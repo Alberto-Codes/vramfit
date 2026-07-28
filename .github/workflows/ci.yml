@@ -28,6 +28,8 @@ jobs:
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run uv-secure
+      - run: uvx yamllint -c .yamllint.yaml .
+      - uses: raven-actions/actionlint@3d39aea434753780c3b3d4a1a31c854b4dbf49d7  # v2
       - run: uv cache prune --ci
         if: always()
         continue-on-error: true
@@ -104,6 +106,6 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: Alberto-Codes/docvet@v1
+      - uses: Alberto-Codes/docvet@257310e5edc8249629d388d879a5afde602f02ca  # v1
         with:
           checks: "all"
