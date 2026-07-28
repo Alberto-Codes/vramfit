@@ -1,7 +1,10 @@
 # ADR-0003: North-star benchmark: Nemotron Super 49B on a 24 GiB RTX 4090
 
-- **Status:** Accepted
+- **Status:** Accepted, amended by
+  [ADR-0010](0010-sub-4-bit-serving-path.md)
 - **Date:** 2026-07-27
+- **Amendment (2026-07-28):** the serving-runtime clause changes — the
+  benchmark serves through llama.cpp, not vLLM. Everything else stands.
 
 ## Context
 
