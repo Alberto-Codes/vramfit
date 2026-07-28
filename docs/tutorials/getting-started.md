@@ -44,7 +44,7 @@ uv run quantfit scan HuggingFaceTB/SmolLM2-135M \
 ```
 
 The scan quantizes one layer group at a time at each candidate
-precision (8, 4, 3, 2 bits), measures divergence from the
+precision (8, 4, 3, 2 bits), measures the damage relative to the
 full-precision model, and writes a
 [sensitivity map](../reference/sensitivity-map.md). Progress prints per
 cell, and every finished cell lands in

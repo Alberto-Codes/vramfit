@@ -92,6 +92,7 @@ sequenceDiagram
     participant CLI as cli_scan (inbound)
     participant M as DamageMeter (torch)
     participant S as ScanCheckpointStore (JSON)
+    participant K as SensitivityMapSink (JSON)
     participant D as domain.scan (pure)
     CLI->>M: groups()
     CLI->>S: load(fingerprint)
@@ -102,7 +103,7 @@ sequenceDiagram
         CLI->>S: append(fingerprint, measurement)
     end
     CLI->>D: assemble_map(model, meta, specs, measurements)
-    CLI->>CLI: SensitivityMapSink.save(map)
+    CLI->>K: save(map)
 ```
 
 The split of responsibilities:
