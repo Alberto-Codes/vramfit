@@ -65,6 +65,6 @@ Against ~49B parameters (plus format overhead), the fp8-KV budget forces an
 *average* of ~3.5 bits/parameter; fp16 KV forces ~3.3. Below uniform-4-bit,
 above uniform-3. Selectivity is not an optimization here; it's the only way
 the average can be spent unevenly enough to preserve quality. This
-arithmetic is the entire reason the project exists — and it's also the open
-tension with vLLM's 4-bit kernel floor recorded in
-[ADR-0004](../adr/0004-vllm-first-runtime.md).
+arithmetic is the entire reason the project exists — and it's also why
+[ADR-0010](../adr/0010-sub-4-bit-serving-path.md) moves the benchmark's
+serving path to GGUF, past vLLM's 4-bit kernel floor.

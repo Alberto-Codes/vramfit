@@ -1,7 +1,7 @@
 # ADR-0006: Sensitivity metric for the scan step
 
-- **Status:** Proposed
-- **Date:** 2026-07-27
+- **Status:** Accepted
+- **Date:** 2026-07-27 (accepted 2026-07-28)
 
 ## Context
 
@@ -13,8 +13,8 @@ choice is load-bearing. Candidates:
    perturbation, no generation needed. Front-runner.
 2. **Perplexity delta** on held-out text. The literature standard, coarser
    per-token signal, similar cost.
-3. **Task evals** (MMLU-style accuracy). Closest to user-felt quality;
-   orders of magnitude too slow per (group × precision).
+3. **Task evals** (MMLU-style accuracy). Closest to user-felt quality.
+   Orders of magnitude too slow per (group × precision).
 4. **Layer-local error** (MSE on the group's own output). Cheapest — no full
    forward pass — but ignores how errors propagate through depth, which is
    the thing we care about.
@@ -22,7 +22,7 @@ choice is load-bearing. Candidates:
 There's also a structural question: marginal scanning assumes per-group
 damage is additive, which is known to leak (errors compound through depth).
 
-## Decision (proposed)
+## Decision
 
 Use **mean KL divergence over the calibration set** as the scan metric, with
 a **single whole-recipe validation pass** after `plan` to check the additive
@@ -30,17 +30,30 @@ prediction, and **one task eval on the final packed model** as ground truth.
 Record the metric name in the sensitivity map (`scan.metric`) so it can
 change without breaking consumers.
 
+Points fixed at acceptance (2026-07-28):
+
+- Measure divergence at the **final logits only**. Intermediate-state
+  probes are an optimization to explore after a first full scan exists,
+  not a v1 requirement.
+- Default calibration size is **131,072 tokens** until measured. The
+  map records `scan.calibration_tokens`, so maps stay comparable and
+  the default can move without a schema change.
+- The scan quantizes groups by **round-to-nearest with per-block
+  scales** in v1. It approximates the pack formats without depending on
+  any of them. A within-group method change (GPTQ, AWQ) is a new scan,
+  not a new schema.
+
 ## Open questions
 
-- How many calibration tokens before per-group KL stabilizes? (Determines
-  scan cost directly.)
-- Should divergence be measured at the final logits only, or also at
-  intermediate hidden states (cheaper early-exit signal)?
-- How large a marginal-vs-whole-recipe gap invalidates a scan?
+- How many calibration tokens before per-group KL stabilizes? Plan:
+  the first real scan reports per-group KL at 1/4, 1/2, and full
+  calibration, and the observed convergence sets the new default.
+- How large a marginal-vs-whole-recipe gap invalidates a scan? Open
+  until the whole-recipe validation pass exists.
 
-## Consequences (if accepted)
+## Consequences
 
 - Scan cost stays `O(groups × precisions)` forward passes — tractable
   overnight on the reference box for the 49B target.
-- Damage values are calibration-set-relative; maps must record their
+- Damage values are calibration-set-relative. Maps must record their
   calibration provenance and are not comparable across different sets.
