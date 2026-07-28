@@ -11,9 +11,9 @@
   --ink: #1a222e;
   --board: #16202b;
   --copper: #b4531d;
-  --copper-2: #c97b45;
-  --copper-3: #dba37a;
-  --copper-4: #ebccb0;
+  --copper-2: #9c4818;
+  --copper-3: #843c14;
+  --copper-4: #6c300f;
   --muted: #5b6673;
   --rule: #d9dfe3;
   --well: #e9ece5;
@@ -164,20 +164,27 @@ section.lead h1 {
 section.lead h1::after {
   height: 10px;
   width: 62%;
+  background: linear-gradient(
+    to right,
+    #d06a2f 0 44%, transparent 44% 46.5%,
+    #b4531d 46.5% 68.5%, transparent 68.5% 71%,
+    #93441a 71% 87.5%, transparent 87.5% 90%,
+    #7a3915 90% 100%
+  );
 }
 
 section.lead strong {
-  color: var(--copper-3);
+  color: #d98b52;
 }
 
 section.lead a {
-  color: var(--copper-3);
+  color: #d98b52;
   border-bottom-color: var(--copper);
 }
 
 section.lead code {
   background: #223041;
-  color: var(--copper-4);
+  color: #e8b98d;
 }
 
 section.lead footer,
