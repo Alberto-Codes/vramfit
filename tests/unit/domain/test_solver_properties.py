@@ -8,6 +8,7 @@ from hypothesis import event, given
 from hypothesis import strategies as st
 
 from quantfit.adapters.outbound.sensitivity_map_json import map_from_dict
+from quantfit.domain.runtime import RUNTIME_CAPABILITIES, RuntimeCapabilityError
 from quantfit.domain.solver import InfeasibleBudgetError, group_bytes, solve
 from tests.strategies import raw_sensitivity_maps
 
@@ -73,6 +74,26 @@ class TestSolverProperties:
     def test_negative_overhead_always_rejected(self, raw, overhead) -> None:
         with pytest.raises(ValueError, match="non-negative"):
             solve_simple(map_from_dict(raw), 10_000, overhead)
+
+    @given(
+        raw=raw_sensitivity_maps(),
+        runtime=st.sampled_from(sorted(RUNTIME_CAPABILITIES)),
+    )
+    def test_runtime_never_assigns_an_unserveable_precision(self, raw, runtime) -> None:
+        map_ = map_from_dict(raw)
+        capability = RUNTIME_CAPABILITIES[runtime]
+        serveable = [p for p in map_.scan.precisions if p in capability]
+
+        if not serveable:
+            event("no serveable precision")
+            with pytest.raises(RuntimeCapabilityError):
+                solve_simple(map_, 10**12, 0.0, runtime=runtime)
+            return
+        event("serveable")
+        recipe = solve_simple(map_, 10**12, 0.0, runtime=runtime)
+
+        assert all(a.bits in capability for a in recipe.assignments)
+        assert recipe.runtime == runtime
 
     @given(raw=raw_sensitivity_maps(), overhead=overheads, data=st.data())
     def test_group_order_never_changes_the_recipe(self, raw, overhead, data) -> None:
