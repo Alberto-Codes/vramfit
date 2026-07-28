@@ -42,11 +42,19 @@ scan  ──►  sensitivity.json  ──►  plan  ──►  recipe.json  ─�
 | `adapters/outbound/scan/` | ✚ | torch meter package (`meter`, `quantize`, `kl`, `calibration`) |
 | `adapters/inbound/cli_scan.py` | ✚ | `quantfit scan` — composition root + loop |
 
-- torch lives **only** in `adapters/outbound/scan/` — enforced by
-  import-linter `ignore_imports`, a ty override, and a coverage `omit`,
-  each scoped to that package and commented with the ADR rationale.
-- Base install stays typer-only (ADR-0005). The CLI imports the meter
-  lazily inside the command.
+---
+
+## Architecture — torch stays quarantined
+
+- torch lives **only** in `adapters/outbound/scan/`, behind the new
+  `quantfit[scan]` extra.
+- Three scoped carve-outs, each commented with its ADR rationale:
+  import-linter `ignore_imports`, a ty `unresolved-import` override,
+  and a coverage `omit`.
+- Base install stays typer-only (ADR-0005); the CLI imports the meter
+  lazily inside the command body.
+- CI never installs torch — the hermetic suites prove the orchestration
+  against the verified fake.
 
 ---
 
