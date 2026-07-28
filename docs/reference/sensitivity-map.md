@@ -6,8 +6,7 @@ status: draft
 
 > **Status: draft** — implemented in
 > `quantfit.adapters.outbound.sensitivity_map_json`, whose loader enforces
-> everything described here. The scan pipeline that *produces* these
-> files does not exist yet.
+> everything described here. `quantfit scan` produces these files.
 
 The sensitivity map is the output of `quantfit scan` and the input to
 `quantfit plan`: JSON, one entry per (layer group × candidate precision).

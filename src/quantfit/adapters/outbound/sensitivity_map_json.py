@@ -1,10 +1,12 @@
 """JSON file adapter for the sensitivity-map artifact.
 
 Owns (de)serialization and validation of the map schema, including the
-``quantfit_schema`` envelope. Validation is strict: artifacts are
-rejected, never normalized — ``scan.precisions`` must arrive strictly
-descending, ``group_by`` must be a known granularity, and every group's
-sensitivity keys must equal it exactly.
+``quantfit_schema`` envelope. One file class serves both directions:
+``quantfit scan`` writes through the sink face, ``quantfit plan`` reads
+through the source face. Validation is strict: artifacts are rejected,
+never normalized — ``scan.precisions`` must arrive strictly descending,
+``group_by`` must be a known granularity, and every group's sensitivity
+keys must equal it exactly.
 
 Examples:
     Round-trip a map through a file:
@@ -157,10 +159,10 @@ def save_sensitivity_map(map_: SensitivityMap, path: Path) -> None:
 
 @dataclass(frozen=True, slots=True)
 class JsonSensitivityMapFile:
-    """`SensitivityMapSource` adapter backed by a JSON file.
+    """`SensitivityMapSource` and `SensitivityMapSink` adapter for one file.
 
     Attributes:
-        path (Path): The file to read.
+        path (Path): The file to read or write.
 
     Examples:
         Use as a port implementation:
@@ -184,6 +186,14 @@ class JsonSensitivityMapFile:
                 validation.
         """
         return load_sensitivity_map(self.path)
+
+    def save(self, map_: SensitivityMap) -> None:
+        """Write the map to `path` as pretty-printed JSON.
+
+        Args:
+            map_: The map to persist.
+        """
+        save_sensitivity_map(map_, self.path)
 
 
 def _parse_scan_meta(obj: dict[str, Any]) -> ScanMeta:
