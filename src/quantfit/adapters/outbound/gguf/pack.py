@@ -3,8 +3,9 @@
 Implements the `RecipePacker` port for the GGUF serving path
 (ADR-0010, ADR-0012). `convert` runs ``convert_hf_to_gguf.py`` under
 a caller-supplied interpreter — that interpreter carries torch, this
-package never imports it (ADR-0005). `pack` runs ``llama-quantize``
-with the recipe's type mapping from
+package never imports it (ADR-0005). `pack` first rejects a recipe
+recorded for a foreign runtime (ADR-0013), then runs
+``llama-quantize`` with the recipe's type mapping from
 [quantfit.adapters.outbound.gguf.types][]. Every failure — a tool
 that cannot start, exits nonzero, dies to a signal, or leaves no
 usable file — translates to `PackError` at this boundary (ADR-0011),
@@ -42,6 +43,7 @@ from typing import Final
 from quantfit.adapters.outbound.gguf.types import (
     PackError,
     base_type,
+    check_runtime,
     tensor_overrides,
     token_embedding_type,
 )
@@ -188,10 +190,12 @@ class LlamaCppPacker:
             The accounting record, with the real packed size.
 
         Raises:
-            PackError: If the base GGUF is missing, the recipe cannot
-                be mapped (ADR-0012), the quantizer fails, or it
-                writes no usable file.
+            PackError: If the recipe targets another runtime
+                (ADR-0013), the base GGUF is missing, the recipe
+                cannot be mapped (ADR-0012), the quantizer fails, or
+                it writes no usable file.
         """
+        check_runtime(recipe)
         if not self.base_gguf.exists():
             raise PackError(
                 f"base GGUF {self.base_gguf} does not exist — run convert first"

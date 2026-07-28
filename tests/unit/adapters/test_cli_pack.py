@@ -308,7 +308,7 @@ class TestPackCommand:
             model_id=str(model_dir),
             plan=make_recipe(str(model_dir)).plan,
             assignments=(
-                Assignment(group="model.layers.0", bits=5, bytes=500, damage=0.01),
+                Assignment(group="model.layers.0", bits=7, bytes=500, damage=0.01),
             ),
         )
         path = tmp_path / "recipe5.json"
@@ -321,7 +321,7 @@ class TestPackCommand:
         )
 
         assert result.exit_code == 1
-        assert "no GGUF base type maps 5-bit" in result.output
+        assert "no GGUF base type maps 7-bit" in result.output
         log = read_run_log(out.with_name(out.stem + ".runlog.jsonl"))
         assert log[-1]["event"] == "pack_halted"
         assert log[-1]["stage"] == "quantize"
