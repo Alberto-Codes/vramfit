@@ -1,0 +1,111 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - run: uv python install 3.12
+      - run: uv lock --check
+      - run: uv sync --locked --dev
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run uv-secure
+      - run: uvx yamllint==1.38.0 -c .yamllint.yaml .
+      - uses: raven-actions/actionlint@3d39aea434753780c3b3d4a1a31c854b4dbf49d7  # v2
+      - run: uv cache prune --ci
+        if: always()
+        continue-on-error: true
+
+  type-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - run: uv python install 3.12
+      - run: uv sync --locked --dev
+      - run: uv run ty check
+      - run: uv cache prune --ci
+        if: always()
+        continue-on-error: true
+
+  # The backstop for the hook line (ADR-0008/0009): hooks can be
+  # bypassed, CI cannot. Hex layers, domain purity, no-torch, the
+  # 300/320 code-line cap, and living doc references.
+  boundaries:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - run: uv python install 3.12
+      - run: uv sync --locked --dev
+      - run: uv run lint-imports
+      - run: uv run python scripts/check_loc.py src
+      - run: uv run python scripts/check_doc_refs.py
+      - run: uv cache prune --ci
+        if: always()
+        continue-on-error: true
+
+  # Mirrors the pre-push gate: thorough hypothesis profile, e2e
+  # included, 90% coverage floor from pyproject. GPU and integration
+  # tiers stay out — CI has neither the card nor the weights.
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-suffix: py${{ matrix.python-version }}
+      - run: uv python install ${{ matrix.python-version }}
+      - run: uv sync --locked --dev
+        env:
+          UV_PYTHON: ${{ matrix.python-version }}
+      - run: >-
+          uv run pytest -m "not gpu and not integration"
+          --cov=quantfit --cov-report=term-missing --tb=short
+        env:
+          UV_PYTHON: ${{ matrix.python-version }}
+          HYPOTHESIS_PROFILE: thorough
+      - run: uv cache prune --ci
+        if: always()
+        continue-on-error: true
+
+  docvet:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: Alberto-Codes/docvet@257310e5edc8249629d388d879a5afde602f02ca  # v1
+        with:
+          checks: "all"

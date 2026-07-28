@@ -1,0 +1,43 @@
+name: CodeQL
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 6 * * 1"  # Weekly Monday 06:00 UTC
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    # Code-scanning upload needs GitHub Advanced Security on private
+    # repos, which this repo does not have (verified 2026-07-28: the
+    # analysis ran, the upload was refused). The job arms itself the
+    # day the repo goes public. To scan while private, enable GHAS in
+    # the repo settings and delete this condition.
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Job-level permissions replace the workflow-level block, so
+    # contents: read must be restated or a private-repo checkout fails.
+    # Private repos additionally need actions: read for the analyze
+    # step's workflow-run lookup.
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: python
+
+      - uses: github/codeql-action/analyze@v4
