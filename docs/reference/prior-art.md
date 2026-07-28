@@ -70,8 +70,8 @@ status: draft
     not planned. Upstream also moved in-tree GGUF support out to
     [vllm-gguf-plugin](https://github.com/vllm-project/vllm-gguf-plugin),
     whose tested formats stop at 4 bits. On that evidence
-    [ADR-0010](../adr/0010-sub-4-bit-serving-path.md) proposes the GGUF
-    serving path for sub-4-bit recipes.
+    [ADR-0010](../adr/0010-sub-4-bit-serving-path.md) routes sub-4-bit
+    recipes through the GGUF serving path.
 
 ## Target model
 

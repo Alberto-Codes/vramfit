@@ -29,8 +29,8 @@ VRAM budget:
    (minus KV-cache headroom), spend bits where the scan says they matter and
    crush where it says they don't. Bits are cost, quality is value.
 3. **Pack** — apply the recipe and emit a checkpoint the target runtime can
-   actually serve (vLLM for ≥4-bit recipes, GGUF for the sub-4-bit benchmark
-   path per [ADR-0010](docs/adr/0010-sub-4-bit-serving-path.md), Proposed).
+   actually serve (GGUF for the sub-4-bit benchmark path, vLLM for ≥4-bit
+   recipes, per [ADR-0010](docs/adr/0010-sub-4-bit-serving-path.md)).
 
 **The goal:** NVIDIA **Nemotron Super 49B running on a 24 GB RTX 4090** — a
 model that does not fit today, made to fit selectively, with measured (not

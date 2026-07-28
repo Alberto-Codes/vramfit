@@ -1,7 +1,7 @@
 # ADR-0010: The sub-4-bit serving path runs through GGUF
 
-- **Status:** Proposed
-- **Date:** 2026-07-28
+- **Status:** Accepted
+- **Date:** 2026-07-28 (accepted 2026-07-28)
 
 ## Context
 
@@ -42,7 +42,7 @@ the impossible thing. The impossible thing is doing it without wrecking
 quality — no published quant of this model chooses its per-layer bits
 from measurement.
 
-## Decision (proposed)
+## Decision
 
 1. **The scan measures candidate precisions {8, 4, 3, 2} per group.**
    Sensitivity is a property of the model, not of a runtime. The scan

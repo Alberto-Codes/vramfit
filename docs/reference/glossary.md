@@ -118,10 +118,10 @@ change.
 
 **North-star benchmark**
 :   The acceptance test from
-    [ADR-0003](../adr/0003-north-star-benchmark.md): Nemotron Super 49B
-    serving on a 24 GiB RTX 4090 via vLLM at 16k context with measured
-    quality loss. [ADR-0010](../adr/0010-sub-4-bit-serving-path.md)
-    (Proposed) would change the serving runtime to llama.cpp.
+    [ADR-0003](../adr/0003-north-star-benchmark.md), as amended by
+    [ADR-0010](../adr/0010-sub-4-bit-serving-path.md): Nemotron Super
+    49B serving on a 24 GiB RTX 4090 via llama.cpp at 16k context, with
+    measured quality loss beating the size-matched heuristic GGUFs.
 
 **Reference box**
 :   The development machine the benchmark runs on: RTX 4090 (24 GiB),
