@@ -4,7 +4,8 @@ Each protocol names one capability the inbound side orchestrates
 against. Artifact IO ports carry whole domain values, and the run-log
 port carries one machine event at a time (ADR-0011). The scan ports
 (`DamageMeter`, `ScanCheckpointStore`) carry the scan grid cell by
-cell so a crashed scan can resume. The pack port (`RecipePacker`)
+cell so a crashed scan can resume — the meter also measures a whole
+recipe at once for the validation pass (ADR-0006). The pack port (`RecipePacker`)
 carries its two toolchain stages separately so the composition root
 can log each (ADR-0012). Concrete implementations live in
 [quantfit.adapters.outbound][].
@@ -179,6 +180,27 @@ class DamageMeter(Protocol):
         Raises:
             ValueError: If the group name is unknown, ``bits`` is below
                 2, or the measurement is numerically unstable.
+        """
+        ...
+
+    def measure_recipe(self, assignments: Mapping[str, int]) -> float:
+        """Measure whole-recipe damage: all groups perturbed at once.
+
+        The validation-pass measurement (ADR-0006): every listed group
+        is quantized to its assigned precision in one pass, so the
+        result includes the interactions marginal scanning misses.
+        Perturbing one group this way equals `measure` for that cell.
+
+        Args:
+            assignments: Assigned precision per group name.
+
+        Returns:
+            The measured damage. Always finite and non-negative.
+
+        Raises:
+            ValueError: If ``assignments`` is empty, names an unknown
+                group, assigns bits below 2, or the measurement is
+                numerically unstable.
         """
         ...
 

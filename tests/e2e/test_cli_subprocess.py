@@ -90,6 +90,43 @@ def test_scan_without_the_extra_reports_the_install_hint(tmp_path) -> None:
     assert "quantfit[scan]" in result.stderr + result.stdout
 
 
+def test_validate_without_the_extra_reports_the_install_hint(tmp_path) -> None:
+    if importlib.util.find_spec("torch") is not None:
+        pytest.skip("scan extra installed — the ImportError path cannot trigger")
+    from quantfit.adapters.outbound.recipe_json import save_recipe
+    from quantfit.domain.model import Assignment, PlanMeta, Recipe
+
+    recipe_path = tmp_path / "recipe.json"
+    save_recipe(
+        Recipe(
+            model_id="some/model",
+            plan=PlanMeta(
+                vram_budget_bytes=4_000,
+                kv_headroom_bytes=1_000,
+                weight_budget_bytes=3_000,
+                predicted_total_bytes=2_500,
+                predicted_damage=0.05,
+                solver="greedy-damage-per-byte",
+                pins={},
+                format_overhead=0.05,
+                trace=(),
+            ),
+            assignments=(
+                Assignment(group="model.layers.0", bits=4, bytes=500, damage=0.01),
+            ),
+            runtime=None,
+        ),
+        recipe_path,
+    )
+    calibration = tmp_path / "calib.txt"
+    calibration.write_text("calibration text")
+
+    result = run("validate", str(recipe_path), "--calibration", str(calibration))
+
+    assert result.returncode == 1
+    assert "quantfit[scan]" in result.stderr + result.stdout
+
+
 def test_pack_flow_with_stub_toolchain_produces_the_packed_file(tmp_path) -> None:
     from quantfit.adapters.outbound.recipe_json import save_recipe
     from quantfit.adapters.outbound.run_log_jsonl import read_run_log

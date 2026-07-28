@@ -105,3 +105,61 @@ def test_measure_below_two_bits_raises_value_error(meter: DamageMeter) -> None:
 
     with pytest.raises(ValueError, match="bits"):
         meter.measure(group, 1)
+
+
+def test_measure_recipe_returns_finite_non_negative_damage(
+    meter: DamageMeter,
+) -> None:
+    recipe = {spec.name: 8 for spec in meter.groups()}
+
+    damage = meter.measure_recipe(recipe)
+
+    assert math.isfinite(damage)
+    assert damage >= 0.0
+
+
+def test_measure_recipe_on_one_group_equals_measure(meter: DamageMeter) -> None:
+    group = meter.groups()[0].name
+
+    assert meter.measure_recipe({group: 4}) == meter.measure(group, 4)
+
+
+def test_measure_recipe_restores_the_model(meter: DamageMeter) -> None:
+    group = meter.groups()[0].name
+    before = meter.measure(group, 2)
+
+    meter.measure_recipe({spec.name: 4 for spec in meter.groups()})
+
+    assert meter.measure(group, 2) == before
+
+
+def test_measure_recipe_coarse_damages_at_least_fine(meter: DamageMeter) -> None:
+    specs = meter.groups()
+
+    fine = meter.measure_recipe({spec.name: 8 for spec in specs})
+    coarse = meter.measure_recipe({spec.name: 2 for spec in specs})
+
+    assert 0.0 <= fine <= coarse
+
+
+def test_measure_recipe_on_unknown_group_raises_value_error(
+    meter: DamageMeter,
+) -> None:
+    with pytest.raises(ValueError, match="unknown group"):
+        meter.measure_recipe({"no.such.group": 8})
+
+
+def test_measure_recipe_below_two_bits_raises_value_error(
+    meter: DamageMeter,
+) -> None:
+    group = meter.groups()[0].name
+
+    with pytest.raises(ValueError, match="bits"):
+        meter.measure_recipe({group: 1})
+
+
+def test_measure_recipe_with_no_assignments_raises_value_error(
+    meter: DamageMeter,
+) -> None:
+    with pytest.raises(ValueError, match="empty"):
+        meter.measure_recipe({})

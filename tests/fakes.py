@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -71,12 +72,20 @@ class MemorySensitivityMapSink:
 
 @dataclass
 class MemoryDamageMeter:
-    """In-memory `DamageMeter`. Damages are configured per (group, bits) cell."""
+    """In-memory `DamageMeter`. Damages are configured per (group, bits) cell.
+
+    `measure_recipe` sums the configured cells and adds
+    ``interaction_damage`` when two or more groups are perturbed —
+    the configurable additivity leak. A single-group recipe equals
+    `measure` for that cell, like the real meter.
+    """
 
     specs: tuple[GroupSpec, ...] = ()
     damages: dict[tuple[str, int], float] = field(default_factory=dict)
     tokens: int = 1024
+    interaction_damage: float = 0.0
     calls: list[tuple[str, int]] = field(default_factory=list)
+    recipe_calls: list[dict[str, int]] = field(default_factory=list)
 
     def groups(self) -> tuple[GroupSpec, ...]:
         return self.specs
@@ -84,15 +93,28 @@ class MemoryDamageMeter:
     def calibration_tokens(self) -> int:
         return self.tokens
 
-    def measure(self, group: str, bits: int) -> float:
+    def _cell(self, group: str, bits: int) -> float:
         if group not in {spec.name for spec in self.specs}:
             raise ValueError(f'unknown group "{group}"')
         if bits < 2:
             raise ValueError("bits must be at least 2")
         if (group, bits) not in self.damages:
             raise ValueError(f"no damage configured for ({group}, {bits})")
-        self.calls.append((group, bits))
         return self.damages[(group, bits)]
+
+    def measure(self, group: str, bits: int) -> float:
+        damage = self._cell(group, bits)
+        self.calls.append((group, bits))
+        return damage
+
+    def measure_recipe(self, assignments: Mapping[str, int]) -> float:
+        if not assignments:
+            raise ValueError("assignments must not be empty")
+        total = sum(self._cell(group, bits) for group, bits in assignments.items())
+        if len(assignments) > 1:
+            total += self.interaction_damage
+        self.recipe_calls.append(dict(assignments))
+        return total
 
 
 @dataclass

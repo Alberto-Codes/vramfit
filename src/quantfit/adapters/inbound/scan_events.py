@@ -4,7 +4,8 @@ Holds the scan command's event machinery so `quantfit.adapters.inbound.cli_scan`
 stays under the size cap. The shared run-log policy wrapper lives in
 [quantfit.adapters.inbound.run_log][] — this module drives it through
 the scan grid, stamping each cell with its timing and memory
-high-water mark (ADR-0011).
+high-water mark (ADR-0011). The validate command reuses `start_run`
+with its own event prefix.
 
 Examples:
     Measure the remaining cells of a scan:
@@ -35,24 +36,29 @@ def start_run(
     run_log: SafeRunLog,
     payload: Mapping[str, object],
     build: Callable[[], DamageMeter],
+    prefix: str = "scan",
 ) -> DamageMeter:
     """Emit the opening events and build the meter.
 
     Args:
-        run_log: Sink for ``scan_started``/``meter_built``/halt events.
-        payload: The ``scan_started`` fields.
+        run_log: Sink for the started, ``meter_built``, and halt
+            events.
+        payload: The ``<prefix>_started`` fields.
         build: Zero-argument meter builder — a closure keeps the real
             call statically checked.
+        prefix: Command name for the ``<prefix>_started`` and
+            ``<prefix>_halted`` events — ``scan`` or ``validation``.
 
     Returns:
         The loaded meter.
 
     Raises:
         typer.Exit: With code 1 when the meter cannot be built — the
-            command echoes the failure and logs ``scan_halted`` with
-            ``cells_kept`` null (the stage cannot know the count).
+            command echoes the failure and logs ``<prefix>_halted``
+            with ``cells_kept`` null (the stage cannot know the
+            count).
     """
-    run_log.emit("scan_started", payload)
+    run_log.emit(f"{prefix}_started", payload)
     build_started = time.monotonic()
     # Only a failed adapter import means "extra not installed" —
     # construction errors (missing tokenizer backend, CUDA out of
@@ -62,7 +68,7 @@ def start_run(
     except (OSError, ValueError, RuntimeError, ImportError) as exc:
         typer.echo(f"error: {exc}", err=True)
         run_log.emit(
-            "scan_halted",
+            f"{prefix}_halted",
             {
                 "stage": "meter_build",
                 "error": str(exc),
