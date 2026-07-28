@@ -3,7 +3,8 @@
 Owns (de)serialization and validation of the map schema, including the
 ``quantfit_schema`` envelope. Validation is strict: artifacts are
 rejected, never normalized — ``scan.precisions`` must arrive strictly
-descending, and every group's sensitivity keys must equal it exactly.
+descending, ``group_by`` must be a known granularity, and every group's
+sensitivity keys must equal it exactly.
 
 Examples:
     Round-trip a map through a file:
@@ -28,7 +29,7 @@ from __future__ import annotations
 import itertools
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, cast
 
 from quantfit.adapters.outbound.json_common import (
     SCHEMA_VERSION,
@@ -59,8 +60,9 @@ def map_from_dict(data: object) -> SensitivityMap:
 
     Raises:
         ArtifactError: If any field is missing, mistyped, or violates a
-            schema rule (duplicate group names, sensitivity keys not
-            matching ``scan.precisions``, and so on).
+            schema rule (duplicate group names, unknown ``group_by``,
+            sensitivity keys not matching ``scan.precisions``, and so
+            on).
 
     Examples:
         Reject an unsupported schema version:
@@ -72,7 +74,8 @@ def map_from_dict(data: object) -> SensitivityMap:
     root = _get_dict(data, "$")
     _check_schema_version(root, "$")
     model_id = _get_str(root, "model_id", "$")
-    scan = _parse_scan_meta(_get_dict(root.get("scan"), "$.scan"))
+    _require("scan" in root, "$", 'missing required field "scan"')
+    scan = _parse_scan_meta(_get_dict(root["scan"], "$.scan"))
     groups_raw = _get_list(root, "groups", "$")
     _require(len(groups_raw) > 0, "$.groups", "must not be empty")
     expected = set(scan.precisions)
@@ -193,9 +196,9 @@ def _parse_scan_meta(obj: dict[str, Any]) -> ScanMeta:
         The validated scan provenance.
 
     Raises:
-        ArtifactError: If a field is missing or invalid, or precisions
-            are empty, duplicated, not integers, or not strictly
-            descending.
+        ArtifactError: If a field is missing or invalid, precisions are
+            empty, duplicated, not integers, or not strictly descending,
+            or ``group_by`` is not ``layer`` or ``tensor``.
     """
     path = "$.scan"
     tokens = _get_int(obj, "calibration_tokens", path)
@@ -218,12 +221,18 @@ def _parse_scan_meta(obj: dict[str, Any]) -> ScanMeta:
         f"{path}.precisions",
         "must be strictly descending",
     )
+    group_by = _get_str(obj, "group_by", path)
+    _require(
+        group_by in ("layer", "tensor"),
+        f"{path}.group_by",
+        'must be "layer" or "tensor"',
+    )
     return ScanMeta(
         metric=_get_str(obj, "metric", path),
         calibration=_get_str(obj, "calibration", path),
         calibration_tokens=tokens,
         precisions=tuple(precisions),
-        group_by=_get_str(obj, "group_by", path),
+        group_by=cast('Literal["layer", "tensor"]', group_by),
         started_at=_get_str(obj, "started_at", path),
     )
 

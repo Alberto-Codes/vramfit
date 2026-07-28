@@ -18,7 +18,7 @@ def make_map(
         model_id: Model identifier recorded in the map.
 
     Returns:
-        A dict accepted by SensitivityMap.from_dict.
+        A dict accepted by map_from_dict.
     """
     return {
         "quantfit_schema": 1,

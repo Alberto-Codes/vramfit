@@ -16,7 +16,7 @@ testing hunts.
 
 ## Decision
 
-**Pyramid with strict markers** (`--strict-markers`; every test declares
+**Pyramid with strict markers** (`--strict-markers` — every test declares
 its tier):
 
 - **`unit`** (most) — pure logic, no IO beyond tmp files. Includes
@@ -31,7 +31,7 @@ its tier):
   runtime writer), their orchestration gets tested against proven
   fakes — no GPU in CI.
 - **`integration`** — real resources (model weights, GPU runtimes).
-  Empty today; tests must skip with an explicit reason when their
+  Empty today. Tests must skip with an explicit reason when their
   resource is absent, never fail for absence.
 - **`e2e`** — the installed console script via subprocess, full
   file-in/file-out flows.

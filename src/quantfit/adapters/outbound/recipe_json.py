@@ -60,17 +60,17 @@ def recipe_from_dict(data: object) -> Recipe:
             in any assignment.
 
     Examples:
-        Reject a recipe with no assignments:
+        Reject an unsupported schema version:
 
         ```python
-        recipe_from_dict({"quantfit_schema": 1, "assignments": []})
-        # raises ArtifactError
+        recipe_from_dict({"quantfit_schema": 2})  # raises ArtifactError
         ```
     """
     root = _get_dict(data, "$")
     _check_schema_version(root, "$")
     model_id = _get_str(root, "model_id", "$")
-    plan = _parse_plan_meta(_get_dict(root.get("plan"), "$.plan"))
+    _require("plan" in root, "$", 'missing required field "plan"')
+    plan = _parse_plan_meta(_get_dict(root["plan"], "$.plan"))
     raw_assignments = _get_list(root, "assignments", "$")
     _require(len(raw_assignments) > 0, "$.assignments", "must not be empty")
     assignments: list[Assignment] = []
@@ -203,16 +203,18 @@ def _parse_plan_meta(obj: dict[str, Any]) -> PlanMeta:
         The validated plan metadata.
 
     Raises:
-        ArtifactError: If a field is missing or invalid.
+        ArtifactError: If a field is missing or invalid. All plan fields
+            are required — the writer always emits them, so a missing
+            field means a truncated or hand-edited artifact.
     """
     path = "$.plan"
-    pins_obj = _get_dict(obj.get("pins", {}), f"{path}.pins")
+    _require("pins" in obj, path, 'missing required field "pins"')
+    pins_obj = _get_dict(obj["pins"], f"{path}.pins")
     pins = {
         pattern: _as_int(bits, f"{path}.pins.{pattern}")
         for pattern, bits in pins_obj.items()
     }
-    trace_raw = obj.get("trace", [])
-    _require(isinstance(trace_raw, list), f"{path}.trace", "expected a list")
+    trace_raw = _get_list(obj, "trace", path)
     trace: list[TraceStep] = []
     for i, raw in enumerate(trace_raw):
         step_path = f"{path}.trace[{i}]"
@@ -236,8 +238,6 @@ def _parse_plan_meta(obj: dict[str, Any]) -> PlanMeta:
         predicted_damage=_get_float(obj, "predicted_damage", path),
         solver=_get_str(obj, "solver", path),
         pins=pins,
-        format_overhead=_get_float(obj, "format_overhead", path)
-        if "format_overhead" in obj
-        else 0.05,
+        format_overhead=_get_float(obj, "format_overhead", path),
         trace=tuple(trace),
     )

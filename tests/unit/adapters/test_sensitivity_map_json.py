@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from quantfit.adapters.outbound.json_common import ArtifactError
@@ -113,6 +115,32 @@ class TestSensitivityMap:
 
         with pytest.raises(ArtifactError, match="strictly descending"):
             map_from_dict(raw)
+
+    def test_nan_damage_in_file_rejected(self, tmp_path) -> None:
+        raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
+        path = tmp_path / "map.json"
+        path.write_text(json.dumps(raw).replace("0.1", "NaN"))
+
+        with pytest.raises(ArtifactError, match="finite"):
+            load_sensitivity_map(path)
+
+    def test_unknown_group_by_rejected(self) -> None:
+        raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
+        raw["scan"]["group_by"] = "block"
+
+        with pytest.raises(ArtifactError, match="layer"):
+            map_from_dict(raw)
+
+    def test_non_utf8_file_rejected(self, tmp_path) -> None:
+        path = tmp_path / "map.json"
+        path.write_bytes(b'{"quantfit_schema": 1, "model_id": "\xff\xfe"}')
+
+        with pytest.raises(ArtifactError, match="UTF-8"):
+            load_sensitivity_map(path)
+
+    def test_missing_file_raises_artifact_error(self, tmp_path) -> None:
+        with pytest.raises(ArtifactError, match="cannot read"):
+            load_sensitivity_map(tmp_path / "absent.json")
 
     def test_malformed_json_file_raises_artifact_error(self, tmp_path) -> None:
         path = tmp_path / "broken.json"

@@ -1,9 +1,14 @@
 """Domain types for the two pipeline artifacts.
 
-Pure dataclasses only — serialization, validation, and the JSON schema
-envelope (including the ``quantfit_schema`` version field) live in
+The dataclasses enforce their own structural invariants in
+``__post_init__`` (positive sizes, strictly descending precisions,
+unique group names, sensitivity keys matching the scan) so an instance
+that exists is safe for the solver — however it was constructed.
+Serialization and the JSON schema envelope (including the
+``quantfit_schema`` version field) live in
 [quantfit.adapters.outbound.sensitivity_map_json][] and
-[quantfit.adapters.outbound.recipe_json][].
+[quantfit.adapters.outbound.recipe_json][], whose loaders add JSON-path
+error reporting on top of these checks.
 
 Examples:
     Build a one-group map in memory:
@@ -38,12 +43,19 @@ See Also:
 
 from __future__ import annotations
 
+import itertools
+from collections.abc import Mapping
 from dataclasses import dataclass, field
+from types import MappingProxyType
+from typing import Literal
 
 
 @dataclass(frozen=True, slots=True)
 class ScanMeta:
     """Provenance of a sensitivity scan.
+
+    Construction validates the invariants the solver relies on — an
+    instance with unordered precisions cannot exist.
 
     Attributes:
         metric (str): Divergence metric name, e.g. ``kl_divergence``.
@@ -76,8 +88,25 @@ class ScanMeta:
     calibration: str
     calibration_tokens: int
     precisions: tuple[int, ...]
-    group_by: str
+    group_by: Literal["layer", "tensor"]
     started_at: str
+
+    def __post_init__(self) -> None:
+        """Enforce the scan invariants the solver relies on.
+
+        Raises:
+            ValueError: If ``calibration_tokens`` is not positive, or
+                ``precisions`` is empty, non-positive, or not strictly
+                descending.
+        """
+        if self.calibration_tokens <= 0:
+            raise ValueError("calibration_tokens must be positive")
+        if not self.precisions:
+            raise ValueError("precisions must not be empty")
+        if any(p <= 0 for p in self.precisions):
+            raise ValueError("precisions must all be positive")
+        if not all(a > b for a, b in itertools.pairwise(self.precisions)):
+            raise ValueError("precisions must be strictly descending")
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,7 +118,7 @@ class LayerGroup:
         tensors (tuple[str, ...]): Tensor names quantized together in this
             group.
         bytes_fp16 (int): Group size in bytes at reference precision.
-        sensitivity (dict[int, float]): Measured damage per candidate
+        sensitivity (Mapping[int, float]): Measured damage per candidate
             precision.
 
     Examples:
@@ -110,7 +139,23 @@ class LayerGroup:
     name: str
     tensors: tuple[str, ...]
     bytes_fp16: int
-    sensitivity: dict[int, float] = field(hash=False)
+    sensitivity: Mapping[int, float] = field(hash=False)
+
+    def __post_init__(self) -> None:
+        """Enforce group invariants and freeze the damage curve.
+
+        The sensitivity mapping is defensively copied and wrapped in a
+        read-only proxy, so a caller's dict cannot alias or mutate a
+        frozen group.
+
+        Raises:
+            ValueError: If ``bytes_fp16`` is not positive.
+        """
+        if self.bytes_fp16 <= 0:
+            raise ValueError("bytes_fp16 must be positive")
+        object.__setattr__(
+            self, "sensitivity", MappingProxyType(dict(self.sensitivity))
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,6 +178,26 @@ class SensitivityMap:
     model_id: str
     scan: ScanMeta
     groups: tuple[LayerGroup, ...]
+
+    def __post_init__(self) -> None:
+        """Enforce the cross-group invariants the solver relies on.
+
+        Raises:
+            ValueError: If ``groups`` is empty, group names collide, or
+                any group's sensitivity keys differ from
+                ``scan.precisions``.
+        """
+        if not self.groups:
+            raise ValueError("groups must not be empty")
+        names = [g.name for g in self.groups]
+        if len(set(names)) != len(names):
+            raise ValueError("group names must be unique")
+        expected = set(self.scan.precisions)
+        for g in self.groups:
+            if set(g.sensitivity) != expected:
+                raise ValueError(
+                    f'group "{g.name}" sensitivity keys must equal scan.precisions'
+                )
 
 
 @dataclass(frozen=True, slots=True)
@@ -214,7 +279,8 @@ class PlanMeta:
         predicted_total_bytes (int): Sum of assignment sizes.
         predicted_damage (float): Sum of assignment damage values.
         solver (str): Name of the solver that produced the recipe.
-        pins (dict[str, int]): User pin patterns, verbatim.
+        pins (Mapping[str, int]): User pin patterns, verbatim; later
+            patterns override earlier ones.
         format_overhead (float): Quantization-format overhead fraction
             used for size predictions.
         trace (tuple[TraceStep, ...]): Ordered downgrade steps explaining
@@ -234,6 +300,8 @@ class PlanMeta:
             predicted_damage=0.5,
             solver="greedy-damage-per-byte",
             pins={},
+            format_overhead=0.05,
+            trace=(),
         )
         ```
     """
@@ -244,9 +312,13 @@ class PlanMeta:
     predicted_total_bytes: int
     predicted_damage: float
     solver: str
-    pins: dict[str, int] = field(hash=False)
-    format_overhead: float = 0.05
-    trace: tuple[TraceStep, ...] = ()
+    pins: Mapping[str, int] = field(hash=False)
+    format_overhead: float = field(hash=False)
+    trace: tuple[TraceStep, ...] = field(hash=False)
+
+    def __post_init__(self) -> None:
+        """Freeze the pin record so it cannot alias a caller's dict."""
+        object.__setattr__(self, "pins", MappingProxyType(dict(self.pins)))
 
 
 @dataclass(frozen=True, slots=True)

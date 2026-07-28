@@ -10,7 +10,7 @@ Examples:
 
     ```console
     $ uv run python scripts/check_loc.py src
-    src/quantfit/domain/solver.py: 152 code lines
+    checked 14 files
     ```
 """
 
@@ -78,7 +78,7 @@ def count_code_lines(path: Path) -> int:
     Returns:
         The number of code lines.
     """
-    text = path.read_text()
+    text = path.read_text(encoding="utf-8")
     doc_lines = _docstring_lines(ast.parse(text))
     token_lines: set[int] = set()
     for tok in tokenize.generate_tokens(io.StringIO(text).readline):
@@ -98,14 +98,27 @@ def main(roots: list[str]) -> int:
         Process exit code: 1 if any file exceeds the hard limit, else 0.
     """
     failures = 0
+    checked = 0
     for root in roots or ["src"]:
-        for path in sorted(Path(root).rglob("*.py")):
+        paths = sorted(Path(root).rglob("*.py"))
+        if not paths:
+            # A gate that scans nothing must fail loudly, not pass
+            # silently — a renamed root would otherwise disable it.
+            print(f"FAIL {root}: no Python files found")
+            failures += 1
+            continue
+        for path in paths:
+            checked += 1
             n = count_code_lines(path)
             if n > HARD_LIMIT:
                 print(f"FAIL {path}: {n} code lines (hard limit {HARD_LIMIT})")
                 failures += 1
             elif n > SOFT_LIMIT:
-                print(f"WARN {path}: {n} code lines (soft limit {SOFT_LIMIT})")
+                print(
+                    f"WARN {path}: {n} code lines (soft limit {SOFT_LIMIT})",
+                    file=sys.stderr,
+                )
+    print(f"checked {checked} files")
     return 1 if failures else 0
 
 

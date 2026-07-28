@@ -36,15 +36,15 @@ repos:
         name: ty type check
         entry: uv run ty check
         language: system
-        types: [python]
         pass_filenames: false
+        always_run: true
 
       - id: pytest
         name: pytest (fast, unit+contract)
         entry: uv run pytest --tb=short -q
         language: system
-        types: [python]
         pass_filenames: false
+        always_run: true
 
       - id: pytest-push
         name: pytest full (thorough + e2e + coverage)
@@ -61,26 +61,26 @@ repos:
         name: import-linter
         entry: uv run lint-imports
         language: system
-        types: [python]
         pass_filenames: false
+        always_run: true
 
       - id: loc-check
         name: file size limit (300/320 code lines)
         entry: uv run python scripts/check_loc.py src
         language: system
-        types: [python]
         pass_filenames: false
+        always_run: true
 
       - id: doc-refs
         name: docs reference living module paths
         entry: uv run python scripts/check_doc_refs.py
         language: system
-        types_or: [markdown, python]
         pass_filenames: false
+        always_run: true
 
       - id: docvet
         name: docvet check
         entry: uv run docvet check --staged
         language: system
-        types: [python]
         pass_filenames: false
+        always_run: true

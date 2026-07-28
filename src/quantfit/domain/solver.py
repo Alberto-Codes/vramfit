@@ -3,7 +3,8 @@
 Implements ADR-0007: start every group at the highest candidate precision
 (or its pin), then repeatedly apply the downgrade with the best
 damage-per-byte-freed ratio until the total fits the weight budget. The
-ordered downgrade log is recorded in the recipe as its explanation trace.
+ordered downgrade log is recorded in the recipe as its explanation
+trace, and the final downgrade is refined when a milder step also fits.
 Inputs are validated at the API boundary: a negative ``format_overhead``
 raises ``ValueError`` before any solving starts.
 
@@ -63,10 +64,10 @@ class PinError(ValueError):
         A pin against an unscanned precision:
 
         ```python
-        from quantfit.domain.solver import PinError, solve
+        from quantfit.domain.solver import PinError
 
         try:
-            solve(map_, weight_budget_bytes=1, pins={"g*": 6}, ...)
+            solve_with_pins(pins={"g*": 6})
         except PinError as exc:
             print(exc)
         ```
@@ -87,10 +88,10 @@ class InfeasibleBudgetError(Exception):
         Report the gap to the user:
 
         ```python
-        from quantfit.domain.solver import InfeasibleBudgetError, solve
+        from quantfit.domain.solver import InfeasibleBudgetError
 
         try:
-            solve(map_, weight_budget_bytes=1, ...)
+            solve_with_tiny_budget()
         except InfeasibleBudgetError as exc:
             print(f"over budget by {exc.gap_bytes} bytes")
         ```
@@ -217,6 +218,77 @@ def _best_move(
     return best
 
 
+def _refine_last_step(
+    sensitivity_map: SensitivityMap,
+    trace: list[TraceStep],
+    state: dict[str, int],
+    total: int,
+    weight_budget_bytes: int,
+    candidates: tuple[int, ...],
+    size: Callable[[int, int], int],
+) -> int:
+    """Shrink the final downgrade if a smaller step also fits the budget.
+
+    The greedy loop ranks moves by ratio, so the step that crosses under
+    the budget can overshoot: a milder downgrade of the same group might
+    fit with less damage. This post-pass replaces the last trace step
+    with the least-damaging sufficient alternative, keeping the recipe
+    deterministic and the trace all-downgrades.
+
+    Args:
+        sensitivity_map: Damage curves for every group.
+        trace: The downgrade log; its last step may be replaced in place.
+        state: Current precision per group name; updated on refinement.
+        total: Current predicted weight total.
+        weight_budget_bytes: Hard ceiling for the predicted total.
+        candidates: The scan's candidate precisions, descending.
+        size: Group-size predictor for the solver's overhead setting.
+
+    Returns:
+        The (possibly reduced-overshoot) predicted total in bytes.
+    """
+    if not trace:
+        return total
+    last = trace[-1]
+    group = next(g for g in sensitivity_map.groups if g.name == last.group)
+    best: tuple[float, int, int, int] | None = None
+    for target in candidates:
+        if not last.to_bits < target < last.from_bits:
+            continue
+        bytes_freed = size(group.bytes_fp16, last.from_bits) - size(
+            group.bytes_fp16, target
+        )
+        if bytes_freed <= 0:
+            continue
+        new_total = (
+            total
+            - size(group.bytes_fp16, last.to_bits)
+            + size(group.bytes_fp16, target)
+        )
+        if new_total > weight_budget_bytes:
+            continue
+        damage = group.sensitivity[target]
+        key = (damage, -target)
+        if best is None or key < (best[0], best[1]):
+            best = (damage, -target, bytes_freed, new_total)
+    if best is None or best[0] >= group.sensitivity[last.to_bits]:
+        return total
+    damage, neg_target, bytes_freed, new_total = best
+    target = -neg_target
+    damage_delta = damage - group.sensitivity[last.from_bits]
+    trace[-1] = TraceStep(
+        step=last.step,
+        group=last.group,
+        from_bits=last.from_bits,
+        to_bits=target,
+        damage_delta=damage_delta,
+        bytes_freed=bytes_freed,
+        ratio=damage_delta / bytes_freed,
+    )
+    state[last.group] = target
+    return new_total
+
+
 def solve(
     sensitivity_map: SensitivityMap,
     weight_budget_bytes: int,
@@ -235,7 +307,9 @@ def solve(
     unpinned group. Moves that free no bytes (possible on tiny groups
     where sizes round to the same value) are never considered. The
     selection is a total order, so the result is deterministic and
-    independent of group input order.
+    independent of group input order. After the loop, the final downgrade
+    is refined: if a milder step of the same group also fits with less
+    damage, it replaces the overshooting one.
 
     Args:
         sensitivity_map: Damage curves for every group.
@@ -329,6 +403,9 @@ def solve(
         state[name] = target
         total -= bytes_freed
 
+    total = _refine_last_step(
+        sensitivity_map, trace, state, total, weight_budget_bytes, candidates, size
+    )
     assignments = tuple(
         Assignment(
             group=g.name,

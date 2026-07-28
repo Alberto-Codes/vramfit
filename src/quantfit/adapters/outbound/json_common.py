@@ -42,7 +42,7 @@ class ArtifactError(ValueError):
 
     Attributes:
         json_path (str): Dotted path to the offending element, e.g.
-            ``groups[3].sensitivity``.
+            ``$.groups[3].sensitivity``.
         message (str): Human-readable description of the problem.
 
     Examples:
@@ -227,14 +227,15 @@ def _check_schema_version(obj: dict[str, Any], path: str) -> None:
         path: JSON path of the artifact root.
 
     Raises:
-        ArtifactError: If the version is missing or unsupported.
+        ArtifactError: If the version is missing or unsupported — the
+            message names the version this quantfit reads.
     """
     version = _get_int(obj, "quantfit_schema", path)
     _require(
         version == SCHEMA_VERSION,
         f"{path}.quantfit_schema",
-        f"unsupported schema version {version}; this quantfit reads version "
-        f"{SCHEMA_VERSION}",
+        f"unsupported schema version {version} — this quantfit reads "
+        f"version {SCHEMA_VERSION}",
     )
 
 
@@ -249,21 +250,31 @@ def _load_json(path: Path, root: str) -> dict[str, Any]:
         The parsed top-level object.
 
     Raises:
-        ArtifactError: If the file is not valid JSON or the top level is
-            not an object.
+        ArtifactError: If the file cannot be read, is not UTF-8, is not
+            valid JSON, or its top level is not an object.
     """
     try:
-        data = json.loads(path.read_text())
+        data = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise ArtifactError(root, f"invalid JSON: {exc}") from exc
+    except UnicodeDecodeError as exc:
+        raise ArtifactError(root, f"not valid UTF-8: {exc}") from exc
+    except OSError as exc:
+        raise ArtifactError(root, f"cannot read file: {exc}") from exc
     return _get_dict(data, root)
 
 
 def _save_json(data: dict[str, Any], path: Path) -> None:
-    """Write ``data`` to ``path`` as pretty-printed JSON.
+    """Write ``data`` to ``path`` as pretty-printed JSON, atomically.
+
+    The payload lands in a sibling temp file first and replaces the
+    target in one step, so a failed write never leaves a truncated
+    artifact behind.
 
     Args:
         data: JSON-serializable object.
         path: Destination file.
     """
-    path.write_text(json.dumps(data, indent=2) + "\n")
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    tmp.replace(path)

@@ -4,9 +4,10 @@ status: draft
 
 # Sensitivity map format
 
-> **Status: draft** — implemented in `quantfit.adapters.outbound.sensitivity_map_json`;
-> the loader enforces everything described here. The scan pipeline that
-> *produces* these files does not exist yet.
+> **Status: draft** — implemented in
+> `quantfit.adapters.outbound.sensitivity_map_json`, whose loader enforces
+> everything described here. The scan pipeline that *produces* these
+> files does not exist yet.
 
 The sensitivity map is the output of `quantfit scan` and the input to
 `quantfit plan`: JSON, one entry per (layer group × candidate precision).
@@ -49,7 +50,7 @@ The sensitivity map is the output of `quantfit scan` and the input to
 - **`bytes_fp16`** — group size at reference precision; the solver derives
   per-precision sizes from this plus quantization-format overhead.
 - **`groups`** — granularity is set by `--group-by`. Marginal (one group at a
-  time) measurement is assumed; interaction effects between groups are a
+  time) measurement is assumed — interaction effects between groups are a
   known blind spot recorded in ADR-0006. Group names must be unique, and
   every group's `sensitivity` keys must equal `scan.precisions` exactly
   (the v1 loader rejects partially-scanned groups).

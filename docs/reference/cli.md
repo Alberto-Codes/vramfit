@@ -4,7 +4,7 @@ status: draft
 
 # CLI reference
 
-> **Status: draft** — `version`, `budget`, and `plan` are implemented;
+> **Status: draft** — `version`, `budget`, and `plan` are implemented.
 > `scan` is a stub and `pack` is design-stage.
 
 ## `quantfit version`
@@ -18,10 +18,11 @@ quantfit 0.1.0
 
 ## `quantfit budget`
 
-Implemented. Prints the VRAM budget breakdown — the calculator that tells
-you what `--kv-headroom` to pass to `plan`. The attention shape comes from
-exactly one source: `--model-config` (a Hugging Face `config.json`; DeciLM
-NAS configs with `no_op` attention blocks are handled) or the manual triple.
+Implemented. Prints the VRAM budget breakdown. The `--kv-headroom` value
+for `plan` is the sum of the KV-cache and runtime-overhead lines. The attention shape comes from
+exactly one source: `--model-config` (a Hugging Face `config.json` —
+DeciLM NAS configs with skipped-attention blocks are handled) or the
+manual triple.
 
 ```
 quantfit budget
@@ -36,7 +37,7 @@ quantfit budget
   --head-dim INT         Head dimension (manual shape)
 ```
 
-Exits 1 when nothing is left for weights; exits 2 on conflicting or missing
+Exits 1 when nothing is left for weights, and 2 on conflicting or missing
 shape sources.
 
 ```console
@@ -64,11 +65,13 @@ quantfit plan SENSITIVITY_MAP
 Pin semantics: patterns are case-sensitive `fnmatch` globs matched against
 the full group name (`--pin "model.layers.0.*=8"`). A pattern that matches
 no group is an error (typo detection). Later pins override earlier ones for
-overlapping groups. Pins are recorded verbatim in the recipe.
+overlapping groups — repeating a pattern moves it to the last position.
+Pins are recorded in the recipe in their effective order.
 
-Exit codes: 1 when the map is invalid or no recipe fits the budget (the
-gap is reported); 2 on malformed options (`--pin` not of the form
-`pattern=bits`, unparseable sizes).
+Exit codes: 1 when the map is invalid, the output is unwritable, or no
+recipe fits the budget (the gap is reported). Exit 2 on malformed options
+(`--pin` not of the form `pattern=bits` with positive bits, unparseable
+sizes, negative `--format-overhead`).
 
 ## `quantfit scan` *(stub)*
 

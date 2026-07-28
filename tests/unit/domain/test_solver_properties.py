@@ -4,7 +4,7 @@ import random
 from typing import Any
 
 import pytest
-from hypothesis import given
+from hypothesis import event, given
 from hypothesis import strategies as st
 
 from quantfit.adapters.outbound.sensitivity_map_json import map_from_dict
@@ -46,7 +46,13 @@ class TestSolverProperties:
         recipe = solve_simple(map_from_dict(raw), budget, overhead)
 
         assert recipe.plan.predicted_total_bytes <= budget
+        assert recipe.plan.predicted_total_bytes == sum(
+            a.bytes for a in recipe.assignments
+        )
         assert len(recipe.assignments) == len(raw["groups"])
+        assert all(
+            a.bits in map_from_dict(raw).scan.precisions for a in recipe.assignments
+        )
         assert recipe.plan.format_overhead == overhead
 
     @given(raw=raw_sensitivity_maps(), overhead=overheads, data=st.data())
@@ -93,22 +99,54 @@ class TestSolverProperties:
 
         recipe = solve_simple(map_, budget, overhead)
 
+        by_name = {g.name: g for g in map_.groups}
         state = {g.name: map_.scan.precisions[0] for g in map_.groups}
         for i, step in enumerate(recipe.plan.trace, start=1):
+            g = by_name[step.group]
             assert step.step == i
             assert state[step.group] == step.from_bits
+            assert step.bytes_freed == group_bytes(
+                g.bytes_fp16, step.from_bits, overhead
+            ) - group_bytes(g.bytes_fp16, step.to_bits, overhead)
+            assert step.damage_delta == (
+                g.sensitivity[step.to_bits] - g.sensitivity[step.from_bits]
+            )
+            assert step.ratio == step.damage_delta / step.bytes_freed
             state[step.group] = step.to_bits
         assert state == {a.group: a.bits for a in recipe.assignments}
 
     @given(raw=raw_sensitivity_maps(), overhead=overheads, data=st.data())
-    def test_pins_always_honored_when_feasible(self, raw, overhead, data) -> None:
+    def test_pins_always_honored_under_budget_pressure(
+        self, raw, overhead, data
+    ) -> None:
         map_ = map_from_dict(raw)
-        _, ceiling = bounds(raw, overhead)
+        lowest = map_.scan.precisions[-1]
         pinned_group = data.draw(st.sampled_from([g.name for g in map_.groups]))
         pinned_bits = data.draw(st.sampled_from(list(map_.scan.precisions)))
+        # Budget between the pin-respecting floor and the pinned starting
+        # total, so downgrades are forced *around* the pinned group.
+        floor = sum(
+            group_bytes(
+                g.bytes_fp16,
+                pinned_bits if g.name == pinned_group else lowest,
+                overhead,
+            )
+            for g in map_.groups
+        )
+        start = sum(
+            group_bytes(
+                g.bytes_fp16,
+                pinned_bits if g.name == pinned_group else map_.scan.precisions[0],
+                overhead,
+            )
+            for g in map_.groups
+        )
+        budget = data.draw(st.integers(min_value=floor, max_value=max(floor, start)))
+        event("pressured" if start > budget else "unpressured")
 
-        recipe = solve_simple(map_, ceiling, overhead, pins={pinned_group: pinned_bits})
+        recipe = solve_simple(map_, budget, overhead, pins={pinned_group: pinned_bits})
 
         by_group = {a.group: a.bits for a in recipe.assignments}
         assert by_group[pinned_group] == pinned_bits
         assert all(step.group != pinned_group for step in recipe.plan.trace)
+        assert recipe.plan.predicted_total_bytes <= budget

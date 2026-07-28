@@ -4,8 +4,10 @@ status: draft
 
 # Recipe format
 
-> **Status: draft** — implemented in `quantfit.adapters.outbound.recipe_json`; the
-> loader enforces everything described here.
+> **Status: draft** — implemented in `quantfit.adapters.outbound.recipe_json`.
+> The loader enforces the structural rules below (required fields, types,
+> positive sizes, unique groups). Cross-artifact claims — map order, trace
+> consistency — are properties of `quantfit plan`, not of loading.
 
 The recipe is the output of `quantfit plan` and the input to `quantfit pack`:
 JSON, one precision assignment per layer group, plus the budget accounting
@@ -51,20 +53,21 @@ that produced it.
 
 - **`assignments`** — every group from the sensitivity map appears exactly
   once, in map order. `bytes` includes quantization-format overhead
-  (scales, zero-points). `damage` is the *measured* value at the assigned
+  (scales, zero-points), and `damage` is the *measured* value at the assigned
   precision — an all-8-bit recipe still carries the measured 8-bit damage.
 - **`predicted_damage`** — sum of per-group damage at the chosen precisions.
-  A *prediction* from marginal measurements, not a guarantee; the pack step's
+  A *prediction* from marginal measurements, not a guarantee — the pack step's
   post-quantization eval is the ground truth.
 - **`solver`** — which strategy produced the recipe (see
   [ADR-0007](../adr/0007-recipe-solver-strategy.md)); recorded so recipes are
   reproducible and comparable.
 - **`pins`** — user-forced precision overrides, kept verbatim for
   provenance. Patterns are case-sensitive `fnmatch` globs against the full
-  group name; later pins override earlier ones.
+  group name, and later pins override earlier ones.
 - **`format_overhead`** — the overhead fraction used for every size
-  prediction. Recorded so a recipe is reproducible from map + pins +
-  overhead alone.
-- **`trace`** — the solver's ordered downgrade log: replaying it from
-  all-highest-precision reproduces the assignments exactly. This is the
-  human-readable answer to "why did this group end up at 4-bit?".
+  prediction. Together with the map, the pins, and the recorded weight
+  budget, it makes the recipe reproducible.
+- **`trace`** — the solver's ordered downgrade log. Replaying it from the
+  starting state (all groups at highest precision, pinned groups at their
+  pin) reproduces the assignments exactly. This is the human-readable
+  answer to "why did this group end up at 4-bit?".

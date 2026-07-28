@@ -1,8 +1,10 @@
 """Hugging Face ``config.json`` adapter: model file → `ModelShape`.
 
 Handles two config families: DeciLM-style NAS configs (the north-star
-target) with per-block ``block_configs`` where attention can be
-``no_op``, and standard llama-style configs with uniform layers. Invalid
+target) with per-block ``block_configs`` where attention can be deleted
+(``no_op``) or replaced with a linear layer (``replace_with_linear``) —
+both are excluded from KV accounting — and standard llama-style configs
+with uniform layers. Invalid
 geometry (non-divisible GQA group sizes, non-divisible head dimensions)
 is rejected rather than silently truncated.
 
@@ -43,8 +45,9 @@ def shape_from_config_json(path: Path) -> ModelShape:
         The parsed shape.
 
     Raises:
-        ValueError: If the file is not valid JSON, required fields are
-            missing, or the attention geometry is inconsistent.
+        ValueError: If the file is not UTF-8, is not valid JSON,
+            required fields are missing, or the attention geometry is
+            inconsistent.
 
     Examples:
         Standard llama-style configs parse to uniform layers:
@@ -55,9 +58,11 @@ def shape_from_config_json(path: Path) -> ModelShape:
         ```
     """
     try:
-        config = json.loads(path.read_text())
+        config = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise ValueError(f"{path}: invalid JSON: {exc}") from exc
+    except UnicodeDecodeError as exc:
+        raise ValueError(f"{path}: not valid UTF-8: {exc}") from exc
     if not isinstance(config, dict):
         raise ValueError(f"{path}: expected a JSON object")
     if "block_configs" in config:
@@ -103,11 +108,13 @@ def _from_decilm_config(config: dict[str, Any], path: Path) -> ModelShape:
         path: Source path, for error messages.
 
     Returns:
-        The parsed shape, with ``no_op`` attention blocks skipped.
+        The parsed shape, with ``no_op`` and ``replace_with_linear``
+        attention blocks skipped.
 
     Raises:
         ValueError: If required fields are missing, ``block_configs`` is
-            not a list, or a block's ``n_heads_in_group`` is not a
+            not a list, no block has real attention, a skip flag is not
+            a boolean, or a block's ``n_heads_in_group`` is not a
             positive divisor of ``num_attention_heads``.
     """
     heads = _config_int(config, "num_attention_heads", path)
@@ -120,7 +127,15 @@ def _from_decilm_config(config: dict[str, Any], path: Path) -> ModelShape:
         attention = block.get("attention") if isinstance(block, dict) else None
         if not isinstance(attention, dict):
             raise ValueError(f"{path}: block_configs[{i}] has no attention object")
-        if attention.get("no_op") or attention.get("replace_with_linear"):
+        skip = False
+        for flag in ("no_op", "replace_with_linear"):
+            value = attention.get(flag)
+            if value is not None and not isinstance(value, bool):
+                raise ValueError(
+                    f"{path}: block_configs[{i}].attention.{flag} must be a boolean"
+                )
+            skip = skip or bool(value)
+        if skip:
             continue
         group_size = attention.get("n_heads_in_group")
         if not isinstance(group_size, int) or group_size <= 0:
@@ -134,6 +149,8 @@ def _from_decilm_config(config: dict[str, Any], path: Path) -> ModelShape:
                 f"{group_size} does not divide num_attention_heads {heads}"
             )
         kv_heads_per_layer.append(heads // group_size)
+    if not kv_heads_per_layer:
+        raise ValueError(f"{path}: no block has real attention")
     return ModelShape(kv_heads_per_layer=tuple(kv_heads_per_layer), head_dim=head_dim)
 
 
@@ -189,16 +206,19 @@ def _head_dim(config: dict[str, Any], num_heads: int, path: Path) -> int:
         path: Source path, for error messages.
 
     Returns:
-        ``head_dim`` if present, otherwise ``hidden_size // num_heads``
-        after validating exact divisibility.
+        ``head_dim`` if present and valid, otherwise
+        ``hidden_size // num_heads`` after validating exact divisibility.
 
     Raises:
-        ValueError: If neither ``head_dim`` nor ``hidden_size`` is
-            usable, or ``hidden_size`` is not an exact multiple of
-            ``num_heads``.
+        ValueError: If a present ``head_dim`` is not a positive integer
+            (a present-but-invalid value is rejected, never silently
+            replaced by the fallback), or ``hidden_size`` is missing or
+            not an exact multiple of ``num_heads``.
     """
     head_dim = config.get("head_dim")
-    if isinstance(head_dim, int) and not isinstance(head_dim, bool) and head_dim > 0:
+    if head_dim is not None:
+        if isinstance(head_dim, bool) or not isinstance(head_dim, int) or head_dim <= 0:
+            raise ValueError(f'{path}: "head_dim" must be a positive integer')
         return head_dim
     hidden = _config_int(config, "hidden_size", path)
     if hidden % num_heads != 0:

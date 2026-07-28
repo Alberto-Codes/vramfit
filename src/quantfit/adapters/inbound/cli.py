@@ -3,7 +3,9 @@
 Exposes the ``quantfit`` console script. ``version``, ``budget``, and
 ``plan`` are implemented; ``scan`` is a stub until the scan pipeline
 lands. The CLI wires outbound adapters to the pure domain, typing them
-against the ports so the seams stay explicit.
+against the ports so the seams stay explicit. Every IO boundary —
+artifact reads, config reads, and the recipe write — converts failures
+to a clean ``error:`` line and a nonzero exit.
 
 Examples:
     Show the installed version:
@@ -31,6 +33,7 @@ from quantfit.adapters.outbound.json_common import ArtifactError
 from quantfit.adapters.outbound.recipe_json import JsonRecipeFile
 from quantfit.adapters.outbound.sensitivity_map_json import JsonSensitivityMapFile
 from quantfit.domain.budget import (
+    DEFAULT_RUNTIME_OVERHEAD_BYTES,
     KV_DTYPE_BYTES,
     Budget,
     ModelShape,
@@ -123,7 +126,7 @@ def budget(
     sequences: Annotated[int, typer.Option(min=1, help="Concurrent sequences.")] = 1,
     overhead: Annotated[
         str, typer.Option(help="Runtime overhead reservation.")
-    ] = "2GiB",
+    ] = format_size(DEFAULT_RUNTIME_OVERHEAD_BYTES),
     model_config: Annotated[
         Path | None,
         typer.Option(help="Model config.json to derive the attention shape from."),
@@ -144,7 +147,9 @@ def budget(
     """Print the VRAM budget breakdown for a model and serving shape.
 
     The attention shape comes from exactly one source: ``--model-config``,
-    or the manual triple ``--attn-layers --kv-heads --head-dim``.
+    or the manual triple ``--attn-layers --kv-heads --head-dim``. The
+    ``--overhead`` default derives from
+    ``quantfit.domain.budget.DEFAULT_RUNTIME_OVERHEAD_BYTES``.
 
     Raises:
         typer.BadParameter: If both or neither shape source is given, a
@@ -164,13 +169,9 @@ def budget(
         raise typer.BadParameter(
             "give either --model-config or the manual shape options, not both"
         )
-    if model_config is None and any(v is None for v in manual):
-        raise typer.BadParameter(
-            "give --model-config, or all of --attn-layers, --kv-heads, --head-dim"
-        )
     if kv_dtype not in KV_DTYPE_BYTES:
         raise typer.BadParameter(
-            f"--kv-dtype: unknown dtype {kv_dtype!r}; "
+            f"--kv-dtype: unknown dtype {kv_dtype!r} — "
             f"choose from {sorted(KV_DTYPE_BYTES)}"
         )
     if model_config is not None:
@@ -236,11 +237,11 @@ def plan(
 
     Raises:
         typer.BadParameter: If a ``--pin`` is not of the form
-            ``pattern=bits``, a size option is malformed, or
-            ``--format-overhead`` is negative.
-        typer.Exit: With code 1 when the map is invalid, the budget is
-            infeasible (the gap is reported), or nothing is left for
-            weights.
+            ``pattern=bits`` with positive bits, a size option is
+            malformed, or ``--format-overhead`` is negative.
+        typer.Exit: With code 1 when the map is invalid, the recipe
+            cannot be written, the budget is infeasible (the gap is
+            reported), or nothing is left for weights.
 
     Examples:
         Plan with the first layer pinned at 8-bit:
@@ -252,9 +253,18 @@ def plan(
     pins: dict[str, int] = {}
     for raw in pin or []:
         pattern, sep, bits_text = raw.partition("=")
-        if not sep or not pattern or not bits_text.lstrip("-").isdigit():
-            raise typer.BadParameter(f'--pin {raw!r}: expected the form "pattern=bits"')
-        pins[pattern] = int(bits_text)
+        try:
+            bits = int(bits_text)
+        except ValueError:
+            bits = 0
+        if not sep or not pattern or bits <= 0:
+            raise typer.BadParameter(
+                f'--pin {raw!r}: expected the form "pattern=bits" with positive bits'
+            )
+        # A repeated pattern must keep its *last* position so later pins
+        # override earlier ones, as documented.
+        pins.pop(pattern, None)
+        pins[pattern] = bits
 
     vram_bytes = _parse_size_option(vram, "--vram")
     headroom_bytes = _parse_size_option(kv_headroom, "--kv-headroom")
@@ -285,14 +295,18 @@ def plan(
     except InfeasibleBudgetError as exc:
         typer.echo(
             f"error: no recipe fits the {format_size(weight_budget)} weight "
-            f"budget; minimum achievable is {format_size(exc.minimum_bytes)} "
+            f"budget — minimum achievable is {format_size(exc.minimum_bytes)} "
             f"({format_size(exc.gap_bytes)} over)",
             err=True,
         )
         raise typer.Exit(code=1) from exc
 
     sink: RecipeSink = JsonRecipeFile(out)
-    sink.save(recipe)
+    try:
+        sink.save(recipe)
+    except OSError as exc:
+        typer.echo(f"error: {out}: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
     typer.echo(
         f"planned {len(recipe.assignments)} groups: "
         f"{format_size(recipe.plan.predicted_total_bytes)} of "

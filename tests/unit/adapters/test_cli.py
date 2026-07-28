@@ -179,6 +179,70 @@ class TestPlanCommand:
         assert result.exit_code == 1
         assert "nothing for weights" in result.output
 
+    def test_repeated_pin_pattern_keeps_last_position_and_value(self, tmp_path) -> None:
+        map_path = self._write_map(
+            tmp_path, groups=[("a1", 160_000, CURVE), ("b1", 160_000, CURVE)]
+        )
+        out = tmp_path / "recipe.json"
+
+        result = runner.invoke(
+            app,
+            [
+                "plan",
+                str(map_path),
+                "--vram",
+                "500000",
+                "--kv-headroom",
+                "1000",
+                "--pin",
+                "a*=8",
+                "--pin",
+                "*1=4",
+                "--pin",
+                "a*=2",
+                "--out",
+                str(out),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        recipe = load_recipe(out)
+        by_group = {a.group: a.bits for a in recipe.assignments}
+        # a* was repeated last, so it must override *1 for a1.
+        assert by_group["a1"] == 2
+        assert by_group["b1"] == 4
+
+    @pytest.mark.parametrize("bad", ["g0:8", "g0=--4", "g0=²", "g0=-4", "g0=0"])
+    def test_malformed_pin_variants_exit_two(self, tmp_path, bad: str) -> None:
+        map_path = self._write_map(tmp_path)
+
+        result = runner.invoke(
+            app, ["plan", str(map_path), "--vram", "200000", "--pin", bad]
+        )
+
+        assert result.exit_code == 2
+        assert "pattern=bits" in result.output
+
+    def test_unwritable_out_exits_one_with_message(self, tmp_path) -> None:
+        map_path = self._write_map(tmp_path)
+
+        result = runner.invoke(
+            app,
+            [
+                "plan",
+                str(map_path),
+                "--vram",
+                "500000",
+                "--kv-headroom",
+                "1000",
+                "--out",
+                str(tmp_path / "no_such_dir" / "recipe.json"),
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert "error:" in result.output
+
     def test_negative_format_overhead_exits_two(self, tmp_path) -> None:
         map_path = self._write_map(tmp_path)
 

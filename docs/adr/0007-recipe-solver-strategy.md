@@ -30,17 +30,23 @@ precision. Add the exact DP solver later behind `--solver exact` as a check
 on greedy's gap. Record the solver name in the recipe (`plan.solver`) for
 reproducibility either way.
 
-Specifics fixed at implementation (`quantfit.domain.solver`; implemented 2026-07-27, path per ADR-0008):
+Specifics fixed at implementation (`quantfit.domain.solver` — implemented 2026-07-27, path per ADR-0008):
 
 - Moves consider **all** lower candidate precisions, not just the next step
   down, so non-convex damage curves get direct multi-step jumps.
 - Selection key is `(damage_delta / bytes_freed, group name, smallest
   downgrade)` — a total order, so recipes are deterministic and invariant
   to group input order.
-- Pins are `fnmatchcase` globs; a pattern matching zero groups is a hard
-  error; later pins override earlier ones; pinned groups never move.
+- Pins are `fnmatchcase` globs. A pattern matching zero groups is a hard
+  error, later pins override earlier ones, and pinned groups never move.
 - Infeasibility is prechecked (minimum achievable total vs budget) and
   reported with the exact gap in bytes.
+- The final downgrade is refined after the loop (2026-07-28): when a
+  milder step of the same group also fits with less damage, it replaces
+  the overshooting one. Greedy remains non-optimal globally — it does
+  not apply improving moves when already under budget, and earlier
+  groups may stay over-downgraded. Both are accepted gaps for
+  `--solver exact` to quantify.
 - The recipe records `format_overhead` and the full downgrade `trace`.
 
 Resolved open questions: tie-breaking is specified above. Hard floors and

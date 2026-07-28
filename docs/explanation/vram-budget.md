@@ -19,7 +19,7 @@ weight_budget = vram_total − kv_cache − runtime_overhead
 ## Weights
 
 ```
-weight_bytes ≈ Σ_groups (params_in_group × bits_group ÷ 8) × format_overhead
+weight_bytes ≈ Σ_groups (params_in_group × bits_group ÷ 8) × (1 + format_overhead)
 ```
 
 `format_overhead` covers quantization metadata (scales, zero-points, block

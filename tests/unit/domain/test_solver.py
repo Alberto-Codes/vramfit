@@ -243,6 +243,46 @@ class TestSolve:
         assert all(step.group == "big" for step in recipe.plan.trace)
         assert recipe.plan.predicted_total_bytes <= 300
 
+    def test_pinned_group_never_moves_under_pressure(self) -> None:
+        map_ = load(
+            make_map(
+                [("fragile", 1600, CONVEX_CURVE), ("tolerant", 1600, CONVEX_CURVE)]
+            )
+        )
+        # At 8 bits both groups are 800 (overhead 0); budget forces the
+        # unpinned group all the way down while the pin holds.
+        recipe = solve_simple(
+            map_, budget=1100, format_overhead=0.0, pins={"fragile": 8}
+        )
+
+        by_group = {a.group: a.bits for a in recipe.assignments}
+        assert by_group["fragile"] == 8
+        assert recipe.plan.trace != ()
+        assert all(step.group == "tolerant" for step in recipe.plan.trace)
+
+    def test_ratio_prefers_bigger_group_at_equal_damage(self) -> None:
+        # Identical curves, very different sizes: the big group frees far
+        # more bytes for the same damage, so damage-per-BYTE must pick it.
+        # The small group sorts first alphabetically, so a wrong
+        # denominator (for example per-bit) would tie and pick "a".
+        map_ = load(make_map([("a", 100, CONVEX_CURVE), ("z", 10_000, CONVEX_CURVE)]))
+
+        recipe = solve_simple(map_, budget=4000, format_overhead=0.0)
+
+        assert recipe.plan.trace[0].group == "z"
+
+    def test_overshooting_final_step_is_refined_to_milder_downgrade(self) -> None:
+        # Best ratio at budget-crossing time is the 8->2 jump, but 4-bit
+        # also fits with less damage; the refinement pass must take it.
+        curve = {8: 0.0, 4: 0.5, 3: 1.0, 2: 0.6}
+        map_ = load(make_map([("g0", 1600, curve)]))
+
+        recipe = solve_simple(map_, budget=450, format_overhead=0.0)
+
+        assert recipe.assignments[0].bits == 4
+        assert recipe.assignments[0].damage == 0.5
+        assert recipe.plan.trace[-1].to_bits == 4
+
     def test_recipe_carries_provenance(self) -> None:
         map_ = load(make_map([("g0", 1000, CONVEX_CURVE)]))
 

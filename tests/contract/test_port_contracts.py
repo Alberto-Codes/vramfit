@@ -55,6 +55,7 @@ def sample_recipe() -> Recipe:
         weight_budget_bytes=5000,
         vram_budget_bytes=6000,
         kv_headroom_bytes=1000,
+        pins={"g0": 8},
     )
 
 
@@ -97,6 +98,23 @@ class TestSensitivityMapSourceContract:
         source: SensitivityMapSource = build(tmp_path, sample_map())
 
         assert source.load() == source.load()
+
+
+@pytest.mark.contract
+@pytest.mark.parametrize(
+    "build",
+    [
+        lambda tmp: JsonSensitivityMapFile(tmp / "absent.json"),
+        lambda tmp: MemorySensitivityMapSource(None),
+    ],
+    ids=["real-json", "fake-memory"],
+)
+class TestSensitivityMapSourceMissingBackingContract:
+    def test_missing_backing_raises_artifact_error(self, build, tmp_path) -> None:
+        source: SensitivityMapSource = build(tmp_path)
+
+        with pytest.raises(ArtifactError):
+            source.load()
 
 
 # --- RecipeSink ------------------------------------------------------------ #
@@ -183,4 +201,21 @@ class TestModelShapeSourceContract:
         source: ModelShapeSource = build(tmp_path, None)
 
         with pytest.raises(ValueError):
+            source.shape()
+
+
+@pytest.mark.contract
+@pytest.mark.parametrize(
+    "build",
+    [
+        lambda tmp: HfConfigFile(tmp / "absent.json"),
+        lambda tmp: MemoryModelShapeSource(None),
+    ],
+    ids=["real-json", "fake-memory"],
+)
+class TestModelShapeSourceMissingBackingContract:
+    def test_missing_backing_raises_os_or_value_error(self, build, tmp_path) -> None:
+        source: ModelShapeSource = build(tmp_path)
+
+        with pytest.raises((OSError, ValueError)):
             source.shape()

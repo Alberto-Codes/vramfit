@@ -117,26 +117,29 @@ class TestRecipe:
         with pytest.raises(ArtifactError, match="must not be empty"):
             recipe_from_dict(raw)
 
-    def test_missing_format_overhead_defaults(self) -> None:
+    @pytest.mark.parametrize("missing", ["format_overhead", "trace", "pins"])
+    def test_missing_plan_field_rejected(self, missing: str) -> None:
         raw = make_recipe_dict()
-        del raw["plan"]["format_overhead"]
-        del raw["plan"]["trace"]
+        del raw["plan"][missing]
 
-        recipe = recipe_from_dict(raw)
+        with pytest.raises(ArtifactError, match=missing):
+            recipe_from_dict(raw)
 
-        assert recipe.plan.format_overhead == 0.05
-        assert recipe.plan.trace == ()
+    def test_infinite_predicted_damage_rejected(self) -> None:
+        raw = make_recipe_dict()
+        raw["plan"]["predicted_damage"] = float("inf")
 
-    def test_plan_meta_defaults_match_schema(self) -> None:
-        meta = PlanMeta(
-            vram_budget_bytes=1,
-            kv_headroom_bytes=1,
-            weight_budget_bytes=1,
-            predicted_total_bytes=1,
-            predicted_damage=0.0,
-            solver="s",
-            pins={},
-        )
+        with pytest.raises(ArtifactError, match="finite"):
+            recipe_from_dict(raw)
 
-        assert meta.format_overhead == 0.05
-        assert meta.trace == ()
+    def test_plan_meta_requires_explicit_provenance(self) -> None:
+        with pytest.raises(TypeError):
+            PlanMeta(  # type: ignore
+                vram_budget_bytes=1,
+                kv_headroom_bytes=1,
+                weight_budget_bytes=1,
+                predicted_total_bytes=1,
+                predicted_damage=0.0,
+                solver="s",
+                pins={},
+            )
