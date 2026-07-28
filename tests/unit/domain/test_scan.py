@@ -92,6 +92,11 @@ class TestPlanMeasurements:
         with pytest.raises(ValueError, match="unique"):
             plan_measurements(twins, (8, 4))
 
+    def test_generator_precisions_cover_every_group(self) -> None:
+        todo = plan_measurements(SPECS, iter((8, 4)))
+
+        assert todo == (("g0", 8), ("g0", 4), ("g1", 8), ("g1", 4))
+
 
 class TestScanFingerprint:
     def test_same_scan_yields_same_fingerprint(self) -> None:

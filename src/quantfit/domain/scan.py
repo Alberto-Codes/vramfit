@@ -170,7 +170,8 @@ def plan_measurements(
 
     Args:
         specs: Discovered layer groups.
-        precisions: Candidate precisions.
+        precisions: Candidate precisions. Any iterable works — the
+            values are materialized once before the grid is built.
         done: Cells already measured, e.g. from a checkpoint.
 
     Returns:
@@ -196,7 +197,10 @@ def plan_measurements(
     names = [spec.name for spec in spec_list]
     if len(set(names)) != len(names):
         raise ValueError("group names must be unique")
-    grid = [(name, bits) for name in names for bits in precisions]
+    # Materialize first — a generator would exhaust after the first
+    # group and silently truncate the grid.
+    precision_list = list(precisions)
+    grid = [(name, bits) for name in names for bits in precision_list]
     grid_set = set(grid)
     seen: set[tuple[str, int]] = set()
     for cell in done:

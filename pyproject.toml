@@ -45,7 +45,9 @@ dependencies = [
 scan = [
     "accelerate>=1.0",
     "torch>=2.4",
-    "transformers>=4.48",
+    # The floor is where from_pretrained's dtype kwarg landed — older
+    # versions ignore it silently and load fp32 at twice the memory.
+    "transformers>=4.56",
 ]
 docs = [
     "mkdocs>=1.6,<2",

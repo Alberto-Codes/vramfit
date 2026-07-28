@@ -1514,7 +1514,7 @@ requires-dist = [
     { name = "mkdocs-material", marker = "extra == 'docs'", specifier = ">=9.6" },
     { name = "mkdocstrings", extras = ["python"], marker = "extra == 'docs'", specifier = ">=1.0" },
     { name = "torch", marker = "extra == 'scan'", specifier = ">=2.4" },
-    { name = "transformers", marker = "extra == 'scan'", specifier = ">=4.48" },
+    { name = "transformers", marker = "extra == 'scan'", specifier = ">=4.56" },
     { name = "typer", specifier = ">=0.9" },
 ]
 provides-extras = ["scan", "docs"]

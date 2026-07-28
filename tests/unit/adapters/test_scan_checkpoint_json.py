@@ -6,11 +6,23 @@ import pytest
 
 from quantfit.adapters.outbound.json_common import ArtifactError
 from quantfit.adapters.outbound.scan_checkpoint_json import JsonScanCheckpointFile
-from quantfit.domain.scan import Measurement
+from quantfit.domain.model import ScanMeta
+from quantfit.domain.scan import Measurement, scan_fingerprint
 
 pytestmark = pytest.mark.unit
 
-FP = "m|kl_divergence|calib.txt|1024|layer|8,4"
+# The real fingerprint shape the CLI persists, method token included.
+FP = scan_fingerprint(
+    "test/model",
+    ScanMeta(
+        metric="kl_divergence",
+        calibration="calib.txt",
+        calibration_tokens=1024,
+        precisions=(8, 4),
+        group_by="layer",
+        started_at="unused",
+    ),
+)
 
 
 def test_missing_file_loads_as_empty_checkpoint(tmp_path) -> None:

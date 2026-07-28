@@ -197,9 +197,11 @@ class TorchDamageMeter:
     def _restore(self, originals: dict[str, torch.Tensor]) -> None:
         """Copy saved weights back, poisoning the meter if that fails.
 
-        A restore failure while another exception is in flight is
-        recorded (the meter refuses further measurements) but not
-        raised, so the root cause keeps the stage.
+        The in-flight exception state is read on entry, before any
+        handler can shadow it. A restore failure while another
+        exception is in flight is recorded (the meter refuses further
+        measurements) but not raised, so the root cause keeps the
+        stage.
 
         Args:
             originals: Saved tensors keyed by parameter name.
@@ -208,13 +210,16 @@ class TorchDamageMeter:
             RuntimeError: If the restore itself fails and no other
                 exception is already propagating.
         """
+        # Read the in-flight state before the handler runs — inside an
+        # except block, sys.exc_info() reports the restore error itself.
+        in_flight = sys.exc_info()[1] is not None
         try:
             with torch.no_grad():
                 for name, original in originals.items():
                     self._param(name).copy_(original)
         except Exception as exc:
             self._poisoned = True
-            if sys.exc_info()[1] is None:
+            if not in_flight:
                 raise RuntimeError(
                     f"failed to restore original weights: {exc}"
                 ) from exc

@@ -25,8 +25,8 @@ from quantfit.adapters.outbound.sensitivity_map_json import (
     save_sensitivity_map,
 )
 from quantfit.domain.budget import ModelShape
-from quantfit.domain.model import Recipe, SensitivityMap
-from quantfit.domain.scan import Measurement
+from quantfit.domain.model import Recipe, ScanMeta, SensitivityMap
+from quantfit.domain.scan import Measurement, scan_fingerprint
 from quantfit.domain.solver import solve
 from quantfit.ports.outbound import (
     ModelShapeSource,
@@ -273,7 +273,18 @@ class TestSensitivityMapSinkContract:
 
 # --- ScanCheckpointStore ---------------------------------------------------- #
 
-FINGERPRINT = "test/model|kl_divergence|calib.txt|1024|layer|8,4"
+# The real fingerprint shape the CLI persists, method token included.
+FINGERPRINT = scan_fingerprint(
+    "test/model",
+    ScanMeta(
+        metric="kl_divergence",
+        calibration="calib.txt",
+        calibration_tokens=1024,
+        precisions=(8, 4),
+        group_by="layer",
+        started_at="unused",
+    ),
+)
 
 
 def _real_checkpoint_store(tmp_path: Path) -> ScanCheckpointStore:

@@ -77,8 +77,10 @@ def _build_meter(
 ) -> DamageMeter:
     """Build the torch-backed meter, importing torch only now.
 
-    Unit tests monkeypatch this seam with the verified fake, keeping
-    the command's orchestration testable without a GPU (ADR-0009).
+    A missing module maps to `ScanExtraMissingError`. Every other
+    import failure surfaces unchanged. Unit tests monkeypatch this
+    seam with the verified fake, keeping the command's orchestration
+    testable without a GPU (ADR-0009).
 
     Args:
         model: Hugging Face model id or local checkpoint path.
@@ -100,7 +102,10 @@ def _build_meter(
         from quantfit.adapters.outbound.scan.meter import (  # noqa: PLC0415 - lazy: keeps the base CLI torch-free (ADR-0005)
             TorchDamageMeter,
         )
-    except ImportError as exc:
+    except ModuleNotFoundError as exc:
+        # Only a missing module means the extra is absent. Any other
+        # ImportError (broken CUDA libs, an adapter bug) surfaces
+        # as itself through the caller's generic handler.
         raise ScanExtraMissingError(INSTALL_HINT) from exc
 
     return TorchDamageMeter(
