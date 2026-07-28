@@ -128,8 +128,10 @@ change.
 **Type mapping**
 :   The pack backend's translation from nominal precision to a runtime
     quantization type. [ADR-0012](../adr/0012-gguf-type-mapping.md)
-    fixes the GGUF table: 8→Q8_0, 4→Q4_K, 3→Q3_K, 2→Q2_K. Effective
-    bits exceed nominal bits, which is why pack re-checks real sizes.
+    fixes the GGUF tensor-type table (8→Q8_0, 4→Q4_K, 3→Q3_K,
+    2→Q2_K) and a separate base-ftype table for the quantizer's
+    positional argument. Effective bits exceed nominal bits, which is
+    why pack re-checks real sizes.
 
 **Base GGUF**
 :   The full-precision (f16) GGUF conversion of the source checkpoint

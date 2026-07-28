@@ -34,16 +34,18 @@ scan does not produce one today. K-quants need no extra input.
 
 1. **A fixed table maps nominal bits to K-quant types.**
 
-   | Nominal bits | GGUF type | Effective bits/weight | Drift |
-   |--------------|-----------|----------------------|-------|
+   | Nominal bits | Tensor type | Effective bits/weight | Drift |
+   |--------------|-------------|----------------------|-------|
    | 8 | `Q8_0` | 8.50 | +6.25 % |
    | 4 | `Q4_K` | 4.50 | +12.5 % |
    | 3 | `Q3_K` | 3.44 | +14.6 % |
    | 2 | `Q2_K` | 2.63 | +31.25 % |
 
-   K-quants only in v1 — an i-quant table waits for the scan to emit
-   the importance matrix as a calibration byproduct. That part of
-   ADR-0010's open question stays open.
+   These are tensor-type names, driven through `--tensor-type` and
+   `--token-embedding-type` (the quantizer matches them
+   case-insensitively). K-quants only in v1 — an i-quant table waits
+   for the scan to emit the importance matrix as a calibration
+   byproduct. That part of ADR-0010's open question stays open.
 2. **One override per layer group.** The group `model.layers.<n>`
    becomes the override `blk\.<n>\.` = type, dots escaped. The group
    `model.embed_tokens` becomes `--token-embedding-type` **and**
