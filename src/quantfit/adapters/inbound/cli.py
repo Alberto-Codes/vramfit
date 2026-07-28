@@ -10,6 +10,8 @@ artifact and config reads, checkpoint and artifact writes, and model
 loading — converts failures to a clean ``error:`` line and a nonzero
 exit. Domain failures surface through one catch of the
 `QuantfitError` root (ADR-0011), whose messages print verbatim.
+Malformed options — including a NaN or infinite overhead — are
+usage errors, rejected before any work starts.
 
 Examples:
     Show the installed version:
@@ -26,6 +28,7 @@ See Also:
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 from typing import Annotated
 
@@ -228,7 +231,8 @@ def plan(
     Raises:
         typer.BadParameter: If a ``--pin`` is not of the form
             ``pattern=bits`` with positive bits, a size option is
-            malformed, or ``--format-overhead`` is negative.
+            malformed, or ``--format-overhead`` is negative, NaN, or
+            infinite.
         typer.Exit: With code 1 when the map is invalid, the recipe
             cannot be written, the solver rejects the plan, or nothing
             is left for weights.
@@ -240,6 +244,13 @@ def plan(
         $ quantfit plan sensitivity.json --vram 24GiB --pin "model.layers.0.*=8"
         ```
     """
+    # typer's min=0.0 lets NaN and inf through (nan < 0.0 is False),
+    # and the solver's own guard is a plain ValueError — reject both
+    # here as the usage error they are.
+    if not math.isfinite(format_overhead):
+        raise typer.BadParameter(
+            f"--format-overhead: must be finite, got {format_overhead}"
+        )
     pins: dict[str, int] = {}
     for raw in pin or []:
         pattern, sep, bits_text = raw.partition("=")

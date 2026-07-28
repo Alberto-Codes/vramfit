@@ -110,6 +110,25 @@ class TestPlanCommand:
         assert "no recipe fits" in result.output
         assert "over" in result.output
 
+    @pytest.mark.parametrize("overhead", ["nan", "inf"], ids=["nan", "inf"])
+    def test_non_finite_format_overhead_exits_two(self, tmp_path, overhead) -> None:
+        map_path = self._write_map(tmp_path)
+
+        result = runner.invoke(
+            app,
+            [
+                "plan",
+                str(map_path),
+                "--vram",
+                "200000",
+                "--format-overhead",
+                overhead,
+            ],
+        )
+
+        assert result.exit_code == 2
+        assert "must be finite" in result.output
+
     def test_malformed_pin_exits_two(self, tmp_path) -> None:
         map_path = self._write_map(tmp_path)
 
