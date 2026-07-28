@@ -138,6 +138,15 @@ class TestSensitivityMap:
         with pytest.raises(ArtifactError, match="duplicates"):
             SensitivityMap.from_dict(raw)
 
+    def test_unsorted_precisions_rejected(self) -> None:
+        raw = make_map(
+            [("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})],
+            precisions=(4, 8, 2, 3),
+        )
+
+        with pytest.raises(ArtifactError, match="strictly descending"):
+            SensitivityMap.from_dict(raw)
+
     def test_malformed_json_file_raises_artifact_error(self, tmp_path) -> None:
         path = tmp_path / "broken.json"
         path.write_text("{not json")

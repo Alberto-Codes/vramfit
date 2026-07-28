@@ -208,7 +208,9 @@ class ModelShape:
             The parsed shape, with ``no_op`` attention blocks skipped.
 
         Raises:
-            ValueError: If required fields are missing.
+            ValueError: If required fields are missing, or a block's
+                ``n_heads_in_group`` is not a positive divisor of
+                ``num_attention_heads``.
         """
         heads = _config_int(config, "num_attention_heads", path)
         head_dim = _head_dim(config, heads, path)
@@ -224,6 +226,11 @@ class ModelShape:
                 raise ValueError(
                     f"{path}: block_configs[{i}].attention.n_heads_in_group "
                     "must be a positive integer"
+                )
+            if heads % group_size != 0:
+                raise ValueError(
+                    f"{path}: block_configs[{i}].attention.n_heads_in_group "
+                    f"{group_size} does not divide num_attention_heads {heads}"
                 )
             kv_heads_per_layer.append(heads // group_size)
         return cls(kv_heads_per_layer=tuple(kv_heads_per_layer), head_dim=head_dim)

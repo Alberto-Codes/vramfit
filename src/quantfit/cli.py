@@ -104,11 +104,13 @@ def _parse_size_option(value: str, option: str) -> int:
 @app.command()
 def budget(
     vram: Annotated[str, typer.Option(help="Total VRAM, e.g. 24GiB.")] = "24GiB",
-    context: Annotated[int, typer.Option(help="Context length in tokens.")] = 16384,
+    context: Annotated[
+        int, typer.Option(min=1, help="Context length in tokens.")
+    ] = 16384,
     kv_dtype: Annotated[
         str, typer.Option(help="KV-cache dtype: fp16, bf16, or fp8.")
     ] = "fp16",
-    sequences: Annotated[int, typer.Option(help="Concurrent sequences.")] = 1,
+    sequences: Annotated[int, typer.Option(min=1, help="Concurrent sequences.")] = 1,
     overhead: Annotated[
         str, typer.Option(help="Runtime overhead reservation.")
     ] = "2GiB",
@@ -117,13 +119,16 @@ def budget(
         typer.Option(help="Model config.json to derive the attention shape from."),
     ] = None,
     attn_layers: Annotated[
-        int | None, typer.Option(help="Attention layer count (manual shape).")
+        int | None,
+        typer.Option(min=1, help="Attention layer count (manual shape)."),
     ] = None,
     kv_heads: Annotated[
-        int | None, typer.Option(help="KV heads per layer (manual shape).")
+        int | None,
+        typer.Option(min=1, help="KV heads per layer (manual shape)."),
     ] = None,
     head_dim: Annotated[
-        int | None, typer.Option(help="Head dimension (manual shape).")
+        int | None,
+        typer.Option(min=1, help="Head dimension (manual shape)."),
     ] = None,
 ) -> None:
     """Print the VRAM budget breakdown for a model and serving shape.
@@ -132,8 +137,9 @@ def budget(
     or the manual triple ``--attn-layers --kv-heads --head-dim``.
 
     Raises:
-        typer.BadParameter: If both or neither shape source is given, or a
-            size/dtype option is malformed.
+        typer.BadParameter: If both or neither shape source is given, a
+            size/dtype option is malformed, or an integer option is not
+            positive.
         typer.Exit: With code 1 when the weight budget is not positive.
 
     Examples:

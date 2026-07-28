@@ -3,7 +3,9 @@
 The pipeline's two artifacts are the sensitivity map (output of ``scan``,
 input to ``plan``) and the recipe (output of ``plan``, input to ``pack``).
 Both carry a ``quantfit_schema`` version field. This module reads version
-``1`` and rejects everything else.
+``1`` and rejects everything else. Validation is strict: artifacts are
+rejected rather than normalized (e.g. ``scan.precisions`` must already be
+strictly descending), and errors name the offending JSON path.
 
 Attributes:
     SCHEMA_VERSION (int): The artifact schema version this module reads
@@ -28,6 +30,7 @@ See Also:
 
 from __future__ import annotations
 
+import itertools
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -495,7 +498,8 @@ def _parse_scan_meta(obj: dict[str, Any]) -> ScanMeta:
 
     Raises:
         ArtifactError: If a field is missing or invalid, or precisions
-            are empty, duplicated, or not integers.
+            are empty, duplicated, not integers, or not strictly
+            descending.
     """
     path = "$.scan"
     tokens = _get_int(obj, "calibration_tokens", path)
@@ -513,11 +517,16 @@ def _parse_scan_meta(obj: dict[str, Any]) -> ScanMeta:
     _require(
         all(p > 0 for p in precisions), f"{path}.precisions", "must all be positive"
     )
+    _require(
+        all(a > b for a, b in itertools.pairwise(precisions)),
+        f"{path}.precisions",
+        "must be strictly descending",
+    )
     return ScanMeta(
         metric=_get_str(obj, "metric", path),
         calibration=_get_str(obj, "calibration", path),
         calibration_tokens=tokens,
-        precisions=tuple(sorted(precisions, reverse=True)),
+        precisions=tuple(precisions),
         group_by=_get_str(obj, "group_by", path),
         started_at=_get_str(obj, "started_at", path),
     )

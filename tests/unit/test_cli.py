@@ -283,6 +283,22 @@ class TestBudgetCommand:
         assert result.exit_code == 1
         assert "nothing left for weights" in result.output
 
+    @pytest.mark.parametrize(
+        "flag",
+        ["--attn-layers", "--kv-heads", "--head-dim", "--context", "--sequences"],
+    )
+    def test_nonpositive_int_option_exits_two(self, flag: str) -> None:
+        args = ["budget", "--attn-layers", "49", "--kv-heads", "8", "--head-dim", "128"]
+        i = args.index(flag) + 1 if flag in args else None
+        if i is not None:
+            args[i] = "0"
+        else:
+            args += [flag, "0"]
+
+        result = runner.invoke(app, args)
+
+        assert result.exit_code == 2
+
     def test_unreadable_config_exits_one(self, tmp_path) -> None:
         result = runner.invoke(
             app, ["budget", "--model-config", str(tmp_path / "absent.json")]

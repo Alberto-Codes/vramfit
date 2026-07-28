@@ -186,8 +186,10 @@ def solve(
     While the total exceeds the budget, the solver applies the downgrade
     with the minimum ``(damage_delta / bytes_freed, group name, smallest
     step)`` key, considering all lower candidate precisions of every
-    unpinned group. The selection is a total order, so the result is
-    deterministic and independent of group input order.
+    unpinned group. Moves that free no bytes (possible on tiny groups
+    where sizes round to the same value) are never considered. The
+    selection is a total order, so the result is deterministic and
+    independent of group input order.
 
     Args:
         sensitivity_map: Damage curves for every group.
@@ -268,6 +270,11 @@ def solve(
                 if target >= current:
                     continue
                 bytes_freed = current_bytes - size(group.bytes_fp16, target)
+                if bytes_freed <= 0:
+                    # ceil rounding can make a downgrade free nothing on
+                    # tiny groups; such a move never helps and would
+                    # divide by zero below.
+                    continue
                 damage_delta = group.sensitivity[target] - group.sensitivity[current]
                 ratio = damage_delta / bytes_freed
                 key = (ratio, group.name, -target)

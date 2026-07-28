@@ -125,6 +125,24 @@ class TestModelShapeFromConfig:
         with pytest.raises(ValueError, match="n_heads_in_group"):
             ModelShape.from_config_json(path)
 
+    def test_decilm_config_non_divisible_group_size_raises(self, tmp_path) -> None:
+        config = self._decilm_config()
+        config["block_configs"][0]["attention"]["n_heads_in_group"] = 6
+        path = tmp_path / "config.json"
+        path.write_text(json.dumps(config))
+
+        with pytest.raises(ValueError, match="does not divide"):
+            ModelShape.from_config_json(path)
+
+    def test_decilm_config_group_size_above_heads_raises(self, tmp_path) -> None:
+        config = self._decilm_config()
+        config["block_configs"][0]["attention"]["n_heads_in_group"] = 128
+        path = tmp_path / "config.json"
+        path.write_text(json.dumps(config))
+
+        with pytest.raises(ValueError, match="does not divide"):
+            ModelShape.from_config_json(path)
+
     def test_llama_config_uniform_layers(self, tmp_path) -> None:
         path = tmp_path / "config.json"
         path.write_text(

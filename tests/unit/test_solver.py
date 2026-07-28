@@ -230,6 +230,18 @@ class TestSolve:
             state[step.group] = step.to_bits
         assert state == {a.group: a.bits for a in recipe.assignments}
 
+    def test_tiny_group_zero_byte_downgrade_skipped(self) -> None:
+        # A 1-byte group rounds to 1 byte at every precision, so its
+        # downgrades free nothing and must be skipped, not divided by.
+        map_ = load(make_map([("tiny", 1, CONVEX_CURVE), ("big", 1600, CONVEX_CURVE)]))
+
+        recipe = solve_simple(map_, budget=300)
+
+        by_group = {a.group: a.bits for a in recipe.assignments}
+        assert by_group["tiny"] == 8
+        assert all(step.group == "big" for step in recipe.plan.trace)
+        assert recipe.plan.predicted_total_bytes <= 300
+
     def test_recipe_carries_provenance(self) -> None:
         map_ = load(make_map([("g0", 1000, CONVEX_CURVE)]))
 
