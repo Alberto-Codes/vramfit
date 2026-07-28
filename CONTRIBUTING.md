@@ -159,7 +159,7 @@ Do not add `Co-Authored-By` trailers to commits.
 
 1. Push your branch to your fork: `git push -u origin feat/<scope>-<description>`
 2. Open a **draft** PR against `upstream/main` (non-draft PRs trigger automated review prematurely)
-3. PR title must follow conventional commits format: `type(scope): description`
+3. Fill out the [PR template](.github/PULL_REQUEST_TEMPLATE.md) -- remove HTML comments, keep visible content. The PR title becomes the squash-commit subject and (later) the release-please changelog entry, so it must follow conventional commits: `type(scope): description`
 4. All CI checks must pass before review
 5. PRs are squash-merged to keep a linear history
 
