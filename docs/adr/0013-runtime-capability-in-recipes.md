@@ -1,7 +1,7 @@
 # ADR-0013: Recipes record their target runtime
 
-- **Status:** Proposed
-- **Date:** 2026-07-28
+- **Status:** Accepted
+- **Date:** 2026-07-28 (accepted 2026-07-28)
 
 ## Context
 
