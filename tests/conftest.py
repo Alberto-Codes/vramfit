@@ -20,6 +20,10 @@ settings.load_profile(os.environ.get("HYPOTHESIS_PROFILE", "fast"))
 os.environ["NO_COLOR"] = "1"
 os.environ.pop("FORCE_COLOR", None)
 os.environ.pop("GITHUB_ACTIONS", None)
+# Rich wraps error panels at 80 columns, splitting messages that embed
+# long tmp paths across lines and breaking substring assertions. Widen
+# the panel so a message stays on one line regardless of path length.
+os.environ["TERMINAL_WIDTH"] = "400"
 
 # Enough distinct text to train a tiny byte-level BPE and to fill a few
 # calibration batches for the torch-tier tests.
