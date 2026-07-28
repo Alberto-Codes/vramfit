@@ -24,6 +24,7 @@ change of course gets a *new* ADR that supersedes the old one.
 | [0005](0005-heavy-deps-as-extras.md) | Heavy ML dependencies stay out of the base install | Accepted |
 | [0006](0006-sensitivity-metric.md) | Sensitivity metric for the scan step | Proposed |
 | [0007](0007-recipe-solver-strategy.md) | Solver strategy for recipe selection | Accepted |
+| [0008](0008-hexagonal-architecture.md) | Hexagonal architecture, enforced by import-linter | Accepted |
 
 ## Template
 

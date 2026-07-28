@@ -6,8 +6,8 @@ import pytest
 from typer.testing import CliRunner
 
 from quantfit import __version__
-from quantfit.artifacts import Recipe
-from quantfit.cli import app
+from quantfit.adapters.inbound.cli import app
+from quantfit.adapters.outbound.recipe_json import load_recipe
 from tests.unit.conftest import make_map
 
 runner = CliRunner()
@@ -67,7 +67,7 @@ class TestPlanCommand:
         )
 
         assert result.exit_code == 0, result.output
-        recipe = Recipe.load(out)
+        recipe = load_recipe(out)
         assert recipe.plan.weight_budget_bytes == 150_000
         assert recipe.plan.vram_budget_bytes == 200_000
         assert "planned 2 groups" in result.output
@@ -93,7 +93,7 @@ class TestPlanCommand:
         )
 
         assert result.exit_code == 0, result.output
-        recipe = Recipe.load(out)
+        recipe = load_recipe(out)
         by_group = {a.group: a.bits for a in recipe.assignments}
         assert by_group["g1"] == 4
         assert recipe.plan.pins == {"g1": 4}

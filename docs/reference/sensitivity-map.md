@@ -4,7 +4,7 @@ status: draft
 
 # Sensitivity map format
 
-> **Status: draft** — implemented in `quantfit.artifacts.SensitivityMap`;
+> **Status: draft** — implemented in `quantfit.adapters.outbound.sensitivity_map_json`;
 > the loader enforces everything described here. The scan pipeline that
 > *produces* these files does not exist yet.
 

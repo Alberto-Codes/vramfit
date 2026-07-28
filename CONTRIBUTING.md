@@ -62,21 +62,23 @@ Hooks that run on each commit:
 | uv-secure | Known vulnerabilities in the lockfile |
 | ty | Type checking |
 | pytest | Test suite (GPU tests excluded) |
-| import-linter | Architecture contracts (layering, no heavy ML deps) |
+| import-linter | Hex layers, domain purity, no heavy ML deps (ADR-0008) |
+| loc-check | 300/320 code-line cap per module |
 | docvet | Docstring quality on staged files |
 
 All hooks must pass before the commit succeeds.
 
 ## Quality Gates
 
-All six gates must pass before opening a PR. Run them locally:
+All seven gates must pass before opening a PR. Run them locally:
 
 ```bash
 uv run ruff check .                  # Linting
 uv run ruff format --check .         # Format check
 uv run ty check                      # Type checking
 uv run pytest -m "not gpu"           # Tests (CI enforces 90% coverage)
-uv run lint-imports                  # Architecture contracts
+uv run lint-imports                  # Hex layers + domain purity
+uv run python scripts/check_loc.py src  # File size cap (300/320 code lines)
 uv run docvet check --all            # Docstring quality
 ```
 
@@ -93,6 +95,8 @@ uv run ruff format .
 - Google-style docstrings on all public functions and classes
 - Type hints on all function signatures (`list[str]`, not `List[str]`)
 - 88-char soft limit (formatter), 100-char hard limit (linter)
+- 300 code lines per module (soft), 320 hard -- decompose, don't excuse.
+  Code lines exclude comments and docstrings (`scripts/check_loc.py`)
 - No relative imports (full package paths only)
 
 ## Testing
@@ -131,7 +135,7 @@ type(scope): description
 | chore | Maintenance tasks |
 | perf | Performance improvements |
 
-**Scopes:** scan, plan, pack, cli, config, docs
+**Scopes:** scan, plan, pack, cli, config, docs, arch, domain, ports, adapters
 
 **Examples:**
 

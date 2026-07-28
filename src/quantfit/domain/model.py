@@ -1,0 +1,272 @@
+"""Domain types for the two pipeline artifacts.
+
+Pure dataclasses only — serialization, validation, and the JSON schema
+envelope (including the ``quantfit_schema`` version field) live in
+[quantfit.adapters.sensitivity_map_json][] and
+[quantfit.adapters.recipe_json][].
+
+Examples:
+    Build a one-group map in memory:
+
+    ```python
+    from quantfit.domain.model import LayerGroup, ScanMeta, SensitivityMap
+
+    map_ = SensitivityMap(
+        model_id="test/model",
+        scan=ScanMeta(
+            metric="kl_divergence",
+            calibration="wikitext",
+            calibration_tokens=1024,
+            precisions=(8, 4),
+            group_by="layer",
+            started_at="2026-07-27T00:00:00Z",
+        ),
+        groups=(
+            LayerGroup(
+                name="g0",
+                tensors=("w",),
+                bytes_fp16=1000,
+                sensitivity={8: 0.0, 4: 0.1},
+            ),
+        ),
+    )
+    ```
+
+See Also:
+    - [quantfit.domain.solver][]: Consumes `SensitivityMap`, builds `Recipe`.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+
+@dataclass(frozen=True, slots=True)
+class ScanMeta:
+    """Provenance of a sensitivity scan.
+
+    Attributes:
+        metric (str): Divergence metric name, e.g. ``kl_divergence``.
+        calibration (str): Calibration set name or path.
+        calibration_tokens (int): Number of calibration tokens measured.
+        precisions (tuple[int, ...]): Candidate bit-widths, strictly
+            descending.
+        group_by (str): Layer grouping granularity (``layer`` or
+            ``tensor``).
+        started_at (str): ISO-8601 timestamp of the scan start.
+
+    Examples:
+        The scan section of a map:
+
+        ```python
+        from quantfit.domain.model import ScanMeta
+
+        meta = ScanMeta(
+            metric="kl_divergence",
+            calibration="wikitext",
+            calibration_tokens=131072,
+            precisions=(8, 4),
+            group_by="layer",
+            started_at="2026-07-27T00:00:00Z",
+        )
+        ```
+    """
+
+    metric: str
+    calibration: str
+    calibration_tokens: int
+    precisions: tuple[int, ...]
+    group_by: str
+    started_at: str
+
+
+@dataclass(frozen=True, slots=True)
+class LayerGroup:
+    """One scanned layer group and its damage curve.
+
+    Attributes:
+        name (str): Unique group name, e.g. ``model.layers.0.self_attn``.
+        tensors (tuple[str, ...]): Tensor names quantized together in this
+            group.
+        bytes_fp16 (int): Group size in bytes at reference precision.
+        sensitivity (dict[int, float]): Measured damage per candidate
+            precision.
+
+    Examples:
+        A group whose damage doubles from 4-bit to 2-bit:
+
+        ```python
+        from quantfit.domain.model import LayerGroup
+
+        group = LayerGroup(
+            name="model.layers.0.mlp",
+            tensors=("gate_proj", "up_proj", "down_proj"),
+            bytes_fp16=1000,
+            sensitivity={8: 0.0, 4: 0.1, 2: 0.2},
+        )
+        ```
+    """
+
+    name: str
+    tensors: tuple[str, ...]
+    bytes_fp16: int
+    sensitivity: dict[int, float] = field(hash=False)
+
+
+@dataclass(frozen=True, slots=True)
+class SensitivityMap:
+    """The output of ``quantfit scan``: damage curves for every group.
+
+    Attributes:
+        model_id (str): The scanned model's identifier.
+        scan (ScanMeta): Scan provenance.
+        groups (tuple[LayerGroup, ...]): All scanned layer groups.
+
+    Examples:
+        Look up one group's damage at 4-bit:
+
+        ```python
+        damage = map_.groups[0].sensitivity[4]
+        ```
+    """
+
+    model_id: str
+    scan: ScanMeta
+    groups: tuple[LayerGroup, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class Assignment:
+    """One group's chosen precision in a recipe.
+
+    Attributes:
+        group (str): The layer group's name.
+        bits (int): Assigned precision.
+        bytes (int): Predicted group size at that precision, including
+            quantization-format overhead.
+        damage (float): Measured damage at the assigned precision.
+
+    Examples:
+        A group kept at 8-bit:
+
+        ```python
+        from quantfit.domain.model import Assignment
+
+        a = Assignment(group="model.embed", bits=8, bytes=420, damage=0.002)
+        ```
+    """
+
+    group: str
+    bits: int
+    bytes: int
+    damage: float
+
+
+@dataclass(frozen=True, slots=True)
+class TraceStep:
+    """One downgrade step in the solver's explanation trace.
+
+    Attributes:
+        step (int): 1-based step number.
+        group (str): Name of the downgraded group.
+        from_bits (int): Precision before the step.
+        to_bits (int): Precision after the step.
+        damage_delta (float): Damage added by the step (may be negative).
+        bytes_freed (int): Bytes saved by the step.
+        ratio (float): ``damage_delta / bytes_freed``, the greedy
+            selection key.
+
+    Examples:
+        The first downgrade of a solve:
+
+        ```python
+        from quantfit.domain.model import TraceStep
+
+        step = TraceStep(
+            step=1,
+            group="model.layers.7.mlp",
+            from_bits=8,
+            to_bits=4,
+            damage_delta=0.004,
+            bytes_freed=2000,
+            ratio=0.000002,
+        )
+        ```
+    """
+
+    step: int
+    group: str
+    from_bits: int
+    to_bits: int
+    damage_delta: float
+    bytes_freed: int
+    ratio: float
+
+
+@dataclass(frozen=True, slots=True)
+class PlanMeta:
+    """Budget accounting and provenance for a recipe.
+
+    Attributes:
+        vram_budget_bytes (int): Total VRAM ceiling the plan was made for.
+        kv_headroom_bytes (int): Bytes reserved for KV cache and runtime.
+        weight_budget_bytes (int): Bytes available for weights.
+        predicted_total_bytes (int): Sum of assignment sizes.
+        predicted_damage (float): Sum of assignment damage values.
+        solver (str): Name of the solver that produced the recipe.
+        pins (dict[str, int]): User pin patterns, verbatim.
+        format_overhead (float): Quantization-format overhead fraction
+            used for size predictions.
+        trace (tuple[TraceStep, ...]): Ordered downgrade steps explaining
+            the recipe.
+
+    Examples:
+        Minimal plan metadata:
+
+        ```python
+        from quantfit.domain.model import PlanMeta
+
+        meta = PlanMeta(
+            vram_budget_bytes=100,
+            kv_headroom_bytes=10,
+            weight_budget_bytes=90,
+            predicted_total_bytes=80,
+            predicted_damage=0.5,
+            solver="greedy-damage-per-byte",
+            pins={},
+        )
+        ```
+    """
+
+    vram_budget_bytes: int
+    kv_headroom_bytes: int
+    weight_budget_bytes: int
+    predicted_total_bytes: int
+    predicted_damage: float
+    solver: str
+    pins: dict[str, int] = field(hash=False)
+    format_overhead: float = 0.05
+    trace: tuple[TraceStep, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class Recipe:
+    """The output of ``quantfit plan``: one precision per layer group.
+
+    Attributes:
+        model_id (str): The target model's identifier.
+        plan (PlanMeta): Budget accounting and provenance.
+        assignments (tuple[Assignment, ...]): One entry per layer group,
+            in sensitivity-map order.
+
+    Examples:
+        Inspect a recipe's predicted size:
+
+        ```python
+        print(recipe.plan.predicted_total_bytes)
+        ```
+    """
+
+    model_id: str
+    plan: PlanMeta
+    assignments: tuple[Assignment, ...]

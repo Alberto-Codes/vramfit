@@ -47,7 +47,7 @@ docs = [
 ]
 
 [project.scripts]
-quantfit = "quantfit.cli:app"
+quantfit = "quantfit.adapters.inbound.cli:app"
 
 [project.urls]
 Homepage = "https://github.com/Alberto-Codes/quantfit"
@@ -75,7 +75,35 @@ target-version = "py312"
 exclude = [".venv", "__pycache__", "*.egg-info"]
 
 [tool.ruff.lint]
-extend-select = ["E501", "I", "D"]
+# Sonar-adjacent set: PL/C901 (complexity), B (bugbear), SIM (simplify),
+# TRY (exception hygiene), S (bandit), PERF, RUF, UP, G on top of the
+# house baseline E501/I/D.
+extend-select = [
+    "E501",
+    "I",
+    "D",
+    "B",
+    "SIM",
+    "UP",
+    "RUF",
+    "PL",
+    "C901",
+    "TRY",
+    "PERF",
+    "S",
+    "G",
+]
+ignore = [
+    "TRY003",  # long messages in raises — our validation errors carry context
+]
+
+[tool.ruff.lint.mccabe]
+# Buffer under the SonarQube cognitive-complexity threshold of 15.
+max-complexity = 12
+
+[tool.ruff.lint.pylint]
+# Match Sonar's parameter-count threshold (S107 default 7).
+max-args = 7
 
 [tool.ruff.lint.pycodestyle]
 max-line-length = 100
@@ -84,7 +112,23 @@ max-line-length = 100
 convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["S101", "D100", "D101", "D102", "D103", "D104"]
+"tests/**/*.py" = [
+    "S101",
+    "S311",  # non-crypto randomness is fine for shuffle tests
+    "D100",
+    "D101",
+    "D102",
+    "D103",
+    "D104",
+    "PLR2004",  # magic values are the point of test assertions
+]
+"src/quantfit/adapters/inbound/cli.py" = [
+    "PLR0913",  # typer commands take one arg per CLI option by design
+    "PLR0917",
+]
+"src/quantfit/adapters/outbound/hf_config.py" = [
+    "TRY004",  # config validation raises ValueError by documented contract
+]
 
 [tool.ruff.lint.isort]
 known-first-party = ["quantfit"]
@@ -145,14 +189,26 @@ root_package = "quantfit"
 include_external_packages = true
 exclude_type_checking_imports = true
 
+# The hex lookup map (ADR-0008): inbound drives, outbound implements
+# ports, domain stays pure. Higher layers may import lower, never the
+# reverse.
 [[tool.importlinter.contracts]]
-name = "CLI on top, artifacts at the bottom"
+name = "Hexagonal layers"
 type = "layers"
 layers = [
-    "quantfit.cli",
-    "quantfit.solver : quantfit.budget",
-    "quantfit.artifacts",
+    "quantfit.adapters.inbound",
+    "quantfit.adapters.outbound",
+    "quantfit.ports",
+    "quantfit.domain",
 ]
+
+[[tool.importlinter.contracts]]
+# The domain is pure: no file IO, no JSON, no CLI framework. Serialization
+# and IO belong to adapters (ADR-0008).
+name = "Domain is IO-free"
+type = "forbidden"
+source_modules = ["quantfit.domain"]
+forbidden_modules = ["json", "pathlib", "os", "io", "typer"]
 
 [[tool.importlinter.contracts]]
 # Executable form of ADR-0005: the plan step stays importable without

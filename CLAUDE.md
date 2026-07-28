@@ -58,6 +58,21 @@ do not strangle them.
 Style rules govern *form*. The status system governs *trust*. Clean prose on
 a `sketch` page is still a sketch.
 
+## Architecture
+
+Hexagonal, mechanically enforced by import-linter (ADR-0008):
+`adapters/inbound` (CLI, composition root) → `adapters/outbound` (JSON
+artifacts, HF configs) → `ports` (Protocols) → `domain` (pure — no
+json/pathlib/os/io/typer, enforced). The `quantfit_schema` envelope
+belongs to the JSON adapters, never to domain dataclasses. New external
+integrations (torch, llm-compressor, runtimes) are outbound adapters
+behind ports.
+
+**File size rule:** modules cap at **300 lines of actual code (soft) /
+320 (hard)** — code lines exclude comments and docstrings; the gate is
+`scripts/check_loc.py` in pre-commit. Over the limit means decompose,
+not excuse.
+
 ## Build & Development
 
 ```bash
@@ -69,7 +84,8 @@ uv run ruff check .
 uv run ruff format --check .
 uv run ty check
 uv run pytest -m "not gpu"     # CI enforces 90% coverage
-uv run lint-imports            # layering + no-torch contracts (ADR-0005)
+uv run lint-imports            # hex layers + domain purity + no-torch (ADR-0008)
+uv run python scripts/check_loc.py src   # 300/320 code-line cap
 uv run docvet check --all
 ```
 

@@ -49,6 +49,13 @@ repos:
         types: [python]
         pass_filenames: false
 
+      - id: loc-check
+        name: file size limit (300/320 code lines)
+        entry: uv run python scripts/check_loc.py src
+        language: system
+        types: [python]
+        pass_filenames: false
+
       - id: docvet
         name: docvet check
         entry: uv run docvet check --staged

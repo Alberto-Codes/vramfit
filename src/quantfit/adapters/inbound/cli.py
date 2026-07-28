@@ -1,7 +1,9 @@
-"""Typer CLI entry point for quantfit.
+"""Typer CLI: the inbound (driving) adapter and composition root.
 
 Exposes the ``quantfit`` console script. ``version``, ``budget``, and
-``plan`` are implemented; ``scan`` is a stub until the scan pipeline lands.
+``plan`` are implemented; ``scan`` is a stub until the scan pipeline
+lands. The CLI wires outbound adapters to the pure domain, typing them
+against the ports so the seams stay explicit.
 
 Examples:
     Show the installed version:
@@ -12,8 +14,8 @@ Examples:
     ```
 
 See Also:
-    - [quantfit.budget][]: The math behind the ``budget`` command.
-    - [quantfit.solver][]: The solver behind the ``plan`` command.
+    - [quantfit.domain.budget][]: The math behind the ``budget`` command.
+    - [quantfit.domain.solver][]: The solver behind the ``plan`` command.
 """
 
 from __future__ import annotations
@@ -24,8 +26,11 @@ from typing import Annotated
 import typer
 
 from quantfit import __version__
-from quantfit.artifacts import ArtifactError, SensitivityMap
-from quantfit.budget import (
+from quantfit.adapters.outbound.hf_config import HfConfigFile
+from quantfit.adapters.outbound.json_common import ArtifactError
+from quantfit.adapters.outbound.recipe_json import JsonRecipeFile
+from quantfit.adapters.outbound.sensitivity_map_json import JsonSensitivityMapFile
+from quantfit.domain.budget import (
     KV_DTYPE_BYTES,
     Budget,
     ModelShape,
@@ -34,11 +39,16 @@ from quantfit.budget import (
     kv_cache_bytes,
     parse_size,
 )
-from quantfit.solver import (
+from quantfit.domain.solver import (
     DEFAULT_FORMAT_OVERHEAD,
     InfeasibleBudgetError,
     PinError,
     solve,
+)
+from quantfit.ports.outbound import (
+    ModelShapeSource,
+    RecipeSink,
+    SensitivityMapSource,
 )
 
 app = typer.Typer(
@@ -164,14 +174,17 @@ def budget(
             f"choose from {sorted(KV_DTYPE_BYTES)}"
         )
     if model_config is not None:
+        shape_source: ModelShapeSource = HfConfigFile(model_config)
         try:
-            shape = ModelShape.from_config_json(model_config)
+            shape = shape_source.shape()
         except (OSError, ValueError) as exc:
             typer.echo(f"error: {exc}", err=True)
             raise typer.Exit(code=1) from exc
     else:
-        assert attn_layers is not None and kv_heads is not None  # typer-checked
-        assert head_dim is not None
+        if attn_layers is None or kv_heads is None or head_dim is None:
+            raise typer.BadParameter(
+                "give --model-config, or all of --attn-layers, --kv-heads, --head-dim"
+            )
         shape = ModelShape.uniform(
             attn_layers=attn_layers, kv_heads=kv_heads, head_dim=head_dim
         )
@@ -248,8 +261,9 @@ def plan(
         typer.echo("error: --kv-headroom leaves nothing for weights", err=True)
         raise typer.Exit(code=1)
 
+    map_source: SensitivityMapSource = JsonSensitivityMapFile(sensitivity_map)
     try:
-        map_ = SensitivityMap.load(sensitivity_map)
+        map_ = map_source.load()
     except (OSError, ArtifactError) as exc:
         typer.echo(f"error: {sensitivity_map}: {exc}", err=True)
         raise typer.Exit(code=1) from exc
@@ -275,7 +289,8 @@ def plan(
         )
         raise typer.Exit(code=1) from exc
 
-    recipe.save(out)
+    sink: RecipeSink = JsonRecipeFile(out)
+    sink.save(recipe)
     typer.echo(
         f"planned {len(recipe.assignments)} groups: "
         f"{format_size(recipe.plan.predicted_total_bytes)} of "

@@ -15,12 +15,10 @@ Examples:
     Solve a map against a byte budget:
 
     ```python
-    from quantfit.artifacts import SensitivityMap
-    from quantfit.solver import solve
+    from quantfit.domain.solver import solve
 
-    map_ = SensitivityMap.load(Path("sensitivity.json"))
     recipe = solve(
-        map_,
+        map_,  # a quantfit.domain.model.SensitivityMap
         weight_budget_bytes=20 * 2**30,
         vram_budget_bytes=24 * 2**30,
         kv_headroom_bytes=4 * 2**30,
@@ -28,8 +26,10 @@ Examples:
     ```
 
 See Also:
-    - [quantfit.artifacts][]: The `SensitivityMap` input and `Recipe` output.
-    - [quantfit.budget][]: Computes the weight budget this solver packs to.
+    - [quantfit.domain.model][]: The `SensitivityMap` input and `Recipe`
+      output types.
+    - [quantfit.domain.budget][]: Computes the weight budget this solver
+      packs to.
 """
 
 from __future__ import annotations
@@ -39,8 +39,7 @@ from collections.abc import Mapping
 from fnmatch import fnmatchcase
 from typing import Final
 
-from quantfit.artifacts import (
-    SCHEMA_VERSION,
+from quantfit.domain.model import (
     Assignment,
     PlanMeta,
     Recipe,
@@ -62,7 +61,7 @@ class PinError(ValueError):
         A pin against an unscanned precision:
 
         ```python
-        from quantfit.solver import PinError, solve
+        from quantfit.domain.solver import PinError, solve
 
         try:
             solve(map_, weight_budget_bytes=1, pins={"g*": 6}, ...)
@@ -86,7 +85,7 @@ class InfeasibleBudgetError(Exception):
         Report the gap to the user:
 
         ```python
-        from quantfit.solver import InfeasibleBudgetError, solve
+        from quantfit.domain.solver import InfeasibleBudgetError, solve
 
         try:
             solve(map_, weight_budget_bytes=1, ...)
@@ -129,7 +128,7 @@ def group_bytes(bytes_fp16: int, bits: int, format_overhead: float) -> int:
         4-bit with 5% overhead is ~26% of the fp16 size:
 
         ```python
-        from quantfit.solver import group_bytes
+        from quantfit.domain.solver import group_bytes
 
         assert group_bytes(1600, 4, 0.05) == 420
         ```
@@ -214,7 +213,7 @@ def solve(
         Pin the first layer high and solve:
 
         ```python
-        from quantfit.solver import solve
+        from quantfit.domain.solver import solve
 
         recipe = solve(
             map_,
@@ -281,7 +280,11 @@ def solve(
                 if best_key is None or key < best_key:
                     best_key = key
                     best_move = (group.name, target, bytes_freed, damage_delta)
-        assert best_move is not None  # guaranteed by the floor_total precheck
+        if best_move is None:  # pragma: no cover - guarded by the precheck
+            raise RuntimeError(
+                "solver invariant broken: over budget but no freeing move "
+                "exists despite the feasibility precheck"
+            )
         name, target, bytes_freed, damage_delta = best_move
         trace.append(
             TraceStep(
@@ -307,7 +310,6 @@ def solve(
         for g in sensitivity_map.groups
     )
     return Recipe(
-        quantfit_schema=SCHEMA_VERSION,
         model_id=sensitivity_map.model_id,
         plan=PlanMeta(
             vram_budget_bytes=vram_budget_bytes,

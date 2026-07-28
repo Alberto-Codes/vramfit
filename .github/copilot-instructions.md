@@ -15,13 +15,19 @@ checkpoints for vLLM (`pack`). Only the plan step is implemented so far.
   glossary is intentional.
 - **No heavy ML deps in the base install** (ADR-0005): torch/transformers
   land behind future extras. Enforced by an import-linter forbidden
-  contract. Do not suggest adding torch-based implementations to
-  `artifacts`, `budget`, `solver`, or `cli`.
+  contract. Torch lands later as outbound adapters behind ports.
 - **Docs carry statuses** (`sketch/draft/stable`; ADRs
   `Proposed/Accepted`). A `sketch` page describing unimplemented behavior
   is a design artifact, not a doc bug.
 - **Determinism is a contract** in the solver: integer byte math, total
   ordering of moves. Flag anything that threatens reproducibility.
+
+- **Hexagonal layers are enforced** (ADR-0008): `adapters/inbound` →
+  `adapters/outbound` → `ports` → `domain`; the domain imports no
+  json/pathlib/os/io/typer. Import-linter fails the build on violations,
+  so layering is a fact, not a suggestion.
+- **File size cap**: 300/320 lines of actual code per module
+  (`scripts/check_loc.py`); large modules are decomposed by policy.
 
 ## Review focus
 

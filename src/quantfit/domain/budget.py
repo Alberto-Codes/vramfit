@@ -1,8 +1,8 @@
 """VRAM budget math: size parsing, KV-cache cost, and the weight budget.
 
 Implements the arithmetic from ``docs/explanation/vram-budget.md``:
-``weight_budget = vram_total − kv_cache − runtime_overhead``. KV cost is a
-sum over attention layers, not ``layers × constant``, because NAS-derived
+``weight_budget = vram_total - kv_cache - runtime_overhead``. KV cost is a
+sum over attention layers, not ``layers x constant``, because NAS-derived
 models like the north-star target delete attention from some layers.
 
 Attributes:
@@ -15,7 +15,7 @@ Examples:
     Compute the weight budget for the north-star target:
 
     ```python
-    from quantfit.budget import Budget, ModelShape, kv_cache_bytes, parse_size
+    from quantfit.domain.budget import Budget, ModelShape, kv_cache_bytes, parse_size
 
     shape = ModelShape.uniform(attn_layers=49, kv_heads=8, head_dim=128)
     budget = Budget(
@@ -27,16 +27,17 @@ Examples:
     ```
 
 See Also:
-    - [quantfit.solver][]: Packs weights against the budget computed here.
+    - [quantfit.domain.solver][]: Packs weights against the budget
+      computed here.
+    - [quantfit.adapters.outbound.hf_config][]: Builds a `ModelShape`
+      from a Hugging Face ``config.json``.
 """
 
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Any, Final
+from typing import Final
 
 KV_DTYPE_BYTES: Final[dict[str, int]] = {"fp16": 2, "bf16": 2, "fp8": 1}
 DEFAULT_RUNTIME_OVERHEAD_BYTES: Final[int] = 2 * 2**30
@@ -76,7 +77,7 @@ def parse_size(text: str) -> int:
         Binary vs decimal units:
 
         ```python
-        from quantfit.budget import parse_size
+        from quantfit.domain.budget import parse_size
 
         assert parse_size("1GiB") == 2**30
         assert parse_size("1GB") == 10**9
@@ -103,7 +104,7 @@ def format_size(n_bytes: int) -> str:
         Render two gibibytes:
 
         ```python
-        from quantfit.budget import format_size
+        from quantfit.domain.budget import format_size
 
         assert format_size(2 * 2**30) == "2.00 GiB"
         ```
@@ -129,7 +130,7 @@ class ModelShape:
         The north-star target's shape, built by hand:
 
         ```python
-        from quantfit.budget import ModelShape
+        from quantfit.domain.budget import ModelShape
 
         shape = ModelShape.uniform(attn_layers=49, kv_heads=8, head_dim=128)
         assert len(shape.kv_heads_per_layer) == 49
@@ -156,153 +157,11 @@ class ModelShape:
             head_dim=head_dim,
         )
 
-    @classmethod
-    def from_config_json(cls, path: Path) -> ModelShape:
-        """Build a shape from a Hugging Face ``config.json``.
-
-        Handles two config families: DeciLM-style NAS configs (the
-        north-star target) with per-block ``block_configs`` where
-        attention can be ``no_op``, and standard llama-style configs with
-        uniform layers.
-
-        Args:
-            path: Path to the model's ``config.json``.
-
-        Returns:
-            The parsed shape.
-
-        Raises:
-            ValueError: If required fields are missing or the file is not
-                valid JSON.
-
-        Examples:
-            Parse a downloaded config:
-
-            ```python
-            from pathlib import Path
-
-            from quantfit.budget import ModelShape
-
-            shape = ModelShape.from_config_json(Path("config.json"))
-            ```
-        """
-        try:
-            config = json.loads(path.read_text())
-        except json.JSONDecodeError as exc:
-            raise ValueError(f"{path}: invalid JSON: {exc}") from exc
-        if not isinstance(config, dict):
-            raise ValueError(f"{path}: expected a JSON object")  # noqa: TRY004
-        if "block_configs" in config:
-            return cls._from_decilm_config(config, path)
-        return cls._from_llama_config(config, path)
-
-    @classmethod
-    def _from_decilm_config(cls, config: dict[str, Any], path: Path) -> ModelShape:
-        """Parse a DeciLM-style NAS config with per-block attention.
-
-        Args:
-            config: Parsed ``config.json`` containing ``block_configs``.
-            path: Source path, for error messages.
-
-        Returns:
-            The parsed shape, with ``no_op`` attention blocks skipped.
-
-        Raises:
-            ValueError: If required fields are missing, or a block's
-                ``n_heads_in_group`` is not a positive divisor of
-                ``num_attention_heads``.
-        """
-        heads = _config_int(config, "num_attention_heads", path)
-        head_dim = _head_dim(config, heads, path)
-        kv_heads_per_layer: list[int] = []
-        for i, block in enumerate(config["block_configs"]):
-            attention = block.get("attention") if isinstance(block, dict) else None
-            if not isinstance(attention, dict):
-                raise ValueError(f"{path}: block_configs[{i}] has no attention object")  # noqa: TRY004
-            if attention.get("no_op") or attention.get("replace_with_linear"):
-                continue
-            group_size = attention.get("n_heads_in_group")
-            if not isinstance(group_size, int) or group_size <= 0:
-                raise ValueError(
-                    f"{path}: block_configs[{i}].attention.n_heads_in_group "
-                    "must be a positive integer"
-                )
-            if heads % group_size != 0:
-                raise ValueError(
-                    f"{path}: block_configs[{i}].attention.n_heads_in_group "
-                    f"{group_size} does not divide num_attention_heads {heads}"
-                )
-            kv_heads_per_layer.append(heads // group_size)
-        return cls(kv_heads_per_layer=tuple(kv_heads_per_layer), head_dim=head_dim)
-
-    @classmethod
-    def _from_llama_config(cls, config: dict[str, Any], path: Path) -> ModelShape:
-        """Parse a standard llama-style config with uniform layers.
-
-        Args:
-            config: Parsed ``config.json``.
-            path: Source path, for error messages.
-
-        Returns:
-            The parsed uniform shape.
-
-        Raises:
-            ValueError: If required fields are missing.
-        """
-        layers = _config_int(config, "num_hidden_layers", path)
-        kv_heads = _config_int(config, "num_key_value_heads", path)
-        heads = _config_int(config, "num_attention_heads", path)
-        return cls.uniform(
-            attn_layers=layers,
-            kv_heads=kv_heads,
-            head_dim=_head_dim(config, heads, path),
-        )
-
-
-def _config_int(config: dict[str, Any], key: str, path: Path) -> int:
-    """Read a required positive integer from a model config.
-
-    Args:
-        config: Parsed ``config.json``.
-        key: Field to read.
-        path: Source path, for error messages.
-
-    Returns:
-        The integer value.
-
-    Raises:
-        ValueError: If the field is missing or not a positive integer.
-    """
-    value = config.get(key)
-    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-        raise ValueError(f'{path}: "{key}" must be a positive integer')
-    return value
-
-
-def _head_dim(config: dict[str, Any], num_heads: int, path: Path) -> int:
-    """Derive the attention head dimension from a model config.
-
-    Args:
-        config: Parsed ``config.json``.
-        num_heads: The model's attention head count.
-        path: Source path, for error messages.
-
-    Returns:
-        ``head_dim`` if present, otherwise ``hidden_size // num_heads``.
-
-    Raises:
-        ValueError: If neither ``head_dim`` nor ``hidden_size`` is usable.
-    """
-    head_dim = config.get("head_dim")
-    if isinstance(head_dim, int) and not isinstance(head_dim, bool) and head_dim > 0:
-        return head_dim
-    return _config_int(config, "hidden_size", path) // num_heads
-
 
 def kv_bytes_per_token(shape: ModelShape, kv_dtype: str = "fp16") -> int:
     """Compute KV-cache bytes stored per token across the whole stack.
 
-    The formula is ``2 (keys + values) × head_dim × Σ kv_heads ×
+    The formula is ``2 (keys + values) x head_dim x Σ kv_heads x
     bytes_per_element``, summing over attention layers only.
 
     Args:
@@ -319,7 +178,7 @@ def kv_bytes_per_token(shape: ModelShape, kv_dtype: str = "fp16") -> int:
         The north-star target stores ~196 KiB per token at fp16:
 
         ```python
-        from quantfit.budget import ModelShape, kv_bytes_per_token
+        from quantfit.domain.budget import ModelShape, kv_bytes_per_token
 
         shape = ModelShape.uniform(attn_layers=49, kv_heads=8, head_dim=128)
         assert kv_bytes_per_token(shape) == 200_704
@@ -350,7 +209,7 @@ def kv_cache_bytes(
         Cache for 16k context on the north-star target:
 
         ```python
-        from quantfit.budget import ModelShape, kv_cache_bytes
+        from quantfit.domain.budget import ModelShape, kv_cache_bytes
 
         shape = ModelShape.uniform(attn_layers=49, kv_heads=8, head_dim=128)
         total = kv_cache_bytes(shape, context=16384)
@@ -373,7 +232,7 @@ class Budget:
         A ledger that leaves ~19 GiB for weights:
 
         ```python
-        from quantfit.budget import Budget, parse_size
+        from quantfit.domain.budget import Budget, parse_size
 
         budget = Budget(
             vram_total_bytes=parse_size("24GiB"),
@@ -393,6 +252,6 @@ class Budget:
         """Bytes left for weights; negative when overcommitted.
 
         Returns:
-            ``vram_total − kv_cache − runtime_overhead``.
+            ``vram_total - kv_cache - runtime_overhead``.
         """
         return self.vram_total_bytes - self.kv_cache_bytes - self.runtime_overhead_bytes

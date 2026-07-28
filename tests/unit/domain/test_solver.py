@@ -5,8 +5,9 @@ from typing import Any
 
 import pytest
 
-from quantfit.artifacts import SensitivityMap
-from quantfit.solver import (
+from quantfit.adapters.outbound.sensitivity_map_json import map_from_dict
+from quantfit.domain.model import SensitivityMap
+from quantfit.domain.solver import (
     SOLVER_NAME,
     InfeasibleBudgetError,
     PinError,
@@ -19,7 +20,7 @@ CONVEX_CURVE = {8: 0.001, 4: 0.010, 3: 0.100, 2: 1.000}
 
 
 def load(raw: dict[str, Any]) -> SensitivityMap:
-    return SensitivityMap.from_dict(raw)
+    return map_from_dict(raw)
 
 
 def solve_simple(map_: SensitivityMap, budget: int, **kwargs: Any):

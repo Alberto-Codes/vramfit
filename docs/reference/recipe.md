@@ -4,7 +4,7 @@ status: draft
 
 # Recipe format
 
-> **Status: draft** — implemented in `quantfit.artifacts.Recipe`; the
+> **Status: draft** — implemented in `quantfit.adapters.outbound.recipe_json`; the
 > loader enforces everything described here.
 
 The recipe is the output of `quantfit plan` and the input to `quantfit pack`:

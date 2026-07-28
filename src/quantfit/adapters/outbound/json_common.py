@@ -1,0 +1,269 @@
+"""Shared JSON validation machinery for the artifact adapters.
+
+Every extractor takes a JSON path string so validation errors read like
+``$.groups[3].sensitivity: key "4x" is not an integer precision``.
+Numeric extractors reject booleans (JSON ``true`` is a valid Python int)
+and non-finite floats (``json.loads`` accepts ``NaN``/``Infinity``, which
+would poison solver comparisons downstream).
+
+Attributes:
+    SCHEMA_VERSION (int): The artifact schema version the adapters read
+        and write.
+
+Examples:
+    Report a validation failure with its JSON path:
+
+    ```python
+    from quantfit.adapters.outbound.json_common import ArtifactError
+
+    try:
+        raise ArtifactError("$.groups[3]", "expected a JSON object")
+    except ArtifactError as exc:
+        print(exc.json_path, exc.message)
+    ```
+
+See Also:
+    - [quantfit.adapters.outbound.sensitivity_map_json][]: Map IO.
+    - [quantfit.adapters.outbound.recipe_json][]: Recipe IO.
+"""
+
+from __future__ import annotations
+
+import json
+import math
+from pathlib import Path
+from typing import Any, Final
+
+SCHEMA_VERSION: Final[int] = 1
+
+
+class ArtifactError(ValueError):
+    """Invalid quantfit JSON artifact.
+
+    Attributes:
+        json_path (str): Dotted path to the offending element, e.g.
+            ``groups[3].sensitivity``.
+        message (str): Human-readable description of the problem.
+
+    Examples:
+        Catch and report a validation failure:
+
+        ```python
+        from quantfit.adapters.outbound.json_common import ArtifactError
+
+        try:
+            _require(False, "$.scan", "missing")
+        except ArtifactError as exc:
+            print(exc.json_path, exc.message)
+        ```
+    """
+
+    def __init__(self, json_path: str, message: str) -> None:
+        """Build the error from a JSON path and a message.
+
+        Args:
+            json_path: Dotted path to the offending element.
+            message: Human-readable description of the problem.
+        """
+        super().__init__(f"{json_path}: {message}")
+        self.json_path = json_path
+        self.message = message
+
+
+def _require(condition: bool, path: str, message: str) -> None:
+    """Raise `ArtifactError` at ``path`` unless ``condition`` holds.
+
+    Args:
+        condition: The invariant that must be true.
+        path: JSON path reported on failure.
+        message: Failure description.
+
+    Raises:
+        ArtifactError: If ``condition`` is false.
+    """
+    if not condition:
+        raise ArtifactError(path, message)
+
+
+def _get_dict(obj: Any, path: str) -> dict[str, Any]:
+    """Return ``obj`` as a JSON object.
+
+    Args:
+        obj: Candidate value.
+        path: JSON path for error reporting.
+
+    Returns:
+        The value, typed as a dict.
+
+    Raises:
+        ArtifactError: If the value is not a JSON object.
+    """
+    _require(isinstance(obj, dict), path, "expected a JSON object")
+    return obj
+
+
+def _get_list(obj: dict[str, Any], key: str, path: str) -> list[Any]:
+    """Return the list stored at ``key``.
+
+    Args:
+        obj: Parent JSON object.
+        key: Key to read.
+        path: JSON path of the parent for error reporting.
+
+    Returns:
+        The list value.
+
+    Raises:
+        ArtifactError: If the key is missing or not a list.
+    """
+    _require(key in obj, path, f'missing required field "{key}"')
+    value = obj[key]
+    _require(isinstance(value, list), f"{path}.{key}", "expected a list")
+    return value
+
+
+def _get_str(obj: dict[str, Any], key: str, path: str) -> str:
+    """Return the non-empty string stored at ``key``.
+
+    Args:
+        obj: Parent JSON object.
+        key: Key to read.
+        path: JSON path of the parent for error reporting.
+
+    Returns:
+        The string value.
+
+    Raises:
+        ArtifactError: If the key is missing, not a string, or empty.
+    """
+    _require(key in obj, path, f'missing required field "{key}"')
+    value = obj[key]
+    _require(isinstance(value, str), f"{path}.{key}", "expected a string")
+    _require(value != "", f"{path}.{key}", "must not be empty")
+    return value
+
+
+def _as_int(value: Any, path: str) -> int:
+    """Return ``value`` as an int, rejecting JSON booleans.
+
+    Args:
+        value: Candidate value.
+        path: JSON path for error reporting.
+
+    Returns:
+        The integer value.
+
+    Raises:
+        ArtifactError: If the value is a bool or not an integer.
+    """
+    _require(not isinstance(value, bool), path, "expected an integer, got a boolean")
+    _require(isinstance(value, int), path, "expected an integer")
+    return value
+
+
+def _get_int(obj: dict[str, Any], key: str, path: str) -> int:
+    """Return the integer stored at ``key``.
+
+    Args:
+        obj: Parent JSON object.
+        key: Key to read.
+        path: JSON path of the parent for error reporting.
+
+    Returns:
+        The integer value.
+
+    Raises:
+        ArtifactError: If the key is missing or not an integer.
+    """
+    _require(key in obj, path, f'missing required field "{key}"')
+    return _as_int(obj[key], f"{path}.{key}")
+
+
+def _as_float(value: Any, path: str) -> float:
+    """Return ``value`` as a finite float, rejecting booleans and NaN/inf.
+
+    Args:
+        value: Candidate value.
+        path: JSON path for error reporting.
+
+    Returns:
+        The numeric value as a float.
+
+    Raises:
+        ArtifactError: If the value is a bool, not a number, or not
+            finite.
+    """
+    _require(not isinstance(value, bool), path, "expected a number, got a boolean")
+    _require(isinstance(value, (int, float)), path, "expected a number")
+    result = float(value)
+    _require(math.isfinite(result), path, "must be a finite number")
+    return result
+
+
+def _get_float(obj: dict[str, Any], key: str, path: str) -> float:
+    """Return the number stored at ``key`` as a finite float.
+
+    Args:
+        obj: Parent JSON object.
+        key: Key to read.
+        path: JSON path of the parent for error reporting.
+
+    Returns:
+        The numeric value.
+
+    Raises:
+        ArtifactError: If the key is missing, not a number, or not
+            finite.
+    """
+    _require(key in obj, path, f'missing required field "{key}"')
+    return _as_float(obj[key], f"{path}.{key}")
+
+
+def _check_schema_version(obj: dict[str, Any], path: str) -> None:
+    """Validate the artifact's ``quantfit_schema`` envelope field.
+
+    Args:
+        obj: Top-level artifact object.
+        path: JSON path of the artifact root.
+
+    Raises:
+        ArtifactError: If the version is missing or unsupported.
+    """
+    version = _get_int(obj, "quantfit_schema", path)
+    _require(
+        version == SCHEMA_VERSION,
+        f"{path}.quantfit_schema",
+        f"unsupported schema version {version}; this quantfit reads version "
+        f"{SCHEMA_VERSION}",
+    )
+
+
+def _load_json(path: Path, root: str) -> dict[str, Any]:
+    """Read ``path`` and return its top-level JSON object.
+
+    Args:
+        path: File to read.
+        root: JSON path name for the artifact root in error messages.
+
+    Returns:
+        The parsed top-level object.
+
+    Raises:
+        ArtifactError: If the file is not valid JSON or the top level is
+            not an object.
+    """
+    try:
+        data = json.loads(path.read_text())
+    except json.JSONDecodeError as exc:
+        raise ArtifactError(root, f"invalid JSON: {exc}") from exc
+    return _get_dict(data, root)
+
+
+def _save_json(data: dict[str, Any], path: Path) -> None:
+    """Write ``data`` to ``path`` as pretty-printed JSON.
+
+    Args:
+        data: JSON-serializable object.
+        path: Destination file.
+    """
+    path.write_text(json.dumps(data, indent=2) + "\n")
