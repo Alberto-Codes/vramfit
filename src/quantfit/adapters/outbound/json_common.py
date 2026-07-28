@@ -222,12 +222,17 @@ def _get_float(obj: dict[str, Any], key: str, path: str) -> float:
     return _as_float(obj[key], f"{path}.{key}")
 
 
-def _check_schema_version(obj: dict[str, Any], path: str) -> None:
+def _check_schema_version(
+    obj: dict[str, Any], path: str, expected: int = SCHEMA_VERSION
+) -> None:
     """Validate the artifact's ``quantfit_schema`` envelope field.
 
     Args:
         obj: Top-level artifact object.
         path: JSON path of the artifact root.
+        expected: The schema version this artifact's adapter reads.
+            Versions advance per artifact — the recipe moved to 2
+            (ADR-0013) while the sensitivity map stays at 1.
 
     Raises:
         ArtifactError: If the version is missing or unsupported — the
@@ -235,10 +240,10 @@ def _check_schema_version(obj: dict[str, Any], path: str) -> None:
     """
     version = _get_int(obj, "quantfit_schema", path)
     _require(
-        version == SCHEMA_VERSION,
+        version == expected,
         f"{path}.quantfit_schema",
         f"unsupported schema version {version} — this quantfit reads "
-        f"version {SCHEMA_VERSION}",
+        f"version {expected}",
     )
 
 
