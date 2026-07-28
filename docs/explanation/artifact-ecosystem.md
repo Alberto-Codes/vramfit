@@ -67,6 +67,44 @@ Each phase is cheap and gated on the one before it. Do not reorder.
    ranked by measured quality of the packed result". That needs eval
    compute and referee credibility. Do not build it speculatively.
 
+## Power user #0: publish measured quants, small models first
+
+Recorded 2026-07-28, the day the first completable scan (Qwen2.5-3B)
+ran. Nobody adopts an artifact standard from a spec — they adopt it
+because artifacts they already want carry it. So the most credible
+socialization move is to be the ecosystem's first power user: publish
+packed models to Hugging Face that people download for their own sake,
+with the sensitivity map, recipe, and run log riding along as standard
+sidecars.
+
+What makes the model card unwritable by anyone else: the damage table
+("layer 1 is ~500× more fragile at 3-bit than layer 0 — we kept it at
+4"), the explicit budget arithmetic, the solver trace, and a
+one-command reproduction line. The closing move on every card:
+"Disagree? Re-run the scan — the map is right there." That is the
+invitation that turns downloaders into publishers.
+
+This amends the phase ordering in one way: small models do not wait
+for the 49B result. The Qwen-class scan finishes in under an hour on
+the reference box, so a measured small-model quant can be publication
+number one while the 49B north star is still blocked on offload-aware
+scanning (issue #16). The 49B writeup remains the gate for everything
+*else* in the phase list.
+
+Hard gates before any publication:
+
+1. `quantfit pack` exists (the GGUF backend of ADR-0010).
+2. The whole-recipe validation pass exists — publishing a recipe whose
+   additivity assumption was never checked is the exact sin the
+   project criticizes.
+3. The packed model measurably beats the size-matched heuristic GGUF.
+   One bad debut kills a "measured beats folklore" brand permanently.
+   If it loses, publish the negative result in the writeup instead of
+   the model.
+
+Conventions to settle at publication time: a `quantfit` HF tag, the
+budget in the repo name (e.g. `-fit24gib`), and the sidecar layout.
+
 ## What a score may never claim
 
 Damage values are calibration-relative. A cross-model or
