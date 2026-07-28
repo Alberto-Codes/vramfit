@@ -19,7 +19,10 @@ jobs:
     timeout-minutes: 10
     # Job-level permissions replace the workflow-level block, so
     # contents: read must be restated or a private-repo checkout fails.
+    # Private repos additionally need actions: read for the analyze
+    # step's workflow-run lookup.
     permissions:
+      actions: read
       contents: read
       security-events: write
     steps:
