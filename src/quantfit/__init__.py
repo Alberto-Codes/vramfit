@@ -17,7 +17,8 @@ Examples:
     ```
 
 See Also:
-    - [quantfit.cli][]: The ``quantfit`` console script entry point.
+    - [quantfit.adapters.inbound.cli][]: The ``quantfit`` console script
+      entry point.
 """
 
 from __future__ import annotations

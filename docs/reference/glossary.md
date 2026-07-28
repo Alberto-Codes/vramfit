@@ -83,6 +83,37 @@ change.
 :   The algorithm that assigns precisions under the weight budget. Strategy
     tracked in [ADR-0007](../adr/0007-recipe-solver-strategy.md).
 
+**Trace**
+:   The solver's ordered downgrade log, recorded in `plan.trace`. Replaying
+    it from the starting state reproduces the assignments — it is the
+    recipe's explanation. Not "log" or "history".
+
+**Format overhead**
+:   The fraction added to predicted sizes for quantization metadata
+    (scales, zero-points). CLI flag `--format-overhead`, recorded in
+    `plan.format_overhead`. Default 0.05 until measured per format.
+
+## Architecture
+
+**Domain**
+:   The pure core (`quantfit.domain`): artifact types, budget math,
+    solver. No IO, no frameworks — enforced by import-linter
+    ([ADR-0008](../adr/0008-hexagonal-architecture.md)).
+
+**Port**
+:   A `typing.Protocol` in `quantfit.ports` naming a capability the
+    application needs (e.g. `RecipeSink`). Outbound (driven) only today.
+
+**Adapter**
+:   An implementation touching the outside world. **Inbound** adapters
+    drive the domain (the CLI); **outbound** adapters implement ports
+    (JSON artifact files, HF configs).
+
+**Envelope**
+:   The serialization-level wrapper owned by the JSON adapters —
+    notably the `quantfit_schema` version field, which domain objects
+    never carry.
+
 ## Project
 
 **North-star benchmark**

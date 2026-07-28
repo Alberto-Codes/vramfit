@@ -61,20 +61,30 @@ Hooks that run on each commit:
 | uv-lock | Lockfile is in sync with pyproject.toml |
 | uv-secure | Known vulnerabilities in the lockfile |
 | ty | Type checking |
-| pytest | Test suite (GPU tests excluded) |
+| pytest | Fast suite: unit + contract (hermetic) |
+| import-linter | Hex layers, domain purity, no heavy ML deps (ADR-0008) |
+| loc-check | 300/320 code-line cap per module |
 | docvet | Docstring quality on staged files |
 
-All hooks must pass before the commit succeeds.
+All hooks must pass before the commit succeeds. A **pre-push** hook
+additionally runs the full suite (thorough hypothesis profile, e2e via
+subprocess, 90% coverage gate). Install both stages:
+
+```bash
+pre-commit install --hook-type pre-commit --hook-type pre-push
+```
 
 ## Quality Gates
 
-All five gates must pass before opening a PR. Run them locally:
+All seven gates must pass before opening a PR. Run them locally:
 
 ```bash
 uv run ruff check .                  # Linting
 uv run ruff format --check .         # Format check
 uv run ty check                      # Type checking
 uv run pytest -m "not gpu"           # Tests (CI enforces 90% coverage)
+uv run lint-imports                  # Hex layers + domain purity
+uv run python scripts/check_loc.py src  # File size cap (300/320 code lines)
 uv run docvet check --all            # Docstring quality
 ```
 
@@ -91,22 +101,26 @@ uv run ruff format .
 - Google-style docstrings on all public functions and classes
 - Type hints on all function signatures (`list[str]`, not `List[str]`)
 - 88-char soft limit (formatter), 100-char hard limit (linter)
+- 300 code lines per module (soft), 320 hard -- decompose, don't excuse.
+  Code lines exclude comments and docstrings (`scripts/check_loc.py`)
 - No relative imports (full package paths only)
 
 ## Testing
 
 ```bash
-uv run pytest                  # All tests (GPU tests skip without CUDA)
-uv run pytest -m unit          # Unit tests only
-uv run pytest -m integration   # Integration tests only
-uv run pytest -m gpu           # CUDA-required tests only
-uv run pytest -m "not slow"    # Skip slow tests
+uv run pytest                  # Default: fast suite (unit + contract)
+uv run pytest -m e2e           # Console-script flows via subprocess
+uv run pytest -m contract      # Verified-fake port suites only
 uv run pytest -k test_name     # Single test by name
+HYPOTHESIS_PROFILE=thorough uv run pytest -m "not gpu and not integration"
 ```
 
 Test naming convention: `test_<what>_<condition>_<expected_result>`
 
-Markers: `unit` (fast, no GPU), `integration` (real weights, slower), `gpu` (requires CUDA), `slow`.
+Tiers per [ADR-0009](docs/adr/0009-testing-strategy.md): `unit` (pure
+logic + hypothesis properties), `contract` (verified fakes — required
+for every new port), `integration` (real resources, resource-gated),
+`e2e` (console script), plus `gpu`/`slow` axes.
 
 GPU-dependent tests must carry the `gpu` marker and skip cleanly when CUDA is
 absent -- CI runners have no GPU, so anything unmarked must pass on CPU.
@@ -129,7 +143,7 @@ type(scope): description
 | chore | Maintenance tasks |
 | perf | Performance improvements |
 
-**Scopes:** scan, plan, pack, cli, config, docs
+**Scopes:** scan, plan, pack, cli, config, docs, arch, domain, ports, adapters
 
 **Examples:**
 
@@ -145,7 +159,7 @@ Do not add `Co-Authored-By` trailers to commits.
 
 1. Push your branch to your fork: `git push -u origin feat/<scope>-<description>`
 2. Open a **draft** PR against `upstream/main` (non-draft PRs trigger automated review prematurely)
-3. PR title must follow conventional commits format: `type(scope): description`
+3. Fill out the [PR template](.github/PULL_REQUEST_TEMPLATE.md) -- remove HTML comments, keep visible content. The PR title becomes the squash-commit subject and (later) the release-please changelog entry, so it must follow conventional commits: `type(scope): description`
 4. All CI checks must pass before review
 5. PRs are squash-merged to keep a linear history
 

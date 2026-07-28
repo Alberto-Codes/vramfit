@@ -35,12 +35,16 @@ runtime-neutral so a pack backend is additive.
   until that changes; sub-4-bit recipes need the future GGUF backend.
 - `quantfit pack` should drive [llm-compressor](https://github.com/vllm-project/llm-compressor)
   rather than reimplement checkpoint writing.
-- **Open tension with ADR-0003:** the north-star budget forces ~3.2 average
-  bits/parameter, below vLLM's 4-bit kernel floor. Resolution paths, in
+- **Open tension with ADR-0003:** the north-star budget forces ~3.3–3.5
+  average bits/parameter (measured via `quantfit budget` with the real
+  config: 18.94 GiB weight budget at fp16 KV, 20.47 GiB at fp8 KV),
+  below vLLM's 4-bit kernel floor. Resolution paths, in
   rough order of preference: (a) the scan + budget math turns out friendlier
   than the estimate (e.g. FP8 KV, tighter overhead), (b) contribute or adopt
   a sub-4-bit kernel in vLLM (maintainer has a vLLM fork), (c) the GGUF
-  backend becomes the benchmark path, (d) the benchmark model changes. Needs
-  its own ADR before `plan` lands.
+  backend becomes the benchmark path, (d) the benchmark model changes.
+  Deferred past the plan milestone (the solver is precision-set agnostic,
+  so the tension binds at scan/pack time); needs its own ADR before `scan`
+  fixes its candidate precisions.
 - llama.cpp users wait for the GGUF backend; acceptable, they're not the
   benchmark audience.

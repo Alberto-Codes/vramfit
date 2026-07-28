@@ -1,6 +1,6 @@
 # ADR-0007: Solver strategy for recipe selection
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-07-27
 
 ## Context
@@ -22,7 +22,7 @@ The damage model is itself an approximation (ADR-0006's additivity
 assumption), which bounds how much solver optimality is worth: an exact
 optimum of an approximate objective is still approximate.
 
-## Decision (proposed)
+## Decision
 
 Ship the **greedy damage-per-byte solver first** — its downgrade sequence
 doubles as a human-readable explanation of *why* each group got its
@@ -30,16 +30,32 @@ precision. Add the exact DP solver later behind `--solver exact` as a check
 on greedy's gap. Record the solver name in the recipe (`plan.solver`) for
 reproducibility either way.
 
-## Open questions
+Specifics fixed at implementation (`quantfit.domain.solver` — implemented 2026-07-27, path per ADR-0008):
 
-- Hard floors: is 2-bit ever allowed on attention groups regardless of what
-  the scan claims, or do we encode structural priors as constraints?
-- Should the solver see the runtime-capability table (ADR-0004) as a
-  constraint set (only kernel-supported precisions per tensor type)?
-- Tie-breaking under equal ratios — deterministic ordering matters for
-  reproducible recipes.
+- Moves consider **all** lower candidate precisions, not just the next step
+  down, so non-convex damage curves get direct multi-step jumps.
+- Selection key is `(damage_delta / bytes_freed, group name, smallest
+  downgrade)` — a total order, so recipes are deterministic and invariant
+  to group input order.
+- Pins are `fnmatchcase` globs. A pattern matching zero groups is a hard
+  error, later pins override earlier ones, and pinned groups never move.
+- Infeasibility is prechecked (minimum achievable total vs budget) and
+  reported with the exact gap in bytes.
+- The final downgrade is refined after the loop (2026-07-28): when a
+  milder step of the same group also fits with less damage, it replaces
+  the overshooting one. Greedy remains non-optimal globally — it does
+  not apply improving moves when already under budget, and earlier
+  groups may stay over-downgraded. Both are accepted gaps for
+  `--solver exact` to quantify.
+- The recipe records `format_overhead` and the full downgrade `trace`.
 
-## Consequences (if proposed decision is accepted)
+Resolved open questions: tie-breaking is specified above. Hard floors and
+the runtime-capability constraint set are **deferred** — the candidate
+precision set comes solely from `scan.precisions`, so both can be encoded
+upstream (in what the scan measures) or added later as solver constraints
+without changing the recipe format.
+
+## Consequences
 
 - Recipes come with an explanation trace essentially for free.
 - A future exact solver quantifies greedy's optimality gap on real maps —

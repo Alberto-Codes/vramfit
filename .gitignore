@@ -12,3 +12,6 @@ wheels/
 # Test artifacts
 .coverage
 coverage.xml
+
+# Default output of quantfit plan
+/recipe.json

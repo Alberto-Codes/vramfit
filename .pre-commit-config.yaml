@@ -1,3 +1,7 @@
+# Commit stage = fast hermetic gates; push stage = full suite with
+# thorough hypothesis profile, e2e, and the coverage gate (ADR-0009).
+default_stages: [pre-commit]
+
 repos:
   - repo: https://github.com/adrienverge/yamllint
     rev: v1.38.0
@@ -32,19 +36,51 @@ repos:
         name: ty type check
         entry: uv run ty check
         language: system
-        types: [python]
         pass_filenames: false
+        always_run: true
 
       - id: pytest
-        name: pytest
-        entry: uv run pytest -m "not gpu" --tb=short -q
+        name: pytest (fast, unit+contract)
+        entry: uv run pytest --tb=short -q
         language: system
-        types: [python]
         pass_filenames: false
+        always_run: true
+
+      - id: pytest-push
+        name: pytest full (thorough + e2e + coverage)
+        entry: >-
+          env HYPOTHESIS_PROFILE=thorough
+          uv run pytest -m "not gpu and not integration"
+          --cov=quantfit --tb=short -q
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]
+
+      - id: lint-imports
+        name: import-linter
+        entry: uv run lint-imports
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: loc-check
+        name: file size limit (300/320 code lines)
+        entry: uv run python scripts/check_loc.py src
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: doc-refs
+        name: docs reference living module paths
+        entry: uv run python scripts/check_doc_refs.py
+        language: system
+        pass_filenames: false
+        always_run: true
 
       - id: docvet
         name: docvet check
         entry: uv run docvet check --staged
         language: system
-        types: [python]
         pass_filenames: false
+        always_run: true
