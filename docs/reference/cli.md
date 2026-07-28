@@ -4,8 +4,8 @@ status: draft
 
 # CLI reference
 
-> **Status: draft** — `version`, `budget`, `plan`, and `scan` are
-> implemented. `pack` is design-stage.
+> **Status: draft** — `version`, `budget`, `plan`, `scan`, and `pack`
+> are implemented. `pack` covers the GGUF backend only (ADR-0010).
 
 ## `quantfit version`
 
