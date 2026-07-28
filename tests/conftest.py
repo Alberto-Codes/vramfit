@@ -12,6 +12,19 @@ settings.register_profile("fast", max_examples=25, deadline=None)
 settings.register_profile("thorough", max_examples=200, deadline=None)
 settings.load_profile(os.environ.get("HYPOTHESIS_PROFILE", "fast"))
 
+# Typer renders CLI errors through rich, which force-enables ANSI color
+# when it sees GITHUB_ACTIONS or FORCE_COLOR at import time — the
+# styling even splits option names mid-token, breaking output
+# assertions. Neutralize the test process env before typer imports so
+# assertions see the same plain text everywhere.
+os.environ["NO_COLOR"] = "1"
+os.environ.pop("FORCE_COLOR", None)
+os.environ.pop("GITHUB_ACTIONS", None)
+# Rich wraps error panels at 80 columns, splitting messages that embed
+# long tmp paths across lines and breaking substring assertions. Widen
+# the panel so a message stays on one line regardless of path length.
+os.environ["TERMINAL_WIDTH"] = "400"
+
 # Enough distinct text to train a tiny byte-level BPE and to fill a few
 # calibration batches for the torch-tier tests.
 CALIBRATION_TEXT = (
