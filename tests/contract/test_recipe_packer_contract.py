@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import sys
+from dataclasses import replace
 from pathlib import Path
 from typing import Literal
 
@@ -82,6 +83,7 @@ def sample_pack_recipe() -> Recipe:
             Assignment(group="model.layers.0", bits=8, bytes=1_000, damage=0.001),
             Assignment(group="model.layers.1", bits=4, bytes=500, damage=0.01),
         ),
+        runtime=None,
     )
 
 
@@ -180,6 +182,22 @@ class TestRecipePackerContract:
             TypeOverride(pattern=r"blk\.0\.", quant_type="q8_0"),
             TypeOverride(pattern=r"blk\.1\.", quant_type="q4_k"),
         )
+
+    def test_pack_llama_cpp_recipe_is_accepted(self, build, tmp_path) -> None:
+        packer: RecipePacker = build(tmp_path, base_exists=True)
+
+        result = packer.pack(replace(sample_pack_recipe(), runtime="llama.cpp"))
+
+        assert result.packed_bytes == PACKED_BYTES
+
+    def test_pack_foreign_runtime_recipe_raises_pack_error(
+        self, build, tmp_path
+    ) -> None:
+        packer: RecipePacker = build(tmp_path, base_exists=True)
+        recipe = replace(sample_pack_recipe(), runtime="vllm")
+
+        with pytest.raises(PackError, match=r"packs for llama\.cpp"):
+            packer.pack(recipe)
 
     def test_pack_without_convert_raises_pack_error(self, build, tmp_path) -> None:
         packer: RecipePacker = build(tmp_path)

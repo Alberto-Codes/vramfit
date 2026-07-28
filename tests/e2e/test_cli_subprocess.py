@@ -55,6 +55,7 @@ def test_plan_flow_produces_loadable_recipe(tmp_path) -> None:
     assert result.returncode == 0, result.stderr
     recipe = load_recipe(out)
     assert recipe.plan.weight_budget_bytes == 150_000
+    assert recipe.runtime == "llama.cpp"
     assert "planned 2 groups" in result.stdout
 
 
@@ -127,6 +128,7 @@ def test_pack_flow_with_stub_toolchain_produces_the_packed_file(tmp_path) -> Non
             Assignment(group="model.embed_tokens", bits=8, bytes=1_000, damage=0.001),
             Assignment(group="model.layers.0", bits=4, bytes=500, damage=0.01),
         ),
+        runtime="llama.cpp",
     )
     recipe_path = tmp_path / "recipe.json"
     save_recipe(recipe, recipe_path)

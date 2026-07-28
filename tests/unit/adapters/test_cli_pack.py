@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -37,6 +38,7 @@ def make_recipe(model_id: str) -> Recipe:
             Assignment(group="model.embed_tokens", bits=8, bytes=1_000, damage=0.001),
             Assignment(group="model.layers.0", bits=4, bytes=500, damage=0.01),
         ),
+        runtime=None,
     )
 
 
@@ -192,6 +194,51 @@ class TestPackCommand:
         log = read_run_log(out.with_name(out.stem + ".runlog.jsonl"))
         assert log[-1]["stage"] == "quantize"
 
+    def test_llama_cpp_recipe_from_file_packs(
+        self, tmp_path, monkeypatch, llama_cpp_dir
+    ) -> None:
+        # The composed product flow: plan records "llama.cpp" by
+        # default, the saved schema-2 recipe reloads, and pack
+        # accepts it.
+        patch_packer(monkeypatch, MemoryRecipePacker(packed_bytes=100))
+        model_dir = tmp_path / "model"
+        model_dir.mkdir()
+        recipe = replace(make_recipe(str(model_dir)), runtime="llama.cpp")
+        path = tmp_path / "recipe.json"
+        save_recipe(recipe, path)
+        out = tmp_path / "packed.gguf"
+
+        result = runner.invoke(
+            app,
+            ["pack", str(path), "--llama-cpp", str(llama_cpp_dir), "--out", str(out)],
+        )
+
+        assert result.exit_code == 0, result.output
+
+    def test_foreign_runtime_recipe_exits_1_and_halts(
+        self, tmp_path, monkeypatch, llama_cpp_dir
+    ) -> None:
+        patch_packer(monkeypatch, MemoryRecipePacker(packed_bytes=100))
+        model_dir = tmp_path / "model"
+        model_dir.mkdir()
+        recipe = replace(make_recipe(str(model_dir)), runtime="vllm")
+        path = tmp_path / "recipe.json"
+        save_recipe(recipe, path)
+        out = tmp_path / "packed.gguf"
+
+        result = runner.invoke(
+            app,
+            ["pack", str(path), "--llama-cpp", str(llama_cpp_dir), "--out", str(out)],
+        )
+
+        assert result.exit_code == 1
+        assert "packs for llama.cpp" in result.output
+        log = read_run_log(out.with_name(out.stem + ".runlog.jsonl"))
+        assert log[-1]["event"] == "pack_halted"
+        # The rejection happens inside packer.pack, so the halt is
+        # attributed to the quantize stage.
+        assert log[-1]["stage"] == "quantize"
+
     def test_missing_recipe_file_exits_1(self, tmp_path, llama_cpp_dir) -> None:
         result = runner.invoke(
             app,
@@ -308,8 +355,9 @@ class TestPackCommand:
             model_id=str(model_dir),
             plan=make_recipe(str(model_dir)).plan,
             assignments=(
-                Assignment(group="model.layers.0", bits=5, bytes=500, damage=0.01),
+                Assignment(group="model.layers.0", bits=7, bytes=500, damage=0.01),
             ),
+            runtime=None,
         )
         path = tmp_path / "recipe5.json"
         save_recipe(recipe, path)
@@ -321,7 +369,7 @@ class TestPackCommand:
         )
 
         assert result.exit_code == 1
-        assert "no GGUF base type maps 5-bit" in result.output
+        assert "no GGUF base type maps 7-bit" in result.output
         log = read_run_log(out.with_name(out.stem + ".runlog.jsonl"))
         assert log[-1]["event"] == "pack_halted"
         assert log[-1]["stage"] == "quantize"

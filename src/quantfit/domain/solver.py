@@ -2,6 +2,9 @@
 
 Implements ADR-0007. Errors sit under the `QuantfitError` root
 (ADR-0011) and carry user-facing messages the CLI prints verbatim.
+A target runtime narrows the candidate set through the ADR-0013
+capability table before any solving starts, and an infeasible
+budget names the precisions that narrowing removed.
 The algorithm: start every group at the highest candidate precision
 (or its pin), then repeatedly apply the downgrade with the best
 damage-per-byte-freed ratio until the total fits the weight budget. The
@@ -53,6 +56,7 @@ from quantfit.domain.model import (
     SensitivityMap,
     TraceStep,
 )
+from quantfit.domain.runtime import servable_precisions
 
 SOLVER_NAME: Final[str] = "greedy-damage-per-byte"
 DEFAULT_FORMAT_OVERHEAD: Final[float] = 0.05
@@ -87,6 +91,11 @@ class InfeasibleBudgetError(QuantfitError):
         minimum_bytes (int): The smallest achievable total (pins
             respected).
         weight_budget_bytes (int): The budget that could not be met.
+        runtime (str | None): Target runtime the solve was constrained
+            to, when one was given.
+        dropped_precisions (tuple[int, ...]): Scanned precisions the
+            runtime cannot serve — the floor the message reports
+            excludes them.
 
     Examples:
         Report the gap to the user:
@@ -102,26 +111,48 @@ class InfeasibleBudgetError(QuantfitError):
     """
 
     def __init__(
-        self, gap_bytes: int, minimum_bytes: int, weight_budget_bytes: int
+        self,
+        gap_bytes: int,
+        minimum_bytes: int,
+        weight_budget_bytes: int,
+        *,
+        runtime: str | None = None,
+        dropped_precisions: tuple[int, ...] = (),
     ) -> None:
         """Build the error from the budget arithmetic.
 
         The message renders every size with `format_size`, so the CLI
-        can print it verbatim as its ``error:`` line.
+        can print it verbatim as its ``error:`` line. When a runtime
+        filter removed scanned precisions, the message names them —
+        the reported floor is higher than the scan alone allows, and
+        the user must see why.
 
         Args:
             gap_bytes: Overshoot of the smallest achievable total.
             minimum_bytes: The smallest achievable total in bytes.
             weight_budget_bytes: The budget that could not be met.
+            runtime: Target runtime that constrained the solve, when
+                one was given.
+            dropped_precisions: Scanned precisions the runtime cannot
+                serve.
         """
-        super().__init__(
+        message = (
             f"no recipe fits the {format_size(weight_budget_bytes)} weight "
             f"budget — minimum achievable is {format_size(minimum_bytes)} "
             f"({format_size(gap_bytes)} over)"
         )
+        if runtime is not None and dropped_precisions:
+            message += (
+                f'. The target runtime "{runtime}" cannot serve the scanned '
+                f"precisions {list(dropped_precisions)}, so the floor sits "
+                f"higher than the scan alone allows"
+            )
+        super().__init__(message)
         self.gap_bytes = gap_bytes
         self.minimum_bytes = minimum_bytes
         self.weight_budget_bytes = weight_budget_bytes
+        self.runtime = runtime
+        self.dropped_precisions = dropped_precisions
 
 
 def group_bytes(bytes_fp16: int, bits: int, format_overhead: float) -> int:
@@ -150,6 +181,7 @@ def group_bytes(bytes_fp16: int, bits: int, format_overhead: float) -> int:
 def _expand_pins(
     pins: Mapping[str, int],
     map_: SensitivityMap,
+    candidates: tuple[int, ...],
 ) -> dict[str, int]:
     """Resolve pin patterns to concrete per-group precisions.
 
@@ -157,21 +189,23 @@ def _expand_pins(
         pins: Ordered mapping of glob pattern to forced precision; later
             patterns override earlier ones for overlapping groups.
         map_: The sensitivity map whose groups are matched.
+        candidates: The solver's candidate precisions — the scanned
+            set, runtime-filtered when a target runtime is given.
 
     Returns:
         Mapping of group name to pinned precision.
 
     Raises:
-        PinError: If a pin uses an unscanned precision or matches no
-            group.
+        PinError: If a pin uses a precision outside the candidate set
+            or matches no group.
     """
-    candidates = set(map_.scan.precisions)
+    allowed = set(candidates)
     pinned: dict[str, int] = {}
     for pattern, bits in pins.items():
-        if bits not in candidates:
+        if bits not in allowed:
             raise PinError(
-                f'pin "{pattern}={bits}": precision {bits} is not in the scanned '
-                f"set {sorted(candidates, reverse=True)}"
+                f'pin "{pattern}={bits}": precision {bits} is not in the candidate '
+                f"set {sorted(allowed, reverse=True)}"
             )
         matched = [g.name for g in map_.groups if fnmatchcase(g.name, pattern)]
         if not matched:
@@ -305,10 +339,16 @@ def solve(
     kv_headroom_bytes: int,
     pins: Mapping[str, int] | None = None,
     format_overhead: float = DEFAULT_FORMAT_OVERHEAD,
+    runtime: str | None = None,
 ) -> Recipe:
     """Assign a precision to every group so the total fits the budget.
 
-    Every group starts at the highest scanned precision (or its pin).
+    When a target runtime is given, the candidate set first filters
+    through the ADR-0013 capability table — a precision the runtime
+    cannot serve is never assigned, and the recipe records the
+    runtime. An infeasible budget then names the precisions the
+    runtime removed, so the reported floor is explainable. Every
+    group starts at the highest candidate precision (or its pin).
     While the total exceeds the budget, the solver applies the downgrade
     with the minimum ``(damage_delta / bytes_freed, group name, smallest
     step)`` key, considering all lower candidate precisions of every
@@ -328,6 +368,8 @@ def solve(
         pins: Ordered glob-pattern pins forcing precisions; later patterns
             override earlier ones.
         format_overhead: Overhead fraction for quantization metadata.
+        runtime: Target runtime name, or None for no capability
+            constraint.
 
     Returns:
         The recipe, with assignments in sensitivity-map group order and
@@ -336,7 +378,10 @@ def solve(
     Raises:
         ValueError: If ``format_overhead`` is negative, NaN, or
             infinite.
-        PinError: If a pin is malformed with respect to the map.
+        RuntimeCapabilityError: If the runtime is unknown or serves
+            none of the scanned precisions.
+        PinError: If a pin is malformed with respect to the candidate
+            set.
         InfeasibleBudgetError: If even minimum precision (pins respected)
             exceeds the budget.
 
@@ -361,7 +406,10 @@ def solve(
         )
     pins = dict(pins or {})
     candidates = sensitivity_map.scan.precisions
-    pinned = _expand_pins(pins, sensitivity_map)
+    if runtime is not None:
+        candidates = servable_precisions(candidates, runtime)
+    dropped = tuple(p for p in sensitivity_map.scan.precisions if p not in candidates)
+    pinned = _expand_pins(pins, sensitivity_map, candidates)
 
     def size(bytes_fp16: int, bits: int) -> int:
         """Shorthand for `group_bytes` with the solver's overhead.
@@ -389,6 +437,8 @@ def solve(
             gap_bytes=floor_total - weight_budget_bytes,
             minimum_bytes=floor_total,
             weight_budget_bytes=weight_budget_bytes,
+            runtime=runtime,
+            dropped_precisions=dropped,
         )
 
     trace: list[TraceStep] = []
@@ -440,4 +490,5 @@ def solve(
             trace=tuple(trace),
         ),
         assignments=assignments,
+        runtime=runtime,
     )

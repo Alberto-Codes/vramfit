@@ -15,8 +15,9 @@ that produced it.
 
 ```json
 {
-  "quantfit_schema": 1,
+  "quantfit_schema": 2,
   "model_id": "nvidia/Llama-3_3-Nemotron-Super-49B-v1_5",
+  "runtime": "llama.cpp",
   "plan": {
     "vram_budget_bytes": 25769803776,
     "kv_headroom_bytes": 4294967296,
@@ -51,6 +52,13 @@ that produced it.
 
 ## Field notes
 
+- **`quantfit_schema`** — 2 since recipes gained the `runtime` field
+  ([ADR-0013](../adr/0013-runtime-capability-in-recipes.md)). Schema
+  versions advance per artifact — the sensitivity map stays at 1.
+- **`runtime`** — the target runtime the plan was made for, or null for
+  an unconstrained plan. `quantfit plan` always sets it. The solver
+  filtered its candidates to this runtime's capability, and pack
+  backends refuse a recipe recorded for a runtime they do not serve.
 - **`assignments`** — every group from the sensitivity map appears exactly
   once, in map order. `bytes` includes quantization-format overhead
   (scales, zero-points), and `damage` is the *measured* value at the assigned

@@ -30,6 +30,7 @@ class TestRecipeInvariants:
                 Assignment(group="model.layers.0", bits=8, bytes=1_500, damage=0.01),
                 Assignment(group="model.layers.1", bits=4, bytes=1_000, damage=0.02),
             ),
+            runtime=None,
         )
 
         assert len(recipe.assignments) == 2
@@ -49,8 +50,11 @@ class TestRecipeInvariants:
                     ),
                     duplicated,
                 ),
+                runtime=None,
             )
 
     def test_empty_assignments_raise_value_error(self) -> None:
         with pytest.raises(ValueError, match="must not be empty"):
-            Recipe(model_id="test/model", plan=make_plan(), assignments=())
+            Recipe(
+                model_id="test/model", plan=make_plan(), assignments=(), runtime=None
+            )

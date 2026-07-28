@@ -29,7 +29,8 @@ change of course gets a *new* ADR that supersedes the old one.
 | [0009](0009-testing-strategy.md) | Testing strategy — pyramid, verified fakes, properties | Accepted |
 | [0010](0010-sub-4-bit-serving-path.md) | The sub-4-bit serving path runs through GGUF | Accepted |
 | [0011](0011-run-logs-and-error-root.md) | Run logs as artifacts, and one error root | Accepted |
-| [0012](0012-gguf-type-mapping.md) | The GGUF backend maps nominal bits to K-quant types | Accepted |
+| [0012](0012-gguf-type-mapping.md) | The GGUF backend maps nominal bits to K-quant types | Accepted, amended by 0013 |
+| [0013](0013-runtime-capability-in-recipes.md) | Recipes record their target runtime | Proposed |
 
 ## Template
 

@@ -11,7 +11,9 @@ loading — converts failures to a clean ``error:`` line and a nonzero
 exit. Domain failures surface through one catch of the
 `QuantfitError` root (ADR-0011), whose messages print verbatim.
 Malformed options — including a NaN or infinite overhead — are
-usage errors, rejected before any work starts.
+usage errors, rejected before any work starts. ``plan`` records
+its ``--runtime`` in the recipe and reports what the runtime
+filter drops (ADR-0013).
 
 Examples:
     Show the installed version:
@@ -51,6 +53,7 @@ from quantfit.domain.budget import (
     parse_size,
 )
 from quantfit.domain.errors import QuantfitError
+from quantfit.domain.runtime import LLAMA_CPP, RUNTIME_CAPABILITIES
 from quantfit.domain.solver import DEFAULT_FORMAT_OVERHEAD, solve
 from quantfit.ports.outbound import (
     ModelShapeSource,
@@ -221,18 +224,28 @@ def plan(
         float,
         typer.Option(min=0.0, help="Quantization-format overhead fraction."),
     ] = DEFAULT_FORMAT_OVERHEAD,
+    runtime: Annotated[
+        str,
+        typer.Option(help="Target runtime the recipe is planned for."),
+    ] = LLAMA_CPP,
 ) -> None:
     """Solve a sensitivity map into a recipe under a VRAM budget.
 
-    Solver rejections (bad pins, an infeasible budget) surface
-    through one catch of the `QuantfitError` root. The solver's own
-    messages carry the details, including the infeasibility gap.
+    The candidate precisions come from the map, filtered to what
+    ``--runtime`` (default llama.cpp) can serve (ADR-0013) — the
+    recipe records the runtime for the pack step, and the command
+    reports any scanned precisions the runtime dropped. Solver
+    rejections (bad pins, an infeasible budget, a runtime serving
+    nothing) surface through one catch of the `QuantfitError` root.
+    The solver's own messages carry the details, including the
+    infeasibility gap.
 
     Raises:
         typer.BadParameter: If a ``--pin`` is not of the form
             ``pattern=bits`` with positive bits, a size option is
-            malformed, or ``--format-overhead`` is negative, NaN, or
-            infinite.
+            malformed, ``--format-overhead`` is negative, NaN, or
+            infinite, or ``--runtime`` is not in the capability
+            table.
         typer.Exit: With code 1 when the map is invalid, the recipe
             cannot be written, the solver rejects the plan, or nothing
             is left for weights.
@@ -250,6 +263,11 @@ def plan(
     if not math.isfinite(format_overhead):
         raise typer.BadParameter(
             f"--format-overhead: must be finite, got {format_overhead}"
+        )
+    if runtime not in RUNTIME_CAPABILITIES:
+        raise typer.BadParameter(
+            f"--runtime: unknown runtime {runtime!r} — "
+            f"choose from {sorted(RUNTIME_CAPABILITIES)}"
         )
     pins: dict[str, int] = {}
     for raw in pin or []:
@@ -281,6 +299,17 @@ def plan(
         typer.echo(f"error: {sensitivity_map}: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
+    # The runtime filter is a silent narrowing otherwise — say what
+    # the target runtime removed from the scanned candidate set.
+    capability = RUNTIME_CAPABILITIES[runtime]
+    dropped = [p for p in map_.scan.precisions if p not in capability]
+    if dropped:
+        kept = [p for p in map_.scan.precisions if p in capability]
+        typer.echo(
+            f"runtime {runtime} serves {kept} of the scanned "
+            f"{list(map_.scan.precisions)} — candidates {dropped} dropped"
+        )
+
     try:
         recipe = solve(
             map_,
@@ -289,6 +318,7 @@ def plan(
             kv_headroom_bytes=headroom_bytes,
             pins=pins,
             format_overhead=format_overhead,
+            runtime=runtime,
         )
     except QuantfitError as exc:
         # One honest catch for the root (ADR-0011): the solver's
@@ -303,7 +333,7 @@ def plan(
         typer.echo(f"error: {out}: {exc}", err=True)
         raise typer.Exit(code=1) from exc
     typer.echo(
-        f"planned {len(recipe.assignments)} groups: "
+        f"planned {len(recipe.assignments)} groups for {runtime}: "
         f"{format_size(recipe.plan.predicted_total_bytes)} of "
         f"{format_size(weight_budget)} weight budget, "
         f"predicted damage {recipe.plan.predicted_damage:.4f}, "

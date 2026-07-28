@@ -1,8 +1,11 @@
 """JSON file adapter for the recipe artifact.
 
 Owns (de)serialization and validation of the recipe schema, including
-the ``quantfit_schema`` envelope. Mirrors the strict reject-don't-
-normalize stance of the sensitivity-map adapter.
+the ``quantfit_schema`` envelope (version 2 since recipes record
+their target runtime, ADR-0013). A known runtime must serve every
+assigned precision — an unknown runtime name loads untouched.
+Mirrors the strict reject-don't-normalize stance of the
+sensitivity-map adapter.
 
 Examples:
     Round-trip a recipe through a file:
@@ -26,10 +29,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 from quantfit.adapters.outbound.json_common import (
-    SCHEMA_VERSION,
     _as_int,
     _check_schema_version,
     _get_dict,
@@ -42,6 +44,12 @@ from quantfit.adapters.outbound.json_common import (
     _save_json,
 )
 from quantfit.domain.model import Assignment, PlanMeta, Recipe, TraceStep
+from quantfit.domain.runtime import RUNTIME_CAPABILITIES
+
+# The recipe schema version. Bumped to 2 when recipes gained the
+# required (nullable) ``runtime`` field (ADR-0013) — a version-1
+# reader would silently drop the runtime constraint.
+RECIPE_SCHEMA_VERSION: Final[int] = 2
 
 
 def recipe_from_dict(data: object) -> Recipe:
@@ -54,21 +62,29 @@ def recipe_from_dict(data: object) -> Recipe:
     Returns:
         The validated recipe.
 
+    When ``runtime`` names a runtime this version's capability table
+    knows, every assignment's precision must be servable by it. An
+    unknown runtime name loads untouched — a newer quantfit's recipe
+    stays readable, and pack backends judge it at use (ADR-0013).
+
     Raises:
         ArtifactError: If any field is missing, mistyped, or violates a
             schema rule — including non-positive ``bits`` or ``bytes``
-            in any assignment.
+            in any assignment, and a known runtime that cannot serve
+            an assigned precision.
 
     Examples:
         Reject an unsupported schema version:
 
         ```python
-        recipe_from_dict({"quantfit_schema": 2})  # raises ArtifactError
+        recipe_from_dict({"quantfit_schema": 1})  # raises ArtifactError
         ```
     """
     root = _get_dict(data, "$")
-    _check_schema_version(root, "$")
+    _check_schema_version(root, "$", expected=RECIPE_SCHEMA_VERSION)
     model_id = _get_str(root, "model_id", "$")
+    _require("runtime" in root, "$", 'missing required field "runtime"')
+    runtime = None if root["runtime"] is None else _get_str(root, "runtime", "$")
     _require("plan" in root, "$", 'missing required field "plan"')
     plan = _parse_plan_meta(_get_dict(root["plan"], "$.plan"))
     raw_assignments = _get_list(root, "assignments", "$")
@@ -95,11 +111,26 @@ def recipe_from_dict(data: object) -> Recipe:
         )
         seen.add(assignment.group)
         assignments.append(assignment)
-    return Recipe(model_id=model_id, plan=plan, assignments=tuple(assignments))
+    if runtime is not None and runtime in RUNTIME_CAPABILITIES:
+        capability = RUNTIME_CAPABILITIES[runtime]
+        for i, assignment in enumerate(assignments):
+            _require(
+                assignment.bits in capability,
+                f"$.assignments[{i}].bits",
+                f'precision {assignment.bits} is not servable by runtime "{runtime}"',
+            )
+    return Recipe(
+        model_id=model_id,
+        plan=plan,
+        assignments=tuple(assignments),
+        runtime=runtime,
+    )
 
 
 def recipe_to_dict(recipe: Recipe) -> dict[str, Any]:
     """Serialize a recipe to a JSON dict with the schema envelope.
+
+    An unconstrained recipe serializes its runtime as JSON null.
 
     Args:
         recipe: The recipe to serialize.
@@ -110,8 +141,9 @@ def recipe_to_dict(recipe: Recipe) -> dict[str, Any]:
     """
     plan = recipe.plan
     return {
-        "quantfit_schema": SCHEMA_VERSION,
+        "quantfit_schema": RECIPE_SCHEMA_VERSION,
         "model_id": recipe.model_id,
+        "runtime": recipe.runtime,
         "plan": {
             "vram_budget_bytes": plan.vram_budget_bytes,
             "kv_headroom_bytes": plan.kv_headroom_bytes,

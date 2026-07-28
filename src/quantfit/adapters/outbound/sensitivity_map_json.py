@@ -1,7 +1,8 @@
 """JSON file adapter for the sensitivity-map artifact.
 
 Owns (de)serialization and validation of the map schema, including the
-``quantfit_schema`` envelope. One file class serves both directions:
+``quantfit_schema`` envelope (`MAP_SCHEMA_VERSION` — schema versions
+advance per artifact, ADR-0013). One file class serves both directions:
 ``quantfit scan`` writes through the sink face, ``quantfit plan`` reads
 through the source face. Validation is strict: artifacts are rejected,
 never normalized — ``scan.precisions`` must arrive strictly descending,
@@ -31,10 +32,9 @@ from __future__ import annotations
 import itertools
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, Final, Literal, cast
 
 from quantfit.adapters.outbound.json_common import (
-    SCHEMA_VERSION,
     ArtifactError,
     _as_float,
     _as_int,
@@ -49,6 +49,10 @@ from quantfit.adapters.outbound.json_common import (
 )
 from quantfit.domain.model import LayerGroup, ScanMeta, SensitivityMap
 
+# The sensitivity-map schema version. Versions advance per artifact
+# (ADR-0013) — the recipe sits at 2 while the map stays at 1.
+MAP_SCHEMA_VERSION: Final[int] = 1
+
 
 def map_from_dict(data: object) -> SensitivityMap:
     """Validate parsed JSON and build a `SensitivityMap`.
@@ -61,10 +65,10 @@ def map_from_dict(data: object) -> SensitivityMap:
         The validated map.
 
     Raises:
-        ArtifactError: If any field is missing, mistyped, or violates a
-            schema rule (duplicate group names, unknown ``group_by``,
-            sensitivity keys not matching ``scan.precisions``, and so
-            on).
+        ArtifactError: If the envelope is not `MAP_SCHEMA_VERSION`, or
+            any field is missing, mistyped, or violates a schema rule
+            (duplicate group names, unknown ``group_by``, sensitivity
+            keys not matching ``scan.precisions``, and so on).
 
     Examples:
         Reject an unsupported schema version:
@@ -74,7 +78,7 @@ def map_from_dict(data: object) -> SensitivityMap:
         ```
     """
     root = _get_dict(data, "$")
-    _check_schema_version(root, "$")
+    _check_schema_version(root, "$", expected=MAP_SCHEMA_VERSION)
     model_id = _get_str(root, "model_id", "$")
     _require("scan" in root, "$", 'missing required field "scan"')
     scan = _parse_scan_meta(_get_dict(root["scan"], "$.scan"))
@@ -103,10 +107,11 @@ def map_to_dict(map_: SensitivityMap) -> dict[str, Any]:
 
     Returns:
         A dict that `map_from_dict` accepts and round-trips to an equal
-        map. Sensitivity keys are stringified in descending-bit order.
+        map, under the `MAP_SCHEMA_VERSION` envelope. Sensitivity keys
+        are stringified in descending-bit order.
     """
     return {
-        "quantfit_schema": SCHEMA_VERSION,
+        "quantfit_schema": MAP_SCHEMA_VERSION,
         "model_id": map_.model_id,
         "scan": {
             "metric": map_.scan.metric,

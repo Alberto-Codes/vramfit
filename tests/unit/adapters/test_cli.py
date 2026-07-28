@@ -98,6 +98,93 @@ class TestPlanCommand:
         assert by_group["g1"] == 4
         assert recipe.plan.pins == {"g1": 4}
 
+    def test_runtime_vllm_filters_the_candidate_set(self, tmp_path) -> None:
+        map_path = self._write_map(tmp_path)
+        out = tmp_path / "recipe.json"
+
+        # 90_000 forces downgrades below 8-bit for both groups; with
+        # vLLM's {8, 4} the solver must stop at 4, never at 3 or 2.
+        result = runner.invoke(
+            app,
+            [
+                "plan",
+                str(map_path),
+                "--vram",
+                "100000",
+                "--kv-headroom",
+                "10000",
+                "--runtime",
+                "vllm",
+                "--out",
+                str(out),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        recipe = load_recipe(out)
+        assert recipe.runtime == "vllm"
+        assert all(a.bits in {8, 4} for a in recipe.assignments)
+        assert "for vllm" in result.output
+        # The narrowing is reported, never silent.
+        assert "[3, 2] dropped" in result.output
+
+    def test_runtime_dropping_nothing_prints_no_narrowing_line(self, tmp_path) -> None:
+        raw = make_map([("g0", 160_000, {8: 0.001, 4: 0.010})], precisions=(8, 4))
+        map_path = tmp_path / "sensitivity.json"
+        map_path.write_text(json.dumps(raw))
+        out = tmp_path / "recipe.json"
+
+        result = runner.invoke(
+            app,
+            [
+                "plan",
+                str(map_path),
+                "--vram",
+                "100000",
+                "--kv-headroom",
+                "10000",
+                "--runtime",
+                "vllm",
+                "--out",
+                str(out),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "dropped" not in result.output
+
+    def test_default_runtime_is_llama_cpp(self, tmp_path) -> None:
+        map_path = self._write_map(tmp_path)
+        out = tmp_path / "recipe.json"
+
+        result = runner.invoke(
+            app,
+            [
+                "plan",
+                str(map_path),
+                "--vram",
+                "400000",
+                "--kv-headroom",
+                "50000",
+                "--out",
+                str(out),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert load_recipe(out).runtime == "llama.cpp"
+
+    def test_unknown_runtime_exits_two(self, tmp_path) -> None:
+        map_path = self._write_map(tmp_path)
+
+        result = runner.invoke(
+            app,
+            ["plan", str(map_path), "--vram", "400000", "--runtime", "tgi"],
+        )
+
+        assert result.exit_code == 2
+        assert "unknown runtime" in result.output
+
     def test_infeasible_budget_exits_one_and_reports_gap(self, tmp_path) -> None:
         map_path = self._write_map(tmp_path)
 

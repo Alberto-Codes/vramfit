@@ -8,6 +8,7 @@ from hypothesis import event, given
 from hypothesis import strategies as st
 
 from quantfit.adapters.outbound.sensitivity_map_json import map_from_dict
+from quantfit.domain.runtime import RUNTIME_CAPABILITIES, RuntimeCapabilityError
 from quantfit.domain.solver import InfeasibleBudgetError, group_bytes, solve
 from tests.strategies import raw_sensitivity_maps
 
@@ -73,6 +74,37 @@ class TestSolverProperties:
     def test_negative_overhead_always_rejected(self, raw, overhead) -> None:
         with pytest.raises(ValueError, match="non-negative"):
             solve_simple(map_from_dict(raw), 10_000, overhead)
+
+    @given(
+        raw=raw_sensitivity_maps(),
+        runtime=st.sampled_from(sorted(RUNTIME_CAPABILITIES)),
+        data=st.data(),
+    )
+    def test_runtime_never_assigns_an_unservable_precision(
+        self, raw, runtime, data
+    ) -> None:
+        map_ = map_from_dict(raw)
+        capability = RUNTIME_CAPABILITIES[runtime]
+        servable = [p for p in map_.scan.precisions if p in capability]
+
+        if not servable:
+            event("no servable precision")
+            with pytest.raises(RuntimeCapabilityError):
+                solve_simple(map_, 10**12, 0.0, runtime=runtime)
+            return
+        # Budget between the *filtered* floor and ceiling, so the
+        # downgrade loop actually runs — an unfiltered candidate could
+        # only leak under budget pressure.
+        floor = sum(group_bytes(g.bytes_fp16, servable[-1], 0.0) for g in map_.groups)
+        ceiling = sum(group_bytes(g.bytes_fp16, servable[0], 0.0) for g in map_.groups)
+        budget = data.draw(st.integers(min_value=floor, max_value=ceiling))
+        event("pressured" if budget < ceiling else "unpressured")
+
+        recipe = solve_simple(map_, budget, 0.0, runtime=runtime)
+
+        assert all(a.bits in capability for a in recipe.assignments)
+        assert recipe.plan.predicted_total_bytes <= budget
+        assert recipe.runtime == runtime
 
     @given(raw=raw_sensitivity_maps(), overhead=overheads, data=st.data())
     def test_group_order_never_changes_the_recipe(self, raw, overhead, data) -> None:
