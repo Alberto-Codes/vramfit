@@ -62,10 +62,10 @@ scan  ──►  sensitivity.json  ──►  plan  ──►  recipe.json  ─�
 
 ```python
 class DamageMeter(Protocol):
-    def groups(self) -> tuple[GroupSpec, ...]: ...        # discovery
+    def groups(self) -> tuple[GroupSpec, ...]: ...  # discovery
     def calibration_tokens(self) -> int: ...
-    def measure(self, group: str, bits: int) -> float:    # one cell =
-        ...                                               # one calibration pass
+    def measure(self, group: str, bits: int) -> float:  # one cell =
+        ...  # one calibration pass
 ```
 
 - `measure` returns **finite, non-negative damage** — the port contract
@@ -101,9 +101,9 @@ class DamageMeter(Protocol):
 ## Core loop — perturb, measure, restore
 
 ```python
-param.copy_(rtn_quantize_dequantize(param, bits, block=32))   # perturb
-damage = mean_kl(cached_ref_logprobs, model(batch).logits)     # measure
-param.copy_(original)                                          # restore (finally)
+param.copy_(rtn_quantize_dequantize(param, bits, block=32))  # perturb
+damage = mean_kl(cached_ref_logprobs, model(batch).logits)  # measure
+param.copy_(original)  # restore (finally)
 ```
 
 - **RTN, symmetric, 32-elem blocks** (ADR-0006 v1): approximates pack
