@@ -28,7 +28,7 @@ jobs:
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run uv-secure
-      - run: uvx yamllint -c .yamllint.yaml .
+      - run: uvx yamllint==1.38.0 -c .yamllint.yaml .
       - uses: raven-actions/actionlint@3d39aea434753780c3b3d4a1a31c854b4dbf49d7  # v2
       - run: uv cache prune --ci
         if: always()
