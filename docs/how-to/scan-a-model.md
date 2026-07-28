@@ -78,13 +78,15 @@ high-water marks. Any JSONL consumer works. One-liner analysis with
 DuckDB:
 
 ```bash
-duckdb -c "SELECT group_, bits, damage, seconds \
+duckdb -c "SELECT \"group\", bits, damage, seconds \
   FROM read_json_auto('sensitivity.runlog.jsonl') \
   WHERE event = 'cell_measured' ORDER BY seconds DESC LIMIT 10"
 ```
 
 Splunk, Postgres `COPY`, and log collectors ingest the same file
-unchanged.
+unchanged. Reruns and resumes append to the same file — filter on
+``run_id`` to select one run. A run-log write failure warns once and
+disables further events; the scan continues.
 
 ## Choosing calibration data
 

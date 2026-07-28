@@ -57,7 +57,7 @@ flowchart TD
         TORCH["scan/ torch meter<br/>(behind the scan extra)"]
     end
     subgraph ports["ports"]
-        P["Protocols: SensitivityMapSource/Sink,<br/>RecipeSink, ModelShapeSource,<br/>DamageMeter, ScanCheckpointStore"]
+        P["Protocols: SensitivityMapSource/Sink,<br/>RecipeSink, ModelShapeSource,<br/>DamageMeter, ScanCheckpointStore,<br/>RunLogSink"]
     end
     subgraph domain["domain (pure)"]
         D["model · budget · solver · scan"]
@@ -121,8 +121,9 @@ The split of responsibilities:
 
 ## Why the heavy dependencies stay optional
 
-The base install carries typer only
-([ADR-0005](../adr/0005-heavy-deps-as-extras.md)). torch, transformers,
+The base install carries typer and structlog only
+([ADR-0005](../adr/0005-heavy-deps-as-extras.md), as amended by
+[ADR-0011](../adr/0011-run-logs-and-error-root.md)). torch, transformers,
 and accelerate arrive with `quantfit[scan]` and are imported in exactly
 one package, lazily. This is not only install hygiene: it forces the
 solver and the artifacts to stay pure, which is what makes the pipeline

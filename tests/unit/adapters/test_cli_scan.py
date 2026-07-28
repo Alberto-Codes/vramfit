@@ -410,3 +410,53 @@ def test_runlog_option_overrides_the_default_path(tmp_path, monkeypatch) -> None
     assert result.exit_code == 0, result.output
     assert read_run_log(custom)[0]["event"] == "scan_started"
     assert not (tmp_path / "sensitivity.runlog.jsonl").exists()
+
+
+def test_every_event_carries_one_run_id_per_invocation(tmp_path, monkeypatch) -> None:
+    from quantfit.adapters.outbound.run_log_jsonl import read_run_log
+
+    install_meter(
+        monkeypatch, MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES), tokens=64)
+    )
+
+    first, _ = invoke_scan(tmp_path)
+    second, _ = invoke_scan(tmp_path)
+
+    assert first.exit_code == 0 and second.exit_code == 0
+    events = read_run_log(tmp_path / "sensitivity.runlog.jsonl")
+    run_ids = {e["run_id"] for e in events}
+    assert len(run_ids) == 2
+    starts = [e for e in events if e["event"] == "scan_started"]
+    assert len({s["run_id"] for s in starts}) == 2
+
+
+def test_run_log_failure_warns_once_and_the_scan_continues(
+    tmp_path, monkeypatch
+) -> None:
+    from quantfit.adapters.outbound.run_log_jsonl import JsonlRunLogFile
+
+    install_meter(
+        monkeypatch, MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES), tokens=64)
+    )
+
+    def refuse(self, event, fields):
+        raise OSError("No space left on device")
+
+    monkeypatch.setattr(JsonlRunLogFile, "emit", refuse)
+
+    result, out = invoke_scan(tmp_path)
+
+    assert result.exit_code == 0, result.output
+    assert result.output.count("warning: run log disabled") == 1
+    assert load_sensitivity_map(out).model_id == "test/model"
+
+
+def test_missing_runlog_directory_exits_with_usage_error(tmp_path, monkeypatch) -> None:
+    install_meter(
+        monkeypatch, MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES), tokens=64)
+    )
+
+    result, _ = invoke_scan(tmp_path, "--runlog", str(tmp_path / "nope" / "x.jsonl"))
+
+    assert result.exit_code == 2
+    assert "--runlog" in result.output

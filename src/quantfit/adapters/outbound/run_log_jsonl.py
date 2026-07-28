@@ -34,19 +34,25 @@ RUNLOG_VERSION: Final[int] = 1
 
 
 def _build_logger(handle: Any) -> Any:
-    """Wrap a writable handle in a JSON-rendering structlog logger.
+    """Wrap a writable handle in a strict JSON-rendering logger.
 
     Args:
         handle: An open text file handle in append mode.
 
     Returns:
         A bound logger whose ``msg`` writes one JSON line per event.
+        Non-serializable or non-finite fields raise at emit time.
     """
     return structlog.wrap_logger(
         structlog.PrintLogger(file=handle),
         processors=[
             structlog.processors.TimeStamper(fmt="iso", utc=True, key="ts"),
-            structlog.processors.JSONRenderer(sort_keys=True),
+            # Strict rendering: a non-serializable field raises instead
+            # of degrading to repr, and NaN/Infinity raise instead of
+            # emitting invalid JSON that only Python parsers accept.
+            structlog.processors.JSONRenderer(
+                sort_keys=True, allow_nan=False, default=None
+            ),
         ],
     )
 
@@ -54,6 +60,10 @@ def _build_logger(handle: Any) -> Any:
 @dataclass
 class JsonlRunLogFile:
     """`RunLogSink` adapter appending JSON lines to one file.
+
+    Rendering is strict: bad fields raise instead of degrading the
+    machine contract silently. Identity is the path — the cached
+    handle stays out of equality and construction.
 
     Attributes:
         path (Path): The run-log file. Created on first emit, appended
@@ -69,7 +79,7 @@ class JsonlRunLogFile:
     """
 
     path: Path
-    _logger: Any = field(default=None, repr=False)
+    _logger: Any = field(default=None, repr=False, init=False, compare=False)
 
     def emit(self, event: str, fields: Mapping[str, object]) -> None:
         """Append one event line, flushed immediately.
@@ -80,6 +90,8 @@ class JsonlRunLogFile:
 
         Raises:
             OSError: If the file cannot be opened or written.
+            TypeError: If a field is not JSON-serializable.
+            ValueError: If a field is NaN or infinite — invalid JSON.
         """
         if self._logger is None:
             handle = self.path.open("a", encoding="utf-8")
@@ -91,7 +103,9 @@ def read_run_log(path: Path) -> list[dict[str, Any]]:
     """Read a run-log file back into event dicts.
 
     A convenience for tests and analysis — the file is plain JSONL and
-    needs no special reader.
+    needs no special reader. A torn final line (the signature of a
+    crash mid-write) is dropped, honoring the crash-tolerance rule of
+    ADR-0011. A torn line anywhere else is corruption and raises.
 
     Args:
         path: The run-log file.
@@ -101,10 +115,17 @@ def read_run_log(path: Path) -> list[dict[str, Any]]:
 
     Raises:
         OSError: If the file cannot be read.
-        ValueError: If a line is not valid JSON.
+        ValueError: If a non-final line is not valid JSON.
     """
-    return [
-        json.loads(line)
-        for line in path.read_text(encoding="utf-8").splitlines()
-        if line.strip()
+    lines = [
+        line for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
     ]
+    events: list[dict[str, Any]] = []
+    for i, line in enumerate(lines):
+        try:
+            events.append(json.loads(line))
+        except ValueError:
+            if i == len(lines) - 1:
+                break
+            raise
+    return events

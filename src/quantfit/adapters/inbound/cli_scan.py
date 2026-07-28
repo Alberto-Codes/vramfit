@@ -7,8 +7,8 @@ base install never imports torch), drives the `DamageMeter` and
 `ScanCheckpointStore` ports cell by cell, and hands the finished
 measurements to the pure assembly logic in [quantfit.domain.scan][].
 Every failure — a missing extra, a bad destination, an unstable
-measurement, a checkpoint write — halts with a clean ``error:`` line,
-the checkpoint keeps every finished cell, and the run log records the
+measurement, a checkpoint write — halts with a clean ``error:`` line.
+The checkpoint keeps every finished cell. The run log records the
 halt with its stage (ADR-0011).
 
 Examples:
@@ -27,13 +27,17 @@ See Also:
 from __future__ import annotations
 
 import datetime
-import resource
-import time
 from pathlib import Path
 from typing import Annotated, Literal
 
 import typer
 
+from quantfit.adapters.inbound.scan_events import (
+    SafeRunLog,
+    measure_cells,
+    rss_hwm_gb,
+    start_run,
+)
 from quantfit.adapters.outbound.json_common import ArtifactError
 from quantfit.adapters.outbound.run_log_jsonl import JsonlRunLogFile
 from quantfit.adapters.outbound.scan_checkpoint_json import JsonScanCheckpointFile
@@ -42,14 +46,12 @@ from quantfit.domain.budget import parse_size
 from quantfit.domain.errors import QuantfitError
 from quantfit.domain.model import ScanMeta
 from quantfit.domain.scan import (
-    Measurement,
     assemble_map,
     plan_measurements,
     scan_fingerprint,
 )
 from quantfit.ports.outbound import (
     DamageMeter,
-    RunLogSink,
     ScanCheckpointStore,
     SensitivityMapSink,
 )
@@ -131,83 +133,24 @@ def _build_meter(
     )
 
 
-def _rss_hwm_gb() -> float:
-    """Report the process resident-set high-water mark in GB.
-
-    Returns:
-        ``ru_maxrss`` converted from KiB (the Linux unit) to GB,
-        rounded to two decimals.
-    """
-    return round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 976_562.5, 2)
-
-
-def _measure_cells(
-    meter: DamageMeter,
-    store: ScanCheckpointStore,
-    fingerprint: str,
-    done: list[Measurement],
-    todo: tuple[tuple[str, int], ...],
-    run_log: RunLogSink,
-) -> list[Measurement]:
-    """Measure every remaining cell, checkpointing and logging each one.
+def _open_run_log(out: Path, runlog: Path | None) -> SafeRunLog:
+    """Resolve, validate, and wrap the run-log destination.
 
     Args:
-        meter: The damage meter to drive.
-        store: The checkpoint store recording each finished cell.
-        fingerprint: The scan's identity string.
-        done: Measurements already checkpointed.
-        todo: Remaining (group, bits) cells, in measurement order.
-        run_log: Sink for ``cell_measured`` and ``scan_halted`` events.
+        out: The sensitivity-map path the default derives from.
+        runlog: An explicit run-log path, or None for the default.
 
     Returns:
-        All measurements, checkpointed ones first.
+        The policy-wrapped sink.
 
     Raises:
-        typer.Exit: With code 1 when a measurement or checkpoint write
-            fails — the message reports how many cells the checkpoint
-            keeps.
+        typer.BadParameter: If the run-log directory does not exist —
+            rejected before the model load burns an hour.
     """
-    measurements = list(done)
-    total = len(done) + len(todo)
-    for i, (group, bits) in enumerate(todo, start=len(done) + 1):
-        started = time.monotonic()
-        try:
-            damage = meter.measure(group, bits)
-            measurement = Measurement(group=group, bits=bits, damage=damage)
-            store.append(fingerprint, measurement)
-        except (RuntimeError, ValueError, OSError) as exc:
-            typer.echo(
-                f"error: scan halted at {group} {bits}-bit: {exc} "
-                f"(checkpoint keeps {i - 1} cells)",
-                err=True,
-            )
-            run_log.emit(
-                "scan_halted",
-                {
-                    "stage": "measure",
-                    "group": group,
-                    "bits": bits,
-                    "error": str(exc),
-                    "cells_kept": i - 1,
-                    "rss_hwm_gb": _rss_hwm_gb(),
-                },
-            )
-            raise typer.Exit(code=1) from exc
-        measurements.append(measurement)
-        run_log.emit(
-            "cell_measured",
-            {
-                "group": group,
-                "bits": bits,
-                "damage": damage,
-                "seconds": round(time.monotonic() - started, 3),
-                "cell": i,
-                "of": total,
-                "rss_hwm_gb": _rss_hwm_gb(),
-            },
-        )
-        typer.echo(f"[{i}/{total}] {group} @ {bits}-bit damage {damage:.6f}")
-    return measurements
+    path = runlog if runlog is not None else out.with_name(out.stem + ".runlog.jsonl")
+    if not path.parent.is_dir():
+        raise typer.BadParameter(f"--runlog: directory {path.parent} does not exist")
+    return SafeRunLog(JsonlRunLogFile(path))
 
 
 def _parse_precisions(text: str) -> tuple[int, ...]:
@@ -245,57 +188,6 @@ def _parse_precisions(text: str) -> tuple[int, ...]:
     except ValueError as exc:
         raise typer.BadParameter(f"--precisions: {exc}") from exc
     return precisions
-
-
-def _start_run(
-    run_log: RunLogSink,
-    build: dict[str, object],
-    meter_args: tuple,
-) -> DamageMeter:
-    """Emit the opening events and build the meter.
-
-    Args:
-        run_log: Sink for ``scan_started``/``meter_built``/halt events.
-        build: The ``scan_started`` payload.
-        meter_args: Positional arguments for `_build_meter`.
-
-    Returns:
-        The loaded meter.
-
-    Raises:
-        typer.Exit: With code 1 when the meter cannot be built — the
-            command echoes the failure and logs ``scan_halted`` with
-            ``cells_kept`` 0.
-    """
-    run_log.emit("scan_started", build)
-    build_started = time.monotonic()
-    # Only a failed adapter import means "extra not installed" —
-    # construction errors (missing tokenizer backend, CUDA out of
-    # memory, bad repo) must surface as themselves.
-    try:
-        meter = _build_meter(*meter_args[:2], **meter_args[2])
-    except (OSError, ValueError, RuntimeError, ImportError) as exc:
-        typer.echo(f"error: {exc}", err=True)
-        run_log.emit(
-            "scan_halted",
-            {
-                "stage": "meter_build",
-                "error": str(exc),
-                "cells_kept": 0,
-                "rss_hwm_gb": _rss_hwm_gb(),
-            },
-        )
-        raise typer.Exit(code=1) from exc
-    run_log.emit(
-        "meter_built",
-        {
-            "seconds": round(time.monotonic() - build_started, 3),
-            "calibration_tokens": meter.calibration_tokens(),
-            "groups": len(meter.groups()),
-            "rss_hwm_gb": _rss_hwm_gb(),
-        },
-    )
-    return meter
 
 
 def scan(
@@ -346,16 +238,17 @@ def scan(
     GPU 0 (parsed with the project size grammar, validated up front),
     keeping workspace free for activations and logits. Every run
     appends machine-readable events to ``--runlog`` (default beside
-    ``--out``) — the run log from ADR-0011, whose every halt event
-    carries the same ``cells_kept`` and memory fields. The meter
+    ``--out``), the ADR-0011 run log. Every halt event carries the
+    same fields, with ``cells_kept`` null when the stage cannot know
+    the count. The meter
     refuses models whose groups fall off real devices — see the
     how-to for the current size limit.
 
     Raises:
         typer.BadParameter: If ``--precisions``, ``--group-by``, or
             ``--gpu-memory`` is malformed, ``--gpu-memory`` is given
-            without ``--device auto``, or the ``--out`` directory does
-            not exist.
+            without ``--device auto``, or the ``--out`` or ``--runlog``
+            directory does not exist.
         typer.Exit: With code 1 when the scan extra is missing, the
             model or calibration cannot load, the checkpoint belongs to
             a different scan, a measurement fails, a checkpoint write
@@ -390,10 +283,8 @@ def scan(
         except ValueError as exc:
             raise typer.BadParameter(f"--gpu-memory: {exc}") from exc
 
-    run_log: RunLogSink = JsonlRunLogFile(
-        runlog if runlog is not None else out.with_name(out.stem + ".runlog.jsonl")
-    )
-    meter = _start_run(
+    run_log = _open_run_log(out, runlog)
+    meter = start_run(
         run_log,
         {
             "model": model,
@@ -403,16 +294,14 @@ def scan(
             "device": device,
             "gpu_memory_bytes": gpu_memory_bytes,
         },
-        (
+        lambda: _build_meter(
             model,
             calibration,
-            {
-                "max_tokens": max_tokens,
-                "group_by": group_by,
-                "device": device,
-                "trust_remote_code": trust_remote_code,
-                "gpu_memory": gpu_memory_bytes,
-            },
+            max_tokens=max_tokens,
+            group_by=group_by,
+            device=device,
+            trust_remote_code=trust_remote_code,
+            gpu_memory=gpu_memory_bytes,
         ),
     )
 
@@ -452,8 +341,8 @@ def scan(
             {
                 "stage": "checkpoint_load",
                 "error": str(exc),
-                "cells_kept": 0,
-                "rss_hwm_gb": _rss_hwm_gb(),
+                "cells_kept": None,
+                "rss_hwm_gb": rss_hwm_gb(),
             },
         )
         raise typer.Exit(code=1) from exc
@@ -461,7 +350,7 @@ def scan(
     if done:
         typer.echo(f"resuming: {len(done)} of {len(done) + len(todo)} cells done")
         run_log.emit("resume_loaded", {"cells": len(done), "remaining": len(todo)})
-    measurements = _measure_cells(meter, store, fingerprint, list(done), todo, run_log)
+    measurements = measure_cells(meter, store, fingerprint, list(done), todo, run_log)
 
     sink: SensitivityMapSink = JsonSensitivityMapFile(out)
     try:
@@ -475,7 +364,7 @@ def scan(
                 "stage": "map_write",
                 "error": str(exc),
                 "cells_kept": len(measurements),
-                "rss_hwm_gb": _rss_hwm_gb(),
+                "rss_hwm_gb": rss_hwm_gb(),
             },
         )
         raise typer.Exit(code=1) from exc
@@ -485,7 +374,7 @@ def scan(
             "out": str(out),
             "groups": len(specs),
             "cells": len(measurements),
-            "rss_hwm_gb": _rss_hwm_gb(),
+            "rss_hwm_gb": rss_hwm_gb(),
         },
     )
     typer.echo(

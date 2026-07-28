@@ -2,8 +2,8 @@
 
 One root gives the CLI a single honest catch: anything that is a
 `QuantfitError` carries a user-facing message and maps to a clean
-``error:`` line. Foreign exceptions (torch, transformers, the OS) are
-translated into `QuantfitError` subclasses at the adapter boundary.
+``error:`` line. The adapters translate foreign exceptions (torch,
+transformers, the OS) into `QuantfitError` subclasses at the boundary.
 
 Examples:
     Catch every quantfit failure at the composition root:

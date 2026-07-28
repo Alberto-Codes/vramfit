@@ -35,7 +35,12 @@ The human channel works: `typer.echo` progress lines and clean
    tense: `scan_started`, `meter_built`, `resume_loaded`,
    `cell_measured`, `scan_finished`, `scan_halted`. `cell_measured`
    carries group, bits, damage, seconds, and the host RSS high-water
-   mark. The file appends and tolerates crashes.
+   mark. Halt events carry `cells_kept`, null when the stage cannot
+   know the count. Every line carries the run's `run_id`, so reruns
+   and resumes stay separable in one file. The file appends and
+   tolerates crashes — the reader drops a torn final line. A write
+   failure warns once on the human channel and disables the run log:
+   measurement work outlives its record.
 3. **structlog renders the events.** structlog is pure Python. It
    joins the base dependencies, which amends the base-dependency
    clause of [ADR-0005](0005-heavy-deps-as-extras.md) from "typer
@@ -62,6 +67,8 @@ The human channel works: `typer.echo` progress lines and clean
   change, and the first `cell_measured` absorbs its seconds today.
 - Full collapse of the CLI's per-command handlers onto the
   `QuantfitError` root (the scan paths converge first).
+- Translation of the torch meter's foreign RuntimeErrors, and its own
+  stdlib raises, under the root.
 - Whether run logs join the provenance story for third-party map
   submissions (issue #11).
 - Whether `cell_measured` should carry the GPU memory high-water mark

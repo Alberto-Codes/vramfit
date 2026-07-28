@@ -248,11 +248,17 @@ class RunLogSink(Protocol):
     def emit(self, event: str, fields: Mapping[str, object]) -> None:
         """Record one event with its fields.
 
+        The keys ``event``, ``ts``, ``quantfit_runlog``, and ``run_id``
+        belong to the envelope — callers must not pass them in
+        ``fields``.
+
         Args:
             event: Past-tense event name, e.g. ``cell_measured``.
             fields: JSON-representable payload for the event.
 
         Raises:
             OSError: If the backing store cannot be written.
+            TypeError: If a field is not JSON-representable.
+            ValueError: If a field is NaN or infinite.
         """
         ...

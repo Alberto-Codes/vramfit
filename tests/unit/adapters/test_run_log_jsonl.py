@@ -50,3 +50,36 @@ def test_events_reach_disk_before_the_handle_closes(tmp_path) -> None:
 
     assert path.stat().st_size > 0
     assert read_run_log(path)[0]["event"] == "scan_started"
+
+
+def test_non_serializable_field_raises_instead_of_degrading(tmp_path) -> None:
+    sink = JsonlRunLogFile(tmp_path / "x.jsonl")
+
+    with pytest.raises(TypeError):
+        sink.emit("scan_started", {"bad": object()})
+
+
+def test_non_finite_field_raises_instead_of_corrupting_json(tmp_path) -> None:
+    sink = JsonlRunLogFile(tmp_path / "x.jsonl")
+
+    with pytest.raises(ValueError, match=r"[Nn]a[Nn]|allow_nan"):
+        sink.emit("cell_measured", {"damage": float("nan")})
+
+
+def test_reader_drops_a_torn_final_line(tmp_path) -> None:
+    path = tmp_path / "x.jsonl"
+    JsonlRunLogFile(path).emit("scan_started", {})
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write('{"event": "cell_measu')  # crash mid-write
+
+    events = read_run_log(path)
+
+    assert [e["event"] for e in events] == ["scan_started"]
+
+
+def test_reader_raises_on_a_torn_middle_line(tmp_path) -> None:
+    path = tmp_path / "x.jsonl"
+    path.write_text('{"broken\n{"event": "scan_finished", "quantfit_runlog": 1}\n')
+
+    with pytest.raises(ValueError):
+        read_run_log(path)

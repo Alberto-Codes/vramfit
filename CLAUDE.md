@@ -105,7 +105,8 @@ Pyramid per ADR-0009, rules in `.claude/rules/pytest.md`:
 
 ## Key Constraints
 
-- Base install carries typer only; torch/transformers land behind extras
+- Base install carries typer and structlog only (ADR-0011 amendment);
+  torch/transformers land behind extras
   ([ADR-0005](docs/adr/0005-heavy-deps-as-extras.md)). The plan step must
   stay importable without torch.
 - Artifact schemas carry `quantfit_schema`; breaking changes bump it.
