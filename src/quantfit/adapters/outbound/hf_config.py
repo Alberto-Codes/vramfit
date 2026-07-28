@@ -82,14 +82,16 @@ class HfConfigFile:
 
         ```python
         source = HfConfigFile(Path("config.json"))
-        shape = source.shape()
+        shape = source.load()
         ```
     """
 
     path: Path
 
-    def shape(self) -> ModelShape:
-        """Load the model's attention geometry from `path`.
+    def load(self) -> ModelShape:
+        """Read and parse the attention geometry from `path`.
+
+        Named per the `ModelShapeSource` port contract.
 
         Returns:
             The parsed shape.

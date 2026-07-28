@@ -17,22 +17,29 @@ import pytest
 from quantfit.adapters.outbound.hf_config import HfConfigFile
 from quantfit.adapters.outbound.json_common import ArtifactError
 from quantfit.adapters.outbound.recipe_json import JsonRecipeFile, load_recipe
+from quantfit.adapters.outbound.scan_checkpoint_json import JsonScanCheckpointFile
 from quantfit.adapters.outbound.sensitivity_map_json import (
     JsonSensitivityMapFile,
+    load_sensitivity_map,
     map_from_dict,
     save_sensitivity_map,
 )
 from quantfit.domain.budget import ModelShape
 from quantfit.domain.model import Recipe, SensitivityMap
+from quantfit.domain.scan import Measurement
 from quantfit.domain.solver import solve
 from quantfit.ports.outbound import (
     ModelShapeSource,
     RecipeSink,
+    ScanCheckpointStore,
+    SensitivityMapSink,
     SensitivityMapSource,
 )
 from tests.fakes import (
     MemoryModelShapeSource,
     MemoryRecipeSink,
+    MemoryScanCheckpointStore,
+    MemorySensitivityMapSink,
     MemorySensitivityMapSource,
 )
 from tests.unit.conftest import make_map
@@ -190,18 +197,18 @@ def _fake_shape_source(tmp_path: Path, shape: ModelShape | None):
     "build", [_real_shape_source, _fake_shape_source], ids=["real-json", "fake-memory"]
 )
 class TestModelShapeSourceContract:
-    def test_shape_returns_the_configured_geometry(self, build, tmp_path) -> None:
+    def test_load_returns_the_configured_geometry(self, build, tmp_path) -> None:
         source: ModelShapeSource = build(tmp_path, SAMPLE_SHAPE)
 
-        assert source.shape() == SAMPLE_SHAPE
+        assert source.load() == SAMPLE_SHAPE
 
-    def test_shape_without_valid_config_raises_value_error(
+    def test_load_without_valid_config_raises_value_error(
         self, build, tmp_path
     ) -> None:
         source: ModelShapeSource = build(tmp_path, None)
 
         with pytest.raises(ValueError):
-            source.shape()
+            source.load()
 
 
 @pytest.mark.contract
@@ -218,4 +225,107 @@ class TestModelShapeSourceMissingBackingContract:
         source: ModelShapeSource = build(tmp_path)
 
         with pytest.raises((OSError, ValueError)):
-            source.shape()
+            source.load()
+
+
+# --- SensitivityMapSink ----------------------------------------------------- #
+
+
+def _real_map_sink(
+    tmp_path: Path,
+) -> tuple[SensitivityMapSink, Callable[[], SensitivityMap]]:
+    path = tmp_path / "map.json"
+    return JsonSensitivityMapFile(path), lambda: load_sensitivity_map(path)
+
+
+def _fake_map_sink(
+    tmp_path: Path,
+) -> tuple[SensitivityMapSink, Callable[[], SensitivityMap]]:
+    sink = MemorySensitivityMapSink()
+    return sink, lambda: sink.last
+
+
+@pytest.mark.contract
+@pytest.mark.parametrize(
+    "build", [_real_map_sink, _fake_map_sink], ids=["real-json", "fake-memory"]
+)
+class TestSensitivityMapSinkContract:
+    def test_saved_map_reads_back_equal(self, build, tmp_path) -> None:
+        sink, readback = build(tmp_path)
+        map_ = sample_map()
+
+        sink.save(map_)
+
+        assert readback() == map_
+
+    def test_second_save_wins(self, build, tmp_path) -> None:
+        sink, readback = build(tmp_path)
+        first = sample_map()
+        second = map_from_dict(
+            make_map([("solo", 4000, {8: 0.02, 4: 0.2, 3: 0.4, 2: 2.0})])
+        )
+
+        sink.save(first)
+        sink.save(second)
+
+        assert readback() == second
+
+
+# --- ScanCheckpointStore ---------------------------------------------------- #
+
+FINGERPRINT = "test/model|kl_divergence|calib.txt|1024|layer|8,4"
+
+
+def _real_checkpoint_store(tmp_path: Path) -> ScanCheckpointStore:
+    return JsonScanCheckpointFile(tmp_path / "scan.checkpoint.json")
+
+
+def _fake_checkpoint_store(tmp_path: Path) -> ScanCheckpointStore:
+    return MemoryScanCheckpointStore()
+
+
+@pytest.mark.contract
+@pytest.mark.parametrize(
+    "build",
+    [_real_checkpoint_store, _fake_checkpoint_store],
+    ids=["real-json", "fake-memory"],
+)
+class TestScanCheckpointStoreContract:
+    def test_fresh_store_loads_empty(self, build, tmp_path) -> None:
+        store: ScanCheckpointStore = build(tmp_path)
+
+        assert store.load(FINGERPRINT) == ()
+
+    def test_appended_measurements_read_back_in_order(self, build, tmp_path) -> None:
+        store: ScanCheckpointStore = build(tmp_path)
+        first = Measurement(group="g0", bits=8, damage=0.001)
+        second = Measurement(group="g0", bits=4, damage=0.02)
+
+        store.append(FINGERPRINT, first)
+        store.append(FINGERPRINT, second)
+
+        assert store.load(FINGERPRINT) == (first, second)
+
+    def test_load_with_different_fingerprint_raises_value_error(
+        self, build, tmp_path
+    ) -> None:
+        store: ScanCheckpointStore = build(tmp_path)
+        store.append(FINGERPRINT, Measurement(group="g0", bits=8, damage=0.001))
+
+        with pytest.raises(ValueError, match="different scan"):
+            store.load("another|scan")
+
+    def test_append_with_different_fingerprint_raises_value_error(
+        self, build, tmp_path
+    ) -> None:
+        store: ScanCheckpointStore = build(tmp_path)
+        store.append(FINGERPRINT, Measurement(group="g0", bits=8, damage=0.001))
+
+        with pytest.raises(ValueError, match="different scan"):
+            store.append("another|scan", Measurement(group="g0", bits=4, damage=0.1))
+
+    def test_load_is_repeatable(self, build, tmp_path) -> None:
+        store: ScanCheckpointStore = build(tmp_path)
+        store.append(FINGERPRINT, Measurement(group="g0", bits=8, damage=0.001))
+
+        assert store.load(FINGERPRINT) == store.load(FINGERPRINT)
