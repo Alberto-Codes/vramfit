@@ -10,6 +10,8 @@ Only floating-point tensors with 2+ dimensions join layer groups —
 norms and biases stay at reference precision and are not scanned.
 A measurement that fails to restore the model poisons the meter: it
 refuses further cells rather than measure against corrupt weights.
+A model whose groups get offloaded off real devices is refused at
+construction — offloaded weights cannot be perturbed in place.
 
 Examples:
     Measure one cell on a local checkpoint:
@@ -81,6 +83,7 @@ class TorchDamageMeter:
         device: str = "auto",
         trust_remote_code: bool = False,
         block_size: int = DEFAULT_BLOCK_SIZE,
+        max_gpu_memory: int | None = None,
     ) -> None:
         """Load the model, tokenize the calibration set, discover groups.
 
@@ -95,9 +98,15 @@ class TorchDamageMeter:
             trust_remote_code: Allow model repos with custom modeling
                 code (the north-star target needs this).
             block_size: Elements per quantization scale block.
+            max_gpu_memory: Byte cap on GPU 0 model shards for ``auto``
+                sharding. Without a cap, sharding packs the card full
+                and leaves no workspace for activations and logits.
 
         Raises:
-            ValueError: If the calibration file yields too few tokens.
+            ValueError: If the calibration file yields too few tokens,
+                or sharding offloaded any quantizable group off real
+                devices — offloaded weights cannot be perturbed in
+                place, and measuring them would record zero damage.
             OSError: If the model or calibration file cannot be read.
         """
         self.model_id = model_id
@@ -105,6 +114,7 @@ class TorchDamageMeter:
             model_id,
             dtype=torch.bfloat16,
             device_map=device,
+            max_memory=_max_memory(device, max_gpu_memory),
             trust_remote_code=trust_remote_code,
         )
         self._model.eval()
@@ -117,6 +127,7 @@ class TorchDamageMeter:
         )
         self._block_size = block_size
         self._groups = _discover_groups(self._model, group_by)
+        _reject_offloaded_groups(self._model, self._groups)
         self._reference: list[torch.Tensor] | None = None
         self._poisoned = False
 
@@ -256,6 +267,58 @@ class TorchDamageMeter:
                 total += mean_kl(ref, logits) * batch.numel()
                 tokens += batch.numel()
         return total / tokens
+
+
+def _max_memory(device: str, max_gpu_memory: int | None) -> dict[int | str, int] | None:
+    """Build the accelerate ``max_memory`` map for a GPU shard cap.
+
+    The cap applies to GPU 0 only — the reference box has one card.
+    The integer device key is required: accelerate rejects ``"0"``.
+
+    Args:
+        device: The ``device_map`` value.
+        max_gpu_memory: Byte cap on GPU 0 shards, or None for no cap.
+
+    Returns:
+        The map for ``auto`` sharding with a cap, otherwise None.
+    """
+    if max_gpu_memory is None or device != "auto":
+        return None
+    return {0: max_gpu_memory, "cpu": 999 * 2**30}
+
+
+def _reject_offloaded_groups(
+    model: torch.nn.Module, groups: dict[str, list[str]]
+) -> None:
+    """Refuse a model whose quantizable groups left real devices.
+
+    ``auto`` sharding offloads overflow modules and exposes their
+    parameters on the ``meta`` device. An in-place perturbation of a
+    meta parameter is either an error or a silent no-op, and a no-op
+    measures as zero damage — a poisoned map. Refusing is the only
+    honest option until offload-aware perturbation exists.
+
+    Args:
+        model: The loaded model.
+        groups: Discovered group membership.
+
+    Raises:
+        ValueError: If any group contains a meta parameter. The
+            message counts affected groups and names the first three.
+    """
+    params = dict(model.named_parameters())
+    offloaded = [
+        name
+        for name, members in groups.items()
+        if any(params[m].is_meta for m in members)
+    ]
+    if offloaded:
+        shown = ", ".join(offloaded[:3])
+        raise ValueError(
+            f"{len(offloaded)} of {len(groups)} groups were offloaded off the "
+            f"GPU and cannot be measured (first: {shown}) — raise --gpu-memory, "
+            "use a smaller model, or wait for offload-aware scanning"
+        )
 
 
 def _discover_groups(
