@@ -26,17 +26,16 @@ The pack step drives external tools — none ship with quantfit:
    cmake --build llama.cpp/build -j --target llama-quantize
    ```
 
-2. A Python able to run `convert_hf_to_gguf.py`. It needs torch and
-   sentencepiece. The quantfit `scan` extra covers torch — add
-   sentencepiece beside it:
+2. A Python able to run `convert_hf_to_gguf.py`. The `pack` extra
+   provisions it (torch, transformers, sentencepiece):
 
    ```bash
-   uv pip install "quantfit[scan]" sentencepiece
+   uv pip install "quantfit[pack]"
    ```
 
-   Without sentencepiece the Qwen converter dies with
-   `ModuleNotFoundError` before it can fall back to the BPE vocab
-   path.
+   sentencepiece matters even for BPE models: the Qwen converter
+   probes it first and dies with `ModuleNotFoundError` when it is
+   absent, before it can fall back to the BPE vocab path.
 
 ## Basic invocation
 

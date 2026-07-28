@@ -138,8 +138,8 @@ def pack(
     python_bin: Annotated[
         Path | None,
         typer.Option(
-            help="Interpreter for the convert script (needs torch and "
-            "sentencepiece). Default: this one."
+            help="Interpreter for the convert script — the pack extra "
+            "provisions its dependencies. Default: this one."
         ),
     ] = None,
     threads: Annotated[int, typer.Option(min=1, help="Quantizer thread count.")] = 8,
@@ -153,9 +153,11 @@ def pack(
     Converts the checkpoint to an f16 base GGUF once (reusing an
     existing file), then drives ``llama-quantize`` with one type
     override per layer group; the embedding assignment also pins an
-    untied output head (ADR-0012). The command re-checks the packed
-    file's real bytes against the recipe's weight budget —
-    nominal-bit predictions undershoot GGUF's effective bits.
+    untied output head (ADR-0012). The ``--python-bin`` interpreter
+    runs the convert script — the ``pack`` extra provisions its
+    dependencies. The command re-checks the packed file's real bytes
+    against the recipe's weight budget — nominal-bit predictions
+    undershoot GGUF's effective bits.
 
     Raises:
         typer.BadParameter: If the llama.cpp checkout misses its

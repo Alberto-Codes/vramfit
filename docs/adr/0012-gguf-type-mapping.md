@@ -83,9 +83,11 @@ scan does not produce one today. K-quants need no extra input.
   not, `llama-quantize` falls back per tensor and warns. Every
   Qwen2.5-3B weight row divides by 256.
 - The pack step needs a llama.cpp checkout with built tools and a
-  Python able to import torch for `convert_hf_to_gguf.py`. Both stay
-  outside the package — the adapter drives them as subprocesses, and
-  the base install stays torch-free (ADR-0005).
+  Python able to run `convert_hf_to_gguf.py`. Both stay outside the
+  package — the adapter drives them as subprocesses, and the base
+  install stays torch-free (ADR-0005). The `pack` extra provisions
+  the convert interpreter (torch, transformers, sentencepiece)
+  without adding a single import to quantfit.
 
 ## Open questions
 

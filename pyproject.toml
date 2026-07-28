@@ -50,6 +50,14 @@ scan = [
     # versions ignore it silently and load fp32 at twice the memory.
     "transformers>=4.56",
 ]
+# The pack extra provisions the interpreter for llama.cpp's
+# convert_hf_to_gguf.py — quantfit never imports these itself
+# (ADR-0012). sentencepiece is load-bearing: some converters (Qwen)
+# probe it first and only fall back to BPE on FileNotFoundError.
+pack = [
+    "quantfit[scan]",
+    "sentencepiece>=0.2",
+]
 docs = [
     "mkdocs>=1.6,<2",
     "mkdocs-material>=9.6",

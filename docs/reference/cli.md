@@ -146,8 +146,9 @@ quantfit pack RECIPE
   --out PATH             Packed model path  [default: packed.gguf]
   --base-gguf PATH       f16 base GGUF, reused when present
                          [default: <model name>-f16.gguf beside --out]
-  --python-bin PATH      Interpreter for the convert script — needs
-                         torch and sentencepiece  [default: current]
+  --python-bin PATH      Interpreter for the convert script — install
+                         quantfit[pack] to provision it
+                         [default: current]
   --threads INT          Quantizer thread count  [default: 8]
   --runlog PATH          Run-log path (JSONL)
                          [default: <stem>.runlog.jsonl]
