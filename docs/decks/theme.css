@@ -18,7 +18,7 @@
   --muted: #5b6673;
   --rule: #d9dfe3;
   --well: #e9ece5;
-  font-family: 'Adwaita Sans', 'Noto Sans', 'Liberation Sans', sans-serif;
+  font-family: 'Liberation Sans', 'Noto Sans', sans-serif; /* static fonts only — variable fonts (Adwaita) export as blurry Type 3 PDF glyphs */
 }
 
 section {
@@ -86,7 +86,7 @@ ol li::marker {
 /* --- code and numbers: the ledger voice ----------------------------- */
 
 code {
-  font-family: 'Adwaita Mono', 'Fira Code', 'Liberation Mono', monospace;
+  font-family: 'Liberation Mono', monospace;
   font-size: 0.82em;
   background: var(--well);
   color: var(--ink);
@@ -109,7 +109,7 @@ pre code {
 }
 
 table {
-  font-family: 'Adwaita Mono', 'Liberation Mono', monospace;
+  font-family: 'Liberation Mono', monospace;
   font-variant-numeric: tabular-nums;
   font-size: 0.82em;
   border-collapse: collapse;
@@ -201,14 +201,14 @@ section.dense {
 }
 
 footer {
-  font-family: 'Adwaita Mono', monospace;
+  font-family: 'Liberation Mono', monospace;
   font-size: 0.5em;
   color: var(--muted);
   letter-spacing: 0.06em;
 }
 
 section::after {
-  font-family: 'Adwaita Mono', monospace;
+  font-family: 'Liberation Mono', monospace;
   font-size: 0.55em;
   color: var(--muted);
 }
