@@ -1,0 +1,153 @@
+[project]
+name = "quantfit"
+version = "0.1.0"
+description = "Selective per-layer quantization to fit large open models on a single GPU"
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [
+    { name = "Alberto-Codes", email = "alberto.codes.dev@gmail.com" }
+]
+requires-python = ">=3.12"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Environment :: GPU :: NVIDIA CUDA",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Typing :: Typed",
+]
+keywords = [
+    "cuda",
+    "gguf",
+    "inference",
+    "llm",
+    "local-llm",
+    "mixed-precision",
+    "model-compression",
+    "nemotron",
+    "quantization",
+    "sensitivity-analysis",
+    "vllm",
+]
+dependencies = [
+    "typer>=0.9",
+]
+
+[project.optional-dependencies]
+docs = [
+    "mkdocs>=1.6,<2",
+    "mkdocs-material>=9.6",
+    "mkdocstrings[python]>=1.0",
+]
+
+[project.scripts]
+quantfit = "quantfit.cli:app"
+
+[project.urls]
+Homepage = "https://github.com/Alberto-Codes/quantfit"
+Source = "https://github.com/Alberto-Codes/quantfit"
+Issues = "https://github.com/Alberto-Codes/quantfit/issues"
+Changelog = "https://github.com/Alberto-Codes/quantfit/blob/main/CHANGELOG.md"
+
+[build-system]
+requires = ["uv_build>=0.11.20,<0.12.0"]
+build-backend = "uv_build"
+
+# --------------------------------------------------------------------------- #
+# uv-secure
+# --------------------------------------------------------------------------- #
+[tool.uv-secure.vulnerability_criteria]
+ignore_vulnerabilities = []
+allow_unused_ignores = false
+
+# --------------------------------------------------------------------------- #
+# Ruff
+# --------------------------------------------------------------------------- #
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+exclude = [".venv", "__pycache__", "*.egg-info"]
+
+[tool.ruff.lint]
+extend-select = ["E501", "I", "D"]
+
+[tool.ruff.lint.pycodestyle]
+max-line-length = 100
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["S101", "D100", "D101", "D102", "D103", "D104"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["quantfit"]
+
+[tool.ruff.format]
+quote-style = "double"
+docstring-code-format = true
+docstring-code-line-length = "dynamic"
+
+# --------------------------------------------------------------------------- #
+# Docvet
+# --------------------------------------------------------------------------- #
+[tool.docvet]
+fail-on = ["enrichment", "freshness", "coverage", "griffe", "presence"]
+
+[tool.docvet.presence]
+min-coverage = 100.0
+
+# --------------------------------------------------------------------------- #
+# Ty (type checker)
+# --------------------------------------------------------------------------- #
+[tool.ty.src]
+include = ["src", "tests"]
+
+# --------------------------------------------------------------------------- #
+# Pytest
+# --------------------------------------------------------------------------- #
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "unit: Unit tests (fast, isolated, no GPU)",
+    "integration: Integration tests (real model weights, slower)",
+    "gpu: Tests that require a CUDA device",
+    "slow: Slow-running tests",
+]
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+    "--showlocals",
+]
+
+# --------------------------------------------------------------------------- #
+# Coverage
+# --------------------------------------------------------------------------- #
+[tool.coverage.run]
+source = ["quantfit"]
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
+
+# --------------------------------------------------------------------------- #
+# Dev dependencies
+# --------------------------------------------------------------------------- #
+[dependency-groups]
+dev = [
+    "docvet>=1.15",
+    "pytest>=9.0",
+    "pytest-cov>=7.0",
+    "pytest-mock>=3.15",
+    "pytest-randomly>=4.0",
+    "ruff>=0.11",
+    "ty>=0.0.1a33",
+    "uv-secure>=0.17.0",
+]
