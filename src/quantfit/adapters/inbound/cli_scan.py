@@ -1,7 +1,8 @@
 """The ``quantfit scan`` command: measure damage, checkpoint, emit a map.
 
 The scan loop lives here because the inbound adapter is the
-composition root: it builds the torch-backed meter (lazily, so the
+composition root: it validates every option up front (sizes parse with
+the project grammar), builds the torch-backed meter (lazily, so the
 base install never imports torch), drives the `DamageMeter` and
 `ScanCheckpointStore` ports cell by cell, and hands the finished
 measurements to the pure assembly logic in [quantfit.domain.scan][].
@@ -33,6 +34,7 @@ import typer
 from quantfit.adapters.outbound.json_common import ArtifactError
 from quantfit.adapters.outbound.scan_checkpoint_json import JsonScanCheckpointFile
 from quantfit.adapters.outbound.sensitivity_map_json import JsonSensitivityMapFile
+from quantfit.domain.budget import parse_size
 from quantfit.domain.model import ScanMeta
 from quantfit.domain.scan import (
     Measurement,
@@ -74,7 +76,7 @@ def _build_meter(
     group_by: Literal["layer", "tensor"],
     device: str,
     trust_remote_code: bool,
-    gpu_memory: str | None,
+    gpu_memory: int | None,
 ) -> DamageMeter:
     """Build the torch-backed meter, importing torch only now.
 
@@ -90,7 +92,8 @@ def _build_meter(
         group_by: Grouping granularity.
         device: transformers ``device_map`` value.
         trust_remote_code: Allow repos with custom modeling code.
-        gpu_memory: Cap on GPU model shards under ``auto`` sharding.
+        gpu_memory: Byte cap on GPU 0 model shards under ``auto``
+            sharding.
 
     Returns:
         The loaded meter.
@@ -230,8 +233,9 @@ def scan(
     gpu_memory: Annotated[
         str | None,
         typer.Option(
-            help="Cap GPU model shards under auto sharding, e.g. 17GiB. "
-            "Leaves workspace for activations and quantization."
+            help="Byte cap on GPU 0 model shards, e.g. 17GiB. Requires "
+            "--device auto. Leaves workspace for activations and "
+            "quantization."
         ),
     ] = None,
 ) -> None:
@@ -240,13 +244,17 @@ def scan(
     Every finished cell lands in a checkpoint file next to ``--out``
     (``<out stem>.checkpoint.json``), so a crashed scan resumes instead
     of restarting. ``--no-resume`` discards any existing checkpoint.
-    For models larger than VRAM, ``--gpu-memory`` caps the shards that
-    ``auto`` sharding places on the card, keeping workspace free for
-    activations and logits.
+    ``--gpu-memory`` caps the shards that ``auto`` sharding places on
+    GPU 0 (parsed with the project size grammar, validated up front),
+    keeping workspace free for activations and logits. The meter
+    refuses models whose groups fall off real devices — see the
+    how-to for the current size limit.
 
     Raises:
-        typer.BadParameter: If ``--precisions`` or ``--group-by`` is
-            malformed, or the ``--out`` directory does not exist.
+        typer.BadParameter: If ``--precisions``, ``--group-by``, or
+            ``--gpu-memory`` is malformed, ``--gpu-memory`` is given
+            without ``--device auto``, or the ``--out`` directory does
+            not exist.
         typer.Exit: With code 1 when the scan extra is missing, the
             model or calibration cannot load, the checkpoint belongs to
             a different scan, a measurement fails, a checkpoint write
@@ -269,6 +277,18 @@ def scan(
     # and the first calibration pass has burned an hour.
     if not out.parent.is_dir():
         raise typer.BadParameter(f"--out: directory {out.parent} does not exist")
+    # Parse the cap with the project grammar — accelerate reads "17gb"
+    # as gigabits, an 8x smaller cap than this CLI means by it.
+    gpu_memory_bytes: int | None = None
+    if gpu_memory is not None:
+        if device != "auto":
+            raise typer.BadParameter(
+                f'--gpu-memory requires --device auto, got --device "{device}"'
+            )
+        try:
+            gpu_memory_bytes = parse_size(gpu_memory)
+        except ValueError as exc:
+            raise typer.BadParameter(f"--gpu-memory: {exc}") from exc
 
     # Only a failed adapter import means "extra not installed" —
     # construction errors (missing tokenizer backend, CUDA out of
@@ -277,11 +297,11 @@ def scan(
         meter = _build_meter(
             model,
             calibration,
-            max_tokens,
-            grouping,
-            device,
-            trust_remote_code,
-            gpu_memory,
+            max_tokens=max_tokens,
+            group_by=grouping,
+            device=device,
+            trust_remote_code=trust_remote_code,
+            gpu_memory=gpu_memory_bytes,
         )
     except (OSError, ValueError, RuntimeError, ImportError) as exc:
         typer.echo(f"error: {exc}", err=True)
