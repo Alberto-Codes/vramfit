@@ -1,92 +1,34 @@
-"""Run-log wiring for the scan command: safe sink, run loop, timings.
+"""Scan-command event wiring: the run loop and its timings.
 
 Holds the scan command's event machinery so `quantfit.adapters.inbound.cli_scan`
-stays under the size cap. `SafeRunLog` enforces the ADR-0011 failure
-policy: a run-log write failure warns once on the human channel and
-disables further events — measurement work outlives its telemetry, and
-a halt event can never displace the error it reports. Every event
-carries a ``run_id``, so reruns and resumes stay separable in one file.
+stays under the size cap. The shared run-log policy wrapper lives in
+[quantfit.adapters.inbound.run_log][] — this module drives it through
+the scan grid, stamping each cell with its timing and memory
+high-water mark (ADR-0011).
 
 Examples:
-    Wrap a sink for one run:
+    Measure the remaining cells of a scan:
 
     ```python
-    safe = SafeRunLog(JsonlRunLogFile(path))
-    safe.emit("scan_started", {"model": "m"})
+    measurements = measure_cells(meter, store, fp, done, todo, run_log)
     ```
 
 See Also:
-    - [quantfit.adapters.outbound.run_log_jsonl][]: The sink this wraps.
+    - [quantfit.adapters.inbound.run_log][]: `SafeRunLog`, the policy
+      wrapper these helpers emit through.
     - [quantfit.adapters.inbound.cli_scan][]: The command that drives it.
 """
 
 from __future__ import annotations
 
-import resource
 import time
-import uuid
 from collections.abc import Callable, Mapping
 
 import typer
 
+from quantfit.adapters.inbound.run_log import SafeRunLog, rss_hwm_gb
 from quantfit.domain.scan import Measurement
-from quantfit.ports.outbound import DamageMeter, RunLogSink, ScanCheckpointStore
-
-
-def rss_hwm_gb() -> float:
-    """Report the process resident-set high-water mark in GB.
-
-    Returns:
-        ``ru_maxrss`` converted from KiB (the Linux unit) to GB,
-        rounded to two decimals.
-    """
-    return round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 976_562.5, 2)
-
-
-class SafeRunLog:
-    """`RunLogSink` wrapper implementing the run-log failure policy.
-
-    The first failed write echoes one ``warning:`` line and disables
-    the run log for the rest of the process. Nothing is silent, no
-    measurement dies for its telemetry, and an emit inside an error
-    handler cannot displace the error it reports (ADR-0011).
-
-    Attributes:
-        run_id (str): Twelve hex characters stamped on every event.
-
-    Examples:
-        A dead sink swallows nothing silently:
-
-        ```python
-        safe = SafeRunLog(sink)
-        safe.emit("scan_started", {})  # warns once if the sink fails
-        ```
-    """
-
-    def __init__(self, sink: RunLogSink) -> None:
-        """Wrap a sink and mint the run identity.
-
-        Args:
-            sink: The real sink to protect.
-        """
-        self._sink = sink
-        self._dead = False
-        self.run_id = uuid.uuid4().hex[:12]
-
-    def emit(self, event: str, fields: Mapping[str, object]) -> None:
-        """Record one event, warning once and disabling on failure.
-
-        Args:
-            event: Past-tense event name.
-            fields: JSON-representable payload. ``run_id`` is added.
-        """
-        if self._dead:
-            return
-        try:
-            self._sink.emit(event, {"run_id": self.run_id, **fields})
-        except (OSError, TypeError, ValueError) as exc:
-            self._dead = True
-            typer.echo(f"warning: run log disabled: {exc}", err=True)
+from quantfit.ports.outbound import DamageMeter, ScanCheckpointStore
 
 
 def start_run(

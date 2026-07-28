@@ -1,8 +1,9 @@
 """Typer CLI: the inbound (driving) adapter and composition root.
 
 Exposes the ``quantfit`` console script. ``version``, ``budget``,
-``plan``, and ``scan`` are implemented — the scan command body lives in
-[quantfit.adapters.inbound.cli_scan][] to keep this module under the
+``plan``, ``scan``, and ``pack`` are implemented — the scan and pack
+command bodies live in [quantfit.adapters.inbound.cli_scan][] and
+[quantfit.adapters.inbound.cli_pack][] to keep this module under the
 size cap. The CLI wires outbound adapters to the pure domain, typing
 them against the ports so the seams stay explicit. Every IO boundary —
 artifact and config reads, checkpoint and artifact writes, and model
@@ -30,7 +31,7 @@ from typing import Annotated
 import typer
 
 from quantfit import __version__
-from quantfit.adapters.inbound import cli_scan
+from quantfit.adapters.inbound import cli_pack, cli_scan
 from quantfit.adapters.outbound.hf_config import HfConfigFile
 from quantfit.adapters.outbound.json_common import ArtifactError
 from quantfit.adapters.outbound.recipe_json import JsonRecipeFile
@@ -80,6 +81,7 @@ def version() -> None:
 
 
 app.command(name="scan")(cli_scan.scan)
+app.command(name="pack")(cli_pack.pack)
 
 
 def _parse_size_option(value: str, option: str) -> int:
