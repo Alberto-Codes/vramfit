@@ -10,7 +10,10 @@ sections with four distinct jobs.
 | [Reference](reference/cli.md) | Facts about the machinery | "What exactly is…?" |
 | [Explanation](explanation/why-selective-quantization.md) | Understanding | "Why is it like this?" |
 
-Design decisions are recorded separately as [ADRs](adr/index.md).
+Design decisions are recorded separately as [ADRs](adr/index.md). Two
+reference pages anchor the rest: the [glossary](reference/glossary.md) (the
+project's canonical vocabulary — one term per concept) and
+[prior art](reference/prior-art.md) (annotated external sources).
 
 ## Page status
 
