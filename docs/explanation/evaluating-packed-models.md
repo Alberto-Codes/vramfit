@@ -9,7 +9,9 @@ status: draft
 > runtime-capability mix (Qwen2.5-3B, see
 > [the first data point](#the-first-data-point) and
 > [the second data point](#the-second-data-point-the-runtime-capability-mix)
-> below). Tier 3 has not run. The publication gates that consume
+> below). The validation pass — the middle leg — ran the same night
+> ([the third data point](#the-third-data-point-the-first-validation-pass)).
+> Tier 3 has not run. The publication gates that consume
 > these evaluations live in [the artifact ecosystem](artifact-ecosystem.md)
 > and issue #11.
 
@@ -47,10 +49,10 @@ Here is the part that matters strategically: **this is the same
 divergence family the damage metric already uses**
 ([ADR-0006](../adr/0006-sensitivity-metric.md)). The scan measures
 KL per (group × precision) cell under marginal perturbation. The
-whole-recipe validation pass (ADR-0006, issue #8) then replays the
-exact recipe through the scan's own quantization and compares against
-the summed marginal damages — that pre-pack check is what isolates
-the additivity assumption leaking. Tier 2 complements it from the
+whole-recipe validation pass (`quantfit validate`, ADR-0006) then
+replays the exact recipe through the scan's own quantization and
+compares against the summed marginal damages — that pre-pack check
+is what isolates the additivity assumption leaking. Tier 2 complements it from the
 other side: whole-model KL of the *packed* result, through the
 runtime's real quantization types. One metric family will run
 end-to-end from scan to verdict:
@@ -172,6 +174,52 @@ that fit one recipe overflowed the next. That is direct evidence
 for the open question ADR-0012 and ADR-0013 both carry: the solver
 should consume per-type effective-bit tables instead of one
 fraction.
+
+## The third data point: the first validation pass
+
+The three-leg story above — cell damage *predicts*, the validation
+pass *checks the prediction*, packed-model KL *confirms the
+artifact* — ran without its middle leg until `quantfit validate`
+existed. On 2026-07-28 the pass ran for the first time, against the
+same 6/5/4 mix the second data point evaluates: all 37 assignments
+replayed through the scan's own quantization in one pass, over the
+scan's own 32,768 calibration tokens, 34 s on the reference box.
+
+| Quantity | Frame | Mean KL |
+|----------|-------|---------|
+| Summed marginal damages (predicted) | scan | 0.0661 |
+| Whole-recipe damage (measured) | scan | 0.0322 |
+| Packed-model KL (tier 2) | runtime | 0.0180 |
+
+The additivity assumption over-predicts by 2.05×. The marginal
+damages are **sub-additive**: quantize 37 groups at once and the
+joint damage is half the sum of the one-at-a-time damages. Errors
+did not compound through depth for this recipe — they partially
+cancelled.
+
+Reading it honestly, in both directions:
+
+- The gap is large. A prediction off by half is not a calibrated
+  estimate of recipe damage, and any claim built on the predicted
+  number should say so.
+- The gap points the safe way. The solver ranks groups by marginal
+  damage per byte and promises the sum; a sub-additive reality means
+  the recipe lands *better* than promised. The dangerous failure
+  mode — super-additive damage, measured above predicted — did not
+  appear, and ADR-0006's invalidation threshold now narrows to that
+  direction.
+- One recipe, one model, one candidate mix is one data point.
+  Whether sub-additivity holds at 3-bit floors, at 49B depth, or
+  under tighter budgets is what running `validate` after every
+  `plan` will accumulate.
+
+The ordering across the three legs is coherent: the packed model
+(0.0180, real K-quants with per-block and super-block scales) lands
+below the scan-frame measurement (0.0322, plain round-to-nearest),
+and both land below the additive prediction (0.0661). The runtime's
+quantizer should beat the scan's approximation — and does — while
+the prediction stays a conservative upper bound. That is the shape
+you want the three numbers to have on a model card.
 
 ## Provenance is not evidence
 
