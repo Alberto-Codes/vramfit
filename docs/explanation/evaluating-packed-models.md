@@ -7,7 +7,7 @@ status: sketch
 > **Status: sketch** — evaluation strategy recorded 2026-07-28, before
 > `quantfit pack` exists. Nothing here is implemented. The publication
 > gates that consume these evaluations live in
-> [the artifact ecosystem](artifact-ecosystem.md) and issue #8.
+> [the artifact ecosystem](artifact-ecosystem.md) and issue #11.
 
 Scanning and planning happen inside quantfit's own frame: damage,
 measured per cell, on our calibration set. The moment a packed model
@@ -35,20 +35,27 @@ faithfulness. That is why tier 1 is necessary but never sufficient.
 The stronger comparison is KL divergence of the packed model's output
 distribution against the reference model's, over the same text.
 llama.cpp ships this natively: `llama-perplexity --kl-divergence`
-consumes a saved base-model logit file and reports the divergence
-statistics.
+reads a base-model logit file (written first with
+`--kl-divergence-base <file>` on the reference) and reports the
+divergence statistics.
 
 Here is the part that matters strategically: **this is the same
 divergence family the damage metric already uses**
 ([ADR-0006](../adr/0006-sensitivity-metric.md)). The scan measures
-per-cell KL under marginal perturbation; the whole-recipe validation
-pass (issue #8) measures whole-model KL of the packed result. One
-metric family runs end-to-end from scan to verdict:
+KL per (group × precision) cell under marginal perturbation. The
+whole-recipe validation pass (ADR-0006, issue #8) then replays the
+exact recipe through the scan's own quantization and compares against
+the summed marginal damages — that pre-pack check is what isolates
+the additivity assumption leaking. Tier 2 complements it from the
+other side: whole-model KL of the *packed* result, through the
+runtime's real quantization types. One metric family will run
+end-to-end from scan to verdict:
 
 - Cell damage *predicts* the recipe's cost (under the additivity
   assumption).
-- Whole-model KL *confirms* it — or exposes additivity leakage, which
-  is exactly what the validation pass exists to catch.
+- The validation pass *checks the prediction* in the scan's frame.
+- Packed-model KL *confirms the shipped artifact* in the runtime's
+  frame.
 
 A model card that shows the prediction next to the confirmation is a
 card no heuristic quant can write. Cost: one reference-logit pass plus
@@ -74,17 +81,19 @@ nobody re-runs.
 ## Provenance is not evidence
 
 Hashes answer a different question and must not be confused with
-quality. Hugging Face stores SHA-256 per file, GGUF embeds metadata
-in-file, and quantfit's fingerprint ties map, checkpoint, and recipe
-to one scan identity. All of that proves *this is the exact artifact*.
-None of it proves the artifact is any good. The project's claim is
+quality. Hugging Face stores SHA-256 per file, and GGUF embeds
+metadata in-file — those prove *this is the exact file*. quantfit's
+fingerprint proves less: it ties a scan checkpoint to that scan's
+recorded provenance, not to content (swapping weights under an
+unchanged path defeats it — content evidence is an open item in
+issue #8). None of these proves the artifact is any good. The project's claim is
 that a publication should carry both: provenance (hashes,
 fingerprint, run log) and evidence (the three tiers above). Shipping
 either alone is the current ecosystem's failure mode — evidence
 without provenance is unreproducible, provenance without evidence is
 a checksum on folklore.
 
-## The publication recipe
+## The publication procedure
 
 For publication number one (a Qwen-class packed model, per
 [the artifact ecosystem](artifact-ecosystem.md)):
@@ -95,7 +104,7 @@ For publication number one (a Qwen-class packed model, per
 3. Every number on the card next to its baseline counterpart, with
    the losing numbers included if any lose.
 
-All three tiers run on the reference box. None require training
+All three tiers will run on the reference box. None require training
 compute.
 
 ## Open questions
