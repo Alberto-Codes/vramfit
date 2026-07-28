@@ -1,0 +1,84 @@
+{
+  "quantfit_schema": 1,
+  "model_id": "test/model",
+  "plan": {
+    "vram_budget_bytes": 50000,
+    "kv_headroom_bytes": 1000,
+    "weight_budget_bytes": 49000,
+    "predicted_total_bytes": 42000,
+    "predicted_damage": 2.0,
+    "solver": "greedy-damage-per-byte",
+    "pins": {},
+    "format_overhead": 0.05,
+    "trace": [
+      {
+        "step": 1,
+        "group": "g0",
+        "from_bits": 8,
+        "to_bits": 4,
+        "damage_delta": 0.009000000000000001,
+        "bytes_freed": 42000,
+        "ratio": 2.142857142857143e-07
+      },
+      {
+        "step": 2,
+        "group": "g1",
+        "from_bits": 8,
+        "to_bits": 4,
+        "damage_delta": 0.009000000000000001,
+        "bytes_freed": 42000,
+        "ratio": 2.142857142857143e-07
+      },
+      {
+        "step": 3,
+        "group": "g0",
+        "from_bits": 4,
+        "to_bits": 3,
+        "damage_delta": 0.09000000000000001,
+        "bytes_freed": 10500,
+        "ratio": 8.571428571428573e-06
+      },
+      {
+        "step": 4,
+        "group": "g1",
+        "from_bits": 4,
+        "to_bits": 3,
+        "damage_delta": 0.09000000000000001,
+        "bytes_freed": 10500,
+        "ratio": 8.571428571428573e-06
+      },
+      {
+        "step": 5,
+        "group": "g0",
+        "from_bits": 3,
+        "to_bits": 2,
+        "damage_delta": 0.9,
+        "bytes_freed": 10500,
+        "ratio": 8.571428571428571e-05
+      },
+      {
+        "step": 6,
+        "group": "g1",
+        "from_bits": 3,
+        "to_bits": 2,
+        "damage_delta": 0.9,
+        "bytes_freed": 10500,
+        "ratio": 8.571428571428571e-05
+      }
+    ]
+  },
+  "assignments": [
+    {
+      "group": "g0",
+      "bits": 2,
+      "bytes": 21000,
+      "damage": 1.0
+    },
+    {
+      "group": "g1",
+      "bits": 2,
+      "bytes": 21000,
+      "damage": 1.0
+    }
+  ]
+}

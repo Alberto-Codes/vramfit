@@ -1,11 +1,13 @@
 ---
-status: draft
+status: stable
 ---
 
 # VRAM budget math
 
-> **Status: draft** — the formulas are standard; the overhead constants are
-> estimates until we measure them on the reference box.
+> **Status: stable** — implemented in `quantfit.budget` and computable via
+> `quantfit budget`; the worked example below uses the target model's real
+> config. The runtime-overhead constant remains a planning figure until
+> measured under vLLM on the reference box.
 
 The plan step optimizes against a *weight budget*, which is what's left of
 the card after everything else takes its cut.
@@ -45,16 +47,24 @@ Planning figure: **1.5–2 GiB** on a 24 GiB card until measured.
 
 ## Worked example: the north-star target
 
-RTX 4090 (24 GiB = 24.56 GB), Nemotron Super 49B, 16k context, 1 sequence:
+Computed with `quantfit budget --model-config <nemotron config.json>` from
+the real checkpoint config: 80 blocks of which **49 have attention** (31 are
+NAS `no_op` blocks), GQA with 8 KV heads × head_dim 128 → **200,704 KV
+bytes/token at fp16, 100,352 at fp8**.
 
-| Item | Estimate |
-|------|----------|
-| VRAM total | 24.5 GB |
-| Runtime overhead | −2.0 GB |
-| KV cache @16k, fp8 | −2 to −3 GB (needs the architecture's real head counts) |
-| **Weight budget** | **~19.5–20.5 GB** |
+RTX 4090 (24 GiB), 16k context, 1 sequence:
 
-Against 49B parameters, that budget forces an *average* of ~3.2–3.3
-bits/parameter — below uniform-4-bit, above uniform-3. Selectivity is not an
-optimization here; it's the only way the average can be spent unevenly enough
-to preserve quality. This arithmetic is the entire reason the project exists.
+| Item | fp16 KV | fp8 KV |
+|------|---------|--------|
+| VRAM total | 24.00 GiB | 24.00 GiB |
+| − KV cache @16k | 3.06 GiB | 1.53 GiB |
+| − runtime overhead | 2.00 GiB | 2.00 GiB |
+| **= weight budget** | **18.94 GiB** | **20.47 GiB** |
+
+Against ~49B parameters (plus format overhead), the fp8-KV budget forces an
+*average* of ~3.5 bits/parameter; fp16 KV forces ~3.3. Below uniform-4-bit,
+above uniform-3. Selectivity is not an optimization here; it's the only way
+the average can be spent unevenly enough to preserve quality. This
+arithmetic is the entire reason the project exists — and it's also the open
+tension with vLLM's 4-bit kernel floor recorded in
+[ADR-0004](../adr/0004-vllm-first-runtime.md).

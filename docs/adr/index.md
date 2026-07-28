@@ -23,7 +23,7 @@ change of course gets a *new* ADR that supersedes the old one.
 | [0004](0004-vllm-first-runtime.md) | vLLM as the first target runtime | Accepted |
 | [0005](0005-heavy-deps-as-extras.md) | Heavy ML dependencies stay out of the base install | Accepted |
 | [0006](0006-sensitivity-metric.md) | Sensitivity metric for the scan step | Proposed |
-| [0007](0007-recipe-solver-strategy.md) | Solver strategy for recipe selection | Proposed |
+| [0007](0007-recipe-solver-strategy.md) | Solver strategy for recipe selection | Accepted |
 
 ## Template
 
