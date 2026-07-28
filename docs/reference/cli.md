@@ -4,8 +4,8 @@ status: draft
 
 # CLI reference
 
-> **Status: draft** — `version`, `budget`, and `plan` are implemented.
-> `scan` is a stub and `pack` is design-stage.
+> **Status: draft** — `version`, `budget`, `plan`, and `scan` are
+> implemented. `pack` is design-stage.
 
 ## `quantfit version`
 
@@ -73,26 +73,47 @@ recipe fits the budget (the gap is reported). Exit 2 on malformed options
 (`--pin` not of the form `pattern=bits` with positive bits, unparseable
 sizes, negative `--format-overhead`).
 
-## `quantfit scan` *(stub)*
+## `quantfit scan`
 
-Exists as a stub that exits with code 1. Planned signature:
+Implemented. Measures per-group damage and writes a sensitivity map.
+Requires the scan extra (`uv pip install "quantfit[scan]"`) — without
+it the command exits 1 with the install hint.
 
 ```
-quantfit scan MODEL_ID
-  --calibration TEXT     Calibration dataset name or path  [default: wikitext]
-  --precisions TEXT      Comma-separated candidate bit-widths; the useful set
-                         depends on the target runtime's kernels (vLLM today:
-                         8, 4-int, 4-fp — see ADR-0004)  [default: 8,4]
-  --group-by TEXT        Layer grouping granularity (layer | tensor)  [default: layer]
-  --resume               Continue an interrupted scan from its checkpoint
+quantfit scan MODEL
+  --calibration PATH     Calibration text file (UTF-8)  [required]
   --out PATH             Output sensitivity map  [default: sensitivity.json]
+  --precisions TEXT      Candidate bit-widths, strictly descending CSV,
+                         2-bit floor, default per ADR-0010
+                         [default: 8,4,3,2]
+  --group-by TEXT        Grouping granularity (layer | tensor)  [default: layer]
+  --max-tokens INT       Calibration token budget  [default: 131072]
+  --device TEXT          Device map: auto | cpu | cuda  [default: auto]
+  --trust-remote-code    Allow model repos with custom code (the
+                         north-star target needs this)
+  --resume / --no-resume Continue from the checkpoint file  [default: resume]
 ```
+
+Every finished (group x precision) cell lands in a checkpoint file next
+to `--out` (`<stem>.checkpoint.json`). A rerun of the same scan resumes
+from it. The checkpoint carries the scan's fingerprint (model, metric,
+calibration, token count, grouping, precisions, method) — a rerun with
+any of those changed refuses the checkpoint instead of mixing numbers.
+The fingerprint identifies provenance, not content: do not swap weights
+or calibration text under an unchanged path between resumes.
+`--no-resume` deletes the checkpoint first and says so.
+
+Exit codes: 1 when the scan extra is missing, the model or calibration
+cannot load, the checkpoint belongs to a different scan, a measurement
+fails (the checkpoint keeps completed cells), a checkpoint write fails,
+or the map cannot be written. Exit 2 on malformed `--precisions` or
+`--group-by`, or a missing `--out` directory.
 
 ## `quantfit pack` *(planned)*
 
 ```
 quantfit pack MODEL_ID
   --recipe PATH          Recipe produced by `quantfit plan`
-  --runtime TEXT         Target runtime (vllm)  [default: vllm]
+  --runtime TEXT         Target runtime (GGUF first per ADR-0010)
   --out PATH             Output checkpoint directory
 ```

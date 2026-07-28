@@ -1,11 +1,13 @@
 """Typer CLI: the inbound (driving) adapter and composition root.
 
-Exposes the ``quantfit`` console script. ``version``, ``budget``, and
-``plan`` are implemented; ``scan`` is a stub until the scan pipeline
-lands. The CLI wires outbound adapters to the pure domain, typing them
-against the ports so the seams stay explicit. Every IO boundary —
-artifact reads, config reads, and the recipe write — converts failures
-to a clean ``error:`` line and a nonzero exit.
+Exposes the ``quantfit`` console script. ``version``, ``budget``,
+``plan``, and ``scan`` are implemented — the scan command body lives in
+[quantfit.adapters.inbound.cli_scan][] to keep this module under the
+size cap. The CLI wires outbound adapters to the pure domain, typing
+them against the ports so the seams stay explicit. Every IO boundary —
+artifact and config reads, checkpoint and artifact writes, and model
+loading — converts failures to a clean ``error:`` line and a nonzero
+exit.
 
 Examples:
     Show the installed version:
@@ -28,6 +30,7 @@ from typing import Annotated
 import typer
 
 from quantfit import __version__
+from quantfit.adapters.inbound import cli_scan
 from quantfit.adapters.outbound.hf_config import HfConfigFile
 from quantfit.adapters.outbound.json_common import ArtifactError
 from quantfit.adapters.outbound.recipe_json import JsonRecipeFile
@@ -76,23 +79,7 @@ def version() -> None:
     typer.echo(f"quantfit {__version__}")
 
 
-@app.command()
-def scan() -> None:
-    """Measure per-layer quantization sensitivity (not yet implemented).
-
-    Raises:
-        typer.Exit: Always, with exit code 1, until the scan pipeline lands.
-
-    Examples:
-        Command line usage:
-
-        ```console
-        $ quantfit scan
-        scan is not implemented yet -- see the roadmap in the README.
-        ```
-    """
-    typer.echo("scan is not implemented yet -- see the roadmap in the README.")
-    raise typer.Exit(code=1)
+app.command(name="scan")(cli_scan.scan)
 
 
 def _parse_size_option(value: str, option: str) -> int:
@@ -146,10 +133,10 @@ def budget(
 ) -> None:
     """Print the VRAM budget breakdown for a model and serving shape.
 
-    The attention shape comes from exactly one source: ``--model-config``,
-    or the manual triple ``--attn-layers --kv-heads --head-dim``. The
-    ``--overhead`` default derives from
-    ``quantfit.domain.budget.DEFAULT_RUNTIME_OVERHEAD_BYTES``.
+    The attention shape comes from exactly one source: ``--model-config``
+    (read through the `ModelShapeSource` port), or the manual triple
+    ``--attn-layers --kv-heads --head-dim``. The ``--overhead`` default
+    derives from ``quantfit.domain.budget.DEFAULT_RUNTIME_OVERHEAD_BYTES``.
 
     Raises:
         typer.BadParameter: If both or neither shape source is given, a
@@ -177,7 +164,7 @@ def budget(
     if model_config is not None:
         shape_source: ModelShapeSource = HfConfigFile(model_config)
         try:
-            shape = shape_source.shape()
+            shape = shape_source.load()
         except (OSError, ValueError) as exc:
             typer.echo(f"error: {exc}", err=True)
             raise typer.Exit(code=1) from exc

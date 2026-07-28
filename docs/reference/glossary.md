@@ -60,6 +60,28 @@ change.
 **Reference**
 :   The unquantized (bf16) model that perturbed models are compared against.
 
+**Group spec**
+:   A discovered layer group before measurement: name, member tensors,
+    and size at reference precision. Code type
+    `quantfit.domain.scan.GroupSpec`.
+
+**Damage meter**
+:   The port that measures one group's damage at one precision
+    (`quantfit.ports.outbound.DamageMeter`). The torch adapter
+    implements it behind the `scan` extra.
+
+**Scan checkpoint**
+:   The incremental record of finished (group x precision) cells that
+    makes a scan resumable. Written next to the map as
+    `<stem>.checkpoint.json`. Not "cache" or "state file".
+
+**Fingerprint**
+:   The identity string that ties a scan checkpoint to one scan's
+    recorded provenance: model, metric, calibration, token count,
+    grouping, precisions, and within-group method. It identifies
+    provenance, not content — swapping weights or calibration text
+    under an unchanged path defeats it.
+
 ## Budgeting
 
 **Precision**

@@ -40,6 +40,15 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# The scan extra carries the GPU stack (ADR-0005): the base install and
+# the plan step stay importable without torch.
+scan = [
+    "accelerate>=1.0",
+    "torch>=2.4",
+    # The floor is where from_pretrained's dtype kwarg landed — older
+    # versions ignore it silently and load fp32 at twice the memory.
+    "transformers>=4.56",
+]
 docs = [
     "mkdocs>=1.6,<2",
     "mkdocs-material>=9.6",
@@ -79,6 +88,7 @@ exclude = [".venv", "__pycache__", "*.egg-info"]
 # TRY (exception hygiene), S (bandit), PERF, RUF, UP, G on top of the
 # house baseline E501/I/D.
 extend-select = [
+    "E402",  # enabled explicitly: hook and locked ruff versions differ on the default
     "E501",
     "I",
     "D",
@@ -114,6 +124,7 @@ convention = "google"
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = [
     "S101",
+    "S106",  # tokenizer special-token strings are not passwords
     "S311",  # non-crypto randomness is fine for shuffle tests
     "D100",
     "D101",
@@ -121,8 +132,13 @@ convention = "google"
     "D103",
     "D104",
     "PLR2004",  # magic values are the point of test assertions
+    "PLC0415",  # torch-tier tests import the scan extra lazily to skip cleanly
 ]
 "src/quantfit/adapters/inbound/cli.py" = [
+    "PLR0913",  # typer commands take one arg per CLI option by design
+    "PLR0917",
+]
+"src/quantfit/adapters/inbound/cli_scan.py" = [
     "PLR0913",  # typer commands take one arg per CLI option by design
     "PLR0917",
 ]
@@ -153,6 +169,20 @@ min-coverage = 100.0
 [tool.ty.src]
 include = ["src", "tests"]
 
+# The scan adapter and its torch-tier tests import torch and
+# transformers, which CI and torch-less dev boxes do not install
+# (ADR-0005). Everything else still type-checks strictly.
+[[tool.ty.overrides]]
+include = [
+    "src/quantfit/adapters/outbound/scan/**",
+    "tests/conftest.py",
+    "tests/contract/test_damage_meter_contract.py",
+    "tests/integration/test_torch_scan_adapter.py",
+]
+
+[tool.ty.overrides.rules]
+unresolved-import = "ignore"
+
 # --------------------------------------------------------------------------- #
 # Pytest
 # --------------------------------------------------------------------------- #
@@ -182,6 +212,10 @@ addopts = [
 # --------------------------------------------------------------------------- #
 [tool.coverage.run]
 source = ["quantfit"]
+# The torch adapter runs only where the scan extra is installed. The
+# hermetic suites prove its orchestration via verified fakes (ADR-0009)
+# and its own tests carry the integration/slow markers (CPU is enough).
+omit = ["*/adapters/outbound/scan/*"]
 
 [tool.coverage.report]
 fail_under = 90
@@ -218,12 +252,16 @@ forbidden_modules = ["json", "pathlib", "os", "io", "typer"]
 
 [[tool.importlinter.contracts]]
 # Executable form of ADR-0005: the plan step stays importable without
-# torch. When the scan milestone lands, scan modules get carved out of
-# source_modules instead of weakening the contract.
-name = "No heavy ML deps outside future scan/pack extras"
+# torch. The torch-touching scan adapter package is the one carve-out —
+# the CLI imports it lazily inside the scan command.
+name = "No heavy ML deps outside the scan adapter package"
 type = "forbidden"
 source_modules = ["quantfit"]
-forbidden_modules = ["torch", "transformers", "safetensors", "vllm"]
+forbidden_modules = ["torch", "transformers", "accelerate", "safetensors", "vllm"]
+ignore_imports = [
+    "quantfit.adapters.outbound.scan.* -> torch",
+    "quantfit.adapters.outbound.scan.* -> transformers",
+]
 
 # --------------------------------------------------------------------------- #
 # Dev dependencies

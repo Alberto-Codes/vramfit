@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import shutil
 import subprocess
@@ -74,6 +75,18 @@ def test_budget_flow_prints_breakdown(tmp_path) -> None:
 
     assert result.returncode == 0, result.stderr
     assert "weight budget" in result.stdout
+
+
+def test_scan_without_the_extra_reports_the_install_hint(tmp_path) -> None:
+    if importlib.util.find_spec("torch") is not None:
+        pytest.skip("scan extra installed — the ImportError path cannot trigger")
+    calibration = tmp_path / "calib.txt"
+    calibration.write_text("calibration text")
+
+    result = run("scan", "some/model", "--calibration", str(calibration))
+
+    assert result.returncode == 1
+    assert "quantfit[scan]" in result.stderr + result.stdout
 
 
 def test_infeasible_plan_exits_one_via_console_script(tmp_path) -> None:

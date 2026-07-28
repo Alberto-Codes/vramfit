@@ -24,11 +24,11 @@ def test_version_command_prints_package_version() -> None:
 
 
 @pytest.mark.unit
-def test_scan_command_unimplemented_exits_nonzero() -> None:
+def test_scan_command_without_arguments_exits_with_usage_error() -> None:
     result = runner.invoke(app, ["scan"])
 
-    assert result.exit_code == 1
-    assert "not implemented" in result.output
+    assert result.exit_code == 2
+    assert "Missing" in result.output
 
 
 @pytest.mark.unit
