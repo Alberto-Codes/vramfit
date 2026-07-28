@@ -28,9 +28,27 @@ status: draft
     outlier channels that carry outsized importance. Same role as GPTQ here,
     and evidence for non-uniform fragility.
 
-**[llama.cpp k-quants](https://github.com/ggml-org/llama.cpp)**
-:   Shipping non-uniform per-layer recipes (Q4_K_M etc.) chosen by fixed
-    heuristic. The thing quantfit replaces with measurement.
+**[llama.cpp k-quants + imatrix](https://github.com/ggml-org/llama.cpp/tree/master/tools/imatrix)**
+:   k-quants ship non-uniform per-layer recipes chosen by fixed heuristic;
+    the imatrix tool adds measured activation statistics that bias
+    *within-block* scale selection. Measurement below the bit-assignment
+    level — complementary to, not competing with, quantfit's per-group
+    decision.
+
+**[EXL2 / exllamav2](https://github.com/turboderp-org/exllamav2)**
+:   The closest prior art. Measured per-layer variable bitrate (2–8 bpw
+    mixing) hitting a target *average* bits-per-weight, with a reusable
+    measurement pass. Differences quantfit bets on: EXL2 is tied to its own
+    runtime (quantfit targets vLLM), optimizes to an average bpw rather than
+    an explicit VRAM budget planned jointly with KV headroom, and its
+    measurement is not a standalone, inspectable artifact. Study its
+    measurement pass before designing `scan`.
+
+**[llm-compressor](https://github.com/vllm-project/llm-compressor)**
+:   vLLM's official companion for producing compressed-tensors checkpoints
+    (GPTQ, AWQ, FP8/INT4 schemes, non-uniform per-layer configs). The likely
+    implementation backend for `quantfit pack` — quantfit's job is deciding
+    the recipe, llm-compressor's is applying it.
 
 **[Minitron](https://arxiv.org/abs/2408.11796)** (NVIDIA)
 :   Pruning + distillation for shrinking LLMs. The alternative road not taken
@@ -47,10 +65,15 @@ status: draft
 
 ## Target model
 
-**[Nemotron](https://huggingface.co/nvidia)** (NVIDIA)
-:   Open-weight model family. Super 49B is the north-star target
-    ([ADR-0003](../adr/0003-north-star-benchmark.md)); Nano is the
-    "just run a smaller model" baseline.
+**[Llama-3_3-Nemotron-Super-49B-v1_5](https://huggingface.co/nvidia/Llama-3_3-Nemotron-Super-49B-v1_5)** (NVIDIA)
+:   The north-star target ([ADR-0003](../adr/0003-north-star-benchmark.md)):
+    dense decoder Transformer derived from Llama 3.3 70B via Neural
+    Architecture Search — layers are structurally heterogeneous, which
+    strengthens the case for per-layer measurement. NVIDIA publishes an
+    official [NVFP4 quant](https://huggingface.co/nvidia/Llama-3_3-Nemotron-Super-49B-v1_5-NVFP4)
+    (~4-bit uniform, still over a 24 GiB card) — a quality baseline for
+    quantfit recipes to beat. Nemotron Nano is the "just run a smaller
+    model" baseline.
 
 ## Writing system
 
