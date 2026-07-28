@@ -2,9 +2,9 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-27
-- **Note (2026-07-28):** the open tension below is resolved in
-  [ADR-0010](0010-sub-4-bit-serving-path.md), which moves the benchmark
-  serving path to GGUF and keeps vLLM first for ≥4-bit recipes.
+- **Note (2026-07-28):** [ADR-0010](0010-sub-4-bit-serving-path.md)
+  proposes to resolve the open tension below: the benchmark serving
+  path moves to GGUF, and vLLM stays first for ≥4-bit recipes.
 
 ## Context
 

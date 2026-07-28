@@ -8,16 +8,16 @@
 ADR-0003 fixes the benchmark: Nemotron Super 49B on one 24 GiB RTX 4090
 at 16k context, via vLLM. ADR-0004 records the conflict: the measured
 weight budget is 18.94 GiB at fp16 KV and 20.47 GiB at fp8 KV, which
-forces ~3.3–3.5 average bits/parameter. vLLM kernels floor at 4 bits.
+forces ~3.3–3.5 average bits/weight. vLLM kernels floor at 4 bits.
 ADR-0004 lists four resolution paths and defers the choice. The scan
 step cannot fix its candidate precision set until this ADR decides.
 
 Evidence, verified 2026-07-28:
 
-- **(a) Friendlier math: closed.** ~49B parameters at uniform 4-bit
-  weigh ~22.8 GiB before format overhead. That exceeds even the
-  20.47 GiB fp8-KV budget by more than 2 GiB. No overhead tuning closes
-  a gap that size.
+- **(a) Friendlier math: closed.** The real checkpoint holds 49.87B
+  parameters, which weigh ~23.2 GiB at uniform 4-bit before format
+  overhead. That exceeds even the 20.47 GiB fp8-KV budget by almost
+  3 GiB. No overhead tuning closes a gap that size.
 - **(b) A vLLM sub-4-bit kernel: possible, but against the current.**
   Upstream closed the EXL3 integration request
   ([vllm#19896](https://github.com/vllm-project/vllm/issues/19896)) as
@@ -53,8 +53,9 @@ from measurement.
    line. This amends the serving-runtime clause of ADR-0003.
 3. **The benchmark claim sharpens to quality at equal size.** The
    recipe must beat the size-matched heuristic baselines (IQ3_XXS and
-   IQ3_XS of the target) and NVIDIA's NVFP4 quant on measured damage,
-   inside the same budget.
+   IQ3_XS of the target) on measured damage inside the same budget.
+   NVIDIA's NVFP4 quant does not fit the card (ADR-0003), so it serves
+   as the over-budget quality reference, not a same-budget baseline.
 4. **vLLM remains the first runtime for recipes at 4-bit and above.**
    ADR-0004 stands in that regime. A sub-4-bit vLLM kernel stays open
    as a stretch path that would return the benchmark to vLLM. Pursuing
@@ -72,8 +73,9 @@ from measurement.
   before llm-compressor. llm-compressor returns when a ≥4-bit vLLM
   recipe is packed.
 - Nominal bits and real bytes drift apart: GGUF 3-bit types spend
-  3.4–3.9 effective bits/weight. `--format-overhead` absorbs the gap
-  today. Pack must re-check real sizes against the budget.
+  ~3.1–3.9 effective bits/weight (IQ3_XXS 3.14, Q3_K_M 3.91 on the
+  target). `--format-overhead` absorbs the gap today. Pack must
+  re-check real sizes against the budget.
 - The headline of ADR-0003 stays: 49B, one 4090, 16k context, measured
   quality loss.
 
@@ -85,3 +87,6 @@ from measurement.
 - Are byte predictions from nominal bits too coarse for the solver once
   GGUF types set the real sizes? If yes, the sensitivity map grows
   per-precision measured byte counts.
+- The 18.94 / 20.47 GiB budgets assume vLLM's 2 GiB runtime overhead
+  and KV layout. Measure both under llama.cpp on the reference box —
+  the budgets move if llama.cpp allocates differently.

@@ -65,13 +65,13 @@ status: draft
     format ([ADR-0004](../adr/0004-vllm-first-runtime.md)). The
     runtime-capability table (which precisions have kernels) comes from
     here. Verified 2026-07: the Marlin and Machete kernels cover 4-bit and
-    8-bit only, the EXL3 integration request
-    ([vllm#19896](https://github.com/vllm-project/vllm/issues/19896)) was
-    closed as not planned, and in-tree GGUF support moved out to
-    [vllm-gguf-plugin](https://github.com/vllm-project/vllm-gguf-plugin)
-    with tested formats stopping at 4 bits. Hence
-    [ADR-0010](../adr/0010-sub-4-bit-serving-path.md): the sub-4-bit
-    serving path runs through GGUF.
+    8-bit only. Upstream closed the EXL3 integration request
+    ([vllm#19896](https://github.com/vllm-project/vllm/issues/19896)) as
+    not planned. Upstream also moved in-tree GGUF support out to
+    [vllm-gguf-plugin](https://github.com/vllm-project/vllm-gguf-plugin),
+    whose tested formats stop at 4 bits. On that evidence
+    [ADR-0010](../adr/0010-sub-4-bit-serving-path.md) proposes the GGUF
+    serving path for sub-4-bit recipes.
 
 ## Target model
 

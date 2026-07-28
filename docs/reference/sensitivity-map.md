@@ -44,7 +44,7 @@ The sensitivity map is the output of `quantfit scan` and the input to
 
 - **`sensitivity`** — divergence of the perturbed model's output from the
   full-precision reference, measured per
-  [ADR-0006](../adr/0006-sensitivity-metric.md) (metric choice still open).
+  [ADR-0006](../adr/0006-sensitivity-metric.md) (mean final-logits KL).
   Higher = more damage. Values are comparable *within* a scan, not across
   scans with different calibration sets.
 - **`bytes_fp16`** — group size at reference precision; the solver derives

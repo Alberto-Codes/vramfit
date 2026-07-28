@@ -13,8 +13,8 @@ choice is load-bearing. Candidates:
    perturbation, no generation needed. Front-runner.
 2. **Perplexity delta** on held-out text. The literature standard, coarser
    per-token signal, similar cost.
-3. **Task evals** (MMLU-style accuracy). Closest to user-felt quality;
-   orders of magnitude too slow per (group × precision).
+3. **Task evals** (MMLU-style accuracy). Closest to user-felt quality.
+   Orders of magnitude too slow per (group × precision).
 4. **Layer-local error** (MSE on the group's own output). Cheapest — no full
    forward pass — but ignores how errors propagate through depth, which is
    the thing we care about.
@@ -55,5 +55,5 @@ Points fixed at acceptance (2026-07-28):
 
 - Scan cost stays `O(groups × precisions)` forward passes — tractable
   overnight on the reference box for the 49B target.
-- Damage values are calibration-set-relative; maps must record their
+- Damage values are calibration-set-relative. Maps must record their
   calibration provenance and are not comparable across different sets.
