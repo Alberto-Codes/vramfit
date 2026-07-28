@@ -69,6 +69,7 @@ uv run ruff check .
 uv run ruff format --check .
 uv run ty check
 uv run pytest -m "not gpu"     # CI enforces 90% coverage
+uv run lint-imports            # layering + no-torch contracts (ADR-0005)
 uv run docvet check --all
 ```
 

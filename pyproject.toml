@@ -138,11 +138,38 @@ fail_under = 90
 show_missing = true
 
 # --------------------------------------------------------------------------- #
+# import-linter
+# --------------------------------------------------------------------------- #
+[tool.importlinter]
+root_package = "quantfit"
+include_external_packages = true
+exclude_type_checking_imports = true
+
+[[tool.importlinter.contracts]]
+name = "CLI on top, artifacts at the bottom"
+type = "layers"
+layers = [
+    "quantfit.cli",
+    "quantfit.solver : quantfit.budget",
+    "quantfit.artifacts",
+]
+
+[[tool.importlinter.contracts]]
+# Executable form of ADR-0005: the plan step stays importable without
+# torch. When the scan milestone lands, scan modules get carved out of
+# source_modules instead of weakening the contract.
+name = "No heavy ML deps outside future scan/pack extras"
+type = "forbidden"
+source_modules = ["quantfit"]
+forbidden_modules = ["torch", "transformers", "safetensors", "vllm"]
+
+# --------------------------------------------------------------------------- #
 # Dev dependencies
 # --------------------------------------------------------------------------- #
 [dependency-groups]
 dev = [
     "docvet>=1.15",
+    "import-linter>=2.11",
     "pytest>=9.0",
     "pytest-cov>=7.0",
     "pytest-mock>=3.15",

@@ -62,19 +62,21 @@ Hooks that run on each commit:
 | uv-secure | Known vulnerabilities in the lockfile |
 | ty | Type checking |
 | pytest | Test suite (GPU tests excluded) |
+| import-linter | Architecture contracts (layering, no heavy ML deps) |
 | docvet | Docstring quality on staged files |
 
 All hooks must pass before the commit succeeds.
 
 ## Quality Gates
 
-All five gates must pass before opening a PR. Run them locally:
+All six gates must pass before opening a PR. Run them locally:
 
 ```bash
 uv run ruff check .                  # Linting
 uv run ruff format --check .         # Format check
 uv run ty check                      # Type checking
 uv run pytest -m "not gpu"           # Tests (CI enforces 90% coverage)
+uv run lint-imports                  # Architecture contracts
 uv run docvet check --all            # Docstring quality
 ```
 
