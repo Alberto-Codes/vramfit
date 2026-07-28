@@ -78,8 +78,9 @@ change.
 **Run log**
 :   The machine-readable event stream of one pipeline run: JSON Lines
     beside the run's artifacts (`<stem>.runlog.jsonl`), one versioned
-    event per line. The machine channel — human CLI output is the
-    human channel and never mixes with it. Proposed in
+    event per line, each stamped with the run's ``run_id``. The
+    machine channel — human CLI output is the human channel and never
+    mixes with it. Decided in
     [ADR-0011](../adr/0011-run-logs-and-error-root.md).
 
 **Fingerprint**

@@ -17,6 +17,7 @@ import pytest
 from quantfit.adapters.outbound.hf_config import HfConfigFile
 from quantfit.adapters.outbound.json_common import ArtifactError
 from quantfit.adapters.outbound.recipe_json import JsonRecipeFile, load_recipe
+from quantfit.adapters.outbound.run_log_jsonl import JsonlRunLogFile, read_run_log
 from quantfit.adapters.outbound.scan_checkpoint_json import JsonScanCheckpointFile
 from quantfit.adapters.outbound.sensitivity_map_json import (
     JsonSensitivityMapFile,
@@ -38,6 +39,7 @@ from quantfit.ports.outbound import (
 from tests.fakes import (
     MemoryModelShapeSource,
     MemoryRecipeSink,
+    MemoryRunLog,
     MemoryScanCheckpointStore,
     MemorySensitivityMapSink,
     MemorySensitivityMapSource,
@@ -340,3 +342,47 @@ class TestScanCheckpointStoreContract:
         store.append(FINGERPRINT, Measurement(group="g0", bits=8, damage=0.001))
 
         assert store.load(FINGERPRINT) == store.load(FINGERPRINT)
+
+
+# --- RunLogSink ------------------------------------------------------------- #
+
+
+def _real_run_log(tmp_path: Path):
+    path = tmp_path / "scan.runlog.jsonl"
+    sink = JsonlRunLogFile(path)
+    return sink, lambda: [
+        (
+            e["event"],
+            {k: v for k, v in e.items() if k not in ("event", "ts", "quantfit_runlog")},
+        )
+        for e in read_run_log(path)
+    ]
+
+
+def _fake_run_log(tmp_path: Path):
+    sink = MemoryRunLog()
+    return sink, lambda: [(event, dict(fields)) for event, fields in sink.events]
+
+
+@pytest.mark.contract
+@pytest.mark.parametrize(
+    "build", [_real_run_log, _fake_run_log], ids=["real-jsonl", "fake-memory"]
+)
+class TestRunLogSinkContract:
+    def test_events_read_back_in_emit_order(self, build, tmp_path) -> None:
+        sink, readback = build(tmp_path)
+
+        sink.emit("scan_started", {"model": "test/model"})
+        sink.emit("cell_measured", {"group": "g0", "bits": 4, "damage": 0.01})
+
+        assert readback() == [
+            ("scan_started", {"model": "test/model"}),
+            ("cell_measured", {"group": "g0", "bits": 4, "damage": 0.01}),
+        ]
+
+    def test_empty_fields_are_allowed(self, build, tmp_path) -> None:
+        sink, readback = build(tmp_path)
+
+        sink.emit("scan_finished", {})
+
+        assert readback() == [("scan_finished", {})]

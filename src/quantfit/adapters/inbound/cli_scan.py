@@ -7,8 +7,9 @@ base install never imports torch), drives the `DamageMeter` and
 `ScanCheckpointStore` ports cell by cell, and hands the finished
 measurements to the pure assembly logic in [quantfit.domain.scan][].
 Every failure — a missing extra, a bad destination, an unstable
-measurement, a checkpoint write — halts with a clean ``error:`` line,
-and the checkpoint keeps every finished cell.
+measurement, a checkpoint write — halts with a clean ``error:`` line.
+The checkpoint keeps every finished cell. The run log records the
+halt with its stage (ADR-0011).
 
 Examples:
     Scan a local checkpoint at the ADR-0010 candidate set:
@@ -31,13 +32,20 @@ from typing import Annotated, Literal
 
 import typer
 
+from quantfit.adapters.inbound.scan_events import (
+    SafeRunLog,
+    measure_cells,
+    rss_hwm_gb,
+    start_run,
+)
 from quantfit.adapters.outbound.json_common import ArtifactError
+from quantfit.adapters.outbound.run_log_jsonl import JsonlRunLogFile
 from quantfit.adapters.outbound.scan_checkpoint_json import JsonScanCheckpointFile
 from quantfit.adapters.outbound.sensitivity_map_json import JsonSensitivityMapFile
 from quantfit.domain.budget import parse_size
+from quantfit.domain.errors import QuantfitError
 from quantfit.domain.model import ScanMeta
 from quantfit.domain.scan import (
-    Measurement,
     assemble_map,
     plan_measurements,
     scan_fingerprint,
@@ -53,12 +61,13 @@ INSTALL_HINT = (
 )
 
 
-class ScanExtraMissingError(RuntimeError):
+class ScanExtraMissingError(QuantfitError, RuntimeError):
     """The scan adapter package itself failed to import.
 
     Distinguishes "torch is not installed" from every other
     ImportError a model load can raise (missing tokenizer backends,
-    broken CUDA builds) — those must surface as themselves.
+    broken CUDA builds) — those must surface as themselves. Inherits
+    `QuantfitError` per ADR-0011.
 
     Examples:
         The scan command maps it to the install hint:
@@ -124,47 +133,24 @@ def _build_meter(
     )
 
 
-def _measure_cells(
-    meter: DamageMeter,
-    store: ScanCheckpointStore,
-    fingerprint: str,
-    done: list[Measurement],
-    todo: tuple[tuple[str, int], ...],
-) -> list[Measurement]:
-    """Measure every remaining cell, checkpointing each one.
+def _open_run_log(out: Path, runlog: Path | None) -> SafeRunLog:
+    """Resolve, validate, and wrap the run-log destination.
 
     Args:
-        meter: The damage meter to drive.
-        store: The checkpoint store recording each finished cell.
-        fingerprint: The scan's identity string.
-        done: Measurements already checkpointed.
-        todo: Remaining (group, bits) cells, in measurement order.
+        out: The sensitivity-map path the default derives from.
+        runlog: An explicit run-log path, or None for the default.
 
     Returns:
-        All measurements, checkpointed ones first.
+        The policy-wrapped sink.
 
     Raises:
-        typer.Exit: With code 1 when a measurement or checkpoint write
-            fails — the message reports how many cells the checkpoint
-            keeps.
+        typer.BadParameter: If the run-log directory does not exist —
+            rejected before the model load burns an hour.
     """
-    measurements = list(done)
-    total = len(done) + len(todo)
-    for i, (group, bits) in enumerate(todo, start=len(done) + 1):
-        try:
-            damage = meter.measure(group, bits)
-            measurement = Measurement(group=group, bits=bits, damage=damage)
-            store.append(fingerprint, measurement)
-        except (RuntimeError, ValueError, OSError) as exc:
-            typer.echo(
-                f"error: scan halted at {group} {bits}-bit: {exc} "
-                f"(checkpoint keeps {i - 1} cells)",
-                err=True,
-            )
-            raise typer.Exit(code=1) from exc
-        measurements.append(measurement)
-        typer.echo(f"[{i}/{total}] {group} @ {bits}-bit damage {damage:.6f}")
-    return measurements
+    path = runlog if runlog is not None else out.with_name(out.stem + ".runlog.jsonl")
+    if not path.parent.is_dir():
+        raise typer.BadParameter(f"--runlog: directory {path.parent} does not exist")
+    return SafeRunLog(JsonlRunLogFile(path))
 
 
 def _parse_precisions(text: str) -> tuple[int, ...]:
@@ -238,23 +224,31 @@ def scan(
             "quantization."
         ),
     ] = None,
+    runlog: Annotated[
+        Path | None,
+        typer.Option(help="Run-log path (JSONL). Default: <stem>.runlog.jsonl."),
+    ] = None,
 ) -> None:
     """Measure per-group quantization damage and write a sensitivity map.
 
     Every finished cell lands in a checkpoint file next to ``--out``
-    (``<out stem>.checkpoint.json``), so a crashed scan resumes instead
+    (``<stem>.checkpoint.json``), so a crashed scan resumes instead
     of restarting. ``--no-resume`` discards any existing checkpoint.
     ``--gpu-memory`` caps the shards that ``auto`` sharding places on
     GPU 0 (parsed with the project size grammar, validated up front),
-    keeping workspace free for activations and logits. The meter
+    keeping workspace free for activations and logits. Every run
+    appends machine-readable events to ``--runlog`` (default beside
+    ``--out``), the ADR-0011 run log. Every halt event carries the
+    same fields, with ``cells_kept`` null when the stage cannot know
+    the count. The meter
     refuses models whose groups fall off real devices — see the
     how-to for the current size limit.
 
     Raises:
         typer.BadParameter: If ``--precisions``, ``--group-by``, or
             ``--gpu-memory`` is malformed, ``--gpu-memory`` is given
-            without ``--device auto``, or the ``--out`` directory does
-            not exist.
+            without ``--device auto``, or the ``--out`` or ``--runlog``
+            directory does not exist.
         typer.Exit: With code 1 when the scan extra is missing, the
             model or calibration cannot load, the checkpoint belongs to
             a different scan, a measurement fails, a checkpoint write
@@ -272,7 +266,6 @@ def scan(
         raise typer.BadParameter(
             f'--group-by: expected "layer" or "tensor", got "{group_by}"'
         )
-    grouping: Literal["layer", "tensor"] = group_by
     # Reject an unwritable destination now — not after the model loads
     # and the first calibration pass has burned an hour.
     if not out.parent.is_dir():
@@ -290,22 +283,27 @@ def scan(
         except ValueError as exc:
             raise typer.BadParameter(f"--gpu-memory: {exc}") from exc
 
-    # Only a failed adapter import means "extra not installed" —
-    # construction errors (missing tokenizer backend, CUDA out of
-    # memory, bad repo) must surface as themselves.
-    try:
-        meter = _build_meter(
+    run_log = _open_run_log(out, runlog)
+    meter = start_run(
+        run_log,
+        {
+            "model": model,
+            "precisions": list(parsed_precisions),
+            "group_by": group_by,
+            "max_tokens": max_tokens,
+            "device": device,
+            "gpu_memory_bytes": gpu_memory_bytes,
+        },
+        lambda: _build_meter(
             model,
             calibration,
             max_tokens=max_tokens,
-            group_by=grouping,
+            group_by=group_by,
             device=device,
             trust_remote_code=trust_remote_code,
             gpu_memory=gpu_memory_bytes,
-        )
-    except (OSError, ValueError, RuntimeError, ImportError) as exc:
-        typer.echo(f"error: {exc}", err=True)
-        raise typer.Exit(code=1) from exc
+        ),
+    )
 
     started_at = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     meta = ScanMeta(
@@ -313,7 +311,7 @@ def scan(
         calibration=str(calibration),
         calibration_tokens=meter.calibration_tokens(),
         precisions=parsed_precisions,
-        group_by=grouping,
+        group_by=group_by,
         started_at=started_at,
     )
     fingerprint = scan_fingerprint(model, meta)
@@ -338,11 +336,21 @@ def scan(
             f"error: {checkpoint_path}: {exc} — pass --no-resume to discard it",
             err=True,
         )
+        run_log.emit(
+            "scan_halted",
+            {
+                "stage": "checkpoint_load",
+                "error": str(exc),
+                "cells_kept": None,
+                "rss_hwm_gb": rss_hwm_gb(),
+            },
+        )
         raise typer.Exit(code=1) from exc
 
     if done:
         typer.echo(f"resuming: {len(done)} of {len(done) + len(todo)} cells done")
-    measurements = _measure_cells(meter, store, fingerprint, list(done), todo)
+        run_log.emit("resume_loaded", {"cells": len(done), "remaining": len(todo)})
+    measurements = measure_cells(meter, store, fingerprint, list(done), todo, run_log)
 
     sink: SensitivityMapSink = JsonSensitivityMapFile(out)
     try:
@@ -350,7 +358,25 @@ def scan(
         sink.save(map_)
     except (ValueError, OSError) as exc:
         typer.echo(f"error: {out}: {exc}", err=True)
+        run_log.emit(
+            "scan_halted",
+            {
+                "stage": "map_write",
+                "error": str(exc),
+                "cells_kept": len(measurements),
+                "rss_hwm_gb": rss_hwm_gb(),
+            },
+        )
         raise typer.Exit(code=1) from exc
+    run_log.emit(
+        "scan_finished",
+        {
+            "out": str(out),
+            "groups": len(specs),
+            "cells": len(measurements),
+            "rss_hwm_gb": rss_hwm_gb(),
+        },
+    )
     typer.echo(
         f"scanned {len(specs)} groups x {len(parsed_precisions)} precisions "
         f"over {meta.calibration_tokens} tokens -> {out}"
