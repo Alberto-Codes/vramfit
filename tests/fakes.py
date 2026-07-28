@@ -1,10 +1,18 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Literal
 
+from quantfit.adapters.outbound.gguf.types import (
+    PackError,
+    base_type,
+    tensor_overrides,
+    token_embedding_type,
+)
 from quantfit.adapters.outbound.json_common import ArtifactError
 from quantfit.domain.budget import ModelShape
 from quantfit.domain.model import Recipe, SensitivityMap
+from quantfit.domain.pack import PackResult
 from quantfit.domain.scan import GroupSpec, Measurement
 
 
@@ -111,6 +119,45 @@ class MemoryScanCheckpointStore:
         self._check(fingerprint)
         self.fingerprint = fingerprint
         self.measurements.append(measurement)
+
+
+@dataclass
+class MemoryRecipePacker:
+    """In-memory `RecipePacker`. Sizes are configured, the type mapping is shared.
+
+    The mapping comes from the same pure functions the real adapter
+    uses, so the fake cannot drift from the ADR-0012 tables. Like the
+    real adapter, an existing base wins before a broken convert tool,
+    and a mapping failure packs nothing.
+    """
+
+    base_bytes: int = 1_000
+    packed_bytes: int = 500
+    fail_stage: Literal["convert", "quantize"] | None = None
+    has_base: bool = False
+    packed: list[Recipe] = field(default_factory=list)
+
+    def convert(self) -> int:
+        if self.has_base:
+            return self.base_bytes
+        if self.fail_stage == "convert":
+            raise PackError("convert failed with exit code 3:\nconfigured failure")
+        self.has_base = True
+        return self.base_bytes
+
+    def pack(self, recipe: Recipe) -> PackResult:
+        if not self.has_base:
+            raise PackError("base GGUF does not exist — run convert first")
+        if self.fail_stage == "quantize":
+            raise PackError("quantize failed with exit code 3:\nconfigured failure")
+        result = PackResult(
+            packed_bytes=self.packed_bytes,
+            base_type=base_type(recipe),
+            token_embedding_type=token_embedding_type(recipe),
+            overrides=tensor_overrides(recipe),
+        )
+        self.packed.append(recipe)
+        return result
 
 
 @dataclass

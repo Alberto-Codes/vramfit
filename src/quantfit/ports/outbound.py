@@ -4,7 +4,9 @@ Each protocol names one capability the inbound side orchestrates
 against. Artifact IO ports carry whole domain values, and the run-log
 port carries one machine event at a time (ADR-0011). The scan ports
 (`DamageMeter`, `ScanCheckpointStore`) carry the scan grid cell by
-cell so a crashed scan can resume. Concrete implementations live in
+cell so a crashed scan can resume. The pack port (`RecipePacker`)
+carries its two toolchain stages separately so the composition root
+can log each (ADR-0012). Concrete implementations live in
 [quantfit.adapters.outbound][].
 
 Examples:
@@ -30,6 +32,7 @@ from typing import Protocol
 
 from quantfit.domain.budget import ModelShape
 from quantfit.domain.model import Recipe, SensitivityMap
+from quantfit.domain.pack import PackResult
 from quantfit.domain.scan import GroupSpec, Measurement
 
 
@@ -231,6 +234,54 @@ class ScanCheckpointStore(Protocol):
         ...
 
 
+class RecipePacker(Protocol):
+    """Packs a recipe into a checkpoint a target runtime can serve.
+
+    The second expensive port after `DamageMeter`: both stages shell
+    out to a runtime's toolchain and run for minutes. The port splits
+    them so the composition root can log each stage (ADR-0012):
+    `convert` materializes the full-precision base GGUF once, and
+    `pack` drives the runtime's quantizer with the recipe's type
+    mapping. The llama.cpp adapter implements it by subprocess.
+
+    Examples:
+        The pack command drives the port like this:
+
+        ```python
+        base_bytes = packer.convert()
+        result = packer.pack(recipe)
+        ```
+    """
+
+    def convert(self) -> int:
+        """Materialize the full-precision base GGUF, reusing any existing one.
+
+        Returns:
+            Size of the base GGUF in bytes.
+
+        Raises:
+            RuntimeError: If the conversion tool fails or writes no
+                file.
+        """
+        ...
+
+    def pack(self, recipe: Recipe) -> PackResult:
+        """Quantize the base GGUF into the recipe's packed model.
+
+        Args:
+            recipe: The recipe to apply.
+
+        Returns:
+            The accounting record, with the real packed size.
+
+        Raises:
+            RuntimeError: If the base GGUF is missing, the recipe has
+                a group or precision the backend cannot map, or the
+                quantizer fails.
+        """
+        ...
+
+
 class RunLogSink(Protocol):
     """Accepts run-log events for durable, machine-readable recording.
 
@@ -248,8 +299,9 @@ class RunLogSink(Protocol):
     def emit(self, event: str, fields: Mapping[str, object]) -> None:
         """Record one event with its fields.
 
-        The keys ``event``, ``ts``, ``quantfit_runlog``, and ``run_id``
-        belong to the envelope — callers must not pass them in
+        The keys ``event``, ``ts``, and ``quantfit_runlog`` belong to
+        the sink's envelope, and the inbound ``SafeRunLog`` wrapper
+        stamps ``run_id`` — callers must not pass any of them in
         ``fields``.
 
         Args:
