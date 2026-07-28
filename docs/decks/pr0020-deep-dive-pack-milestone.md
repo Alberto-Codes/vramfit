@@ -51,17 +51,17 @@ The package imports neither torch nor gguf — the convert script's
 
 ```python
 class RecipePacker(Protocol):
-    def convert(self) -> int: ...          # f16 base GGUF, reused if present
+    def convert(self) -> int: ...  # f16 base GGUF, reused if present
     def pack(self, recipe: Recipe) -> PackResult: ...
 ```
 
 ```python
 @dataclass(frozen=True, slots=True)
 class PackResult:
-    packed_bytes: int                   # real file size, stat'd
-    base_type: str                      # e.g. "Q4_K_S"
-    token_embedding_type: str | None    # e.g. "q8_0"
-    overrides: tuple[TypeOverride, ...] # unique patterns, recipe order
+    packed_bytes: int  # real file size, stat'd
+    base_type: str  # e.g. "Q4_K_S"
+    token_embedding_type: str | None  # e.g. "q8_0"
+    overrides: tuple[TypeOverride, ...]  # unique patterns, recipe order
 ```
 
 Two methods because the composition root logs each stage (ADR-0011):
