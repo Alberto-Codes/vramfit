@@ -1,6 +1,7 @@
 """Greedy damage-per-byte solver that turns a sensitivity map into a recipe.
 
-Implements ADR-0007: start every group at the highest candidate precision
+Implements ADR-0007, with errors under the `QuantfitError` root
+(ADR-0011): start every group at the highest candidate precision
 (or its pin), then repeatedly apply the downgrade with the best
 damage-per-byte-freed ratio until the total fits the weight budget. The
 ordered downgrade log is recorded in the recipe as its explanation
@@ -42,6 +43,7 @@ from collections.abc import Callable, Mapping
 from fnmatch import fnmatchcase
 from typing import Final
 
+from quantfit.domain.errors import QuantfitError
 from quantfit.domain.model import (
     Assignment,
     PlanMeta,
@@ -54,8 +56,8 @@ SOLVER_NAME: Final[str] = "greedy-damage-per-byte"
 DEFAULT_FORMAT_OVERHEAD: Final[float] = 0.05
 
 
-class PinError(ValueError):
-    """A ``--pin`` pattern is unusable.
+class PinError(QuantfitError, ValueError):
+    """A ``--pin`` pattern is unusable. Under the `QuantfitError` root.
 
     Raised when a pin names a precision the scan did not measure, or when
     its pattern matches no group (usually a typo).
@@ -74,8 +76,8 @@ class PinError(ValueError):
     """
 
 
-class InfeasibleBudgetError(Exception):
-    """No recipe fits the weight budget, even at minimum precision.
+class InfeasibleBudgetError(QuantfitError):
+    """No recipe fits the weight budget. Under the `QuantfitError` root.
 
     Attributes:
         gap_bytes (int): How far the best possible total overshoots the

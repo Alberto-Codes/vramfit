@@ -70,6 +70,24 @@ The reference distributions still cache on the CPU — roughly 0.25 GiB
 per 1024 calibration tokens at a 128k vocabulary — so `--max-tokens`
 budgets against system RAM either way.
 
+## Reading the run log
+
+Beside the map and checkpoint, the scan appends one JSON event per
+line to `sensitivity.runlog.jsonl` — timings, damage, and memory
+high-water marks. Any JSONL consumer works. One-liner analysis with
+DuckDB:
+
+```bash
+duckdb -c "SELECT \"group\", bits, damage, seconds \
+  FROM read_json_auto('sensitivity.runlog.jsonl') \
+  WHERE event = 'cell_measured' ORDER BY seconds DESC LIMIT 10"
+```
+
+Splunk, Postgres `COPY`, and log collectors ingest the same file
+unchanged. Reruns and resumes append to the same file — filter on
+``run_id`` to select one run. A run-log write failure warns once and
+disables further events; the scan continues.
+
 ## Choosing calibration data
 
 Sensitivity is measured *on some text*; the choice matters and is an open

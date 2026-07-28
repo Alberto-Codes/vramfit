@@ -36,6 +36,7 @@ keywords = [
     "vllm",
 ]
 dependencies = [
+    "structlog>=24.1",
     "typer>=0.9",
 ]
 
@@ -252,7 +253,7 @@ layers = [
 name = "Domain is IO-free"
 type = "forbidden"
 source_modules = ["quantfit.domain"]
-forbidden_modules = ["json", "pathlib", "os", "io", "typer"]
+forbidden_modules = ["json", "pathlib", "os", "io", "typer", "logging", "structlog"]
 
 [[tool.importlinter.contracts]]
 # Executable form of ADR-0005: the plan step stays importable without

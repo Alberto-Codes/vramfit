@@ -1,5 +1,6 @@
 """Shared JSON validation machinery for the artifact adapters.
 
+`ArtifactError` sits under the `QuantfitError` root (ADR-0011).
 Every extractor takes a JSON path string so validation errors read like
 ``$.groups[3].sensitivity: key "4x" is not an integer precision``.
 Numeric extractors reject booleans (JSON ``true`` is a valid Python int)
@@ -34,11 +35,13 @@ import math
 from pathlib import Path
 from typing import Any, Final
 
+from quantfit.domain.errors import QuantfitError
+
 SCHEMA_VERSION: Final[int] = 1
 
 
-class ArtifactError(ValueError):
-    """Invalid quantfit JSON artifact.
+class ArtifactError(QuantfitError, ValueError):
+    """Invalid quantfit JSON artifact, under the `QuantfitError` root.
 
     Attributes:
         json_path (str): Dotted path to the offending element, e.g.
