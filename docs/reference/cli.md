@@ -92,6 +92,8 @@ quantfit scan MODEL
   --trust-remote-code    Allow model repos with custom code (the
                          north-star target needs this)
   --resume / --no-resume Continue from the checkpoint file  [default: resume]
+  --runlog PATH          Run-log path (JSONL)
+                         [default: <out stem>.runlog.jsonl]
   --gpu-memory SIZE      Byte cap on GPU 0 model shards (e.g. 17GiB),
                          parsed with the same grammar as --vram.
                          Requires --device auto. Keeps workspace free
@@ -99,7 +101,11 @@ quantfit scan MODEL
                          [default: none]
 ```
 
-Every finished (group x precision) cell lands in a checkpoint file next
+Every run appends machine-readable events to a run log
+(`<stem>.runlog.jsonl`, ADR-0011): scan_started, meter_built,
+resume_loaded, one cell_measured per cell with damage, seconds, and
+the RSS high-water mark, then scan_finished or scan_halted. Every
+finished (group x precision) cell lands in a checkpoint file next
 to `--out` (`<stem>.checkpoint.json`). A rerun of the same scan resumes
 from it. The checkpoint carries the scan's fingerprint (model, metric,
 calibration, token count, grouping, precisions, method) — a rerun with

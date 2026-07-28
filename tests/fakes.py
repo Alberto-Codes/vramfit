@@ -111,3 +111,13 @@ class MemoryScanCheckpointStore:
         self._check(fingerprint)
         self.fingerprint = fingerprint
         self.measurements.append(measurement)
+
+
+@dataclass
+class MemoryRunLog:
+    """In-memory `RunLogSink` recording events in order."""
+
+    events: list[tuple[str, dict]] = field(default_factory=list)
+
+    def emit(self, event: str, fields) -> None:
+        self.events.append((event, dict(fields)))

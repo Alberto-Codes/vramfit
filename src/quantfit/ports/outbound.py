@@ -1,7 +1,8 @@
 """Outbound (driven) ports: what the application needs from the world.
 
 Each protocol names one capability the inbound side orchestrates
-against. Artifact IO ports carry whole domain values. The scan ports
+against. Artifact IO ports carry whole domain values, and the run-log
+port carries one machine event at a time (ADR-0011). The scan ports
 (`DamageMeter`, `ScanCheckpointStore`) carry the scan grid cell by
 cell so a crashed scan can resume. Concrete implementations live in
 [quantfit.adapters.outbound][].
@@ -24,6 +25,7 @@ See Also:
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Protocol
 
 from quantfit.domain.budget import ModelShape
@@ -225,5 +227,32 @@ class ScanCheckpointStore(Protocol):
             ValueError: If the stored checkpoint carries a different
                 fingerprint.
             OSError: If the write fails.
+        """
+        ...
+
+
+class RunLogSink(Protocol):
+    """Accepts run-log events for durable, machine-readable recording.
+
+    The run log is the machine channel (ADR-0011): one event per call,
+    appended in order. Human CLI output never routes through it.
+
+    Examples:
+        Record one measured cell:
+
+        ```python
+        sink.emit("cell_measured", {"group": "g0", "bits": 4})
+        ```
+    """
+
+    def emit(self, event: str, fields: Mapping[str, object]) -> None:
+        """Record one event with its fields.
+
+        Args:
+            event: Past-tense event name, e.g. ``cell_measured``.
+            fields: JSON-representable payload for the event.
+
+        Raises:
+            OSError: If the backing store cannot be written.
         """
         ...

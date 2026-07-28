@@ -354,3 +354,59 @@ def test_gpu_memory_without_auto_device_exits_with_usage_error(
 
     assert result.exit_code == 2
     assert "requires --device auto" in result.output
+
+
+def test_scan_writes_a_run_log_with_the_full_event_story(tmp_path, monkeypatch) -> None:
+    from quantfit.adapters.outbound.run_log_jsonl import read_run_log
+
+    install_meter(
+        monkeypatch, MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES), tokens=64)
+    )
+
+    result, _out = invoke_scan(tmp_path)
+
+    assert result.exit_code == 0, result.output
+    events = read_run_log(tmp_path / "sensitivity.runlog.jsonl")
+    names = [e["event"] for e in events]
+    assert names[0] == "scan_started"
+    assert names[1] == "meter_built"
+    assert names.count("cell_measured") == 4
+    assert names[-1] == "scan_finished"
+    cell = next(e for e in events if e["event"] == "cell_measured")
+    assert {"group", "bits", "damage", "seconds", "rss_hwm_gb", "ts"} <= set(cell)
+    assert all(e["quantfit_runlog"] == 1 for e in events)
+
+
+def test_halted_scan_logs_the_failing_cell(tmp_path, monkeypatch) -> None:
+    from quantfit.adapters.outbound.run_log_jsonl import read_run_log
+
+    damages = dict(DAMAGES)
+    damages[("model.layers.1", 8)] = float("nan")
+    install_meter(
+        monkeypatch, MemoryDamageMeter(specs=SPECS, damages=damages, tokens=64)
+    )
+
+    result, _ = invoke_scan(tmp_path)
+
+    assert result.exit_code == 1
+    events = read_run_log(tmp_path / "sensitivity.runlog.jsonl")
+    halted = events[-1]
+    assert halted["event"] == "scan_halted"
+    assert halted["stage"] == "measure"
+    assert halted["group"] == "model.layers.1"
+    assert halted["cells_kept"] == 2
+
+
+def test_runlog_option_overrides_the_default_path(tmp_path, monkeypatch) -> None:
+    from quantfit.adapters.outbound.run_log_jsonl import read_run_log
+
+    install_meter(
+        monkeypatch, MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES), tokens=64)
+    )
+    custom = tmp_path / "elsewhere.jsonl"
+
+    result, _ = invoke_scan(tmp_path, "--runlog", str(custom))
+
+    assert result.exit_code == 0, result.output
+    assert read_run_log(custom)[0]["event"] == "scan_started"
+    assert not (tmp_path / "sensitivity.runlog.jsonl").exists()
