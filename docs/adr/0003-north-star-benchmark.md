@@ -10,10 +10,15 @@ project needs one benchmark that (a) is impossible today, (b) becomes
 possible only if the core idea works, and (c) runs on hardware we actually
 own (RTX 4090, 24 GiB VRAM, 124 GB system RAM).
 
-Nemotron Super 49B fits that profile: it does not fit a 4090 at uniform
-4-bit, the required ~3.2 average bits/parameter is achievable *only* with
-non-uniform assignment, and the model is open-weight with strong quality —
-so "49B on a 4090" is a headline result people can reproduce.
+Nemotron Super 49B — exact checkpoint
+[nvidia/Llama-3_3-Nemotron-Super-49B-v1_5](https://huggingface.co/nvidia/Llama-3_3-Nemotron-Super-49B-v1_5)
+— fits that profile: it does not fit a 4090 at uniform 4-bit (NVIDIA's own
+NVFP4 quant is still over the card), the required ~3.2 average
+bits/parameter is achievable *only* with non-uniform assignment, and the
+model is open-weight with strong quality — so "49B on a 4090" is a headline
+result people can reproduce. Bonus: the model is NAS-derived with
+structurally heterogeneous layers, so uniform treatment is especially
+unlikely to be optimal for it.
 
 Alternatives: a 70B-class dense model (needs average bits low enough that
 even selective assignment likely wrecks it — a stretch goal, not a first

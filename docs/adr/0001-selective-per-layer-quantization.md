@@ -8,9 +8,14 @@
 Models worth running (Nemotron Super 49B class) exceed a 24 GiB card at any
 uniform precision that preserves quality: uniform 4-bit doesn't fit, uniform
 3-bit fits marginally but degrades badly. Layer fragility is known to be
-non-uniform, and existing tools encode that as fixed per-architecture
-heuristics rather than measurement. antirez/ds4 demonstrated that a recipe
-tuned to one specific model outperforms generic treatment of that model.
+non-uniform. Existing tools mostly encode that as fixed heuristics
+(llama.cpp k-quants); EXL2/exllamav2 *does* measure per-layer and mix
+bitrates, but is tied to its own runtime and optimizes to an average
+bits-per-weight rather than an explicit VRAM budget planned jointly with KV
+headroom. antirez/ds4 demonstrated that a recipe tuned to one specific model
+outperforms generic treatment of that model. quantfit's niche: EXL2-style
+measurement, vLLM-served, with the budget math and the recipe as inspectable
+first-class artifacts.
 
 Alternatives considered: uniform quantization with better within-layer
 methods (AWQ/GPTQ alone — doesn't change the fit arithmetic); pruning or

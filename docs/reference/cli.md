@@ -23,7 +23,9 @@ Exists as a stub that exits with code 1. Planned signature:
 ```
 quantfit scan MODEL_ID
   --calibration TEXT     Calibration dataset name or path  [default: wikitext]
-  --precisions TEXT      Comma-separated candidate bit-widths  [default: 8,4,3,2]
+  --precisions TEXT      Comma-separated candidate bit-widths; the useful set
+                         depends on the target runtime's kernels (vLLM today:
+                         8, 4-int, 4-fp — see ADR-0004)  [default: 8,4]
   --group-by TEXT        Layer grouping granularity (layer | tensor)  [default: layer]
   --resume               Continue an interrupted scan from its checkpoint
   --out PATH             Output sensitivity map  [default: sensitivity.json]

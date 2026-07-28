@@ -47,8 +47,13 @@ the project's core hypothesis, and the 49B-on-a-4090 benchmark is its test.
 - **antirez/ds4** — proved the depth-over-breadth ethos: selective
   quantization hand-tuned for one model (DeepSeek V4 Flash) beat generic
   runtimes' recipes for that model.
-- **llama.cpp k-quants** — ship non-uniform layer recipes, but heuristic and
-  generic across architectures.
+- **llama.cpp k-quants + imatrix** — non-uniform layer recipes (heuristic)
+  plus measured activation statistics applied *within* blocks.
+- **EXL2/exllamav2** — the closest relative: measured per-layer bitrate
+  mixing to hit a target average bpw. quantfit differs in target runtime
+  (vLLM), in optimizing against an explicit VRAM+KV budget instead of an
+  average bitrate, and in treating the measurement and recipe as standalone
+  artifacts.
 - **AWQ / GPTQ** — calibration-aware weight quantization within a uniform
   target precision; quantfit's selectivity operates a level above (which
   precision per group), and can use these as the within-group method.
