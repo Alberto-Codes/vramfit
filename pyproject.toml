@@ -155,6 +155,10 @@ convention = "google"
     "PLR0913",  # typer commands take one arg per CLI option by design
     "PLR0917",
 ]
+"src/quantfit/adapters/inbound/cli_validate.py" = [
+    "PLR0913",  # typer commands take one arg per CLI option by design
+    "PLR0917",
+]
 "src/quantfit/adapters/outbound/scan/meter.py" = [
     "PLR0913",  # the meter constructor mirrors the scan command's options
     "PLR0917",
