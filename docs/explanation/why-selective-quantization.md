@@ -4,9 +4,14 @@ status: draft
 
 # Why selective quantization
 
-> **Status: draft** — the reasoning is well-grounded in published work. Our
-> own measurements so far: a tiny-model scan shows ~50× sensitivity spread
-> between groups. The first full-size scan is in progress.
+> **Status: draft** — the reasoning is well-grounded in published work and
+> now in our own data. A tiny-model scan showed ~50× sensitivity spread
+> between groups. The first real-model scan (Qwen2.5-3B, 2026-07-28,
+> 37 groups × 4 precisions, 57 min on the reference box) measured a ~490×
+> 3-bit fragility gap between *adjacent* layers (layer 1: damage 6.28,
+> layer 0: 0.013) and a U-shaped 2-bit damage profile — both ends of the
+> stack fragile, the middle ~10× cheaper. The 49B scan waits on
+> offload-aware scanning (issue #16).
 
 ## The arithmetic that forces the issue
 
