@@ -28,6 +28,7 @@ change of course gets a *new* ADR that supersedes the old one.
 | [0008](0008-hexagonal-architecture.md) | Hexagonal architecture, enforced by import-linter | Accepted |
 | [0009](0009-testing-strategy.md) | Testing strategy — pyramid, verified fakes, properties | Accepted |
 | [0010](0010-sub-4-bit-serving-path.md) | The sub-4-bit serving path runs through GGUF | Accepted |
+| [0011](0011-run-logs-and-error-root.md) | Run logs as artifacts, and one error root | Proposed |
 
 ## Template
 
