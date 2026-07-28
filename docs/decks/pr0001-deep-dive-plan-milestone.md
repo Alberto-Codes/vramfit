@@ -1,14 +1,18 @@
 ---
 marp: true
-theme: default
+theme: quantfit
 paginate: true
+footer: quantfit · PR #1
 ---
+
+<!-- _class: lead -->
 
 # quantfit — plan step deep dive
 
 Milestone 1: artifact schemas, VRAM budget math, greedy solver
 
-Branch `feat/plan-solver-schemas-budget` · PR #1 · 2026-07-27
+Branch `feat/plan-solver-schemas-budget` · 2026-07-27
+[github.com/Alberto-Codes/quantfit/pull/1](https://github.com/Alberto-Codes/quantfit/pull/1)
 
 ---
 
@@ -137,6 +141,8 @@ Multiple-choice knapsack, greedy by damage-per-byte:
 
 ---
 
+<!-- _class: dense -->
+
 # Solver — design points
 
 - Moves consider **all** lower precisions → non-convex damage curves
@@ -176,6 +182,8 @@ Multiple-choice knapsack, greedy by damage-per-byte:
   reserved); scan pipeline is still a stub.
 
 ---
+
+<!-- _class: dense -->
 
 # Risks and open questions
 

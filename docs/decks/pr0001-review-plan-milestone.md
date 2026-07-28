@@ -1,14 +1,18 @@
 ---
 marp: true
-theme: default
+theme: quantfit
 paginate: true
+footer: quantfit · PR #1
 ---
+
+<!-- _class: lead -->
 
 # quantfit
 
 **Making a big AI model fit on the computer we already own.**
 
 Milestone 1 review — July 27, 2026
+[github.com/Alberto-Codes/quantfit/pull/1](https://github.com/Alberto-Codes/quantfit/pull/1)
 
 ---
 
