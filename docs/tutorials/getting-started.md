@@ -1,58 +1,74 @@
 ---
-status: sketch
+status: draft
 ---
 
 # Getting started
 
-> **Status: sketch** — the pipeline commands are not implemented; this
-> tutorial describes the intended first-run experience.
+> **Status: draft** — steps 1–3 (install, scan, plan) run against real
+> code today. Step 4 (pack) is design-stage, so the loop does not close
+> yet.
 
-This tutorial walks you from a clean checkout to a quantized model you can
-serve, using a small model so the whole loop runs in minutes.
+This tutorial walks you from a clean checkout to a measured
+mixed-precision recipe, using a small model so the scan finishes in
+minutes.
 
 ## Prerequisites
 
-- Linux with an NVIDIA GPU (any modern card works for the tutorial model)
+- Linux with an NVIDIA GPU (any modern card works for the tutorial
+  model — CPU also works, just slower)
 - Python 3.12+ and [uv](https://docs.astral.sh/uv/)
 
 ## 1. Install
 
+The scan step needs the GPU stack, which lives behind an extra
+(ADR-0005):
+
 ```bash
 git clone https://github.com/Alberto-Codes/quantfit.git
 cd quantfit
-uv sync
+uv sync --extra scan
 uv run quantfit version
 ```
 
 ## 2. Scan a small model
 
-We use a small model first so a full sensitivity scan finishes quickly:
+The scan measures damage on some text — give it a calibration file:
 
 ```bash
-uv run quantfit scan <small-model-id> --out sensitivity.json
+printf 'The quick brown fox jumps over the lazy dog. %.0s' {1..200} > calibration.txt
+
+uv run quantfit scan HuggingFaceTB/SmolLM2-135M \
+  --calibration calibration.txt \
+  --max-tokens 2048 \
+  --out sensitivity.json
 ```
 
-The scan quantizes one layer group at a time at each candidate precision,
-measures divergence from the full-precision model, and writes a
-[sensitivity map](../reference/sensitivity-map.md).
+The scan quantizes one layer group at a time at each candidate
+precision (8, 4, 3, 2 bits), measures divergence from the
+full-precision model, and writes a
+[sensitivity map](../reference/sensitivity-map.md). Progress prints per
+cell, and every finished cell lands in
+`sensitivity.checkpoint.json` — rerun the same command after an
+interruption and it resumes.
 
 ## 3. Plan a recipe
 
 Pick a deliberately tight VRAM budget so the solver has real work to do:
 
 ```bash
-uv run quantfit plan sensitivity.json --vram 4GiB --kv-headroom 1GiB --out recipe.json
+uv run quantfit plan sensitivity.json --vram 256MiB --kv-headroom 64MiB --out recipe.json
 ```
 
-The output [recipe](../reference/recipe.md) lists every layer group and its
-assigned precision.
+The output [recipe](../reference/recipe.md) lists every layer group and
+its assigned precision, plus the downgrade trace explaining each
+choice. Try loosening or tightening `--vram` and watch the assignments
+move.
 
-## 4. Pack and serve
+## 4. Pack and serve *(not yet implemented)*
 
-```bash
-uv run quantfit pack <small-model-id> --recipe recipe.json --out ./packed
-```
-
-Point vLLM at `./packed` and generate text. You have run the full
-scan → plan → pack loop; the [how-to guides](../how-to/scan-a-model.md) cover
-doing this on models that *don't* trivially fit.
+The pack step will apply the recipe and emit a checkpoint a runtime can
+serve — GGUF/llama.cpp first, per
+[ADR-0010](../adr/0010-sub-4-bit-serving-path.md). Until it lands, the
+recipe is the end of the loop. The
+[how-to guides](../how-to/scan-a-model.md) cover scanning models that
+*don't* trivially fit.
