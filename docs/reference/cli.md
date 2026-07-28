@@ -131,9 +131,11 @@ written. Exit 2 on malformed `--precisions`, `--group-by`, or
 Implemented for the GGUF backend (ADR-0010, ADR-0012). Applies a
 recipe through llama.cpp's quantizer: one f16 base GGUF conversion
 (reused when present), then `llama-quantize` with one type override
-per layer group and the embedding bound via
-`--token-embedding-type`. The base type is the recipe's precision
-floor, applied with `--pure`, so no heuristic mixing leaks in.
+per layer group and the embedding assignment bound via
+`--token-embedding-type` and `--output-tensor-type` — the second
+flag keeps an untied output head at the embedding's precision. The
+base type is the recipe's precision floor, applied with `--pure`, so
+no heuristic mixing leaks in.
 
 ```
 quantfit pack RECIPE

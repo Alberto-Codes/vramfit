@@ -74,6 +74,9 @@ class SafeRunLog:
     def emit(self, event: str, fields: Mapping[str, object]) -> None:
         """Record one event, warning once and disabling on failure.
 
+        The warning names the event that died, so the one line the
+        user sees points at the emit that broke.
+
         Args:
             event: Past-tense event name.
             fields: JSON-representable payload. ``run_id`` is added.
@@ -84,4 +87,4 @@ class SafeRunLog:
             self._sink.emit(event, {"run_id": self.run_id, **fields})
         except (OSError, TypeError, ValueError) as exc:
             self._dead = True
-            typer.echo(f"warning: run log disabled: {exc}", err=True)
+            typer.echo(f'warning: run log disabled at "{event}": {exc}', err=True)

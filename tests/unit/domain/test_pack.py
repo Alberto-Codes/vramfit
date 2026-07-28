@@ -34,10 +34,31 @@ class TestPackResult:
             packed_bytes=100,
             base_type="Q4_K_S",
             token_embedding_type=None,
-            overrides=(TypeOverride(pattern=r"blk\.0\.", ggml_type="q4_k"),),
+            overrides=(TypeOverride(pattern=r"blk\.0\.", quant_type="q4_k"),),
         )
 
         assert result.packed_bytes == 100
+
+    def test_empty_token_embedding_type_raises_value_error(self) -> None:
+        with pytest.raises(ValueError, match="token_embedding_type"):
+            PackResult(
+                packed_bytes=1,
+                base_type="Q4_K_S",
+                token_embedding_type="",
+                overrides=(),
+            )
+
+    def test_duplicate_override_patterns_raise_value_error(self) -> None:
+        duplicate = TypeOverride(pattern=r"blk\.0\.", quant_type="q4_k")
+        shadowed = TypeOverride(pattern=r"blk\.0\.", quant_type="q8_0")
+
+        with pytest.raises(ValueError, match="unique"):
+            PackResult(
+                packed_bytes=1,
+                base_type="Q4_K_S",
+                token_embedding_type=None,
+                overrides=(duplicate, shadowed),
+            )
 
     @pytest.mark.parametrize("bad_bytes", [0, -1], ids=["zero", "negative"])
     def test_non_positive_packed_bytes_raises_value_error(self, bad_bytes) -> None:
@@ -56,13 +77,13 @@ class TestPackResult:
             )
 
     @pytest.mark.parametrize(
-        ("pattern", "ggml_type"),
+        ("pattern", "quant_type"),
         [("", "q4_k"), (r"blk\.0\.", "")],
         ids=["empty-pattern", "empty-type"],
     )
-    def test_empty_override_half_raises_value_error(self, pattern, ggml_type) -> None:
+    def test_empty_override_half_raises_value_error(self, pattern, quant_type) -> None:
         with pytest.raises(ValueError, match="must not be empty"):
-            TypeOverride(pattern=pattern, ggml_type=ggml_type)
+            TypeOverride(pattern=pattern, quant_type=quant_type)
 
 
 class TestWeightBudgetMargin:

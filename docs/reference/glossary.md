@@ -136,6 +136,11 @@ change.
     that `llama-quantize` consumes. Created once per model, reused
     across packs. Not "intermediate file".
 
+**Type override**
+:   One (tensor pattern → quantization type) pair driven into the
+    runtime's quantizer. One per layer group, first match wins. Code
+    type `quantfit.domain.pack.TypeOverride`.
+
 **Pack result**
 :   The pack step's accounting record: real packed bytes plus the type
     mapping driven into the quantizer. Code type

@@ -138,7 +138,8 @@ def pack(
     python_bin: Annotated[
         Path | None,
         typer.Option(
-            help="Interpreter for the convert script (needs torch). Default: this one."
+            help="Interpreter for the convert script (needs torch and "
+            "sentencepiece). Default: this one."
         ),
     ] = None,
     threads: Annotated[int, typer.Option(min=1, help="Quantizer thread count.")] = 8,
@@ -151,8 +152,9 @@ def pack(
 
     Converts the checkpoint to an f16 base GGUF once (reusing an
     existing file), then drives ``llama-quantize`` with one type
-    override per layer group (ADR-0012). The command re-checks the
-    packed file's real bytes against the recipe's weight budget —
+    override per layer group; the embedding assignment also pins an
+    untied output head (ADR-0012). The command re-checks the packed
+    file's real bytes against the recipe's weight budget —
     nominal-bit predictions undershoot GGUF's effective bits.
 
     Raises:
@@ -233,7 +235,7 @@ def pack(
     started = time.monotonic()
     try:
         base_bytes = packer.convert()
-    except (RuntimeError, OSError) as exc:
+    except (RuntimeError, ValueError, OSError) as exc:
         raise _halt(run_log, "convert", exc) from exc
     run_log.emit(
         "gguf_converted",
@@ -248,7 +250,7 @@ def pack(
     started = time.monotonic()
     try:
         result = packer.pack(recipe)
-    except (RuntimeError, OSError) as exc:
+    except (RuntimeError, ValueError, OSError) as exc:
         raise _halt(run_log, "quantize", exc) from exc
     run_log.emit(
         "model_packed",

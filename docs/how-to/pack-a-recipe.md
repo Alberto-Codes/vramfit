@@ -41,9 +41,9 @@ The pack step drives external tools — none ship with quantfit:
 ## Basic invocation
 
 ```bash
-uv run quantfit pack recipe-4GiB.json \
+uv run quantfit pack recipe-4GiB-fo10.json \
   --llama-cpp ~/llama.cpp \
-  --out qwen2.5-3b-recipe-4GiB.gguf \
+  --out qwen2.5-3b-recipe-4GiB-fo10.gguf \
   --threads 14
 ```
 
@@ -72,7 +72,7 @@ pack exits 1 and keeps the file, so you can inspect what overflowed.
 Real bytes exceed the nominal-bit prediction because GGUF types
 spend 6-31 % more effective bits than their nominal precision
 (ADR-0012). Measured on Qwen2.5-3B: a recipe planned with the 0.05
-default packed to 2.06 GiB against a 2.00 GiB weight budget — 56 MiB
+default packed to 2.05 GiB against a 2.00 GiB weight budget — 56 MiB
 over, exit 1. Re-planning the same map with `--format-overhead 0.10`
 produced a recipe that packed to 1.98 GiB, 17 MiB under. Until the
 solver consumes per-type effective-bit tables (open question in

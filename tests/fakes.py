@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Literal
 
 from quantfit.adapters.outbound.gguf.types import (
     PackError,
@@ -125,16 +126,20 @@ class MemoryRecipePacker:
     """In-memory `RecipePacker`. Sizes are configured, the type mapping is shared.
 
     The mapping comes from the same pure functions the real adapter
-    uses, so the fake cannot drift from the ADR-0012 tables.
+    uses, so the fake cannot drift from the ADR-0012 tables. Like the
+    real adapter, an existing base wins before a broken convert tool,
+    and a mapping failure packs nothing.
     """
 
     base_bytes: int = 1_000
     packed_bytes: int = 500
-    fail_stage: str | None = None
+    fail_stage: Literal["convert", "quantize"] | None = None
     has_base: bool = False
     packed: list[Recipe] = field(default_factory=list)
 
     def convert(self) -> int:
+        if self.has_base:
+            return self.base_bytes
         if self.fail_stage == "convert":
             raise PackError("convert failed with exit code 3:\nconfigured failure")
         self.has_base = True
@@ -145,13 +150,14 @@ class MemoryRecipePacker:
             raise PackError("base GGUF does not exist — run convert first")
         if self.fail_stage == "quantize":
             raise PackError("quantize failed with exit code 3:\nconfigured failure")
-        self.packed.append(recipe)
-        return PackResult(
+        result = PackResult(
             packed_bytes=self.packed_bytes,
             base_type=base_type(recipe),
             token_embedding_type=token_embedding_type(recipe),
             overrides=tensor_overrides(recipe),
         )
+        self.packed.append(recipe)
+        return result
 
 
 @dataclass

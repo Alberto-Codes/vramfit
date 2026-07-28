@@ -185,10 +185,11 @@ def tensor_overrides(recipe: Recipe) -> tuple[TypeOverride, ...]:
             embedding, or its precision has no table entry.
 
     Examples:
-        Layer 7 at 4-bit becomes an escaped pattern:
+        The group ``model.layers.7`` at 4-bit becomes an escaped
+        pattern:
 
         ```python
-        assert overrides[7].pattern == r"blk\.7\."
+        assert TypeOverride(r"blk\.7\.", "q4_k") in tensor_overrides(recipe)
         ```
     """
     overrides: list[TypeOverride] = []
@@ -204,7 +205,7 @@ def tensor_overrides(recipe: Recipe) -> tuple[TypeOverride, ...]:
         overrides.append(
             TypeOverride(
                 pattern=rf"blk\.{match.group(1)}\.",
-                ggml_type=ggml_type_for(assignment.bits),
+                quant_type=ggml_type_for(assignment.bits),
             )
         )
     return tuple(overrides)

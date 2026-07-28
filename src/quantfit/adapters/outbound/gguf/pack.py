@@ -5,9 +5,10 @@ Implements the `RecipePacker` port for the GGUF serving path
 a caller-supplied interpreter — that interpreter carries torch, this
 package never imports it (ADR-0005). `pack` runs ``llama-quantize``
 with the recipe's type mapping from
-[quantfit.adapters.outbound.gguf.types][]. Tool failures translate to
-`PackError` at this boundary (ADR-0011), carrying the tool's last
-output lines.
+[quantfit.adapters.outbound.gguf.types][]. Every failure — a tool
+that cannot start, exits nonzero, dies to a signal, or leaves no
+usable file — translates to `PackError` at this boundary (ADR-0011),
+carrying the tool's last output lines.
 
 Examples:
     Pack a recipe with a local llama.cpp checkout:
@@ -32,6 +33,7 @@ See Also:
 
 from __future__ import annotations
 
+import signal
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -49,8 +51,35 @@ from quantfit.domain.pack import PackResult
 _TAIL_LINES: Final[int] = 15
 
 
+def _sized_file(path: Path, stage: str) -> int:
+    """Measure a tool's output file, rejecting absent or empty results.
+
+    Args:
+        path: The file the tool reported writing.
+        stage: Stage name for the error message.
+
+    Returns:
+        The file size in bytes, always positive.
+
+    Raises:
+        PackError: If the file is absent, empty, or unreadable — a
+            zero-exit tool that wrote nothing must not pass as
+            success.
+    """
+    try:
+        size = path.stat().st_size
+    except OSError as exc:
+        raise PackError(f"{stage} output {path} cannot be inspected: {exc}") from exc
+    if size == 0:
+        raise PackError(f"{stage} exited 0 but wrote an empty file at {path}")
+    return size
+
+
 def _run_tool(command: list[str], stage: str) -> None:
     """Run one toolchain subprocess, translating failure to `PackError`.
+
+    stderr merges into stdout so the failure tail is the tool's real
+    last words, whichever stream carried them.
 
     Args:
         command: Argument vector. The first element is the tool path.
@@ -58,22 +87,32 @@ def _run_tool(command: list[str], stage: str) -> None:
             ``quantize``).
 
     Raises:
-        PackError: If the tool cannot start or exits nonzero. The
-            message carries the last `_TAIL_LINES` lines the tool
-            wrote.
+        PackError: If the tool cannot start, exits nonzero, or dies
+            to a signal (named in the message). The message carries
+            the last `_TAIL_LINES` lines the tool wrote.
     """
     try:
+        # No timeout on purpose: a 49B conversion legitimately runs for
+        # a long time, and a wrong guess kills real work. stderr merges
+        # into stdout so the failure tail never hides the wrong stream.
         completed = subprocess.run(  # noqa: S603 - fixed tool paths from the composition root, no shell
-            command, capture_output=True, text=True, check=False
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            check=False,
         )
     except OSError as exc:
         raise PackError(f"{stage}: cannot run {command[0]}: {exc}") from exc
     if completed.returncode != 0:
-        output = completed.stderr or completed.stdout or ""
-        tail = "\n".join(output.splitlines()[-_TAIL_LINES:])
-        raise PackError(
-            f"{stage} failed with exit code {completed.returncode}:\n{tail}"
+        tail = "\n".join((completed.stdout or "").splitlines()[-_TAIL_LINES:])
+        code = completed.returncode
+        died = (
+            f"killed by signal {signal.Signals(-code).name}"
+            if code < 0
+            else f"failed with exit code {code}"
         )
+        raise PackError(f"{stage} {died}:\n{tail or '(no output captured)'}")
 
 
 @dataclass(frozen=True, slots=True)
@@ -121,25 +160,23 @@ class LlamaCppPacker:
             Size of the base GGUF in bytes.
 
         Raises:
-            PackError: If the convert tool fails or writes no file.
+            PackError: If the convert tool fails, writes no usable
+                file, or the file cannot be inspected.
         """
-        if self.base_gguf.exists():
-            return self.base_gguf.stat().st_size
-        _run_tool(
-            [
-                str(self.python_bin),
-                str(self.convert_script),
-                str(self.model_dir),
-                "--outfile",
-                str(self.base_gguf),
-                "--outtype",
-                "f16",
-            ],
-            stage="convert",
-        )
         if not self.base_gguf.exists():
-            raise PackError(f"convert exited 0 but wrote no file at {self.base_gguf}")
-        return self.base_gguf.stat().st_size
+            _run_tool(
+                [
+                    str(self.python_bin),
+                    str(self.convert_script),
+                    str(self.model_dir),
+                    "--outfile",
+                    str(self.base_gguf),
+                    "--outtype",
+                    "f16",
+                ],
+                stage="convert",
+            )
+        return _sized_file(self.base_gguf, stage="convert")
 
     def pack(self, recipe: Recipe) -> PackResult:
         """Quantize the base GGUF into the recipe's packed model.
@@ -152,7 +189,8 @@ class LlamaCppPacker:
 
         Raises:
             PackError: If the base GGUF is missing, the recipe cannot
-                be mapped (ADR-0012), or the quantizer fails.
+                be mapped (ADR-0012), the quantizer fails, or it
+                writes no usable file.
         """
         if not self.base_gguf.exists():
             raise PackError(
@@ -163,15 +201,17 @@ class LlamaCppPacker:
         overrides = tensor_overrides(recipe)
         command = [str(self.quantize_bin), "--pure"]
         if embedding is not None:
+            # The embedding assignment drives both flags: on a model
+            # with an untied output head, the head would otherwise fall
+            # to the --pure base type — the recipe's floor (ADR-0012).
             command += ["--token-embedding-type", embedding]
+            command += ["--output-tensor-type", embedding]
         for override in overrides:
-            command += ["--tensor-type", f"{override.pattern}={override.ggml_type}"]
+            command += ["--tensor-type", f"{override.pattern}={override.quant_type}"]
         command += [str(self.base_gguf), str(self.out_path), base, str(self.threads)]
         _run_tool(command, stage="quantize")
-        if not self.out_path.exists():
-            raise PackError(f"quantize exited 0 but wrote no file at {self.out_path}")
         return PackResult(
-            packed_bytes=self.out_path.stat().st_size,
+            packed_bytes=_sized_file(self.out_path, stage="quantize"),
             base_type=base,
             token_embedding_type=embedding,
             overrides=overrides,

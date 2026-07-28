@@ -46,15 +46,21 @@ scan does not produce one today. K-quants need no extra input.
    ADR-0010's open question stays open.
 2. **One override per layer group.** The group `model.layers.<n>`
    becomes the override `blk\.<n>\.` = type, dots escaped. The group
-   `model.embed_tokens` becomes `--token-embedding-type`. When the
-   model ties embeddings (Qwen2.5-3B does), that one assignment also
-   governs the output head. The v1 backend rejects tensor-level
-   groups with a clear error.
+   `model.embed_tokens` becomes `--token-embedding-type` **and**
+   `--output-tensor-type`. On a model that ties embeddings
+   (Qwen2.5-3B does), the output flag never applies. On a model with
+   an untied output head (the 49B target), the head takes the
+   embedding's precision — without the flag, `--pure` would drop it
+   to the recipe's floor with no warning. The v1 backend rejects
+   tensor-level groups with a clear error.
 3. **The base type is the recipe's floor, applied with `--pure`.**
-   The quantizer's positional type argument gets the mapped type of
-   the lowest assignment. `--pure` stops the heuristic mixing, so a
-   tensor no override covers gets exactly the base type — the packed
-   file is recipe-driven, never heuristic-driven.
+   The quantizer's positional type argument speaks ftype names, not
+   tensor-type names, so the floor maps through a second table:
+   8→`Q8_0`, 4→`Q4_K_S`, 3→`Q3_K_S`, 2→`Q2_K` (`Q4_K` as an ftype
+   aliases `Q4_K_M`, and `Q3_K` is not an ftype). `--pure` stops the
+   heuristic mixing, so a tensor no override covers gets exactly the
+   base type — the packed file is recipe-driven, never
+   heuristic-driven.
 4. **Pack re-checks real bytes.** Effective bits exceed nominal bits
    by 6-31 %, so predicted sizes undershoot. Pack stats the output
    file and reports the margin against `plan.weight_budget_bytes`.
@@ -82,6 +88,9 @@ scan does not produce one today. K-quants need no extra input.
 ## Open questions
 
 - The i-quant table, once the scan emits an importance matrix.
+- Whether pack persists the toolchain's own output as a sidecar
+  artifact. Today a zero-exit tool's warnings (for example an
+  override pattern that matched no tensor) are discarded.
 - Whether the solver should consume per-type effective-bit tables
   instead of one `format_overhead` fraction (ties to the
   runtime-capability milestone from ADR-0010).

@@ -36,7 +36,9 @@ class TypeOverride:
     Attributes:
         pattern (str): Regex the quantizer matches against tensor
             names. The first matching override wins.
-        ggml_type (str): Quantization type name for matching tensors.
+        quant_type (str): Quantization type name for matching tensors.
+            An opaque token to the domain — the backend owns the
+            vocabulary (ADR-0012 for GGUF).
 
     Examples:
         Layer 7 of a recipe packed at 4-bit:
@@ -44,23 +46,23 @@ class TypeOverride:
         ```python
         from quantfit.domain.pack import TypeOverride
 
-        override = TypeOverride(pattern=r"blk\.7\.", ggml_type="q4_k")
+        override = TypeOverride(pattern=r"blk\.7\.", quant_type="q4_k")
         ```
     """
 
     pattern: str
-    ggml_type: str
+    quant_type: str
 
     def __post_init__(self) -> None:
         """Reject empty override halves.
 
         Raises:
-            ValueError: If ``pattern`` or ``ggml_type`` is empty.
+            ValueError: If ``pattern`` or ``quant_type`` is empty.
         """
         if not self.pattern:
             raise ValueError("pattern must not be empty")
-        if not self.ggml_type:
-            raise ValueError("ggml_type must not be empty")
+        if not self.quant_type:
+            raise ValueError("quant_type must not be empty")
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,10 +74,13 @@ class PackResult:
         base_type (str): Quantizer base type for tensors no override
             covers.
         token_embedding_type (str | None): Type forced on the
-            embedding tensor, or None when the recipe has no
-            embedding group.
+            embedding tensor — and, through the quantizer's output
+            flag, on an untied output head (ADR-0012). None when the
+            recipe has no embedding group.
         overrides (tuple[TypeOverride, ...]): Ordered per-tensor
-            overrides, in recipe order.
+            overrides, in recipe order. Patterns are unique — the
+            quantizer applies the first match, so a duplicate would
+            silently shadow its successor.
 
     Examples:
         Inspect the real size of a packed model:
@@ -94,13 +99,19 @@ class PackResult:
         """Enforce the result invariants.
 
         Raises:
-            ValueError: If ``packed_bytes`` is not positive or
-                ``base_type`` is empty.
+            ValueError: If ``packed_bytes`` is not positive,
+                ``base_type`` is empty, ``token_embedding_type`` is
+                empty, or two overrides share a pattern.
         """
         if self.packed_bytes <= 0:
             raise ValueError("packed_bytes must be positive")
         if not self.base_type:
             raise ValueError("base_type must not be empty")
+        if self.token_embedding_type is not None and not self.token_embedding_type:
+            raise ValueError("token_embedding_type must not be empty")
+        patterns = [override.pattern for override in self.overrides]
+        if len(set(patterns)) != len(patterns):
+            raise ValueError("override patterns must be unique")
 
 
 def weight_budget_margin(recipe: Recipe, packed_bytes: int) -> int:

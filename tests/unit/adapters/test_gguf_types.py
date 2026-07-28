@@ -108,7 +108,7 @@ def test_tensor_overrides_keep_recipe_order_and_skip_the_embedding() -> None:
 
     overrides = tensor_overrides(recipe)
 
-    assert [(o.pattern, o.ggml_type) for o in overrides] == [
+    assert [(o.pattern, o.quant_type) for o in overrides] == [
         (r"blk\.0\.", "q4_k"),
         (r"blk\.1\.", "q2_k"),
     ]

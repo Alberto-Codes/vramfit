@@ -4,12 +4,17 @@ The real side runs the true adapter code — argument construction,
 subprocess handling, error translation — against stub tools that
 stand in for the llama.cpp binaries, so the suite stays hermetic
 (ADR-0009). The type mapping itself is shared pure code, proven in
-its own unit suite.
+its own unit suite. The stubs record their argv, so the real-only
+tests below the shared contract pin the exact command lines — the
+one seam the verified fake cannot reach.
 """
 
 from __future__ import annotations
 
+import json
+import sys
 from pathlib import Path
+from typing import Literal
 
 import pytest
 
@@ -26,8 +31,10 @@ BASE_BYTES = 1_000
 PACKED_BYTES = 500
 
 _CONVERT_STUB = f"""\
-import sys
+import json, sys
 
+with open({{argv_log!r}}, "w") as log:
+    json.dump(sys.argv[1:], log)
 out = sys.argv[sys.argv.index("--outfile") + 1]
 with open(out, "wb") as handle:
     handle.write(b"G" * {BASE_BYTES})
@@ -35,8 +42,10 @@ with open(out, "wb") as handle:
 
 _QUANTIZE_STUB = f"""\
 #!/usr/bin/env python3
-import sys
+import json, sys
 
+with open({{argv_log!r}}, "w") as log:
+    json.dump(sys.argv[1:], log)
 with open(sys.argv[-3], "wb") as handle:
     handle.write(b"Q" * {PACKED_BYTES})
 """
@@ -47,6 +56,10 @@ import sys
 
 sys.stderr.write("stub tool exploded\\n")
 sys.exit(3)
+"""
+
+_SILENT_STUB = """\
+#!/usr/bin/env python3
 """
 
 
@@ -78,19 +91,27 @@ def _write_stub(path: Path, body: str) -> Path:
     return path
 
 
-def _real_packer(tmp_path: Path, fail_stage: str | None) -> RecipePacker:
-    import sys
+def _real_packer(
+    tmp_path: Path,
+    fail_stage: Literal["convert", "quantize"] | None = None,
+    base_exists: bool = False,
+    silent_stage: str | None = None,
+) -> RecipePacker:
+    def stub_body(stage: str, template: str) -> str:
+        if fail_stage == stage:
+            return _FAILING_STUB
+        if silent_stage == stage:
+            return _SILENT_STUB
+        return template.format(argv_log=str(tmp_path / f"{stage}-argv.json"))
 
-    convert = _write_stub(
-        tmp_path / "convert.py",
-        _FAILING_STUB if fail_stage == "convert" else _CONVERT_STUB,
-    )
+    convert = _write_stub(tmp_path / "convert.py", stub_body("convert", _CONVERT_STUB))
     quantize = _write_stub(
-        tmp_path / "llama-quantize",
-        _FAILING_STUB if fail_stage == "quantize" else _QUANTIZE_STUB,
+        tmp_path / "llama-quantize", stub_body("quantize", _QUANTIZE_STUB)
     )
     model_dir = tmp_path / "model"
     model_dir.mkdir(exist_ok=True)
+    if base_exists:
+        (tmp_path / "base.gguf").write_bytes(b"G" * BASE_BYTES)
     return LlamaCppPacker(
         model_dir=model_dir,
         base_gguf=tmp_path / "base.gguf",
@@ -102,9 +123,17 @@ def _real_packer(tmp_path: Path, fail_stage: str | None) -> RecipePacker:
     )
 
 
-def _fake_packer(tmp_path: Path, fail_stage: str | None) -> RecipePacker:
+def _fake_packer(
+    tmp_path: Path,
+    fail_stage: Literal["convert", "quantize"] | None = None,
+    base_exists: bool = False,
+    silent_stage: str | None = None,
+) -> RecipePacker:
     return MemoryRecipePacker(
-        base_bytes=BASE_BYTES, packed_bytes=PACKED_BYTES, fail_stage=fail_stage
+        base_bytes=BASE_BYTES,
+        packed_bytes=PACKED_BYTES,
+        fail_stage=fail_stage,
+        has_base=base_exists,
     )
 
 
@@ -113,19 +142,26 @@ def _fake_packer(tmp_path: Path, fail_stage: str | None) -> RecipePacker:
 )
 class TestRecipePackerContract:
     def test_convert_returns_the_base_size(self, build, tmp_path) -> None:
-        packer: RecipePacker = build(tmp_path, None)
+        packer: RecipePacker = build(tmp_path)
 
         assert packer.convert() == BASE_BYTES
 
     def test_convert_twice_returns_the_same_size(self, build, tmp_path) -> None:
-        packer: RecipePacker = build(tmp_path, None)
+        packer: RecipePacker = build(tmp_path)
 
         assert packer.convert() == packer.convert()
+
+    def test_convert_with_existing_base_skips_the_broken_tool(
+        self, build, tmp_path
+    ) -> None:
+        packer: RecipePacker = build(tmp_path, fail_stage="convert", base_exists=True)
+
+        assert packer.convert() == BASE_BYTES
 
     def test_pack_after_convert_reports_the_real_packed_size(
         self, build, tmp_path
     ) -> None:
-        packer: RecipePacker = build(tmp_path, None)
+        packer: RecipePacker = build(tmp_path)
         packer.convert()
 
         result = packer.pack(sample_pack_recipe())
@@ -133,7 +169,7 @@ class TestRecipePackerContract:
         assert result.packed_bytes == PACKED_BYTES
 
     def test_pack_carries_the_shared_type_mapping(self, build, tmp_path) -> None:
-        packer: RecipePacker = build(tmp_path, None)
+        packer: RecipePacker = build(tmp_path)
         packer.convert()
 
         result = packer.pack(sample_pack_recipe())
@@ -141,12 +177,12 @@ class TestRecipePackerContract:
         assert result.base_type == "Q4_K_S"
         assert result.token_embedding_type == "q8_0"  # noqa: S105 - a ggml type name, not a secret
         assert result.overrides == (
-            TypeOverride(pattern=r"blk\.0\.", ggml_type="q8_0"),
-            TypeOverride(pattern=r"blk\.1\.", ggml_type="q4_k"),
+            TypeOverride(pattern=r"blk\.0\.", quant_type="q8_0"),
+            TypeOverride(pattern=r"blk\.1\.", quant_type="q4_k"),
         )
 
     def test_pack_without_convert_raises_pack_error(self, build, tmp_path) -> None:
-        packer: RecipePacker = build(tmp_path, None)
+        packer: RecipePacker = build(tmp_path)
 
         with pytest.raises(PackError, match="run convert first"):
             packer.pack(sample_pack_recipe())
@@ -154,7 +190,7 @@ class TestRecipePackerContract:
     def test_convert_failure_raises_pack_error_with_exit_code(
         self, build, tmp_path
     ) -> None:
-        packer: RecipePacker = build(tmp_path, "convert")
+        packer: RecipePacker = build(tmp_path, fail_stage="convert")
 
         with pytest.raises(PackError, match="convert failed with exit code 3"):
             packer.convert()
@@ -162,8 +198,54 @@ class TestRecipePackerContract:
     def test_quantize_failure_raises_pack_error_with_exit_code(
         self, build, tmp_path
     ) -> None:
-        packer: RecipePacker = build(tmp_path, "quantize")
+        packer: RecipePacker = build(tmp_path, fail_stage="quantize")
         packer.convert()
 
         with pytest.raises(PackError, match="quantize failed with exit code 3"):
+            packer.pack(sample_pack_recipe())
+
+
+class TestLlamaCppCommandLines:
+    """Real-adapter argv contracts the fake structurally cannot cover."""
+
+    def test_convert_argv_requests_an_f16_outfile(self, tmp_path) -> None:
+        packer = _real_packer(tmp_path)
+
+        packer.convert()
+
+        argv = json.loads((tmp_path / "convert-argv.json").read_text())
+        assert argv[0] == str(tmp_path / "model")
+        assert argv[argv.index("--outfile") + 1] == str(tmp_path / "base.gguf")
+        assert argv[argv.index("--outtype") + 1] == "f16"
+
+    def test_quantize_argv_carries_the_full_type_mapping(self, tmp_path) -> None:
+        packer = _real_packer(tmp_path)
+        packer.convert()
+
+        packer.pack(sample_pack_recipe())
+
+        argv = json.loads((tmp_path / "quantize-argv.json").read_text())
+        assert argv[0] == "--pure"
+        assert argv[argv.index("--token-embedding-type") + 1] == "q8_0"
+        assert argv[argv.index("--output-tensor-type") + 1] == "q8_0"
+        pairs = [argv[i + 1] for i, flag in enumerate(argv) if flag == "--tensor-type"]
+        assert pairs == [r"blk\.0\.=q8_0", r"blk\.1\.=q4_k"]
+        assert argv[-4:] == [
+            str(tmp_path / "base.gguf"),
+            str(tmp_path / "out.gguf"),
+            "Q4_K_S",
+            "1",
+        ]
+
+    def test_convert_writing_no_file_raises_pack_error(self, tmp_path) -> None:
+        packer = _real_packer(tmp_path, silent_stage="convert")
+
+        with pytest.raises(PackError, match="cannot be inspected"):
+            packer.convert()
+
+    def test_quantize_writing_no_file_raises_pack_error(self, tmp_path) -> None:
+        packer = _real_packer(tmp_path, silent_stage="quantize")
+        packer.convert()
+
+        with pytest.raises(PackError, match="cannot be inspected"):
             packer.pack(sample_pack_recipe())

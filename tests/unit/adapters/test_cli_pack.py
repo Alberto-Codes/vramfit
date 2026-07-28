@@ -248,6 +248,84 @@ class TestPackCommand:
         assert result.exit_code == 1
         assert "pass --model" in result.output
 
+    def test_options_reach_the_packer_builder_in_the_right_slots(
+        self, tmp_path, monkeypatch, llama_cpp_dir, recipe_path
+    ) -> None:
+        seen: dict[str, object] = {}
+
+        def recorder(model_dir, base_gguf, out, llama_cpp, python_bin, threads):
+            seen.update(
+                model_dir=model_dir,
+                base_gguf=base_gguf,
+                out=out,
+                llama_cpp=llama_cpp,
+                python_bin=python_bin,
+                threads=threads,
+            )
+            return MemoryRecipePacker(packed_bytes=100)
+
+        monkeypatch.setattr(cli_pack, "_build_packer", recorder)
+        model_dir = tmp_path / "other-model"
+        model_dir.mkdir()
+
+        result = runner.invoke(
+            app,
+            [
+                "pack",
+                str(recipe_path),
+                "--llama-cpp",
+                str(llama_cpp_dir),
+                "--out",
+                str(tmp_path / "packed.gguf"),
+                "--model",
+                str(model_dir),
+                "--base-gguf",
+                str(tmp_path / "custom-f16.gguf"),
+                "--python-bin",
+                str(tmp_path / "python3"),
+                "--threads",
+                "3",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert seen == {
+            "model_dir": model_dir,
+            "base_gguf": tmp_path / "custom-f16.gguf",
+            "out": tmp_path / "packed.gguf",
+            "llama_cpp": llama_cpp_dir,
+            "python_bin": tmp_path / "python3",
+            "threads": 3,
+        }
+
+    def test_unmappable_recipe_exits_1_and_halts_at_quantize(
+        self, tmp_path, monkeypatch, llama_cpp_dir
+    ) -> None:
+        patch_packer(monkeypatch, MemoryRecipePacker())
+        model_dir = tmp_path / "model5"
+        model_dir.mkdir()
+        recipe = Recipe(
+            model_id=str(model_dir),
+            plan=make_recipe(str(model_dir)).plan,
+            assignments=(
+                Assignment(group="model.layers.0", bits=5, bytes=500, damage=0.01),
+            ),
+        )
+        path = tmp_path / "recipe5.json"
+        save_recipe(recipe, path)
+        out = tmp_path / "packed.gguf"
+
+        result = runner.invoke(
+            app,
+            ["pack", str(path), "--llama-cpp", str(llama_cpp_dir), "--out", str(out)],
+        )
+
+        assert result.exit_code == 1
+        assert "no GGUF base type maps 5-bit" in result.output
+        log = read_run_log(out.with_name(out.stem + ".runlog.jsonl"))
+        assert log[-1]["event"] == "pack_halted"
+        assert log[-1]["stage"] == "quantize"
+
     def test_events_share_one_run_id(
         self, tmp_path, monkeypatch, llama_cpp_dir, recipe_path
     ) -> None:

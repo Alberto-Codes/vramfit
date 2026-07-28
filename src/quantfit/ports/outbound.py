@@ -299,8 +299,9 @@ class RunLogSink(Protocol):
     def emit(self, event: str, fields: Mapping[str, object]) -> None:
         """Record one event with its fields.
 
-        The keys ``event``, ``ts``, ``quantfit_runlog``, and ``run_id``
-        belong to the envelope — callers must not pass them in
+        The keys ``event``, ``ts``, and ``quantfit_runlog`` belong to
+        the sink's envelope, and the inbound ``SafeRunLog`` wrapper
+        stamps ``run_id`` — callers must not pass any of them in
         ``fields``.
 
         Args:
