@@ -22,10 +22,11 @@ change of course gets a *new* ADR that supersedes the old one.
 | [0003](0003-north-star-benchmark.md) | North-star benchmark: Nemotron Super 49B on a 24 GiB RTX 4090 | Accepted |
 | [0004](0004-vllm-first-runtime.md) | vLLM as the first target runtime | Accepted |
 | [0005](0005-heavy-deps-as-extras.md) | Heavy ML dependencies stay out of the base install | Accepted |
-| [0006](0006-sensitivity-metric.md) | Sensitivity metric for the scan step | Proposed |
+| [0006](0006-sensitivity-metric.md) | Sensitivity metric for the scan step | Accepted |
 | [0007](0007-recipe-solver-strategy.md) | Solver strategy for recipe selection | Accepted |
 | [0008](0008-hexagonal-architecture.md) | Hexagonal architecture, enforced by import-linter | Accepted |
 | [0009](0009-testing-strategy.md) | Testing strategy — pyramid, verified fakes, properties | Accepted |
+| [0010](0010-sub-4-bit-serving-path.md) | The sub-4-bit serving path runs through GGUF | Proposed |
 
 ## Template
 

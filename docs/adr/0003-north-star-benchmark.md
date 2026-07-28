@@ -2,6 +2,9 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-27
+- **Note (2026-07-28):** [ADR-0010](0010-sub-4-bit-serving-path.md)
+  proposes to amend the serving-runtime clause: the benchmark serves
+  through llama.cpp, not vLLM.
 
 ## Context
 

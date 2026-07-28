@@ -33,7 +33,9 @@ status: draft
     the imatrix tool adds measured activation statistics that bias
     *within-block* scale selection. Measurement below the bit-assignment
     level — complementary to, not competing with, quantfit's per-group
-    decision.
+    decision. `llama-quantize --tensor-type` accepts per-tensor type
+    overrides, which is the mechanism the GGUF pack backend drives
+    ([ADR-0010](../adr/0010-sub-4-bit-serving-path.md)).
 
 **[EXL2 / exllamav2](https://github.com/turboderp-org/exllamav2)**
 :   The closest prior art. Measured per-layer variable bitrate (2–8 bpw
@@ -59,9 +61,17 @@ status: draft
 
 **[vLLM](https://github.com/vllm-project/vllm)** /
 **[compressed-tensors](https://github.com/neuralmagic/compressed-tensors)**
-:   First pack target and its mixed-precision checkpoint format
-    ([ADR-0004](../adr/0004-vllm-first-runtime.md)). The runtime-capability
-    table (which precisions have kernels) comes from here.
+:   First pack target for ≥4-bit recipes and its mixed-precision checkpoint
+    format ([ADR-0004](../adr/0004-vllm-first-runtime.md)). The
+    runtime-capability table (which precisions have kernels) comes from
+    here. Verified 2026-07: the Marlin and Machete kernels cover 4-bit and
+    8-bit only, the EXL3 integration request
+    ([vllm#19896](https://github.com/vllm-project/vllm/issues/19896)) was
+    closed as not planned, and in-tree GGUF support moved out to
+    [vllm-gguf-plugin](https://github.com/vllm-project/vllm-gguf-plugin)
+    with tested formats stopping at 4 bits. Hence
+    [ADR-0010](../adr/0010-sub-4-bit-serving-path.md): the sub-4-bit
+    serving path runs through GGUF.
 
 ## Target model
 
