@@ -247,6 +247,44 @@ class TestTorchDamageMeter:
         with pytest.raises(ValueError, match=r"offloaded.*ghost"):
             _reject_offloaded_groups(PartlyOffloaded(), groups)
 
+    def test_poisoned_meter_refuses_measure_recipe(self, tiny_meter) -> None:
+        tiny_meter._poisoned = True
+        recipe = {spec.name: 8 for spec in tiny_meter.groups()}
+
+        with pytest.raises(RuntimeError, match="rebuild the meter"):
+            tiny_meter.measure_recipe(recipe)
+
+    def test_poisoned_meter_refuses_measure(self, tiny_meter) -> None:
+        tiny_meter._poisoned = True
+        group = tiny_meter.groups()[0].name
+
+        with pytest.raises(RuntimeError, match="rebuild the meter"):
+            tiny_meter.measure(group, 8)
+
+    @pytest.mark.gpu
+    def test_measure_recipe_on_cuda_restores_across_devices(
+        self, tiny_model_dir, tmp_path
+    ) -> None:
+        # The whole-recipe pass stages originals on the CPU and
+        # restores host-to-device — the path every GPU validation
+        # takes, untestable on the CPU-only contract leg.
+        if not torch.cuda.is_available():
+            pytest.skip("no CUDA device")
+        from quantfit.adapters.outbound.scan.meter import TorchDamageMeter
+
+        calibration = tmp_path / "calib.txt"
+        calibration.write_text(CALIBRATION_TEXT)
+        meter = TorchDamageMeter(
+            str(tiny_model_dir), calibration, max_tokens=128, device="cuda"
+        )
+        group = meter.groups()[0].name
+        before = meter.measure(group, 2)
+
+        damage = meter.measure_recipe({spec.name: 4 for spec in meter.groups()})
+
+        assert damage >= 0.0
+        assert meter.measure(group, 2) == before
+
     def test_layer_grouping_without_layer_structure_raises(self) -> None:
         from quantfit.adapters.outbound.scan.meter import _discover_groups
 

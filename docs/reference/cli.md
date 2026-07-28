@@ -129,12 +129,13 @@ written. Exit 2 on malformed `--precisions`, `--group-by`, or
 
 ## `quantfit validate`
 
-Implemented. Runs the whole-recipe validation pass (ADR-0006): every
-group quantized to its assigned precision in one calibration pass
-through the scan's own quantization, measured damage reported next to
-the recipe's summed marginal damages. The gap is the additivity
-assumption leaking. Requires the scan extra — without it the command
-exits 1 with the install hint.
+Implemented. Runs the whole-recipe validation pass (ADR-0006). The
+command quantizes every group to its assigned precision in one
+calibration pass. The pass uses the scan's own quantization. The
+command reports the measured damage next to the recipe's summed
+marginal damages. The gap is the additivity assumption leaking.
+Requires the scan extra — without it the command exits 1 with the
+install hint.
 
 ```
 quantfit validate RECIPE
@@ -154,8 +155,10 @@ quantfit validate RECIPE
 Use the scan's calibration file and token budget — damage values are
 only comparable within one calibration set. The command refuses a
 recipe whose groups do not match the model's discovered groups (wrong
-model or wrong `--group-by`). It reports the gap and does not gate on
-it: the invalidation threshold is an open question in ADR-0006 until
+model or wrong `--group-by`). A `--model` that differs from the
+recipe's `model_id` prints a warning — the comparison assumes the
+scanned model. The command reports the gap and does not gate on it:
+the invalidation threshold is an open question in ADR-0006 until
 measured gaps exist.
 
 Every run appends events to a run log: validation_started,

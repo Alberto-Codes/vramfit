@@ -158,6 +158,13 @@ def test_measure_recipe_below_two_bits_raises_value_error(
         meter.measure_recipe({group: 1})
 
 
+def test_measure_recipe_checks_group_names_before_bits(meter: DamageMeter) -> None:
+    group = meter.groups()[0].name
+
+    with pytest.raises(ValueError, match="unknown group"):
+        meter.measure_recipe({group: 1, "no.such.group": 8})
+
+
 def test_measure_recipe_with_no_assignments_raises_value_error(
     meter: DamageMeter,
 ) -> None:

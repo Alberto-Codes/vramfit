@@ -110,6 +110,13 @@ class MemoryDamageMeter:
     def measure_recipe(self, assignments: Mapping[str, int]) -> float:
         if not assignments:
             raise ValueError("assignments must not be empty")
+        # Match the real meter's validation order: all group names
+        # first, then bits, before any cell is read.
+        unknown = sorted(set(assignments) - {spec.name for spec in self.specs})
+        if unknown:
+            raise ValueError(f'unknown group "{unknown[0]}"')
+        if any(bits < 2 for bits in assignments.values()):
+            raise ValueError("bits must be at least 2")
         total = sum(self._cell(group, bits) for group, bits in assignments.items())
         if len(assignments) > 1:
             total += self.interaction_damage

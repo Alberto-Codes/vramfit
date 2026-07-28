@@ -64,7 +64,9 @@ def recipe_path(tmp_path: Path) -> Path:
     return path
 
 
-def install_meter(monkeypatch, meter: MemoryDamageMeter) -> None:
+def install_meter(monkeypatch, meter: MemoryDamageMeter) -> list[dict]:
+    builds: list[dict] = []
+
     def build(
         model,
         calibration,
@@ -75,9 +77,13 @@ def install_meter(monkeypatch, meter: MemoryDamageMeter) -> None:
         trust_remote_code,
         gpu_memory,
     ):
+        builds.append(
+            {"model": model, "max_tokens": max_tokens, "gpu_memory": gpu_memory}
+        )
         return meter
 
     monkeypatch.setattr(cli_validate, "_build_meter", build)
+    return builds
 
 
 def invoke_validate(tmp_path: Path, recipe_path: Path, *extra: str):
@@ -134,6 +140,54 @@ class TestValidateCommand:
         assert finished["measured_damage"] == pytest.approx(0.015)
         assert finished["gap"] == pytest.approx(0.003)
         assert finished["ratio"] == pytest.approx(1.25)
+
+    def test_default_model_is_the_recipes_model_id(
+        self, tmp_path, monkeypatch, recipe_path
+    ) -> None:
+        builds = install_meter(
+            monkeypatch, MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES))
+        )
+
+        result = invoke_validate(tmp_path, recipe_path)
+
+        assert result.exit_code == 0, result.output
+        assert builds == [
+            {"model": "test/model", "max_tokens": 131072, "gpu_memory": None}
+        ]
+        assert "warning" not in result.output
+
+    def test_model_override_reaches_the_builder_and_warns(
+        self, tmp_path, monkeypatch, recipe_path
+    ) -> None:
+        builds = install_meter(
+            monkeypatch, MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES))
+        )
+
+        result = invoke_validate(tmp_path, recipe_path, "--model", "other/model")
+
+        assert result.exit_code == 0, result.output
+        assert builds[0]["model"] == "other/model"
+        assert "warning" in result.output
+        assert "test/model" in result.output
+
+    def test_zero_prediction_reports_the_gap_without_a_percentage(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        damages = {("model.layers.0", 8): 0.0, ("model.layers.1", 8): 0.0}
+        install_meter(monkeypatch, MemoryDamageMeter(specs=SPECS, damages=damages))
+        recipe_path = tmp_path / "recipe.json"
+        save_recipe(
+            make_recipe((("model.layers.0", 8, 0.0), ("model.layers.1", 8, 0.0))),
+            recipe_path,
+        )
+
+        result = invoke_validate(tmp_path, recipe_path)
+
+        assert result.exit_code == 0, result.output
+        assert "gap +0.000000" in result.output
+        assert "of predicted" not in result.output
+        events = events_of(recipe_path.with_name("recipe.validation.runlog.jsonl"))
+        assert events[-1]["ratio"] is None
 
     def test_explicit_runlog_path_wins_over_the_default(
         self, tmp_path, monkeypatch, recipe_path
@@ -192,6 +246,9 @@ class TestValidateCommand:
 
         assert result.exit_code == 1
         assert "model.layers.1" in result.output
+        events = events_of(recipe_path.with_name("recipe.validation.runlog.jsonl"))
+        assert events[-1]["event"] == "validation_halted"
+        assert events[-1]["stage"] == "group_match"
 
     def test_measurement_failure_exits_one_and_logs_measure_stage(
         self, tmp_path, monkeypatch, recipe_path

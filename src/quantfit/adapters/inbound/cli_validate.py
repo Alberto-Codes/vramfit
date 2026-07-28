@@ -7,7 +7,8 @@ measured whole-recipe damage against the recipe's summed marginal
 damages — the direct test of the additivity assumption behind
 marginal scanning. The comparison logic is pure and lives in
 [quantfit.domain.validation][]. Every failure halts with a clean
-``error:`` line and a ``validation_halted`` run-log event (ADR-0011).
+``error:`` line. Failures after the run log opens also emit a
+``validation_halted`` event (ADR-0011).
 
 Examples:
     Validate a recipe against its model:
@@ -65,7 +66,9 @@ def _check_groups(meter: DamageMeter, recipe: Recipe, run_log: SafeRunLog) -> No
     """Refuse a recipe whose groups differ from the model's.
 
     A mismatch means the recipe was planned for a different model or
-    grouping — measuring it would compare unrelated numbers.
+    grouping — measuring it would compare unrelated numbers. The halt
+    event carries the stage and the mismatch detail, with no cell
+    count — the validation pass has no scan grid.
 
     Args:
         meter: The loaded meter, holding the discovered groups.
@@ -95,12 +98,7 @@ def _check_groups(meter: DamageMeter, recipe: Recipe, run_log: SafeRunLog) -> No
     )
     run_log.emit(
         "validation_halted",
-        {
-            "stage": "group_match",
-            "error": detail,
-            "cells_kept": None,
-            "rss_hwm_gb": rss_hwm_gb(),
-        },
+        {"stage": "group_match", "error": detail, "rss_hwm_gb": rss_hwm_gb()},
     )
     raise typer.Exit(code=1)
 
@@ -145,15 +143,15 @@ def validate(
 ) -> None:
     """Measure whole-recipe damage and compare it against the prediction.
 
-    The validation pass (ADR-0006): quantize every group to its
-    assigned precision in one pass through the scan's own quantization,
-    then report the measured damage next to the recipe's summed
-    marginal damages. The gap is the additivity assumption leaking.
-    Use the scan's calibration file and ``--max-tokens`` — damage
-    values are only comparable within one calibration set. The command
-    reports the numbers and does not gate on them: the invalidation
-    threshold is an open question in ADR-0006 until measured gaps
-    exist.
+    The validation pass (ADR-0006). The command quantizes every group
+    to its assigned precision in one pass. The pass uses the scan's
+    own quantization. The command then reports the measured damage
+    next to the recipe's summed marginal damages. The gap is the
+    additivity assumption leaking. Use the scan's calibration file
+    and ``--max-tokens`` — damage values are only comparable within
+    one calibration set. The command reports the numbers and does not
+    gate on them: the invalidation threshold is an open question in
+    ADR-0006 until measured gaps exist.
 
     Raises:
         typer.BadParameter: If ``--group-by`` or ``--gpu-memory`` is
@@ -188,6 +186,12 @@ def validate(
 
     recipe = _load_recipe(recipe_path)
     model_id = model if model is not None else recipe.model_id
+    if model is not None and model != recipe.model_id:
+        typer.echo(
+            f'warning: --model "{model}" differs from the recipe\'s model_id '
+            f'"{recipe.model_id}" — the comparison assumes the scanned model',
+            err=True,
+        )
 
     runlog_path = (
         runlog
@@ -228,20 +232,14 @@ def validate(
     started = time.monotonic()
     try:
         measured = meter.measure_recipe(assignments)
+        result = validation_result(recipe, measured)
     except (RuntimeError, ValueError, OSError) as exc:
         typer.echo(f"error: validation halted: {exc}", err=True)
         run_log.emit(
             "validation_halted",
-            {
-                "stage": "measure",
-                "error": str(exc),
-                "cells_kept": None,
-                "rss_hwm_gb": rss_hwm_gb(),
-            },
+            {"stage": "measure", "error": str(exc), "rss_hwm_gb": rss_hwm_gb()},
         )
         raise typer.Exit(code=1) from exc
-
-    result = validation_result(recipe, measured)
     tokens = meter.calibration_tokens()
     run_log.emit(
         "validation_finished",

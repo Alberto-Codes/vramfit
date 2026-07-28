@@ -35,7 +35,6 @@ See Also:
 from __future__ import annotations
 
 import re
-import sys
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Literal
@@ -64,7 +63,9 @@ class TorchDamageMeter:
     cached reference distributions, and a poisoned flag set when a
     failed measurement leaves the weights unrestored. `measure` and
     `measure_recipe` share one perturb-measure-restore path — a
-    single-group recipe measures exactly like the scan's cell.
+    single-group recipe measures exactly like the scan's cell. A
+    single group's originals stay on their device; a multi-group
+    perturbation stages originals on the CPU.
 
     Attributes:
         model_id (str): The Hugging Face id or local path the model
@@ -164,7 +165,8 @@ class TorchDamageMeter:
         """Measure one group's damage at one candidate precision.
 
         A one-assignment case of the shared perturb-measure-restore
-        path.
+        path. The group's originals stay on their own device — no
+        host round-trip on the scan's hot path.
 
         Args:
             group: Name of the group to perturb.
@@ -181,6 +183,7 @@ class TorchDamageMeter:
             RuntimeError: If a prior measurement failed to restore the
                 model — the meter refuses to produce corrupt numbers.
         """
+        self._refuse_poisoned()
         if group not in self._groups:
             raise ValueError(f'unknown group "{group}"')
         return self._measure_perturbed({group: bits})
@@ -189,9 +192,9 @@ class TorchDamageMeter:
         """Measure whole-recipe damage: all groups perturbed at once.
 
         The validation-pass measurement (ADR-0006). Original weights
-        stage on the CPU during the pass — a whole-recipe perturbation
-        clones every quantizable tensor, and the card must keep its
-        workspace.
+        stage on the CPU during this pass — a whole-recipe
+        perturbation clones every quantizable tensor, and the card
+        must keep its workspace.
 
         Args:
             assignments: Assigned precision per group name.
@@ -207,6 +210,7 @@ class TorchDamageMeter:
             RuntimeError: If a prior measurement failed to restore the
                 model — the meter refuses to produce corrupt numbers.
         """
+        self._refuse_poisoned()
         if not assignments:
             raise ValueError("assignments must not be empty")
         unknown = sorted(set(assignments) - set(self._groups))
@@ -214,8 +218,28 @@ class TorchDamageMeter:
             raise ValueError(f'unknown group "{unknown[0]}"')
         return self._measure_perturbed(dict(assignments))
 
+    def _refuse_poisoned(self) -> None:
+        """Refuse to measure on a meter with unrestored weights.
+
+        Raises:
+            RuntimeError: If a prior measurement failed to restore the
+                model — the meter refuses to produce corrupt numbers.
+        """
+        if self._poisoned:
+            raise RuntimeError(
+                "a prior measurement failed to restore the model — "
+                "rebuild the meter before measuring again"
+            )
+
     def _measure_perturbed(self, assignments: dict[str, int]) -> float:
         """Quantize the assigned groups in place, measure, restore.
+
+        A single group's originals stay on their own device — the card
+        already keeps workspace for one group, and a host round-trip
+        per scan cell would cost hours over a full scan. A multi-group
+        perturbation stages originals on the CPU instead: cloning
+        every quantizable tensor on the card would double the model's
+        footprint.
 
         Args:
             assignments: Assigned precision per validated group name.
@@ -226,30 +250,34 @@ class TorchDamageMeter:
         Raises:
             ValueError: If any assigned bits are below 2, or the
                 perturbed forward pass is numerically unstable.
-            RuntimeError: If this or a prior measurement failed to
-                restore the model.
+            RuntimeError: If the restore fails after a completed
+                measurement.
         """
-        if self._poisoned:
-            raise RuntimeError(
-                "a prior measurement failed to restore the model — "
-                "rebuild the meter before measuring again"
-            )
         if any(bits < MIN_BITS for bits in assignments.values()):
             raise ValueError(f"bits must be at least {MIN_BITS}")
         reference = self._ensure_reference()
+        stage_on_cpu = len(assignments) > 1
         originals: dict[str, torch.Tensor] = {}
         try:
             with torch.no_grad():
                 for group, bits in assignments.items():
                     for name in self._groups[group]:
                         param = self._param(name)
-                        originals[name] = param.detach().to("cpu", copy=True)
+                        saved = param.detach()
+                        originals[name] = (
+                            saved.to("cpu", copy=True)
+                            if stage_on_cpu
+                            else saved.clone()
+                        )
                         param.copy_(
                             rtn_quantize_dequantize(param, bits, self._block_size)
                         )
-            return self._mean_damage(reference)
-        finally:
-            self._restore(originals)
+            damage = self._mean_damage(reference)
+        except BaseException:
+            self._restore(originals, in_flight=True)
+            raise
+        self._restore(originals, in_flight=False)
+        return damage
 
     def _param(self, name: str) -> torch.Tensor:
         """Look up a parameter tensor by its dotted name.
@@ -262,31 +290,33 @@ class TorchDamageMeter:
         """
         return self._model.get_parameter(name)
 
-    def _restore(self, originals: dict[str, torch.Tensor]) -> None:
+    def _restore(self, originals: dict[str, torch.Tensor], in_flight: bool) -> None:
         """Copy saved weights back, poisoning the meter if that fails.
 
-        The in-flight exception state is read on entry, before any
-        handler can shadow it. A restore failure while another
-        exception is in flight is recorded (the meter refuses further
-        measurements) but not raised, so the root cause keeps the
+        Any failure — including an interrupt mid-copy — poisons the
+        meter: a partial restore leaves corrupt weights, and the flag
+        is what stops them being measured. Interrupts and exits always
+        propagate. A restore failure while another exception is in
+        flight is recorded but not raised, so the root cause keeps the
         stage.
 
         Args:
             originals: Saved tensors keyed by parameter name.
+            in_flight: True when the caller is unwinding another
+                exception.
 
         Raises:
             RuntimeError: If the restore itself fails and no other
                 exception is already propagating.
         """
-        # Read the in-flight state before the handler runs — inside an
-        # except block, sys.exc_info() reports the restore error itself.
-        in_flight = sys.exc_info()[1] is not None
         try:
             with torch.no_grad():
                 for name, original in originals.items():
                     self._param(name).copy_(original)
-        except Exception as exc:
+        except BaseException as exc:
             self._poisoned = True
+            if not isinstance(exc, Exception):
+                raise
             if not in_flight:
                 raise RuntimeError(
                     f"failed to restore original weights: {exc}"

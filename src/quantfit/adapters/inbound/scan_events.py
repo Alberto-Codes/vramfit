@@ -54,9 +54,10 @@ def start_run(
 
     Raises:
         typer.Exit: With code 1 when the meter cannot be built — the
-            command echoes the failure and logs ``<prefix>_halted``
-            with ``cells_kept`` null (the stage cannot know the
-            count).
+            command echoes the failure and logs ``<prefix>_halted``.
+            Scan halts carry ``cells_kept`` null (the stage cannot
+            know the count); validation halts have no scan grid and
+            omit it.
     """
     run_log.emit(f"{prefix}_started", payload)
     build_started = time.monotonic()
@@ -67,15 +68,16 @@ def start_run(
         meter = build()
     except (OSError, ValueError, RuntimeError, ImportError) as exc:
         typer.echo(f"error: {exc}", err=True)
-        run_log.emit(
-            f"{prefix}_halted",
-            {
-                "stage": "meter_build",
-                "error": str(exc),
-                "cells_kept": None,
-                "rss_hwm_gb": rss_hwm_gb(),
-            },
-        )
+        fields: dict[str, object] = {
+            "stage": "meter_build",
+            "error": str(exc),
+            "rss_hwm_gb": rss_hwm_gb(),
+        }
+        # Every scan halt carries the same fields (ADR-0011); the
+        # validation pass has no scan grid, so no cell count.
+        if prefix == "scan":
+            fields["cells_kept"] = None
+        run_log.emit(f"{prefix}_halted", fields)
         raise typer.Exit(code=1) from exc
     run_log.emit(
         "meter_built",
