@@ -129,8 +129,57 @@ class TestSolve:
     def test_pin_unscanned_precision_raises_pin_error(self) -> None:
         map_ = load(make_map([("g0", 1000, CONVEX_CURVE)]))
 
-        with pytest.raises(PinError, match="not in the scanned set"):
+        with pytest.raises(PinError, match="not in the candidate set"):
             solve_simple(map_, budget=10_000, pins={"g0": 6})
+
+    def test_runtime_filters_candidates_and_is_recorded(self) -> None:
+        map_ = load(make_map([("g0", 1000, CONVEX_CURVE)]))
+
+        # A budget that forces below 8-bit: with vLLM's {8, 4} the
+        # solver must land on 4, never on the scanned 3 or 2.
+        recipe = solve_simple(map_, budget=300, runtime="vllm")
+
+        assert recipe.assignments[0].bits == 4
+        assert recipe.runtime == "vllm"
+
+    def test_no_runtime_leaves_candidates_unfiltered(self) -> None:
+        map_ = load(make_map([("g0", 1000, CONVEX_CURVE)]))
+
+        recipe = solve_simple(map_, budget=150)
+
+        assert recipe.assignments[0].bits == 2
+        assert recipe.runtime is None
+
+    def test_runtime_excluding_the_floor_can_make_a_budget_infeasible(self) -> None:
+        map_ = load(make_map([("g0", 1000, CONVEX_CURVE)]))
+
+        # 150 bytes needs the 2-bit floor, which vLLM cannot serve.
+        with pytest.raises(InfeasibleBudgetError) as excinfo:
+            solve_simple(map_, budget=150, runtime="vllm")
+
+        # The message must name the removed precisions — the reported
+        # floor is higher than the scan alone allows.
+        assert excinfo.value.runtime == "vllm"
+        assert excinfo.value.dropped_precisions == (3, 2)
+        assert 'runtime "vllm" cannot serve' in str(excinfo.value)
+        assert "[3, 2]" in str(excinfo.value)
+
+    def test_runtime_dropping_nothing_keeps_the_plain_message(self) -> None:
+        map_ = load(make_map([("g0", 1600, CONVEX_CURVE)]))
+        floor = group_bytes(1600, 2, 0.05)
+
+        # llama.cpp serves the whole scanned set — the message must
+        # not blame the runtime for the floor.
+        with pytest.raises(InfeasibleBudgetError) as excinfo:
+            solve_simple(map_, budget=floor - 10, runtime="llama.cpp")
+
+        assert "cannot serve" not in str(excinfo.value)
+
+    def test_pin_outside_runtime_set_raises_pin_error(self) -> None:
+        map_ = load(make_map([("g0", 1000, CONVEX_CURVE)]))
+
+        with pytest.raises(PinError, match="not in the candidate set"):
+            solve_simple(map_, budget=10_000, runtime="vllm", pins={"g0": 3})
 
     def test_later_pin_overrides_earlier_for_same_group(self) -> None:
         map_ = load(make_map([("g0", 1000, CONVEX_CURVE)]))

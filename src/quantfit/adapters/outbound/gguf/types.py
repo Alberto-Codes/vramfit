@@ -2,10 +2,13 @@
 
 The decision core of the GGUF backend, kept free of IO so the mapping
 is testable and the verified fake can share it. Nominal precisions
-map to K-quant types, layer groups map to escaped `blk.<n>.` regex
-patterns, and the embedding group maps to the quantizer's dedicated
-embedding flag. Anything the table cannot map raises `PackError`
-instead of guessing.
+map to K-quant types (the full llama.cpp capability set since
+ADR-0013), layer groups map to escaped `blk.<n>.` regex patterns,
+and the embedding group maps to the quantizer's dedicated embedding
+flag. The backend's own runtime name is the domain's `LLAMA_CPP`
+constant, so the table key and the pack check cannot drift apart. A
+recipe recorded for a foreign runtime, or anything the table cannot
+map, raises `PackError` instead of guessing.
 
 Examples:
     Map a recipe to quantizer inputs:
@@ -31,9 +34,12 @@ from typing import Final
 from quantfit.domain.errors import QuantfitError
 from quantfit.domain.model import Recipe
 from quantfit.domain.pack import TypeOverride
+from quantfit.domain.runtime import LLAMA_CPP
 
 GGML_TYPE_BY_BITS: Final[dict[int, str]] = {
     8: "q8_0",
+    6: "q6_k",
+    5: "q5_k",
     4: "q4_k",
     3: "q3_k",
     2: "q2_k",
@@ -44,10 +50,16 @@ GGML_TYPE_BY_BITS: Final[dict[int, str]] = {
 # nominal bits as GGML_TYPE_BY_BITS.
 BASE_FTYPE_BY_BITS: Final[dict[int, str]] = {
     8: "Q8_0",
+    6: "Q6_K",
+    5: "Q5_K_S",
     4: "Q4_K_S",
     3: "Q3_K_S",
     2: "Q2_K",
 }
+
+# The one runtime this backend packs for. A recipe planned for
+# another runtime must not silently become a GGUF (ADR-0013).
+GGUF_RUNTIME: Final[str] = LLAMA_CPP
 
 EMBEDDING_GROUP: Final[str] = "model.embed_tokens"
 
@@ -57,18 +69,47 @@ _LAYER_GROUP: Final[re.Pattern[str]] = re.compile(r"^model\.layers\.(\d+)$")
 class PackError(QuantfitError, RuntimeError):
     """The pack backend cannot map or apply a recipe.
 
-    Raised for precisions outside the ADR-0012 table, groups without
-    a GGUF tensor mapping, and toolchain failures. Inherits
+    Raised for precisions outside the ADR-0012 table (as amended by
+    ADR-0013), groups without a GGUF tensor mapping, recipes planned
+    for another runtime, and toolchain failures. Inherits
     `QuantfitError` per ADR-0011 and `RuntimeError` for the port
     contract.
 
     Examples:
-        A 6-bit assignment has no mapping today:
+        A 16-bit assignment has no mapping:
 
         ```python
-        ggml_type_for(6)  # raises PackError
+        ggml_type_for(16)  # raises PackError
         ```
     """
+
+
+def check_runtime(recipe: Recipe) -> None:
+    """Reject a recipe planned for a runtime this backend cannot serve.
+
+    A recipe whose runtime is None passes — it was planned without a
+    runtime constraint, and the type tables still decide what it can
+    map.
+
+    Args:
+        recipe: The recipe to pack.
+
+    Raises:
+        PackError: If the recipe records a runtime other than
+            ``llama.cpp``.
+
+    Examples:
+        A vLLM recipe never packs to GGUF:
+
+        ```python
+        check_runtime(vllm_recipe)  # raises PackError
+        ```
+    """
+    if recipe.runtime is not None and recipe.runtime != GGUF_RUNTIME:
+        raise PackError(
+            f'recipe targets runtime "{recipe.runtime}" — the GGUF backend '
+            f"packs for {GGUF_RUNTIME} (ADR-0013)"
+        )
 
 
 def ggml_type_for(bits: int) -> str:

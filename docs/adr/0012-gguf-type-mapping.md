@@ -1,7 +1,11 @@
 # ADR-0012: The GGUF backend maps nominal bits to K-quant types
 
-- **Status:** Accepted
+- **Status:** Accepted, amended by
+  [ADR-0013](0013-runtime-capability-in-recipes.md)
 - **Date:** 2026-07-28 (accepted 2026-07-28)
+- **Amendment (2026-07-28):** the type tables in decisions 1 and 3
+  gain 6- and 5-bit rows (6→`Q6_K`, 5→`Q5_K`, base ftype
+  5→`Q5_K_S`). Everything else stands.
 
 ## Context
 

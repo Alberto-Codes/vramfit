@@ -14,8 +14,9 @@ from quantfit.domain.model import Assignment, PlanMeta, TraceStep
 
 def make_recipe_dict() -> dict:
     return {
-        "quantfit_schema": 1,
+        "quantfit_schema": 2,
         "model_id": "test/model",
+        "runtime": "llama.cpp",
         "plan": {
             "vram_budget_bytes": 100,
             "kv_headroom_bytes": 10,
@@ -75,6 +76,58 @@ class TestRecipe:
         save_recipe(recipe, path)
 
         assert load_recipe(path) == recipe
+
+    def test_runtime_round_trips(self) -> None:
+        recipe = recipe_from_dict(make_recipe_dict())
+
+        assert recipe.runtime == "llama.cpp"
+        assert recipe_to_dict(recipe)["runtime"] == "llama.cpp"
+
+    def test_null_runtime_loads_as_none(self) -> None:
+        raw = make_recipe_dict()
+        raw["runtime"] = None
+
+        recipe = recipe_from_dict(raw)
+
+        assert recipe.runtime is None
+        assert recipe_to_dict(recipe)["runtime"] is None
+
+    def test_missing_runtime_rejected(self) -> None:
+        raw = make_recipe_dict()
+        del raw["runtime"]
+
+        with pytest.raises(ArtifactError, match="runtime"):
+            recipe_from_dict(raw)
+
+    def test_empty_runtime_rejected(self) -> None:
+        raw = make_recipe_dict()
+        raw["runtime"] = ""
+
+        with pytest.raises(ArtifactError, match="must not be empty"):
+            recipe_from_dict(raw)
+
+    def test_known_runtime_with_unservable_bits_rejected(self) -> None:
+        raw = make_recipe_dict()
+        raw["runtime"] = "vllm"
+        raw["assignments"][1]["bits"] = 3
+
+        with pytest.raises(ArtifactError, match='not servable by runtime "vllm"'):
+            recipe_from_dict(raw)
+
+    def test_unknown_runtime_loads_untouched(self) -> None:
+        raw = make_recipe_dict()
+        raw["runtime"] = "some-future-runtime"
+
+        recipe = recipe_from_dict(raw)
+
+        assert recipe.runtime == "some-future-runtime"
+
+    def test_version_one_recipe_rejected(self) -> None:
+        raw = make_recipe_dict()
+        raw["quantfit_schema"] = 1
+
+        with pytest.raises(ArtifactError, match="unsupported schema version 1"):
+            recipe_from_dict(raw)
 
     def test_missing_assignment_field_rejected(self) -> None:
         raw = make_recipe_dict()

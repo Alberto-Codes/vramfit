@@ -335,6 +335,10 @@ class Recipe:
         plan (PlanMeta): Budget accounting and provenance.
         assignments (tuple[Assignment, ...]): One entry per layer group,
             in sensitivity-map order.
+        runtime (str | None): Target runtime the recipe was planned
+            for (ADR-0013), or None for an unconstrained plan. No
+            default — every constructor states its intent. The
+            capability table lives in [quantfit.domain.runtime][].
 
     Examples:
         Inspect a recipe's predicted size:
@@ -347,6 +351,7 @@ class Recipe:
     model_id: str
     plan: PlanMeta
     assignments: tuple[Assignment, ...]
+    runtime: str | None
 
     def __post_init__(self) -> None:
         """Enforce the recipe invariants the pack step relies on.

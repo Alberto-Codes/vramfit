@@ -6,6 +6,7 @@ from typing import Literal
 from quantfit.adapters.outbound.gguf.types import (
     PackError,
     base_type,
+    check_runtime,
     tensor_overrides,
     token_embedding_type,
 )
@@ -146,6 +147,7 @@ class MemoryRecipePacker:
         return self.base_bytes
 
     def pack(self, recipe: Recipe) -> PackResult:
+        check_runtime(recipe)
         if not self.has_base:
             raise PackError("base GGUF does not exist — run convert first")
         if self.fail_stage == "quantize":

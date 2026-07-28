@@ -5,11 +5,9 @@ Every extractor takes a JSON path string so validation errors read like
 ``$.groups[3].sensitivity: key "4x" is not an integer precision``.
 Numeric extractors reject booleans (JSON ``true`` is a valid Python int)
 and non-finite floats (``json.loads`` accepts ``NaN``/``Infinity``, which
-would poison solver comparisons downstream).
-
-Attributes:
-    SCHEMA_VERSION (int): The artifact schema version the adapters read
-        and write.
+would poison solver comparisons downstream). Schema versions advance
+per artifact (ADR-0013) — each adapter owns its version constant and
+passes it to `_check_schema_version`.
 
 Examples:
     Report a validation failure with its JSON path:
@@ -33,11 +31,9 @@ from __future__ import annotations
 import json
 import math
 from pathlib import Path
-from typing import Any, Final
+from typing import Any
 
 from quantfit.domain.errors import QuantfitError
-
-SCHEMA_VERSION: Final[int] = 1
 
 
 class ArtifactError(QuantfitError, ValueError):
@@ -222,12 +218,17 @@ def _get_float(obj: dict[str, Any], key: str, path: str) -> float:
     return _as_float(obj[key], f"{path}.{key}")
 
 
-def _check_schema_version(obj: dict[str, Any], path: str) -> None:
+def _check_schema_version(obj: dict[str, Any], path: str, expected: int) -> None:
     """Validate the artifact's ``quantfit_schema`` envelope field.
 
     Args:
         obj: Top-level artifact object.
         path: JSON path of the artifact root.
+        expected: The schema version this artifact's adapter reads.
+            Versions advance per artifact — the recipe moved to 2
+            (ADR-0013) while the sensitivity map stays at 1. Every
+            caller passes its own constant, so no artifact silently
+            validates against another's version.
 
     Raises:
         ArtifactError: If the version is missing or unsupported — the
@@ -235,10 +236,10 @@ def _check_schema_version(obj: dict[str, Any], path: str) -> None:
     """
     version = _get_int(obj, "quantfit_schema", path)
     _require(
-        version == SCHEMA_VERSION,
+        version == expected,
         f"{path}.quantfit_schema",
         f"unsupported schema version {version} — this quantfit reads "
-        f"version {SCHEMA_VERSION}",
+        f"version {expected}",
     )
 
 
