@@ -1,5 +1,5 @@
 /* @theme quantfit */
-/* Copper on slate — the material world of the board itself.
+/* Circuit green on slate — solder mask and substrate.
    Signature: the precision ladder under every heading, four segments
    in width ratio 8:4:3:2 (the candidate bit-widths).
    Build: marp --theme-set docs/decks/theme.css --pdf <deck>.md */
@@ -10,10 +10,11 @@
   --paper: #f3f5f1;
   --ink: #1a222e;
   --board: #16202b;
-  --copper: #b4531d;
-  --copper-2: #9c4818;
-  --copper-3: #843c14;
-  --copper-4: #6c300f;
+  --accent: #2f6b4f;
+  --accent-2: #265a41;
+  --accent-3: #1d4934;
+  --accent-4: #143827;
+  --accent-bright: #5fa885;
   --muted: #5b6673;
   --rule: #d9dfe3;
   --well: #e9ece5;
@@ -47,17 +48,17 @@ h1::after {
   border-radius: 2px;
   background: linear-gradient(
     to right,
-    var(--copper) 0 44%, transparent 44% 46.5%,
-    var(--copper-2) 46.5% 68.5%, transparent 68.5% 71%,
-    var(--copper-3) 71% 87.5%, transparent 87.5% 90%,
-    var(--copper-4) 90% 100%
+    var(--accent) 0 44%, transparent 44% 46.5%,
+    var(--accent-2) 46.5% 68.5%, transparent 68.5% 71%,
+    var(--accent-3) 71% 87.5%, transparent 87.5% 90%,
+    var(--accent-4) 90% 100%
   );
 }
 
 h2 {
   font-weight: 700;
   font-size: 1.05em;
-  color: var(--copper);
+  color: var(--accent);
 }
 
 strong {
@@ -66,20 +67,20 @@ strong {
 }
 
 em {
-  color: var(--copper);
+  color: var(--accent);
   font-style: normal;
   font-weight: 600;
 }
 
 a {
-  color: var(--copper);
+  color: var(--accent);
   text-decoration: none;
-  border-bottom: 1.5px solid var(--copper-3);
+  border-bottom: 1.5px solid #9dc4b1;
 }
 
 ul li::marker,
 ol li::marker {
-  color: var(--copper);
+  color: var(--accent);
 }
 
 /* --- code and numbers: the ledger voice ----------------------------- */
@@ -95,7 +96,7 @@ code {
 
 pre {
   background: var(--well);
-  border-left: 4px solid var(--copper);
+  border-left: 4px solid var(--accent);
   border-radius: 0 6px 6px 0;
   font-size: 0.72em;
   line-height: 1.45;
@@ -129,7 +130,7 @@ th {
   color: var(--muted);
   font-weight: 600;
   border: none;
-  border-bottom: 2.5px solid var(--copper);
+  border-bottom: 2.5px solid var(--accent);
   padding: 0.3em 0.9em;
   text-align: left;
 }
@@ -142,11 +143,11 @@ td {
 }
 
 tr:last-child td {
-  border-bottom: 2.5px solid var(--copper);
+  border-bottom: 2.5px solid var(--accent);
   font-weight: 700;
 }
 
-/* --- lead: dark board, copper trace --------------------------------- */
+/* --- lead: dark board, bright trace --------------------------------- */
 
 section.lead {
   background: var(--board);
@@ -166,25 +167,25 @@ section.lead h1::after {
   width: 62%;
   background: linear-gradient(
     to right,
-    #d06a2f 0 44%, transparent 44% 46.5%,
-    #b4531d 46.5% 68.5%, transparent 68.5% 71%,
-    #93441a 71% 87.5%, transparent 87.5% 90%,
-    #7a3915 90% 100%
+    var(--accent-bright) 0 44%, transparent 44% 46.5%,
+    #3f8464 46.5% 68.5%, transparent 68.5% 71%,
+    var(--accent) 71% 87.5%, transparent 87.5% 90%,
+    var(--accent-2) 90% 100%
   );
 }
 
 section.lead strong {
-  color: #d98b52;
+  color: var(--accent-bright);
 }
 
 section.lead a {
-  color: #d98b52;
-  border-bottom-color: var(--copper);
+  color: var(--accent-bright);
+  border-bottom-color: var(--accent);
 }
 
 section.lead code {
   background: #223041;
-  color: #e8b98d;
+  color: #9ed3b6;
 }
 
 section.lead footer,
@@ -213,7 +214,7 @@ section::after {
 }
 
 blockquote {
-  border-left: 4px solid var(--copper-3);
+  border-left: 4px solid #9dc4b1;
   color: var(--muted);
   font-size: 0.9em;
 }
