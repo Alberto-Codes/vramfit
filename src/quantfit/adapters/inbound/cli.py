@@ -222,7 +222,7 @@ def plan(
     """Solve a sensitivity map into a recipe under a VRAM budget.
 
     Solver rejections (bad pins, an infeasible budget) surface
-    through one catch of the `QuantfitError` root — the solver's own
+    through one catch of the `QuantfitError` root. The solver's own
     messages carry the details, including the infeasibility gap.
 
     Raises:

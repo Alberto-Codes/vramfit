@@ -22,7 +22,7 @@ def make_plan() -> PlanMeta:
 
 
 class TestRecipeInvariants:
-    def test_unique_groups_construct(self) -> None:
+    def test_unique_groups_construct_succeeds(self) -> None:
         recipe = Recipe(
             model_id="test/model",
             plan=make_plan(),

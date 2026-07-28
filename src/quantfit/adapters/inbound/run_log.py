@@ -78,8 +78,8 @@ class SafeRunLog:
     def emit(self, event: str, fields: Mapping[str, object]) -> None:
         """Record one event, warning once and disabling on failure.
 
-        The warning names the run-log file and the event that died, so
-        the one line the user sees points at the sink and the emit
+        The warning quotes the run-log file and the event that died,
+        so the one line the user sees points at the sink and the emit
         that broke.
 
         Args:
@@ -93,6 +93,6 @@ class SafeRunLog:
         except (OSError, TypeError, ValueError) as exc:
             self._dead = True
             typer.echo(
-                f'warning: run log {self._path} disabled at "{event}": {exc}',
+                f'warning: run log "{self._path}" disabled at "{event}": {exc}',
                 err=True,
             )

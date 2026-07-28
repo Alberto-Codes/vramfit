@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 
 from quantfit.adapters.outbound.sensitivity_map_json import map_from_dict
+from quantfit.domain.budget import format_size
 from quantfit.domain.model import SensitivityMap
 from quantfit.domain.solver import (
     SOLVER_NAME,
@@ -148,6 +149,19 @@ class TestSolve:
 
         assert excinfo.value.minimum_bytes == floor
         assert excinfo.value.gap_bytes == 10
+        # The CLI prints str(exc) verbatim — the message must carry
+        # human-readable sizes, not raw byte counts.
+        assert "no recipe fits" in str(excinfo.value)
+        assert format_size(floor) in str(excinfo.value)
+
+    @pytest.mark.parametrize(
+        "overhead", [float("nan"), float("inf")], ids=["nan", "inf"]
+    )
+    def test_non_finite_format_overhead_raises_value_error(self, overhead) -> None:
+        map_ = load(make_map([("g0", 1000, CONVEX_CURVE)]))
+
+        with pytest.raises(ValueError, match="finite"):
+            solve_simple(map_, budget=10_000, format_overhead=overhead)
 
     def test_pins_alone_over_budget_raises_infeasible(self) -> None:
         map_ = load(make_map([("g0", 1600, CONVEX_CURVE), ("g1", 1600, CONVEX_CURVE)]))

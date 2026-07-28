@@ -1,8 +1,8 @@
 """Greedy damage-per-byte solver that turns a sensitivity map into a recipe.
 
-Implements ADR-0007, with errors under the `QuantfitError` root
-(ADR-0011) carrying user-facing messages the CLI prints verbatim:
-start every group at the highest candidate precision
+Implements ADR-0007. Errors sit under the `QuantfitError` root
+(ADR-0011) and carry user-facing messages the CLI prints verbatim.
+The algorithm: start every group at the highest candidate precision
 (or its pin), then repeatedly apply the downgrade with the best
 damage-per-byte-freed ratio until the total fits the weight budget. The
 ordered downgrade log is recorded in the recipe as its explanation
@@ -334,7 +334,8 @@ def solve(
         the downgrade trace in ``plan.trace``.
 
     Raises:
-        ValueError: If ``format_overhead`` is negative.
+        ValueError: If ``format_overhead`` is negative, NaN, or
+            infinite.
         PinError: If a pin is malformed with respect to the map.
         InfeasibleBudgetError: If even minimum precision (pins respected)
             exceeds the budget.
@@ -354,8 +355,10 @@ def solve(
         )
         ```
     """
-    if format_overhead < 0:
-        raise ValueError(f"format_overhead must be non-negative, got {format_overhead}")
+    if not (math.isfinite(format_overhead) and format_overhead >= 0):
+        raise ValueError(
+            f"format_overhead must be finite and non-negative, got {format_overhead}"
+        )
     pins = dict(pins or {})
     candidates = sensitivity_map.scan.precisions
     pinned = _expand_pins(pins, sensitivity_map)
