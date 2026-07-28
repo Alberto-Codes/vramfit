@@ -328,13 +328,13 @@ def scan(
     ] = None,
     runlog: Annotated[
         Path | None,
-        typer.Option(help="Run-log path (JSONL). Default: <out stem>.runlog.jsonl."),
+        typer.Option(help="Run-log path (JSONL). Default: <stem>.runlog.jsonl."),
     ] = None,
 ) -> None:
     """Measure per-group quantization damage and write a sensitivity map.
 
     Every finished cell lands in a checkpoint file next to ``--out``
-    (``<out stem>.checkpoint.json``), so a crashed scan resumes instead
+    (``<stem>.checkpoint.json``), so a crashed scan resumes instead
     of restarting. ``--no-resume`` discards any existing checkpoint.
     ``--gpu-memory`` caps the shards that ``auto`` sharding places on
     GPU 0 (parsed with the project size grammar, validated up front),

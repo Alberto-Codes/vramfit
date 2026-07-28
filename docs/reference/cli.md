@@ -93,7 +93,7 @@ quantfit scan MODEL
                          north-star target needs this)
   --resume / --no-resume Continue from the checkpoint file  [default: resume]
   --runlog PATH          Run-log path (JSONL)
-                         [default: <out stem>.runlog.jsonl]
+                         [default: <stem>.runlog.jsonl]
   --gpu-memory SIZE      Byte cap on GPU 0 model shards (e.g. 17GiB),
                          parsed with the same grammar as --vram.
                          Requires --device auto. Keeps workspace free
