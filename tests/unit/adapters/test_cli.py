@@ -179,6 +179,16 @@ class TestPlanCommand:
         assert result.exit_code == 1
         assert "nothing for weights" in result.output
 
+    def test_negative_format_overhead_exits_two(self, tmp_path) -> None:
+        map_path = self._write_map(tmp_path)
+
+        result = runner.invoke(
+            app,
+            ["plan", str(map_path), "--vram", "200000", "--format-overhead", "-0.1"],
+        )
+
+        assert result.exit_code == 2
+
     def test_malformed_vram_exits_two(self, tmp_path) -> None:
         map_path = self._write_map(tmp_path)
 

@@ -71,6 +71,13 @@ repos:
         types: [python]
         pass_filenames: false
 
+      - id: doc-refs
+        name: docs reference living module paths
+        entry: uv run python scripts/check_doc_refs.py
+        language: system
+        types_or: [markdown, python]
+        pass_filenames: false
+
       - id: docvet
         name: docvet check
         entry: uv run docvet check --staged

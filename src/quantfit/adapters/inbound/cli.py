@@ -228,14 +228,16 @@ def plan(
         "recipe.json"
     ),
     format_overhead: Annotated[
-        float, typer.Option(help="Quantization-format overhead fraction.")
+        float,
+        typer.Option(min=0.0, help="Quantization-format overhead fraction."),
     ] = DEFAULT_FORMAT_OVERHEAD,
 ) -> None:
     """Solve a sensitivity map into a recipe under a VRAM budget.
 
     Raises:
         typer.BadParameter: If a ``--pin`` is not of the form
-            ``pattern=bits`` or a size option is malformed.
+            ``pattern=bits``, a size option is malformed, or
+            ``--format-overhead`` is negative.
         typer.Exit: With code 1 when the map is invalid, the budget is
             infeasible (the gap is reported), or nothing is left for
             weights.

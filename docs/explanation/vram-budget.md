@@ -4,7 +4,7 @@ status: stable
 
 # VRAM budget math
 
-> **Status: stable** — implemented in `quantfit.budget` and computable via
+> **Status: stable** — implemented in `quantfit.domain.budget` and computable via
 > `quantfit budget`; the worked example below uses the target model's real
 > config. The runtime-overhead constant remains a planning figure until
 > measured under vLLM on the reference box.

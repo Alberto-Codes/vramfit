@@ -56,7 +56,8 @@ def recipe_from_dict(data: object) -> Recipe:
 
     Raises:
         ArtifactError: If any field is missing, mistyped, or violates a
-            schema rule.
+            schema rule — including non-positive ``bits`` or ``bytes``
+            in any assignment.
 
     Examples:
         Reject a recipe with no assignments:
@@ -77,10 +78,14 @@ def recipe_from_dict(data: object) -> Recipe:
     for i, raw in enumerate(raw_assignments):
         path = f"$.assignments[{i}]"
         obj = _get_dict(raw, path)
+        bits = _get_int(obj, "bits", path)
+        _require(bits > 0, f"{path}.bits", "must be positive")
+        size = _get_int(obj, "bytes", path)
+        _require(size > 0, f"{path}.bytes", "must be positive")
         assignment = Assignment(
             group=_get_str(obj, "group", path),
-            bits=_get_int(obj, "bits", path),
-            bytes=_get_int(obj, "bytes", path),
+            bits=bits,
+            bytes=size,
             damage=_get_float(obj, "damage", path),
         )
         _require(

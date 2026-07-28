@@ -92,6 +92,24 @@ class TestRecipe:
         with pytest.raises(ArtifactError, match="duplicate group"):
             recipe_from_dict(raw)
 
+    def test_nonpositive_bits_rejected(self) -> None:
+        raw = make_recipe_dict()
+        raw["assignments"][0]["bits"] = 0
+
+        with pytest.raises(ArtifactError) as excinfo:
+            recipe_from_dict(raw)
+
+        assert excinfo.value.json_path == "$.assignments[0].bits"
+
+    def test_nonpositive_bytes_rejected(self) -> None:
+        raw = make_recipe_dict()
+        raw["assignments"][1]["bytes"] = -5
+
+        with pytest.raises(ArtifactError) as excinfo:
+            recipe_from_dict(raw)
+
+        assert excinfo.value.json_path == "$.assignments[1].bytes"
+
     def test_empty_assignments_rejected(self) -> None:
         raw = make_recipe_dict()
         raw["assignments"] = []

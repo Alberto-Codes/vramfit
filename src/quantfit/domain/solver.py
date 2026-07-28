@@ -4,6 +4,8 @@ Implements ADR-0007: start every group at the highest candidate precision
 (or its pin), then repeatedly apply the downgrade with the best
 damage-per-byte-freed ratio until the total fits the weight budget. The
 ordered downgrade log is recorded in the recipe as its explanation trace.
+Inputs are validated at the API boundary: a negative ``format_overhead``
+raises ``ValueError`` before any solving starts.
 
 Attributes:
     SOLVER_NAME (str): Identifier recorded in ``plan.solver`` for
@@ -35,7 +37,7 @@ See Also:
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from fnmatch import fnmatchcase
 from typing import Final
 
@@ -170,6 +172,51 @@ def _expand_pins(
     return pinned
 
 
+def _best_move(
+    sensitivity_map: SensitivityMap,
+    pinned: dict[str, int],
+    state: dict[str, int],
+    candidates: tuple[int, ...],
+    size: Callable[[int, int], int],
+) -> tuple[str, int, int, float] | None:
+    """Pick the downgrade with the minimum greedy selection key.
+
+    Considers every lower candidate precision of every unpinned group.
+    Moves that free no bytes (ceil rounding on tiny groups) are skipped —
+    they never help and would divide by zero in the ratio.
+
+    Args:
+        sensitivity_map: Damage curves for every group.
+        pinned: Group names whose precision is user-forced.
+        state: Current precision per group name.
+        candidates: The scan's candidate precisions, descending.
+        size: Group-size predictor for the solver's overhead setting.
+
+    Returns:
+        ``(group, target_bits, bytes_freed, damage_delta)`` for the best
+        move, or None when no downgrade can free bytes.
+    """
+    best_key: tuple[float, str, int] | None = None
+    best: tuple[str, int, int, float] | None = None
+    for group in sensitivity_map.groups:
+        if group.name in pinned:
+            continue
+        current = state[group.name]
+        current_bytes = size(group.bytes_fp16, current)
+        for target in candidates:
+            if target >= current:
+                continue
+            bytes_freed = current_bytes - size(group.bytes_fp16, target)
+            if bytes_freed <= 0:
+                continue
+            damage_delta = group.sensitivity[target] - group.sensitivity[current]
+            key = (damage_delta / bytes_freed, group.name, -target)
+            if best_key is None or key < best_key:
+                best_key = key
+                best = (group.name, target, bytes_freed, damage_delta)
+    return best
+
+
 def solve(
     sensitivity_map: SensitivityMap,
     weight_budget_bytes: int,
@@ -205,6 +252,7 @@ def solve(
         the downgrade trace in ``plan.trace``.
 
     Raises:
+        ValueError: If ``format_overhead`` is negative.
         PinError: If a pin is malformed with respect to the map.
         InfeasibleBudgetError: If even minimum precision (pins respected)
             exceeds the budget.
@@ -224,6 +272,8 @@ def solve(
         )
         ```
     """
+    if format_overhead < 0:
+        raise ValueError(f"format_overhead must be non-negative, got {format_overhead}")
     pins = dict(pins or {})
     candidates = sensitivity_map.scan.precisions
     pinned = _expand_pins(pins, sensitivity_map)
@@ -258,28 +308,7 @@ def solve(
 
     trace: list[TraceStep] = []
     while total > weight_budget_bytes:
-        best_key: tuple[float, str, int] | None = None
-        best_move: tuple[str, int, int, float] | None = None
-        for group in sensitivity_map.groups:
-            if group.name in pinned:
-                continue
-            current = state[group.name]
-            current_bytes = size(group.bytes_fp16, current)
-            for target in candidates:
-                if target >= current:
-                    continue
-                bytes_freed = current_bytes - size(group.bytes_fp16, target)
-                if bytes_freed <= 0:
-                    # ceil rounding can make a downgrade free nothing on
-                    # tiny groups; such a move never helps and would
-                    # divide by zero below.
-                    continue
-                damage_delta = group.sensitivity[target] - group.sensitivity[current]
-                ratio = damage_delta / bytes_freed
-                key = (ratio, group.name, -target)
-                if best_key is None or key < best_key:
-                    best_key = key
-                    best_move = (group.name, target, bytes_freed, damage_delta)
+        best_move = _best_move(sensitivity_map, pinned, state, candidates, size)
         if best_move is None:  # pragma: no cover - guarded by the precheck
             raise RuntimeError(
                 "solver invariant broken: over budget but no freeing move "

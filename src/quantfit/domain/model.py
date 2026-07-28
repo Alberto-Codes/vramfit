@@ -2,8 +2,8 @@
 
 Pure dataclasses only — serialization, validation, and the JSON schema
 envelope (including the ``quantfit_schema`` version field) live in
-[quantfit.adapters.sensitivity_map_json][] and
-[quantfit.adapters.recipe_json][].
+[quantfit.adapters.outbound.sensitivity_map_json][] and
+[quantfit.adapters.outbound.recipe_json][].
 
 Examples:
     Build a one-group map in memory:
