@@ -95,7 +95,7 @@ reference box (llama.cpp b10172, Vulkan).
 | Model | File size | Fits 2.00 GiB budget | PPL ↓ | Mean KLD ↓ | Same top token ↑ |
 |-------|-----------|----------------------|-------|------------|------------------|
 | f16 reference | 5.75 GiB | no | 8.422 ± 0.057 | — | — |
-| **quantfit recipe** (7×8-bit + embed, 29×4-bit) | 1.98 GiB | **yes** (17 MiB under) | **8.661 ± 0.058** | **0.0382** | **90.5 %** |
+| **quantfit recipe** (7×8-bit incl. embed, 30×4-bit) | 1.98 GiB | **yes** (17 MiB under) | **8.661 ± 0.058** | **0.0382** | **90.5 %** |
 | Q4_K_M heuristic | 1.80 GiB | yes | 8.790 ± 0.060 | 0.0494 | 88.9 % |
 | Q5_K_S heuristic | 2.02 GiB | no (21 MiB over) | 8.520 ± 0.057 | 0.0161 | 93.3 % |
 
@@ -136,7 +136,7 @@ Vulkan.
 | Model | File size | Fits 2.00 GiB budget | PPL ↓ | Mean KLD ↓ | Same top token ↑ |
 |-------|-----------|----------------------|-------|------------|------------------|
 | f16 reference | 5.75 GiB | no | 8.422 ± 0.057 | — | — |
-| **quantfit 6/5/4 mix** (3×6-bit + embed, 29×5-bit, 5×4-bit) | **1.995 GiB** | **yes** (5.3 MiB under) | **8.534 ± 0.057** | **0.0180** | **93.3 %** |
+| **quantfit 6/5/4 mix** (3×6-bit incl. embed, 29×5-bit, 5×4-bit) | **1.995 GiB** | **yes** (5.3 MiB under) | **8.534 ± 0.057** | **0.0180** | **93.3 %** |
 | quantfit {8, 4} recipe (first data point) | 1.983 GiB | yes | 8.661 ± 0.058 | 0.0382 | 90.5 % |
 | Q4_K_M heuristic | 1.80 GiB | yes | 8.790 ± 0.060 | 0.0494 | 88.9 % |
 | Q5_K_S heuristic | 2.02 GiB | no (21 MiB over) | 8.520 ± 0.057 | 0.0161 | 93.3 % |
@@ -147,7 +147,7 @@ Reading it honestly, in both directions:
   f16→quant perplexity climb (0.112 vs 0.239) and 53 % lower mean
   KL, at nearly the same size. The 6- and 5-bit candidates are worth
   measuring.
-- Against Q5_K_S, the mix is 27.7 MB smaller, fits the budget
+- Against Q5_K_S, the mix is 26.4 MiB smaller, fits the budget
   Q5_K_S misses, and ties on perplexity within noise (8.534 vs
   8.520, overlapping ± 0.057 intervals) and on top-token agreement
   (93.31 % vs 93.35 %). It **loses narrowly on mean KL** (0.0180 vs
@@ -162,12 +162,16 @@ The size lesson repeated, with sharper teeth: planned at the 10 %
 overhead that fit the {8, 4} recipe with 17 MiB to spare, the
 5-bit-dominant mix packed 4.5 MiB **over** budget and `quantfit
 pack` refused it. Re-planning at 10.5 % fit with 5.3 MiB to spare.
-One scalar `format_overhead` cannot represent per-type drift that
-spans +6.25 % (`Q8_0`) to +12.5 % (`Q4_K`) — with two precisions
-the error averaged out, with six it surfaced on the first pack.
-That is direct evidence for the open question ADR-0012 and ADR-0013
-both carry: the solver should consume per-type effective-bit tables
-instead of one fraction.
+The mechanism: one scalar `format_overhead` has to match the
+mix-weighted drift of whatever types the solver happens to pick.
+The {8, 4} recipe's largest tensor was a `Q8_0` embedding at
++6.25 % drift, which pulled its aggregate under the 10 % scalar.
+The new mix packs only types drifting +9.4 % (`Q6_K`) to +12.5 %
+(`Q4_K`), so its aggregate lands just above 10 % — and the scalar
+that fit one recipe overflowed the next. That is direct evidence
+for the open question ADR-0012 and ADR-0013 both carry: the solver
+should consume per-type effective-bit tables instead of one
+fraction.
 
 ## Provenance is not evidence
 
