@@ -40,6 +40,7 @@ def make_recipe(*assignments: tuple[str, int]) -> Recipe:
             Assignment(group=group, bits=bits, bytes=100, damage=0.001)
             for group, bits in assignments
         ),
+        runtime=None,
     )
 
 

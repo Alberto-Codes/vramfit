@@ -1,6 +1,6 @@
 """Runtime capability: the precisions a target runtime can serve.
 
-Implements the ADR-0013 capability table. A recipe is only serveable
+Implements the ADR-0013 capability table. A recipe is only servable
 when every assigned precision has a kernel in the target runtime, so
 the solver filters its candidate set through this table before any
 solving starts. The table maps runtime names to nominal bit-widths —
@@ -8,6 +8,9 @@ what each runtime's quantization types cover, not how they spend
 their effective bits (that stays a pack concern, ADR-0012).
 
 Attributes:
+    LLAMA_CPP (str): The llama.cpp runtime name. Pack backends and
+        the CLI reference this constant, never the literal.
+    VLLM (str): The vLLM runtime name.
     RUNTIME_CAPABILITIES (Mapping[str, frozenset[int]]): Nominal
         precisions each known target runtime serves.
 
@@ -15,9 +18,9 @@ Examples:
     Filter a scanned candidate set for vLLM:
 
     ```python
-    from quantfit.domain.runtime import serveable_precisions
+    from quantfit.domain.runtime import VLLM, servable_precisions
 
-    assert serveable_precisions((8, 4, 3, 2), "vllm") == (8, 4)
+    assert servable_precisions((8, 4, 3, 2), VLLM) == (8, 4)
     ```
 
 See Also:
@@ -33,10 +36,13 @@ from typing import Final
 
 from quantfit.domain.errors import QuantfitError
 
+LLAMA_CPP: Final[str] = "llama.cpp"
+VLLM: Final[str] = "vllm"
+
 RUNTIME_CAPABILITIES: Final[Mapping[str, frozenset[int]]] = MappingProxyType(
     {
-        "llama.cpp": frozenset({8, 6, 5, 4, 3, 2}),
-        "vllm": frozenset({8, 4}),
+        LLAMA_CPP: frozenset({8, 6, 5, 4, 3, 2}),
+        VLLM: frozenset({8, 4}),
     }
 )
 
@@ -53,20 +59,21 @@ class RuntimeCapabilityError(QuantfitError, ValueError):
         An unknown runtime name:
 
         ```python
-        serveable_precisions((8, 4), "tgi")  # raises
+        servable_precisions((8, 4), "tgi")  # raises
         ```
     """
 
 
-def serveable_precisions(precisions: tuple[int, ...], runtime: str) -> tuple[int, ...]:
+def servable_precisions(precisions: tuple[int, ...], runtime: str) -> tuple[int, ...]:
     """Filter candidate precisions to those the runtime can serve.
 
     Args:
-        precisions: Scanned candidate precisions, strictly descending.
+        precisions: Scanned candidate precisions. Order is preserved,
+            so a descending input stays descending.
         runtime: Target runtime name from `RUNTIME_CAPABILITIES`.
 
     Returns:
-        The serveable precisions, order preserved. Never empty.
+        The servable precisions, in input order. Never empty.
 
     Raises:
         RuntimeCapabilityError: If the runtime is unknown, or it
@@ -76,7 +83,7 @@ def serveable_precisions(precisions: tuple[int, ...], runtime: str) -> tuple[int
         llama.cpp serves the whole ADR-0010 scan set:
 
         ```python
-        assert serveable_precisions((8, 4, 3, 2), "llama.cpp") == (8, 4, 3, 2)
+        assert servable_precisions((8, 4, 3, 2), "llama.cpp") == (8, 4, 3, 2)
         ```
     """
     try:

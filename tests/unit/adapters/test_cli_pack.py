@@ -37,6 +37,7 @@ def make_recipe(model_id: str) -> Recipe:
             Assignment(group="model.embed_tokens", bits=8, bytes=1_000, damage=0.001),
             Assignment(group="model.layers.0", bits=4, bytes=500, damage=0.01),
         ),
+        runtime=None,
     )
 
 
@@ -310,6 +311,7 @@ class TestPackCommand:
             assignments=(
                 Assignment(group="model.layers.0", bits=7, bytes=500, damage=0.01),
             ),
+            runtime=None,
         )
         path = tmp_path / "recipe5.json"
         save_recipe(recipe, path)

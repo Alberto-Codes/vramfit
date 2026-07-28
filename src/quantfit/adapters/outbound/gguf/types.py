@@ -5,8 +5,10 @@ is testable and the verified fake can share it. Nominal precisions
 map to K-quant types (the full llama.cpp capability set since
 ADR-0013), layer groups map to escaped `blk.<n>.` regex patterns,
 and the embedding group maps to the quantizer's dedicated embedding
-flag. A recipe recorded for a foreign runtime, or anything the table
-cannot map, raises `PackError` instead of guessing.
+flag. The backend's own runtime name is the domain's `LLAMA_CPP`
+constant, so the table key and the pack check cannot drift apart. A
+recipe recorded for a foreign runtime, or anything the table cannot
+map, raises `PackError` instead of guessing.
 
 Examples:
     Map a recipe to quantizer inputs:
@@ -32,6 +34,7 @@ from typing import Final
 from quantfit.domain.errors import QuantfitError
 from quantfit.domain.model import Recipe
 from quantfit.domain.pack import TypeOverride
+from quantfit.domain.runtime import LLAMA_CPP
 
 GGML_TYPE_BY_BITS: Final[dict[int, str]] = {
     8: "q8_0",
@@ -56,7 +59,7 @@ BASE_FTYPE_BY_BITS: Final[dict[int, str]] = {
 
 # The one runtime this backend packs for. A recipe planned for
 # another runtime must not silently become a GGUF (ADR-0013).
-GGUF_RUNTIME: Final[str] = "llama.cpp"
+GGUF_RUNTIME: Final[str] = LLAMA_CPP
 
 EMBEDDING_GROUP: Final[str] = "model.embed_tokens"
 
@@ -84,9 +87,9 @@ class PackError(QuantfitError, RuntimeError):
 def check_runtime(recipe: Recipe) -> None:
     """Reject a recipe planned for a runtime this backend cannot serve.
 
-    A recipe without a recorded runtime passes — it predates the
-    constraint or was planned unconstrained, and the type tables
-    still decide what it can map.
+    A recipe whose runtime is None passes — it was planned without a
+    runtime constraint, and the type tables still decide what it can
+    map.
 
     Args:
         recipe: The recipe to pack.

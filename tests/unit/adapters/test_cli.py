@@ -125,6 +125,8 @@ class TestPlanCommand:
         assert recipe.runtime == "vllm"
         assert all(a.bits in {8, 4} for a in recipe.assignments)
         assert "for vllm" in result.output
+        # The narrowing is reported, never silent.
+        assert "[3, 2] dropped" in result.output
 
     def test_default_runtime_is_llama_cpp(self, tmp_path) -> None:
         map_path = self._write_map(tmp_path)

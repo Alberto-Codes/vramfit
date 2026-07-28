@@ -154,8 +154,15 @@ class TestSolve:
         map_ = load(make_map([("g0", 1000, CONVEX_CURVE)]))
 
         # 150 bytes needs the 2-bit floor, which vLLM cannot serve.
-        with pytest.raises(InfeasibleBudgetError):
+        with pytest.raises(InfeasibleBudgetError) as excinfo:
             solve_simple(map_, budget=150, runtime="vllm")
+
+        # The message must name the removed precisions — the reported
+        # floor is higher than the scan alone allows.
+        assert excinfo.value.runtime == "vllm"
+        assert excinfo.value.dropped_precisions == (3, 2)
+        assert 'runtime "vllm" cannot serve' in str(excinfo.value)
+        assert "[3, 2]" in str(excinfo.value)
 
     def test_pin_outside_runtime_set_raises_pin_error(self) -> None:
         map_ = load(make_map([("g0", 1000, CONVEX_CURVE)]))

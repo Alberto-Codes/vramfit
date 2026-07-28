@@ -3,7 +3,8 @@
 Implements ADR-0007. Errors sit under the `QuantfitError` root
 (ADR-0011) and carry user-facing messages the CLI prints verbatim.
 A target runtime narrows the candidate set through the ADR-0013
-capability table before any solving starts.
+capability table before any solving starts, and an infeasible
+budget names the precisions that narrowing removed.
 The algorithm: start every group at the highest candidate precision
 (or its pin), then repeatedly apply the downgrade with the best
 damage-per-byte-freed ratio until the total fits the weight budget. The
@@ -55,7 +56,7 @@ from quantfit.domain.model import (
     SensitivityMap,
     TraceStep,
 )
-from quantfit.domain.runtime import serveable_precisions
+from quantfit.domain.runtime import servable_precisions
 
 SOLVER_NAME: Final[str] = "greedy-damage-per-byte"
 DEFAULT_FORMAT_OVERHEAD: Final[float] = 0.05
@@ -90,6 +91,11 @@ class InfeasibleBudgetError(QuantfitError):
         minimum_bytes (int): The smallest achievable total (pins
             respected).
         weight_budget_bytes (int): The budget that could not be met.
+        runtime (str | None): Target runtime the solve was constrained
+            to, when one was given.
+        dropped_precisions (tuple[int, ...]): Scanned precisions the
+            runtime cannot serve — the floor the message reports
+            excludes them.
 
     Examples:
         Report the gap to the user:
@@ -105,26 +111,48 @@ class InfeasibleBudgetError(QuantfitError):
     """
 
     def __init__(
-        self, gap_bytes: int, minimum_bytes: int, weight_budget_bytes: int
+        self,
+        gap_bytes: int,
+        minimum_bytes: int,
+        weight_budget_bytes: int,
+        *,
+        runtime: str | None = None,
+        dropped_precisions: tuple[int, ...] = (),
     ) -> None:
         """Build the error from the budget arithmetic.
 
         The message renders every size with `format_size`, so the CLI
-        can print it verbatim as its ``error:`` line.
+        can print it verbatim as its ``error:`` line. When a runtime
+        filter removed scanned precisions, the message names them —
+        the reported floor is higher than the scan alone allows, and
+        the user must see why.
 
         Args:
             gap_bytes: Overshoot of the smallest achievable total.
             minimum_bytes: The smallest achievable total in bytes.
             weight_budget_bytes: The budget that could not be met.
+            runtime: Target runtime that constrained the solve, when
+                one was given.
+            dropped_precisions: Scanned precisions the runtime cannot
+                serve.
         """
-        super().__init__(
+        message = (
             f"no recipe fits the {format_size(weight_budget_bytes)} weight "
             f"budget — minimum achievable is {format_size(minimum_bytes)} "
             f"({format_size(gap_bytes)} over)"
         )
+        if runtime is not None and dropped_precisions:
+            message += (
+                f'. The target runtime "{runtime}" cannot serve the scanned '
+                f"precisions {list(dropped_precisions)}, so the floor sits "
+                f"higher than the scan alone allows"
+            )
+        super().__init__(message)
         self.gap_bytes = gap_bytes
         self.minimum_bytes = minimum_bytes
         self.weight_budget_bytes = weight_budget_bytes
+        self.runtime = runtime
+        self.dropped_precisions = dropped_precisions
 
 
 def group_bytes(bytes_fp16: int, bits: int, format_overhead: float) -> int:
@@ -318,8 +346,9 @@ def solve(
     When a target runtime is given, the candidate set first filters
     through the ADR-0013 capability table — a precision the runtime
     cannot serve is never assigned, and the recipe records the
-    runtime. Every group starts at the highest candidate precision
-    (or its pin).
+    runtime. An infeasible budget then names the precisions the
+    runtime removed, so the reported floor is explainable. Every
+    group starts at the highest candidate precision (or its pin).
     While the total exceeds the budget, the solver applies the downgrade
     with the minimum ``(damage_delta / bytes_freed, group name, smallest
     step)`` key, considering all lower candidate precisions of every
@@ -378,7 +407,8 @@ def solve(
     pins = dict(pins or {})
     candidates = sensitivity_map.scan.precisions
     if runtime is not None:
-        candidates = serveable_precisions(candidates, runtime)
+        candidates = servable_precisions(candidates, runtime)
+    dropped = tuple(p for p in sensitivity_map.scan.precisions if p not in candidates)
     pinned = _expand_pins(pins, sensitivity_map, candidates)
 
     def size(bytes_fp16: int, bits: int) -> int:
@@ -407,6 +437,8 @@ def solve(
             gap_bytes=floor_total - weight_budget_bytes,
             minimum_bytes=floor_total,
             weight_budget_bytes=weight_budget_bytes,
+            runtime=runtime,
+            dropped_precisions=dropped,
         )
 
     trace: list[TraceStep] = []

@@ -106,6 +106,22 @@ class TestRecipe:
         with pytest.raises(ArtifactError, match="must not be empty"):
             recipe_from_dict(raw)
 
+    def test_known_runtime_with_unservable_bits_rejected(self) -> None:
+        raw = make_recipe_dict()
+        raw["runtime"] = "vllm"
+        raw["assignments"][1]["bits"] = 3
+
+        with pytest.raises(ArtifactError, match='not servable by runtime "vllm"'):
+            recipe_from_dict(raw)
+
+    def test_unknown_runtime_loads_untouched(self) -> None:
+        raw = make_recipe_dict()
+        raw["runtime"] = "some-future-runtime"
+
+        recipe = recipe_from_dict(raw)
+
+        assert recipe.runtime == "some-future-runtime"
+
     def test_version_one_recipe_rejected(self) -> None:
         raw = make_recipe_dict()
         raw["quantfit_schema"] = 1

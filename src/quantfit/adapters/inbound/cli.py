@@ -12,7 +12,8 @@ exit. Domain failures surface through one catch of the
 `QuantfitError` root (ADR-0011), whose messages print verbatim.
 Malformed options — including a NaN or infinite overhead — are
 usage errors, rejected before any work starts. ``plan`` records
-its ``--runtime`` in the recipe (ADR-0013).
+its ``--runtime`` in the recipe and reports what the runtime
+filter drops (ADR-0013).
 
 Examples:
     Show the installed version:
@@ -52,7 +53,7 @@ from quantfit.domain.budget import (
     parse_size,
 )
 from quantfit.domain.errors import QuantfitError
-from quantfit.domain.runtime import RUNTIME_CAPABILITIES
+from quantfit.domain.runtime import LLAMA_CPP, RUNTIME_CAPABILITIES
 from quantfit.domain.solver import DEFAULT_FORMAT_OVERHEAD, solve
 from quantfit.ports.outbound import (
     ModelShapeSource,
@@ -226,16 +227,18 @@ def plan(
     runtime: Annotated[
         str,
         typer.Option(help="Target runtime the recipe is planned for."),
-    ] = "llama.cpp",
+    ] = LLAMA_CPP,
 ) -> None:
     """Solve a sensitivity map into a recipe under a VRAM budget.
 
     The candidate precisions come from the map, filtered to what
-    ``--runtime`` can serve (ADR-0013) — the recipe records the
-    runtime for the pack step. Solver rejections (bad pins, an
-    infeasible budget, a runtime serving nothing) surface through one
-    catch of the `QuantfitError` root. The solver's own messages
-    carry the details, including the infeasibility gap.
+    ``--runtime`` (default llama.cpp) can serve (ADR-0013) — the
+    recipe records the runtime for the pack step, and the command
+    reports any scanned precisions the runtime dropped. Solver
+    rejections (bad pins, an infeasible budget, a runtime serving
+    nothing) surface through one catch of the `QuantfitError` root.
+    The solver's own messages carry the details, including the
+    infeasibility gap.
 
     Raises:
         typer.BadParameter: If a ``--pin`` is not of the form
@@ -295,6 +298,17 @@ def plan(
     except (OSError, ArtifactError) as exc:
         typer.echo(f"error: {sensitivity_map}: {exc}", err=True)
         raise typer.Exit(code=1) from exc
+
+    # The runtime filter is a silent narrowing otherwise — say what
+    # the target runtime removed from the scanned candidate set.
+    capability = RUNTIME_CAPABILITIES[runtime]
+    dropped = [p for p in map_.scan.precisions if p not in capability]
+    if dropped:
+        kept = [p for p in map_.scan.precisions if p in capability]
+        typer.echo(
+            f"runtime {runtime} serves {kept} of the scanned "
+            f"{list(map_.scan.precisions)} — candidates {dropped} dropped"
+        )
 
     try:
         recipe = solve(

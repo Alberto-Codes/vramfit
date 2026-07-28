@@ -2,8 +2,10 @@
 
 Owns (de)serialization and validation of the recipe schema, including
 the ``quantfit_schema`` envelope (version 2 since recipes record
-their target runtime, ADR-0013). Mirrors the strict reject-don't-
-normalize stance of the sensitivity-map adapter.
+their target runtime, ADR-0013). A known runtime must serve every
+assigned precision — an unknown runtime name loads untouched.
+Mirrors the strict reject-don't-normalize stance of the
+sensitivity-map adapter.
 
 Examples:
     Round-trip a recipe through a file:
@@ -42,6 +44,7 @@ from quantfit.adapters.outbound.json_common import (
     _save_json,
 )
 from quantfit.domain.model import Assignment, PlanMeta, Recipe, TraceStep
+from quantfit.domain.runtime import RUNTIME_CAPABILITIES
 
 # The recipe schema version. Bumped to 2 when recipes gained the
 # required (nullable) ``runtime`` field (ADR-0013) — a version-1
@@ -59,10 +62,16 @@ def recipe_from_dict(data: object) -> Recipe:
     Returns:
         The validated recipe.
 
+    When ``runtime`` names a runtime this version's capability table
+    knows, every assignment's precision must be servable by it. An
+    unknown runtime name loads untouched — a newer quantfit's recipe
+    stays readable, and pack backends judge it at use (ADR-0013).
+
     Raises:
         ArtifactError: If any field is missing, mistyped, or violates a
             schema rule — including non-positive ``bits`` or ``bytes``
-            in any assignment.
+            in any assignment, and a known runtime that cannot serve
+            an assigned precision.
 
     Examples:
         Reject an unsupported schema version:
@@ -102,6 +111,14 @@ def recipe_from_dict(data: object) -> Recipe:
         )
         seen.add(assignment.group)
         assignments.append(assignment)
+    if runtime is not None and runtime in RUNTIME_CAPABILITIES:
+        capability = RUNTIME_CAPABILITIES[runtime]
+        for i, assignment in enumerate(assignments):
+            _require(
+                assignment.bits in capability,
+                f"$.assignments[{i}].bits",
+                f'precision {assignment.bits} is not servable by runtime "{runtime}"',
+            )
     return Recipe(
         model_id=model_id,
         plan=plan,
