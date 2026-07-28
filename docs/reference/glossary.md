@@ -78,9 +78,9 @@ change.
 **Run log**
 :   The machine-readable event stream of one pipeline run: JSON Lines
     beside the run's artifacts (`<stem>.runlog.jsonl`), one versioned
-    event per line. Proposed in
-    [ADR-0011](../adr/0011-run-logs-and-error-root.md). Human CLI
-    output is not the run log.
+    event per line. The machine channel — human CLI output is the
+    human channel and never mixes with it. Proposed in
+    [ADR-0011](../adr/0011-run-logs-and-error-root.md).
 
 **Fingerprint**
 :   The identity string that ties a scan checkpoint to one scan's
@@ -141,7 +141,8 @@ change.
 **Envelope**
 :   The serialization-level wrapper owned by the JSON adapters —
     notably the `quantfit_schema` version field, which domain objects
-    never carry.
+    never carry. Run logs carry `quantfit_runlog` instead, versioning
+    one event line rather than a whole document.
 
 ## Project
 

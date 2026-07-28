@@ -2,9 +2,6 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-27
-- **Note (2026-07-28):** [ADR-0011](0011-run-logs-and-error-root.md)
-  proposes to amend the base-dependency clause to "typer and
-  structlog".
 
 ## Context
 
