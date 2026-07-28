@@ -15,6 +15,12 @@ concurrency:
 
 jobs:
   analyze:
+    # Code-scanning upload needs GitHub Advanced Security on private
+    # repos, which this repo does not have (verified 2026-07-28: the
+    # analysis ran, the upload was refused). The job arms itself the
+    # day the repo goes public. To scan while private, enable GHAS in
+    # the repo settings and delete this condition.
+    if: ${{ !github.event.repository.private }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     # Job-level permissions replace the workflow-level block, so
