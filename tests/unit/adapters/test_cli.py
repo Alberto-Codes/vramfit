@@ -128,6 +128,31 @@ class TestPlanCommand:
         # The narrowing is reported, never silent.
         assert "[3, 2] dropped" in result.output
 
+    def test_runtime_dropping_nothing_prints_no_narrowing_line(self, tmp_path) -> None:
+        raw = make_map([("g0", 160_000, {8: 0.001, 4: 0.010})], precisions=(8, 4))
+        map_path = tmp_path / "sensitivity.json"
+        map_path.write_text(json.dumps(raw))
+        out = tmp_path / "recipe.json"
+
+        result = runner.invoke(
+            app,
+            [
+                "plan",
+                str(map_path),
+                "--vram",
+                "100000",
+                "--kv-headroom",
+                "10000",
+                "--runtime",
+                "vllm",
+                "--out",
+                str(out),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "dropped" not in result.output
+
     def test_default_runtime_is_llama_cpp(self, tmp_path) -> None:
         map_path = self._write_map(tmp_path)
         out = tmp_path / "recipe.json"

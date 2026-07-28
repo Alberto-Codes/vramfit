@@ -90,10 +90,15 @@ def test_pack_error_inherits_the_quantfit_root() -> None:
     assert issubclass(PackError, RuntimeError)
 
 
-def test_base_type_is_the_recipe_floor() -> None:
-    recipe = make_recipe(("model.layers.0", 8), ("model.layers.1", 3))
+@pytest.mark.parametrize(
+    ("floor_bits", "expected"),
+    [(6, "Q6_K"), (5, "Q5_K_S"), (3, "Q3_K_S")],
+    ids=["6-bit", "5-bit", "3-bit"],
+)
+def test_base_type_is_the_recipe_floor(floor_bits: int, expected: str) -> None:
+    recipe = make_recipe(("model.layers.0", 8), ("model.layers.1", floor_bits))
 
-    assert base_type(recipe) == "Q3_K_S"
+    assert base_type(recipe) == expected
 
 
 def test_base_type_with_unmapped_floor_raises_pack_error() -> None:

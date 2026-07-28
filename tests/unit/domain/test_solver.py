@@ -164,6 +164,17 @@ class TestSolve:
         assert 'runtime "vllm" cannot serve' in str(excinfo.value)
         assert "[3, 2]" in str(excinfo.value)
 
+    def test_runtime_dropping_nothing_keeps_the_plain_message(self) -> None:
+        map_ = load(make_map([("g0", 1600, CONVEX_CURVE)]))
+        floor = group_bytes(1600, 2, 0.05)
+
+        # llama.cpp serves the whole scanned set — the message must
+        # not blame the runtime for the floor.
+        with pytest.raises(InfeasibleBudgetError) as excinfo:
+            solve_simple(map_, budget=floor - 10, runtime="llama.cpp")
+
+        assert "cannot serve" not in str(excinfo.value)
+
     def test_pin_outside_runtime_set_raises_pin_error(self) -> None:
         map_ = load(make_map([("g0", 1000, CONVEX_CURVE)]))
 
