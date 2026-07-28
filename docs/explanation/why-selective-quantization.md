@@ -47,7 +47,7 @@ Four findings, in order of how much they matter to the solver:
    damage 6.28 — its neighbor layer 0 takes 0.013 at the same
    precision, a ~490× gap between *adjacent* layers. Across all 37
    groups the 3-bit spread is ~870×. Even at 4-bit, layer 1 (0.038)
-   costs 10× its neighbors. No depth heuristic predicts this: "protect
+   costs 11× the median group. No depth heuristic predicts this: "protect
    early layers" treats layers 0 and 1 the same, and they are not
    remotely the same.
 2. **The 2-bit profile is a U-curve, not a slope.** Damage falls from
@@ -58,11 +58,13 @@ Four findings, in order of how much they matter to the solver:
    cheaper than either end.
 3. **The embeddings are expensive to crush.** Not on the chart
    (layer axis only): 2-bit damage 2.26, 3-bit 0.25 — among the worst
-   groups at every precision below 8-bit, and on a small-vocab-heavy
-   3B they are a large fraction of the parameters.
-4. **The meter behaves.** 8-bit damage sits at a flat ~0.001 noise
-   floor across every group, and every damage curve is monotone in
-   bits. Real measurement, sensible instrument.
+   groups at every precision below 8-bit. On a 3B with a
+   151,936-token vocabulary they are ~10% of the parameters, and
+   Qwen2.5 ties them to the output head, so crushing them hurts twice.
+4. **The meter behaves.** 8-bit damage sits in a narrow
+   0.0005–0.0012 band across every group — far below any group's
+   4-bit cell — and every damage curve is monotone in bits. Real
+   measurement, sensible instrument.
 
 ### What the solver did with it
 
@@ -77,12 +79,20 @@ The recipe adapts exactly where the map says to spend:
 | 1.32 GiB | 16 × 4-bit, 21 × 3-bit | 0.402 |
 
 The 2.00 GiB row is the thesis in one line: the nine groups the
-solver kept at 8-bit are exactly the nine highest measured 4-bit
-damages — the embeddings, layers 1 and 2 at the front, and the
-fragile top of the stack (27, 30, 31, 33–35). Nobody encoded "protect
-both ends and layer 1". The map did. At 1.32 GiB the solver pushes
-only the cheap middle to 3-bit while every fragile group holds 4-bit.
-Each recipe carries its trace, so every downgrade is replayable.
+solver kept at 8-bit are exactly the nine with the highest measured
+8→4-bit damage increase — the embeddings, layers 1 and 2 at the
+front, and the fragile top of the stack (27, 30, 31, 33–35). Nobody
+encoded "protect both ends and layer 1". The map did.
+
+The 1.32 GiB row shows something subtler: **fragility rank depends on
+precision.** The solver holds the embeddings, layer 1, layer 10, and
+the top third of the stack at 4-bit — exactly the sixteen highest
+4→3-bit damage increases — and takes the rest to 3-bit, *including*
+layer 2. Layer 2 is second-worst in the model at 2-bit (5.36) yet
+only 14th-worst at 3-bit (0.016): cheap to take to 3 bits,
+catastrophic to take to 2. A single "fragile layers" list cannot
+express that. Damage curves can, and each recipe carries its trace,
+so every downgrade is replayable.
 
 ### What this data may not claim
 
