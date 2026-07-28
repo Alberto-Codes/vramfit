@@ -102,7 +102,8 @@ Hard gates before any publication:
 2. The whole-recipe validation pass exists — publishing a recipe whose
    additivity assumption was never checked is the exact sin the
    project criticizes.
-3. The packed model measurably beats the size-matched heuristic GGUF.
+3. The packed model measurably beats the size-matched heuristic GGUF,
+   judged per [evaluating packed models](evaluating-packed-models.md).
    One bad debut kills a "measured beats folklore" brand permanently.
    If it loses, publish the negative result in the writeup instead of
    the model.
