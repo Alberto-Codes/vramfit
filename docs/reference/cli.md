@@ -84,8 +84,8 @@ quantfit scan MODEL
   --calibration PATH     Calibration text file (UTF-8)  [required]
   --out PATH             Output sensitivity map  [default: sensitivity.json]
   --precisions TEXT      Candidate bit-widths, strictly descending CSV,
-                         2-bit floor. The default follows ADR-0010
-                         (Proposed)  [default: 8,4,3,2]
+                         2-bit floor, default per ADR-0010
+                         [default: 8,4,3,2]
   --group-by TEXT        Grouping granularity (layer | tensor)  [default: layer]
   --max-tokens INT       Calibration token budget  [default: 131072]
   --device TEXT          Device map: auto | cpu | cuda  [default: auto]
@@ -114,6 +114,6 @@ or the map cannot be written. Exit 2 on malformed `--precisions` or
 ```
 quantfit pack MODEL_ID
   --recipe PATH          Recipe produced by `quantfit plan`
-  --runtime TEXT         Target runtime (GGUF first per ADR-0010, Proposed)
+  --runtime TEXT         Target runtime (GGUF first per ADR-0010)
   --out PATH             Output checkpoint directory
 ```
