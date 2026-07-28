@@ -5,7 +5,7 @@ status: sketch
 # The artifact ecosystem: how this work could outlive the tool
 
 > **Status: sketch** — strategy thinking recorded 2026-07-28, before the
-> first real scan finished. Nothing here is committed work. The
+> 49B benchmark ran. Nothing here is committed work. The
 > triggers that would activate each phase are tracked in issue #11.
 
 ## The honest competitive picture
@@ -17,7 +17,8 @@ Unsloth's dynamic GGUFs are the closest living relative — selective
 per-layer bits, shipped at scale, chosen by expert heuristic.
 
 What none of them publish is the measurement itself. EXL2's
-measurement pass dies inside its pipeline. Heuristic recipes carry no
+measurement is reusable only inside its own pipeline, never a
+standalone, inspectable artifact. Heuristic recipes carry no
 evidence. quantfit's differentiated assets are exactly three:
 
 1. **The sensitivity map as a standalone, versioned artifact** — damage
@@ -25,7 +26,9 @@ evidence. quantfit's differentiated assets are exactly three:
 2. **Budget-first solving** — an explicit VRAM + KV budget, not an
    average-bits target.
 3. **The falsifiable benchmark** — measured against named baselines,
-   negative result publishable (ADR-0003, ADR-0010).
+   negative result publishable
+   ([ADR-0003](../adr/0003-north-star-benchmark.md),
+   [ADR-0010](../adr/0010-sub-4-bit-serving-path.md)).
 
 The core experiment can still fail: heuristic recipes may prove
 near-optimal, and the additivity assumption may leak badly. If so, the
@@ -53,7 +56,7 @@ Each phase is cheap and gated on the one before it. Do not reorder.
    Nothing else starts until this exists.
 2. **Ride existing rails** — sensitivity maps as Hugging Face datasets,
    packed models as ordinary model repos whose cards embed the damage
-   table and recipe. A `quantfit-maps` git registry where submission is
+   curves and recipe. A `quantfit-maps` git registry where submission is
    a PR and CI validates schema, fingerprint, and provenance.
 3. **The browser demo** — `quantfit plan` is torch-free pure Python, so
    a Hugging Face Space can re-solve recipes live against published
@@ -67,33 +70,35 @@ Each phase is cheap and gated on the one before it. Do not reorder.
    ranked by measured quality of the packed result". That needs eval
    compute and referee credibility. Do not build it speculatively.
 
-## Power user #0: publish measured quants, small models first
+## Power user #0: publish measured packed models, small models first
 
 Recorded 2026-07-28, the day the first completable scan (Qwen2.5-3B)
 ran. Nobody adopts an artifact standard from a spec — they adopt it
 because artifacts they already want carry it. So the most credible
 socialization move is to be the ecosystem's first power user: publish
 packed models to Hugging Face that people download for their own sake,
-with the sensitivity map, recipe, and run log riding along as standard
-sidecars.
+with the sensitivity map, recipe, and run log riding along beside the
+weights.
 
-What makes the model card unwritable by anyone else: the damage table
-("layer 1 is ~500× more fragile at 3-bit than layer 0 — we kept it at
-4"), the explicit budget arithmetic, the solver trace, and a
+What makes the model card unwritable by anyone else: the damage
+curves (the 2026-07-28 Qwen2.5-3B scan measured layer 1 as ~490× more
+fragile at 3-bit than layer 0 — damage 6.28 vs 0.013 — so layer 1
+keeps 4 bits), the explicit budget arithmetic, the solver trace, and a
 one-command reproduction line. The closing move on every card:
 "Disagree? Re-run the scan — the map is right there." That is the
 invitation that turns downloaders into publishers.
 
 This amends the phase ordering in one way: small models do not wait
-for the 49B result. The Qwen-class scan finishes in under an hour on
-the reference box, so a measured small-model quant can be publication
-number one while the 49B north star is still blocked on offload-aware
-scanning (issue #16). The 49B writeup remains the gate for everything
+for the 49B result. The Qwen2.5-3B scan runs at ~23 s per cell on the
+reference box (148 cells ≈ one hour), so a measured Qwen-class packed
+model can be publication number one while the 49B north star is still
+blocked on offload-aware scanning (issue #16). The 49B writeup remains the gate for everything
 *else* in the phase list.
 
 Hard gates before any publication:
 
-1. `quantfit pack` exists (the GGUF backend of ADR-0010).
+1. `quantfit pack` exists (the GGUF backend of
+   [ADR-0010](../adr/0010-sub-4-bit-serving-path.md)).
 2. The whole-recipe validation pass exists — publishing a recipe whose
    additivity assumption was never checked is the exact sin the
    project criticizes.
@@ -103,14 +108,15 @@ Hard gates before any publication:
    the model.
 
 Conventions to settle at publication time: a `quantfit` HF tag, the
-budget in the repo name (e.g. `-fit24gib`), and the sidecar layout.
+budget in the repo name (e.g. `-fit24gib`), and which artifacts sit
+beside the weights in the repo.
 
 ## What a score may never claim
 
 Damage values are calibration-relative. A cross-model or
 cross-calibration damage leaderboard would be statistically dishonest —
-the docs already say maps are only comparable within one calibration
-set. Rankings must compare packed-model quality at a fixed (model,
+the [glossary](../reference/glossary.md) already says maps are only
+comparable within one calibration set. Rankings must compare packed-model quality at a fixed (model,
 budget) pair, never raw damage across scans.
 
 ## Ideas parked for later
