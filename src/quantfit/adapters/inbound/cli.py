@@ -8,7 +8,10 @@ size cap. The CLI wires outbound adapters to the pure domain, typing
 them against the ports so the seams stay explicit. Every IO boundary —
 artifact and config reads, checkpoint and artifact writes, and model
 loading — converts failures to a clean ``error:`` line and a nonzero
-exit.
+exit. Domain failures surface through one catch of the
+`QuantfitError` root (ADR-0011), whose messages print verbatim.
+Malformed options — including a NaN or infinite overhead — are
+usage errors, rejected before any work starts.
 
 Examples:
     Show the installed version:
@@ -25,6 +28,7 @@ See Also:
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 from typing import Annotated
 
@@ -46,12 +50,8 @@ from quantfit.domain.budget import (
     kv_cache_bytes,
     parse_size,
 )
-from quantfit.domain.solver import (
-    DEFAULT_FORMAT_OVERHEAD,
-    InfeasibleBudgetError,
-    PinError,
-    solve,
-)
+from quantfit.domain.errors import QuantfitError
+from quantfit.domain.solver import DEFAULT_FORMAT_OVERHEAD, solve
 from quantfit.ports.outbound import (
     ModelShapeSource,
     RecipeSink,
@@ -224,13 +224,18 @@ def plan(
 ) -> None:
     """Solve a sensitivity map into a recipe under a VRAM budget.
 
+    Solver rejections (bad pins, an infeasible budget) surface
+    through one catch of the `QuantfitError` root. The solver's own
+    messages carry the details, including the infeasibility gap.
+
     Raises:
         typer.BadParameter: If a ``--pin`` is not of the form
             ``pattern=bits`` with positive bits, a size option is
-            malformed, or ``--format-overhead`` is negative.
+            malformed, or ``--format-overhead`` is negative, NaN, or
+            infinite.
         typer.Exit: With code 1 when the map is invalid, the recipe
-            cannot be written, the budget is infeasible (the gap is
-            reported), or nothing is left for weights.
+            cannot be written, the solver rejects the plan, or nothing
+            is left for weights.
 
     Examples:
         Plan with the first layer pinned at 8-bit:
@@ -239,6 +244,13 @@ def plan(
         $ quantfit plan sensitivity.json --vram 24GiB --pin "model.layers.0.*=8"
         ```
     """
+    # typer's min=0.0 lets NaN and inf through (nan < 0.0 is False),
+    # and the solver's own guard is a plain ValueError — reject both
+    # here as the usage error they are.
+    if not math.isfinite(format_overhead):
+        raise typer.BadParameter(
+            f"--format-overhead: must be finite, got {format_overhead}"
+        )
     pins: dict[str, int] = {}
     for raw in pin or []:
         pattern, sep, bits_text = raw.partition("=")
@@ -278,16 +290,10 @@ def plan(
             pins=pins,
             format_overhead=format_overhead,
         )
-    except PinError as exc:
+    except QuantfitError as exc:
+        # One honest catch for the root (ADR-0011): the solver's
+        # errors carry their own user-facing messages.
         typer.echo(f"error: {exc}", err=True)
-        raise typer.Exit(code=1) from exc
-    except InfeasibleBudgetError as exc:
-        typer.echo(
-            f"error: no recipe fits the {format_size(weight_budget)} weight "
-            f"budget — minimum achievable is {format_size(exc.minimum_bytes)} "
-            f"({format_size(exc.gap_bytes)} over)",
-            err=True,
-        )
         raise typer.Exit(code=1) from exc
 
     sink: RecipeSink = JsonRecipeFile(out)

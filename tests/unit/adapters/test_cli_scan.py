@@ -447,7 +447,8 @@ def test_run_log_failure_warns_once_and_the_scan_continues(
     result, out = invoke_scan(tmp_path)
 
     assert result.exit_code == 0, result.output
-    assert result.output.count("warning: run log disabled") == 1
+    assert result.output.count("warning: run log") == 1
+    assert "sensitivity.runlog.jsonl" in result.output
     assert load_sensitivity_map(out).model_id == "test/model"
 
 
