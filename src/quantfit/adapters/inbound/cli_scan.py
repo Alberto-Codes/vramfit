@@ -141,7 +141,8 @@ def _open_run_log(out: Path, runlog: Path | None) -> SafeRunLog:
         runlog: An explicit run-log path, or None for the default.
 
     Returns:
-        The policy-wrapped sink.
+        The policy-wrapped sink, which names the resolved path in its
+        disable warning.
 
     Raises:
         typer.BadParameter: If the run-log directory does not exist —
@@ -150,7 +151,7 @@ def _open_run_log(out: Path, runlog: Path | None) -> SafeRunLog:
     path = runlog if runlog is not None else out.with_name(out.stem + ".runlog.jsonl")
     if not path.parent.is_dir():
         raise typer.BadParameter(f"--runlog: directory {path.parent} does not exist")
-    return SafeRunLog(JsonlRunLogFile(path))
+    return SafeRunLog(JsonlRunLogFile(path), path=path)
 
 
 def _parse_precisions(text: str) -> tuple[int, ...]:

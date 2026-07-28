@@ -12,7 +12,7 @@ Examples:
     Wrap a sink for one run:
 
     ```python
-    safe = SafeRunLog(JsonlRunLogFile(path))
+    safe = SafeRunLog(JsonlRunLogFile(path), path=path)
     safe.emit("pack_started", {"recipe": "recipe.json"})
     ```
 
@@ -25,6 +25,7 @@ from __future__ import annotations
 import resource
 import uuid
 from collections.abc import Mapping
+from pathlib import Path
 
 import typer
 
@@ -56,26 +57,30 @@ class SafeRunLog:
         A dead sink swallows nothing silently:
 
         ```python
-        safe = SafeRunLog(sink)
+        safe = SafeRunLog(sink, path=path)
         safe.emit("scan_started", {})  # warns once if the sink fails
         ```
     """
 
-    def __init__(self, sink: RunLogSink) -> None:
+    def __init__(self, sink: RunLogSink, *, path: Path) -> None:
         """Wrap a sink and mint the run identity.
 
         Args:
             sink: The real sink to protect.
+            path: The run-log file the sink writes, named in the
+                disable warning.
         """
         self._sink = sink
+        self._path = path
         self._dead = False
         self.run_id = uuid.uuid4().hex[:12]
 
     def emit(self, event: str, fields: Mapping[str, object]) -> None:
         """Record one event, warning once and disabling on failure.
 
-        The warning names the event that died, so the one line the
-        user sees points at the emit that broke.
+        The warning quotes the run-log file and the event that died,
+        so the one line the user sees points at the sink and the emit
+        that broke.
 
         Args:
             event: Past-tense event name.
@@ -87,4 +92,7 @@ class SafeRunLog:
             self._sink.emit(event, {"run_id": self.run_id, **fields})
         except (OSError, TypeError, ValueError) as exc:
             self._dead = True
-            typer.echo(f'warning: run log disabled at "{event}": {exc}', err=True)
+            typer.echo(
+                f'warning: run log "{self._path}" disabled at "{event}": {exc}',
+                err=True,
+            )

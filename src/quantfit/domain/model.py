@@ -325,6 +325,11 @@ class PlanMeta:
 class Recipe:
     """The output of ``quantfit plan``: one precision per layer group.
 
+    Construction validates the invariants the pack step relies on — a
+    recipe with duplicate assignment groups cannot exist, however it
+    was constructed (the JSON loader adds path-aware reporting on
+    top).
+
     Attributes:
         model_id (str): The target model's identifier.
         plan (PlanMeta): Budget accounting and provenance.
@@ -342,3 +347,16 @@ class Recipe:
     model_id: str
     plan: PlanMeta
     assignments: tuple[Assignment, ...]
+
+    def __post_init__(self) -> None:
+        """Enforce the recipe invariants the pack step relies on.
+
+        Raises:
+            ValueError: If ``assignments`` is empty or two assignments
+                name the same group.
+        """
+        if not self.assignments:
+            raise ValueError("assignments must not be empty")
+        names = [a.group for a in self.assignments]
+        if len(set(names)) != len(names):
+            raise ValueError("assignment groups must be unique")
