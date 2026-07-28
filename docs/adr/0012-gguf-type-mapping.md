@@ -1,7 +1,7 @@
 # ADR-0012: The GGUF backend maps nominal bits to K-quant types
 
-- **Status:** Proposed
-- **Date:** 2026-07-28
+- **Status:** Accepted
+- **Date:** 2026-07-28 (accepted 2026-07-28)
 
 ## Context
 
