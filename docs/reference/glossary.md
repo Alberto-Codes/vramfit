@@ -54,8 +54,17 @@ change.
 **Marginal scanning**
 :   Measuring one group at a time while the rest stays at reference
     precision. Implies the **additivity assumption**: total recipe damage ≈
-    sum of marginal damages. Known blind spot; checked by a whole-recipe
-    validation pass.
+    sum of marginal damages. Known blind spot; checked by the validation
+    pass.
+
+**Validation pass**
+:   The whole-recipe check of the additivity assumption (`quantfit
+    validate`): quantize every group to its recipe-assigned precision in
+    one pass through the scan's own quantization, then compare the
+    measured damage against the recipe's summed marginal damages.
+    Committed in [ADR-0006](../adr/0006-sensitivity-metric.md). Not
+    "verification" or "recipe eval" — evaluation of *packed* models is
+    a different step.
 
 **Reference**
 :   The unquantized (bf16) model that perturbed models are compared against.

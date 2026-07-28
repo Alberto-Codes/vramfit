@@ -48,8 +48,13 @@ Points fixed at acceptance (2026-07-28):
 - How many calibration tokens before per-group KL stabilizes? Plan:
   the first real scan reports per-group KL at 1/4, 1/2, and full
   calibration, and the observed convergence sets the new default.
-- How large a marginal-vs-whole-recipe gap invalidates a scan? Open
-  until the whole-recipe validation pass exists.
+- How large a marginal-vs-whole-recipe gap invalidates a scan? The
+  validation pass exists (`quantfit validate`). First measurement
+  (2026-07-28, Qwen2.5-3B, the 6/5/4 mix, 32,768 tokens): measured
+  0.0322 against predicted 0.0661 — the marginal damages are
+  sub-additive by 2.05x. Over-prediction is the safe direction. The
+  open threshold narrows to under-prediction: how much measured
+  damage above predicted invalidates a scan.
 
 ## Consequences
 
