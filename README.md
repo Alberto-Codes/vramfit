@@ -8,28 +8,39 @@ Selective per-layer quantization to fit large open models on a single GPU.
 
 ## What is this?
 
-Uniform quantization treats every layer the same — and leaves quality (or VRAM)
-on the table. Some layers of a transformer tolerate 2-bit crushing with barely a
-ripple; others (attention projections, first/last blocks) fall apart below 8-bit.
+**The problem.** A model's weights are billions of numbers, normally stored at
+16 bits each — Nemotron Super 49B is ~98 GB at full precision, and an RTX 4090
+has 24 GB. Quantization stores those numbers with fewer bits (8, 4, even 2),
+trading a little accuracy for a lot of memory. But even uniform 4-bit puts 49B
+parameters at ~26 GB — still doesn't fit — and uniform 3-bit wrecks quality,
+because some parts of a transformer get badly stupid when you crush them.
 
-`quantfit` measures which layers are which, then solves for the best mixed-precision
-recipe that fits a *specific* model into a *specific* VRAM budget:
+**The insight.** Not all layers are equally fragile. Some tolerate 2–3 bits
+with barely a ripple; others (attention projections, first/last blocks) fall
+apart below 6–8 bits. Most published quantized models pick precision by crude
+heuristic. `quantfit` *measures* which layers are which, then solves for the
+best mixed-precision recipe that fits a *specific* model into a *specific*
+VRAM budget:
 
-1. **Scan** — perturb each layer group at candidate precisions and measure output
-   divergence (sensitivity) against the full-precision reference.
-2. **Plan** — treat recipe selection as a budget problem: spend bits where the
-   scan says they matter, crush where it says they don't, land under the target
-   VRAM with room for KV cache.
-3. **Pack** — emit the quantized checkpoint for the target runtime (vLLM first;
-   GGUF export planned).
+1. **Scan** — quantize one layer group at a time at candidate precisions and
+   measure output divergence against the full-precision reference. Output: a
+   sensitivity map of which layers can survive being crushed.
+2. **Plan** — a budget problem: given the map and a hard VRAM constraint
+   (minus KV-cache headroom), spend bits where the scan says they matter and
+   crush where it says they don't. Bits are cost, quality is value.
+3. **Pack** — apply the recipe and emit a checkpoint the target runtime can
+   actually serve (vLLM first; GGUF export planned).
 
-The north-star benchmark: **NVIDIA Nemotron Super 49B on a 24 GB RTX 4090** —
-a model that does *not* fit at uniform 4-bit, made to fit selectively with
-measured (not vibes-based) quality loss.
+**The goal:** NVIDIA **Nemotron Super 49B running on a 24 GB RTX 4090** — a
+model that does not fit today, made to fit selectively, with measured (not
+vibes-based) quality loss versus running a smaller model instead.
 
 Philosophy borrowed from [antirez/ds4](https://github.com/antirez/ds4): depth
 over breadth. One model profiled properly beats a generic recipe applied to a
 hundred.
+
+Docs live in [`docs/`](docs/index.md) (Diátaxis layout, every page carries a
+maturity status). Design decisions are recorded as [ADRs](docs/adr/index.md).
 
 ## Status
 
