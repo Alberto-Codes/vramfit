@@ -6,10 +6,13 @@ scan command imports [quantfit.adapters.outbound.scan.meter][] lazily,
 so the base install stays torch-free.
 
 Attributes:
-    meter: `TorchDamageMeter`, the `DamageMeter` port implementation.
-    quantize: Round-to-nearest quantize-dequantize (ADR-0006 v1 method).
-    kl: Mean KL divergence between reference and perturbed logits.
-    calibration: Calibration text loading and batching.
+    meter: Submodule holding `TorchDamageMeter`, the `DamageMeter`
+        port implementation. Set only after an explicit import.
+    quantize: Submodule with round-to-nearest quantize-dequantize
+        (the ADR-0006 v1 method).
+    kl: Submodule computing mean KL between reference and perturbed
+        logits.
+    calibration: Submodule for calibration text loading and batching.
 
 Examples:
     Import lazily, at the point of use:

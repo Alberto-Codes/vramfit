@@ -83,8 +83,9 @@ it the command exits 1 with the install hint.
 quantfit scan MODEL
   --calibration PATH     Calibration text file (UTF-8)  [required]
   --out PATH             Output sensitivity map  [default: sensitivity.json]
-  --precisions TEXT      Candidate bit-widths, strictly descending CSV
-                         (ADR-0010 fixes the default)  [default: 8,4,3,2]
+  --precisions TEXT      Candidate bit-widths, strictly descending CSV,
+                         2-bit floor. The default follows ADR-0010
+                         (Proposed)  [default: 8,4,3,2]
   --group-by TEXT        Grouping granularity (layer | tensor)  [default: layer]
   --max-tokens INT       Calibration token budget  [default: 131072]
   --device TEXT          Device map: auto | cpu | cuda  [default: auto]
@@ -95,21 +96,24 @@ quantfit scan MODEL
 
 Every finished (group x precision) cell lands in a checkpoint file next
 to `--out` (`<stem>.checkpoint.json`). A rerun of the same scan resumes
-from it. The checkpoint carries the scan's fingerprint — model, metric,
-calibration, token count, grouping, precisions — and a rerun with any
-of those changed refuses the checkpoint instead of mixing numbers.
-`--no-resume` deletes the checkpoint first.
+from it. The checkpoint carries the scan's fingerprint (model, metric,
+calibration, token count, grouping, precisions, method) — a rerun with
+any of those changed refuses the checkpoint instead of mixing numbers.
+The fingerprint identifies provenance, not content: do not swap weights
+or calibration text under an unchanged path between resumes.
+`--no-resume` deletes the checkpoint first and says so.
 
 Exit codes: 1 when the scan extra is missing, the model or calibration
-cannot load, the checkpoint belongs to a different scan, or a
-measurement fails (the checkpoint keeps completed cells). Exit 2 on
-malformed `--precisions` or `--group-by`.
+cannot load, the checkpoint belongs to a different scan, a measurement
+fails (the checkpoint keeps completed cells), a checkpoint write fails,
+or the map cannot be written. Exit 2 on malformed `--precisions` or
+`--group-by`, or a missing `--out` directory.
 
 ## `quantfit pack` *(planned)*
 
 ```
 quantfit pack MODEL_ID
   --recipe PATH          Recipe produced by `quantfit plan`
-  --runtime TEXT         Target runtime (llama.cpp first, per ADR-0010)
+  --runtime TEXT         Target runtime (GGUF first per ADR-0010, Proposed)
   --out PATH             Output checkpoint directory
 ```

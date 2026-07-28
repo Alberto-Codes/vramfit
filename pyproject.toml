@@ -86,6 +86,7 @@ exclude = [".venv", "__pycache__", "*.egg-info"]
 # TRY (exception hygiene), S (bandit), PERF, RUF, UP, G on top of the
 # house baseline E501/I/D.
 extend-select = [
+    "E402",  # enabled explicitly: hook and locked ruff versions differ on the default
     "E501",
     "I",
     "D",
@@ -166,10 +167,16 @@ min-coverage = 100.0
 [tool.ty.src]
 include = ["src", "tests"]
 
-# The scan adapter imports torch, which CI and torch-less dev boxes do
-# not install (ADR-0005). Everything else still type-checks strictly.
+# The scan adapter and its torch-tier tests import torch and
+# transformers, which CI and torch-less dev boxes do not install
+# (ADR-0005). Everything else still type-checks strictly.
 [[tool.ty.overrides]]
-include = ["src/quantfit/adapters/outbound/scan/**"]
+include = [
+    "src/quantfit/adapters/outbound/scan/**",
+    "tests/conftest.py",
+    "tests/contract/test_damage_meter_contract.py",
+    "tests/integration/test_torch_scan_adapter.py",
+]
 
 [tool.ty.overrides.rules]
 unresolved-import = "ignore"
@@ -203,9 +210,9 @@ addopts = [
 # --------------------------------------------------------------------------- #
 [tool.coverage.run]
 source = ["quantfit"]
-# The torch adapter runs only with the scan extra plus a GPU-capable
-# box; the hermetic suites prove its orchestration via verified fakes
-# (ADR-0009). Its own tests carry the gpu/integration markers.
+# The torch adapter runs only where the scan extra is installed. The
+# hermetic suites prove its orchestration via verified fakes (ADR-0009)
+# and its own tests carry the integration/slow markers (CPU is enough).
 omit = ["*/adapters/outbound/scan/*"]
 
 [tool.coverage.report]

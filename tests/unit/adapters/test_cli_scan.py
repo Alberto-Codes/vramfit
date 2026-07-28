@@ -7,7 +7,8 @@ from quantfit.adapters.inbound import cli_scan
 from quantfit.adapters.inbound.cli import app
 from quantfit.adapters.outbound.scan_checkpoint_json import JsonScanCheckpointFile
 from quantfit.adapters.outbound.sensitivity_map_json import load_sensitivity_map
-from quantfit.domain.scan import GroupSpec, Measurement
+from quantfit.domain.model import ScanMeta
+from quantfit.domain.scan import GroupSpec, Measurement, scan_fingerprint
 from tests.fakes import MemoryDamageMeter
 
 runner = CliRunner()
@@ -117,15 +118,28 @@ def test_no_resume_discards_a_stale_checkpoint(tmp_path, monkeypatch) -> None:
 
 
 def test_missing_scan_extra_reports_install_hint(tmp_path, monkeypatch) -> None:
-    def raise_import_error(*args):
-        raise ImportError("No module named 'torch'")
+    def raise_extra_missing(*args):
+        raise cli_scan.ScanExtraMissingError(cli_scan.INSTALL_HINT)
 
-    monkeypatch.setattr(cli_scan, "_build_meter", raise_import_error)
+    monkeypatch.setattr(cli_scan, "_build_meter", raise_extra_missing)
 
     result, _ = invoke_scan(tmp_path)
 
     assert result.exit_code == 1
     assert "quantfit[scan]" in result.output
+
+
+def test_backend_import_error_surfaces_as_itself(tmp_path, monkeypatch) -> None:
+    def raise_backend_error(*args):
+        raise ImportError("requires the SentencePiece library")
+
+    monkeypatch.setattr(cli_scan, "_build_meter", raise_backend_error)
+
+    result, _ = invoke_scan(tmp_path)
+
+    assert result.exit_code == 1
+    assert "SentencePiece" in result.output
+    assert "quantfit[scan]" not in result.output
 
 
 def test_meter_build_failure_reports_error(tmp_path, monkeypatch) -> None:
@@ -167,6 +181,97 @@ def test_invalid_group_by_exits_with_usage_error(tmp_path, monkeypatch) -> None:
 
     assert result.exit_code == 2
     assert "--group-by" in result.output
+
+
+def cli_fingerprint(tmp_path) -> str:
+    meta = ScanMeta(
+        metric="kl_divergence",
+        calibration=str(tmp_path / "calib.txt"),
+        calibration_tokens=64,
+        precisions=(8, 4),
+        group_by="layer",
+        started_at="unused",
+    )
+    return scan_fingerprint("test/model", meta)
+
+
+def test_nan_damage_fails_cleanly_and_keeps_the_checkpoint(
+    tmp_path, monkeypatch
+) -> None:
+    damages = dict(DAMAGES)
+    damages[("model.layers.1", 8)] = float("nan")
+    install_meter(
+        monkeypatch, MemoryDamageMeter(specs=SPECS, damages=damages, tokens=64)
+    )
+
+    result, out = invoke_scan(tmp_path)
+
+    assert result.exit_code == 1
+    assert "scan halted at model.layers.1 8-bit" in result.output
+    assert "finite" in result.output
+    assert "checkpoint keeps 2 cells" in result.output
+    assert not out.exists()
+
+
+def test_checkpoint_write_failure_reports_a_clean_error(tmp_path, monkeypatch) -> None:
+    install_meter(
+        monkeypatch, MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES), tokens=64)
+    )
+
+    def refuse(self, fingerprint, measurement) -> None:
+        raise OSError("No space left on device")
+
+    monkeypatch.setattr(JsonScanCheckpointFile, "append", refuse)
+
+    result, _ = invoke_scan(tmp_path)
+
+    assert result.exit_code == 1
+    assert "scan halted at model.layers.0 8-bit" in result.output
+    assert "No space left on device" in result.output
+
+
+def test_missing_out_directory_exits_before_loading_the_model(
+    tmp_path, monkeypatch
+) -> None:
+    def explode(*args):
+        raise AssertionError("the meter must not be built")
+
+    monkeypatch.setattr(cli_scan, "_build_meter", explode)
+
+    result, _ = invoke_scan(tmp_path, "--out", str(tmp_path / "nope" / "s.json"))
+
+    assert result.exit_code == 2
+    assert "does not exist" in result.output
+
+
+def test_duplicated_checkpoint_cell_fails_upfront_with_hint(
+    tmp_path, monkeypatch
+) -> None:
+    install_meter(
+        monkeypatch, MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES), tokens=64)
+    )
+    store = JsonScanCheckpointFile(tmp_path / "sensitivity.checkpoint.json")
+    cell = Measurement(group="model.layers.0", bits=8, damage=0.5)
+    store.append(cli_fingerprint(tmp_path), cell)
+    store.append(cli_fingerprint(tmp_path), cell)
+
+    result, out = invoke_scan(tmp_path)
+
+    assert result.exit_code == 1
+    assert "appears twice" in result.output
+    assert "--no-resume" in result.output
+    assert not out.exists()
+
+
+def test_precisions_below_two_bits_exit_with_usage_error(tmp_path, monkeypatch) -> None:
+    install_meter(
+        monkeypatch, MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES), tokens=64)
+    )
+
+    result, _ = invoke_scan(tmp_path, "--precisions", "8,4,1")
+
+    assert result.exit_code == 2
+    assert "floors at 2 bits" in result.output
 
 
 def test_completed_checkpoint_reassembles_without_new_measurements(

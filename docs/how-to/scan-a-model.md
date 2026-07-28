@@ -29,21 +29,28 @@ uv pip install "quantfit[scan]"
 uv run quantfit scan nvidia/Llama-3_3-Nemotron-Super-49B-v1_5 \
   --calibration calibration.txt \
   --precisions 8,4,3,2 \
+  --max-tokens 32768 \
   --trust-remote-code \
   --out sensitivity.json
 ```
 
 `--calibration` takes a plain UTF-8 text file. The north-star target
-ships custom modeling code, hence `--trust-remote-code`.
+ships custom modeling code, hence `--trust-remote-code`. Lower
+`--max-tokens` below the 131,072 default for large models — see the
+memory math below.
 
 ## Resume
 
 Every finished (group x precision) cell lands in
 `sensitivity.checkpoint.json` immediately. Rerun the same command after
 a crash and the scan continues at the first unmeasured cell. The
-checkpoint carries the scan's fingerprint — change the model,
-calibration, token count, grouping, or precisions and the scan refuses
-the old checkpoint. Pass `--no-resume` to discard it.
+checkpoint carries the scan's fingerprint — change the model id,
+calibration path, token count, grouping, precisions, or method and the
+scan refuses the old checkpoint. Pass `--no-resume` to discard it.
+
+The fingerprint records provenance, not content. It cannot detect new
+weights or edited calibration text behind an unchanged path — do not
+change either between a crash and its resume.
 
 ## Scanning a model that doesn't fit in VRAM
 
@@ -52,9 +59,11 @@ meter loads the model with `--device auto`, which shards across GPU and
 system RAM (the reference box holds the 49B reference in its 124 GB).
 Reference distributions are computed once and cached on the CPU in
 float16 — roughly 0.25 GiB per 1024 calibration tokens at a 128k
-vocabulary, so budget `--max-tokens` against system RAM. Streaming
-groups to the GPU one at a time is the planned optimization, not yet
-built.
+vocabulary. Budget `--max-tokens` against system RAM: at the 131,072
+default the cache costs ~32 GiB, which does not fit next to ~98 GiB of
+bf16 weights on the 124 GB reference box. Start the 49B target at
+`--max-tokens 32768` (~8 GiB cache). Streaming groups to the GPU one
+at a time is the planned optimization, not yet built.
 
 ## Choosing calibration data
 

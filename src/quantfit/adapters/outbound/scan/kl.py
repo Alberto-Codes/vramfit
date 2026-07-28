@@ -2,16 +2,18 @@
 
 The scan metric fixed by ADR-0006: divergence of next-token
 distributions at the final logits, averaged over calibration tokens.
-KL is computed in float32 regardless of model dtype.
+KL is computed in float32 regardless of model dtype. A KL that is
+non-finite or negative beyond float16 residue is a defect, so
+`mean_kl` rejects it instead of recording it.
 
 Examples:
-    Identical logits diverge by zero:
+    Identical distributions diverge by (almost) zero:
 
     ```python
     import torch
 
     logits = torch.randn(1, 8, 32)
-    assert mean_kl(logits, logits) == 0.0
+    assert mean_kl(reference_log_probs(logits), logits) < 1e-3
     ```
 
 See Also:
@@ -21,7 +23,13 @@ See Also:
 
 from __future__ import annotations
 
+import math
+
 import torch
+
+# Largest negative KL attributable to the float16 reference cache.
+# Anything more negative means mispaired tensors, not rounding.
+RESIDUE_TOLERANCE = 1e-3
 
 
 def reference_log_probs(logits: torch.Tensor) -> torch.Tensor:
@@ -48,9 +56,14 @@ def mean_kl(reference: torch.Tensor, perturbed_logits: torch.Tensor) -> float:
             batch.
 
     Returns:
-        The mean KL divergence over all tokens, clamped at zero —
-        float16 caching can produce a negligible negative residue on
-        near-identical distributions.
+        The mean KL divergence over all tokens, finite and
+        non-negative. Float16-cache residue down to
+        ``-RESIDUE_TOLERANCE`` is clamped to zero.
+
+    Raises:
+        ValueError: If the KL is not finite (NaN logits from an
+            unstable forward pass) or negative beyond the float16
+            residue tolerance (mispaired reference and batch).
 
     Examples:
         Damage is positive once logits differ:
@@ -65,4 +78,14 @@ def mean_kl(reference: torch.Tensor, perturbed_logits: torch.Tensor) -> float:
     ref = reference.to(torch.float32)
     pert = torch.log_softmax(perturbed_logits.to(torch.float32).to(ref.device), dim=-1)
     kl = (ref.exp() * (ref - pert)).sum(dim=-1).mean().item()
+    if not math.isfinite(kl):
+        raise ValueError(
+            f"KL divergence is {kl} — the perturbed forward pass is numerically "
+            "unstable at this precision"
+        )
+    if kl < -RESIDUE_TOLERANCE:
+        raise ValueError(
+            f"KL divergence {kl:.6f} is negative beyond float16 residue — "
+            "the reference cache does not match this batch"
+        )
     return max(kl, 0.0)

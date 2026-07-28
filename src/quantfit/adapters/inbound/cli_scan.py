@@ -5,6 +5,9 @@ composition root: it builds the torch-backed meter (lazily, so the
 base install never imports torch), drives the `DamageMeter` and
 `ScanCheckpointStore` ports cell by cell, and hands the finished
 measurements to the pure assembly logic in [quantfit.domain.scan][].
+Every failure — a missing extra, a bad destination, an unstable
+measurement, a checkpoint write — halts with a clean ``error:`` line,
+and the checkpoint keeps every finished cell.
 
 Examples:
     Scan a local checkpoint at the ADR-0010 candidate set:
@@ -48,6 +51,22 @@ INSTALL_HINT = (
 )
 
 
+class ScanExtraMissingError(RuntimeError):
+    """The scan adapter package itself failed to import.
+
+    Distinguishes "torch is not installed" from every other
+    ImportError a model load can raise (missing tokenizer backends,
+    broken CUDA builds) — those must surface as themselves.
+
+    Examples:
+        The scan command maps it to the install hint:
+
+        ```python
+        raise ScanExtraMissingError(INSTALL_HINT)
+        ```
+    """
+
+
 def _build_meter(
     model: str,
     calibration: Path,
@@ -73,13 +92,16 @@ def _build_meter(
         The loaded meter.
 
     Raises:
-        ImportError: If the scan extra is not installed.
+        ScanExtraMissingError: If the scan extra is not installed.
         ValueError: If the calibration file yields too few tokens.
         OSError: If the model or calibration file cannot be read.
     """
-    from quantfit.adapters.outbound.scan.meter import (  # noqa: PLC0415 - lazy: keeps the base CLI torch-free (ADR-0005)
-        TorchDamageMeter,
-    )
+    try:
+        from quantfit.adapters.outbound.scan.meter import (  # noqa: PLC0415 - lazy: keeps the base CLI torch-free (ADR-0005)
+            TorchDamageMeter,
+        )
+    except ImportError as exc:
+        raise ScanExtraMissingError(INSTALL_HINT) from exc
 
     return TorchDamageMeter(
         model,
@@ -89,6 +111,49 @@ def _build_meter(
         device=device,
         trust_remote_code=trust_remote_code,
     )
+
+
+def _measure_cells(
+    meter: DamageMeter,
+    store: ScanCheckpointStore,
+    fingerprint: str,
+    done: list[Measurement],
+    todo: tuple[tuple[str, int], ...],
+) -> list[Measurement]:
+    """Measure every remaining cell, checkpointing each one.
+
+    Args:
+        meter: The damage meter to drive.
+        store: The checkpoint store recording each finished cell.
+        fingerprint: The scan's identity string.
+        done: Measurements already checkpointed.
+        todo: Remaining (group, bits) cells, in measurement order.
+
+    Returns:
+        All measurements, checkpointed ones first.
+
+    Raises:
+        typer.Exit: With code 1 when a measurement or checkpoint write
+            fails — the message reports how many cells the checkpoint
+            keeps.
+    """
+    measurements = list(done)
+    total = len(done) + len(todo)
+    for i, (group, bits) in enumerate(todo, start=len(done) + 1):
+        try:
+            damage = meter.measure(group, bits)
+            measurement = Measurement(group=group, bits=bits, damage=damage)
+            store.append(fingerprint, measurement)
+        except (RuntimeError, ValueError, OSError) as exc:
+            typer.echo(
+                f"error: scan halted at {group} {bits}-bit: {exc} "
+                f"(checkpoint keeps {i - 1} cells)",
+                err=True,
+            )
+            raise typer.Exit(code=1) from exc
+        measurements.append(measurement)
+        typer.echo(f"[{i}/{total}] {group} @ {bits}-bit damage {damage:.6f}")
+    return measurements
 
 
 def _parse_precisions(text: str) -> tuple[int, ...]:
@@ -101,8 +166,8 @@ def _parse_precisions(text: str) -> tuple[int, ...]:
         The parsed precisions.
 
     Raises:
-        typer.BadParameter: If a value is not an integer, or the list
-            is empty, non-positive, or not strictly descending.
+        typer.BadParameter: If a value is not an integer, any value is
+            below 2, or the list is empty or not strictly descending.
     """
     try:
         precisions = tuple(int(part) for part in text.split(","))
@@ -110,6 +175,10 @@ def _parse_precisions(text: str) -> tuple[int, ...]:
         raise typer.BadParameter(
             f'--precisions: expected comma-separated integers, got "{text}"'
         ) from None
+    if any(bits < 2 for bits in precisions):  # noqa: PLR2004 - scan floor (ADR-0010)
+        raise typer.BadParameter(
+            "--precisions: the scan floors at 2 bits — remove values below 2"
+        )
     try:
         ScanMeta(
             metric="probe",
@@ -159,10 +228,11 @@ def scan(
 
     Raises:
         typer.BadParameter: If ``--precisions`` or ``--group-by`` is
-            malformed.
+            malformed, or the ``--out`` directory does not exist.
         typer.Exit: With code 1 when the scan extra is missing, the
             model or calibration cannot load, the checkpoint belongs to
-            a different scan, or a measurement fails.
+            a different scan, a measurement fails, a checkpoint write
+            fails, or the map cannot be written.
 
     Examples:
         Command line usage:
@@ -177,15 +247,19 @@ def scan(
             f'--group-by: expected "layer" or "tensor", got "{group_by}"'
         )
     grouping: Literal["layer", "tensor"] = group_by
+    # Reject an unwritable destination now — not after the model loads
+    # and the first calibration pass has burned an hour.
+    if not out.parent.is_dir():
+        raise typer.BadParameter(f"--out: directory {out.parent} does not exist")
 
+    # Only a failed adapter import means "extra not installed" —
+    # construction errors (missing tokenizer backend, CUDA out of
+    # memory, bad repo) must surface as themselves.
     try:
         meter = _build_meter(
             model, calibration, max_tokens, grouping, device, trust_remote_code
         )
-    except ImportError as exc:
-        typer.echo(f"error: {INSTALL_HINT}", err=True)
-        raise typer.Exit(code=1) from exc
-    except (OSError, ValueError) as exc:
+    except (OSError, ValueError, RuntimeError, ImportError) as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
@@ -200,8 +274,13 @@ def scan(
     )
     fingerprint = scan_fingerprint(model, meta)
     checkpoint_path = out.with_name(out.stem + ".checkpoint.json")
-    if not resume:
-        checkpoint_path.unlink(missing_ok=True)
+    if not resume and checkpoint_path.exists():
+        try:
+            checkpoint_path.unlink()
+        except OSError as exc:
+            typer.echo(f"error: {checkpoint_path}: {exc}", err=True)
+            raise typer.Exit(code=1) from exc
+        typer.echo(f"discarded checkpoint {checkpoint_path}")
     store: ScanCheckpointStore = JsonScanCheckpointFile(checkpoint_path)
 
     specs = meter.groups()
@@ -210,7 +289,7 @@ def scan(
         todo = plan_measurements(
             specs, parsed_precisions, [(m.group, m.bits) for m in done]
         )
-    except (ArtifactError, ValueError) as exc:
+    except (ArtifactError, ValueError, OSError) as exc:
         typer.echo(
             f"error: {checkpoint_path}: {exc} — pass --no-resume to discard it",
             err=True,
@@ -219,28 +298,13 @@ def scan(
 
     if done:
         typer.echo(f"resuming: {len(done)} of {len(done) + len(todo)} cells done")
-    measurements = list(done)
-    total = len(done) + len(todo)
-    for i, (group, bits) in enumerate(todo, start=len(done) + 1):
-        try:
-            damage = meter.measure(group, bits)
-        except (RuntimeError, ValueError, OSError) as exc:
-            typer.echo(
-                f"error: measuring {group} at {bits}-bit failed: {exc} "
-                f"(checkpoint keeps {i - 1} cells)",
-                err=True,
-            )
-            raise typer.Exit(code=1) from exc
-        measurement = Measurement(group=group, bits=bits, damage=damage)
-        store.append(fingerprint, measurement)
-        measurements.append(measurement)
-        typer.echo(f"[{i}/{total}] {group} @ {bits}-bit damage {damage:.6f}")
+    measurements = _measure_cells(meter, store, fingerprint, list(done), todo)
 
-    map_ = assemble_map(model, meta, specs, measurements)
     sink: SensitivityMapSink = JsonSensitivityMapFile(out)
     try:
+        map_ = assemble_map(model, meta, specs, measurements)
         sink.save(map_)
-    except OSError as exc:
+    except (ValueError, OSError) as exc:
         typer.echo(f"error: {out}: {exc}", err=True)
         raise typer.Exit(code=1) from exc
     typer.echo(

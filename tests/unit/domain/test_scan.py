@@ -82,6 +82,16 @@ class TestPlanMeasurements:
         with pytest.raises(ValueError, match="different scan"):
             plan_measurements(SPECS, (8, 4), done=[("g0", 3)])
 
+    def test_duplicate_done_cell_raises(self) -> None:
+        with pytest.raises(ValueError, match="appears twice"):
+            plan_measurements(SPECS, (8, 4), done=[("g0", 8), ("g0", 8)])
+
+    def test_duplicate_spec_names_raise(self) -> None:
+        twins = (SPECS[0], SPECS[0])
+
+        with pytest.raises(ValueError, match="unique"):
+            plan_measurements(twins, (8, 4))
+
 
 class TestScanFingerprint:
     def test_same_scan_yields_same_fingerprint(self) -> None:
@@ -111,6 +121,23 @@ class TestScanFingerprint:
 
     def test_model_id_changes_the_fingerprint(self) -> None:
         assert scan_fingerprint("a", make_meta()) != scan_fingerprint("b", make_meta())
+
+    def test_method_changes_the_fingerprint(self) -> None:
+        assert scan_fingerprint("m", make_meta()) != scan_fingerprint(
+            "m", make_meta(), method="awq-block32"
+        )
+
+    def test_separator_in_field_values_cannot_collide(self) -> None:
+        injected = scan_fingerprint("m|kl_divergence", make_meta(metric="x"))
+        honest = scan_fingerprint("m", make_meta(metric="kl_divergence|x"))
+
+        assert injected != honest
+
+    def test_backslash_in_field_values_cannot_collide(self) -> None:
+        left = scan_fingerprint("m\\", make_meta(metric="|x"))
+        right = scan_fingerprint("m", make_meta(metric="\\|x"))
+
+        assert left != right
 
 
 def complete_measurements() -> list[Measurement]:

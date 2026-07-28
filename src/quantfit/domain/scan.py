@@ -3,8 +3,8 @@
 The scan loop itself lives in the inbound adapter (it drives ports).
 This module holds the pure parts: which (group x precision) cells still
 need measurement, how a finished pile of measurements becomes a
-`SensitivityMap`, and the fingerprint that guards resume against mixing
-two different scans' checkpoints.
+`SensitivityMap`, and the escaped, method-carrying fingerprint that
+guards resume against mixing two different scans' checkpoints.
 
 Examples:
     Plan the remaining work after a partial scan:
@@ -59,9 +59,11 @@ class GroupSpec:
         """Enforce the spec invariants.
 
         Raises:
-            ValueError: If ``bytes_fp16`` is not positive or ``tensors``
-                is empty.
+            ValueError: If ``name`` is empty, ``bytes_fp16`` is not
+                positive, or ``tensors`` is empty.
         """
+        if not self.name:
+            raise ValueError("name must not be empty")
         if self.bytes_fp16 <= 0:
             raise ValueError("bytes_fp16 must be positive")
         if not self.tensors:
@@ -95,29 +97,42 @@ class Measurement:
         """Enforce the measurement invariants.
 
         Raises:
-            ValueError: If ``bits`` is not positive, or ``damage`` is
-                negative or not finite.
+            ValueError: If ``group`` is empty, ``bits`` is not positive,
+                or ``damage`` is negative or not finite.
         """
+        if not self.group:
+            raise ValueError("group must not be empty")
         if self.bits <= 0:
             raise ValueError("bits must be positive")
         if not math.isfinite(self.damage) or self.damage < 0.0:
             raise ValueError("damage must be a finite non-negative number")
 
 
-def scan_fingerprint(model_id: str, meta: ScanMeta) -> str:
+# The v1 within-group method (ADR-0006): round-to-nearest, 32-element
+# scale blocks. Must track the scan adapter's defaults — a method change
+# is a new scan, so the token lives in the fingerprint.
+SCAN_METHOD = "rtn-block32"
+
+
+def scan_fingerprint(model_id: str, meta: ScanMeta, method: str = SCAN_METHOD) -> str:
     """Derive the identity string that guards checkpoint resume.
 
-    Two scans share a fingerprint exactly when their measurements are
-    interchangeable: same model, metric, calibration set and size,
-    grouping, and candidate precisions. ``started_at`` is excluded — a
-    resumed scan is a new invocation of the same scan.
+    Two scans share a fingerprint when their recorded provenance
+    matches: model identifier, metric, calibration path and size,
+    grouping, candidate precisions, and within-group method. The
+    fingerprint identifies provenance, not content — it cannot detect
+    weights or calibration text changing under an unchanged path.
+    ``started_at`` is excluded — a resumed scan is a new invocation of
+    the same scan.
 
     Args:
         model_id: The scanned model's identifier.
         meta: The scan's provenance.
+        method: The within-group quantization method token.
 
     Returns:
-        A stable, human-readable identity string.
+        A stable, human-readable identity string. Field separators
+        inside values are escaped, so no two distinct scans collide.
 
     Examples:
         The fingerprint survives a restart:
@@ -129,16 +144,17 @@ def scan_fingerprint(model_id: str, meta: ScanMeta) -> str:
         ```
     """
     precisions = ",".join(str(p) for p in meta.precisions)
-    return "|".join(
-        (
-            model_id,
-            meta.metric,
-            meta.calibration,
-            str(meta.calibration_tokens),
-            meta.group_by,
-            precisions,
-        )
+    fields = (
+        model_id,
+        meta.metric,
+        meta.calibration,
+        str(meta.calibration_tokens),
+        meta.group_by,
+        precisions,
+        method,
     )
+    escaped = (f.replace("\\", "\\\\").replace("|", "\\|") for f in fields)
+    return "|".join(escaped)
 
 
 def plan_measurements(
@@ -161,8 +177,10 @@ def plan_measurements(
         The remaining cells, in measurement order.
 
     Raises:
-        ValueError: If ``done`` contains a cell outside the scan grid —
-            a sign the checkpoint belongs to a different scan.
+        ValueError: If two specs share a name, ``done`` contains a cell
+            outside the scan grid, or ``done`` repeats a cell. Each is
+            a sign the checkpoint belongs to a different or damaged
+            scan — better rejected now than after hours of measuring.
 
     Examples:
         A fresh scan measures the full grid:
@@ -174,16 +192,26 @@ def plan_measurements(
         assert plan_measurements(specs, (8, 4)) == (("g0", 8), ("g0", 4))
         ```
     """
-    grid = [(spec.name, bits) for spec in specs for bits in precisions]
+    spec_list = list(specs)
+    names = [spec.name for spec in spec_list]
+    if len(set(names)) != len(names):
+        raise ValueError("group names must be unique")
+    grid = [(name, bits) for name in names for bits in precisions]
     grid_set = set(grid)
+    seen: set[tuple[str, int]] = set()
     for cell in done:
         if cell not in grid_set:
             raise ValueError(
                 f"checkpoint cell {cell!r} is outside the scan grid — "
                 "the checkpoint belongs to a different scan"
             )
-    done_set = set(done)
-    return tuple(cell for cell in grid if cell not in done_set)
+        if cell in seen:
+            raise ValueError(
+                f"checkpoint cell {cell!r} appears twice — the checkpoint "
+                "is damaged (two scans may have shared one output path)"
+            )
+        seen.add(cell)
+    return tuple(cell for cell in grid if cell not in seen)
 
 
 def assemble_map(
@@ -205,7 +233,8 @@ def assemble_map(
 
     Raises:
         ValueError: If a measurement duplicates a cell, names an unknown
-            group, or any (group x precision) cell is missing.
+            group, or any (group x precision) cell is missing — the
+            error names the group and lists the missing precisions.
 
     Examples:
         One group, two precisions:
@@ -237,10 +266,8 @@ def assemble_map(
     for spec in spec_list:
         missing = expected - set(curves[spec.name])
         if missing:
-            raise ValueError(
-                f'group "{spec.name}" is missing measurements at '
-                f"{sorted(missing, reverse=True)}-bit"
-            )
+            listed = ", ".join(f"{bits}-bit" for bits in sorted(missing, reverse=True))
+            raise ValueError(f'group "{spec.name}" is missing measurements at {listed}')
     return SensitivityMap(
         model_id=model_id,
         scan=meta,

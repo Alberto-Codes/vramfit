@@ -10,7 +10,7 @@ from quantfit.domain.scan import GroupSpec, Measurement
 
 @dataclass
 class MemorySensitivityMapSource:
-    """In-memory `SensitivityMapSource`; raises like the JSON adapter when empty."""
+    """In-memory `SensitivityMapSource`. Raises like the JSON adapter when empty."""
 
     map_: SensitivityMap | None = None
 
@@ -22,7 +22,7 @@ class MemorySensitivityMapSource:
 
 @dataclass
 class MemoryRecipeSink:
-    """In-memory `RecipeSink` capturing every save; last one wins."""
+    """In-memory `RecipeSink` capturing every save. Last one wins."""
 
     saved: list[Recipe] = field(default_factory=list)
 
@@ -36,7 +36,7 @@ class MemoryRecipeSink:
 
 @dataclass
 class MemoryModelShapeSource:
-    """In-memory `ModelShapeSource`; raises like the config adapter when empty."""
+    """In-memory `ModelShapeSource`. Raises like the config adapter when empty."""
 
     shape_: ModelShape | None = None
 
@@ -48,7 +48,7 @@ class MemoryModelShapeSource:
 
 @dataclass
 class MemorySensitivityMapSink:
-    """In-memory `SensitivityMapSink` capturing every save; last one wins."""
+    """In-memory `SensitivityMapSink` capturing every save. Last one wins."""
 
     saved: list[SensitivityMap] = field(default_factory=list)
 
@@ -62,7 +62,7 @@ class MemorySensitivityMapSink:
 
 @dataclass
 class MemoryDamageMeter:
-    """In-memory `DamageMeter`; damages configured per (group, bits) cell."""
+    """In-memory `DamageMeter`. Damages are configured per (group, bits) cell."""
 
     specs: tuple[GroupSpec, ...] = ()
     damages: dict[tuple[str, int], float] = field(default_factory=dict)
@@ -78,15 +78,17 @@ class MemoryDamageMeter:
     def measure(self, group: str, bits: int) -> float:
         if group not in {spec.name for spec in self.specs}:
             raise ValueError(f'unknown group "{group}"')
-        self.calls.append((group, bits))
+        if bits < 2:
+            raise ValueError("bits must be at least 2")
         if (group, bits) not in self.damages:
             raise ValueError(f"no damage configured for ({group}, {bits})")
+        self.calls.append((group, bits))
         return self.damages[(group, bits)]
 
 
 @dataclass
 class MemoryScanCheckpointStore:
-    """In-memory `ScanCheckpointStore`; raises like the JSON adapter on mismatch."""
+    """In-memory `ScanCheckpointStore`. Raises like the JSON adapter on mismatch."""
 
     fingerprint: str | None = None
     measurements: list[Measurement] = field(default_factory=list)

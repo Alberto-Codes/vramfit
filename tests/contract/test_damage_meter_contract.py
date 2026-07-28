@@ -87,14 +87,21 @@ def test_measure_is_deterministic_and_restores_the_model(meter: DamageMeter) -> 
     assert fine <= coarse
 
 
-def test_fewer_bits_never_reduce_damage(meter: DamageMeter) -> None:
+def test_two_bit_damage_is_at_least_eight_bit_damage(meter: DamageMeter) -> None:
     group = meter.groups()[-1].name
 
-    curve = {bits: meter.measure(group, bits) for bits in (8, 4, 2)}
+    curve = {bits: meter.measure(group, bits) for bits in (8, 2)}
 
-    assert curve[8] <= curve[4] <= curve[2]
+    assert 0.0 <= curve[8] <= curve[2]
 
 
 def test_measure_on_unknown_group_raises_value_error(meter: DamageMeter) -> None:
     with pytest.raises(ValueError, match="unknown group"):
         meter.measure("no.such.group", 8)
+
+
+def test_measure_below_two_bits_raises_value_error(meter: DamageMeter) -> None:
+    group = meter.groups()[0].name
+
+    with pytest.raises(ValueError, match="bits"):
+        meter.measure(group, 1)

@@ -1,7 +1,7 @@
 """Outbound (driven) ports: what the application needs from the world.
 
 Each protocol names one capability the inbound side orchestrates
-against. Artifact IO ports carry whole domain values; the scan ports
+against. Artifact IO ports carry whole domain values. The scan ports
 (`DamageMeter`, `ScanCheckpointStore`) carry the scan grid cell by
 cell so a crashed scan can resume. Concrete implementations live in
 [quantfit.adapters.outbound][].
@@ -167,10 +167,13 @@ class DamageMeter(Protocol):
             bits: Candidate precision to quantize the group to.
 
         Returns:
-            The measured damage.
+            The measured damage. Always finite and non-negative —
+            implementations reject unstable measurements instead of
+            recording them.
 
         Raises:
-            ValueError: If the group name or precision is unknown.
+            ValueError: If the group name is unknown, ``bits`` is below
+                2, or the measurement is numerically unstable.
         """
         ...
 
@@ -203,11 +206,16 @@ class ScanCheckpointStore(Protocol):
         Raises:
             ValueError: If the stored checkpoint carries a different
                 fingerprint or is corrupt.
+            OSError: If the backing store exists but cannot be read.
         """
         ...
 
     def append(self, fingerprint: str, measurement: Measurement) -> None:
-        """Durably record one finished measurement.
+        """Record one finished measurement.
+
+        Callers append each grid cell at most once — the store does not
+        deduplicate, and `quantfit.domain.scan.plan_measurements`
+        rejects a checkpoint that repeats a cell.
 
         Args:
             fingerprint: The scan's identity string.
@@ -216,5 +224,6 @@ class ScanCheckpointStore(Protocol):
         Raises:
             ValueError: If the stored checkpoint carries a different
                 fingerprint.
+            OSError: If the write fails.
         """
         ...

@@ -5,8 +5,9 @@ Exposes the ``quantfit`` console script. ``version``, ``budget``,
 [quantfit.adapters.inbound.cli_scan][] to keep this module under the
 size cap. The CLI wires outbound adapters to the pure domain, typing
 them against the ports so the seams stay explicit. Every IO boundary —
-artifact reads, config reads, and the recipe write — converts failures
-to a clean ``error:`` line and a nonzero exit.
+artifact and config reads, checkpoint and artifact writes, and model
+loading — converts failures to a clean ``error:`` line and a nonzero
+exit.
 
 Examples:
     Show the installed version:

@@ -40,16 +40,16 @@ class TestRtnQuantize:
 
         assert torch.allclose(w, rtn_quantize_dequantize(w, 8), atol=0.05)
 
-    def test_error_grows_as_bits_drop(self) -> None:
+    def test_reconstruction_mse_grows_as_bits_drop(self) -> None:
         torch.manual_seed(0)
         w = torch.randn(64, 64)
 
-        errors = {
+        mse = {
             bits: (w - rtn_quantize_dequantize(w, bits)).pow(2).mean().item()
-            for bits in (8, 4, 2)
+            for bits in (8, 4, 3, 2)
         }
 
-        assert errors[8] < errors[4] < errors[2]
+        assert mse[8] < mse[4] < mse[3] < mse[2]
 
     def test_shape_and_dtype_survive_including_the_padding_path(self) -> None:
         w = torch.randn(17, 5, dtype=torch.bfloat16)
@@ -87,6 +87,26 @@ class TestMeanKl:
         reference = reference_log_probs(torch.randn(1, 16, 32))
 
         assert mean_kl(reference, torch.randn(1, 16, 32)) > 0.01
+
+    def test_nan_logits_are_rejected_not_recorded(self) -> None:
+        torch.manual_seed(0)
+        reference = reference_log_probs(torch.randn(1, 16, 32))
+        unstable = torch.full((1, 16, 32), float("nan"))
+
+        with pytest.raises(ValueError, match="numerically"):
+            mean_kl(reference, unstable)
+
+    def test_mispaired_reference_is_rejected(self) -> None:
+        # A "reference" that is not a normalized log-probability
+        # distribution can drive KL strongly negative, which must
+        # raise instead of clamping to zero damage.
+        bogus_reference = torch.full((1, 4, 8), -40.0)
+        bogus_reference[..., 0] = -5.0
+        peaked_logits = torch.zeros(1, 4, 8)
+        peaked_logits[..., 0] = 100.0
+
+        with pytest.raises(ValueError, match="negative"):
+            mean_kl(bogus_reference, peaked_logits)
 
 
 class TestLoadCalibration:
@@ -156,6 +176,32 @@ class TestTorchDamageMeter:
 
         assert embed.bytes_fp16 == 512 * 32 * 2
 
+    def test_gpt2_style_names_group_by_layer(self) -> None:
+        from quantfit.adapters.outbound.scan.meter import _discover_groups
+
+        class Gpt2Like(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.transformer = torch.nn.Module()
+                self.transformer.h = torch.nn.ModuleList(
+                    [torch.nn.Linear(4, 4) for _ in range(2)]
+                )
+
+        groups = _discover_groups(Gpt2Like(), "layer")
+
+        assert set(groups) == {"transformer.h.0", "transformer.h.1"}
+
+    def test_layer_grouping_without_layer_structure_raises(self) -> None:
+        from quantfit.adapters.outbound.scan.meter import _discover_groups
+
+        class Flat(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.proj = torch.nn.Linear(4, 4)
+
+        with pytest.raises(ValueError, match="--group-by tensor"):
+            _discover_groups(Flat(), "layer")
+
 
 def test_scan_cli_produces_a_valid_map_on_the_tiny_model(
     tiny_model_dir, tmp_path
@@ -174,7 +220,7 @@ def test_scan_cli_produces_a_valid_map_on_the_tiny_model(
             "--out",
             str(out),
             "--precisions",
-            "8,4",
+            "8,4,3,2",
             "--max-tokens",
             "64",
             "--device",
@@ -184,9 +230,9 @@ def test_scan_cli_produces_a_valid_map_on_the_tiny_model(
 
     assert result.exit_code == 0, result.output
     map_ = load_sensitivity_map(out)
-    assert map_.scan.precisions == (8, 4)
+    assert map_.scan.precisions == (8, 4, 3, 2)
     assert map_.scan.metric == "kl_divergence"
-    assert all(group.sensitivity[4] >= group.sensitivity[8] for group in map_.groups)
+    assert all(group.sensitivity[2] >= group.sensitivity[8] for group in map_.groups)
 
     rerun = runner.invoke(
         app,
@@ -198,7 +244,7 @@ def test_scan_cli_produces_a_valid_map_on_the_tiny_model(
             "--out",
             str(out),
             "--precisions",
-            "8,4",
+            "8,4,3,2",
             "--max-tokens",
             "64",
             "--device",

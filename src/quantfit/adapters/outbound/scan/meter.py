@@ -8,6 +8,8 @@ vocabulary) so the reference model runs exactly once.
 
 Only floating-point tensors with 2+ dimensions join layer groups —
 norms and biases stay at reference precision and are not scanned.
+A measurement that fails to restore the model poisons the meter: it
+refuses further cells rather than measure against corrupt weights.
 
 Examples:
     Measure one cell on a local checkpoint:
@@ -29,6 +31,7 @@ See Also:
 from __future__ import annotations
 
 import re
+import sys
 from pathlib import Path
 from typing import Literal
 
@@ -39,15 +42,22 @@ from quantfit.adapters.outbound.scan.calibration import load_calibration
 from quantfit.adapters.outbound.scan.kl import mean_kl, reference_log_probs
 from quantfit.adapters.outbound.scan.quantize import (
     DEFAULT_BLOCK_SIZE,
+    MIN_BITS,
     rtn_quantize_dequantize,
 )
 from quantfit.domain.scan import GroupSpec
 
-_LAYER_PREFIX = re.compile(r"^(.*\.layers\.\d+)\.")
+# Decoder-layer prefixes across common naming families: llama-style
+# ".layers.N.", GPT-2-style ".h.N.", and ".blocks.N.".
+_LAYER_PREFIX = re.compile(r"^(.*\.(?:layers|h|blocks)\.\d+)\.")
 
 
 class TorchDamageMeter:
     """`DamageMeter` backed by torch and transformers.
+
+    Holds the loaded model, the tokenized calibration batches, the
+    cached reference distributions, and a poisoned flag set when a
+    failed measurement leaves the weights unrestored.
 
     Attributes:
         model_id (str): The Hugging Face id or local path the model
@@ -72,7 +82,7 @@ class TorchDamageMeter:
         trust_remote_code: bool = False,
         block_size: int = DEFAULT_BLOCK_SIZE,
     ) -> None:
-        """Load the model and tokenize the calibration set.
+        """Load the model, tokenize the calibration set, discover groups.
 
         Args:
             model_id: Hugging Face model id or local checkpoint path.
@@ -108,6 +118,7 @@ class TorchDamageMeter:
         self._block_size = block_size
         self._groups = _discover_groups(self._model, group_by)
         self._reference: list[torch.Tensor] | None = None
+        self._poisoned = False
 
     def groups(self) -> tuple[GroupSpec, ...]:
         """Discover the model's layer groups.
@@ -142,14 +153,25 @@ class TorchDamageMeter:
 
         Returns:
             Token-weighted mean KL divergence against the reference.
+            Always finite and non-negative.
 
         Raises:
-            ValueError: If the group name is unknown or ``bits`` is
-                below 2.
+            ValueError: If the group name is unknown, ``bits`` is below
+                2, or the perturbed forward pass is numerically
+                unstable.
+            RuntimeError: If a prior measurement failed to restore the
+                model — the meter refuses to produce corrupt numbers.
         """
+        if self._poisoned:
+            raise RuntimeError(
+                "a prior measurement failed to restore the model — "
+                "rebuild the meter before measuring again"
+            )
         if group not in self._groups:
             raise ValueError(f'unknown group "{group}"')
-        self._ensure_reference()
+        if bits < MIN_BITS:
+            raise ValueError(f"bits must be at least {MIN_BITS}")
+        reference = self._ensure_reference()
         originals: dict[str, torch.Tensor] = {}
         try:
             with torch.no_grad():
@@ -157,11 +179,9 @@ class TorchDamageMeter:
                     param = self._param(name)
                     originals[name] = param.detach().clone()
                     param.copy_(rtn_quantize_dequantize(param, bits, self._block_size))
-            return self._mean_damage()
+            return self._mean_damage(reference)
         finally:
-            with torch.no_grad():
-                for name, original in originals.items():
-                    self._param(name).copy_(original)
+            self._restore(originals)
 
     def _param(self, name: str) -> torch.Tensor:
         """Look up a parameter tensor by its dotted name.
@@ -174,28 +194,59 @@ class TorchDamageMeter:
         """
         return self._model.get_parameter(name)
 
-    def _ensure_reference(self) -> None:
-        """Run the unperturbed model once and cache its distributions."""
-        if self._reference is not None:
-            return
-        reference: list[torch.Tensor] = []
-        with torch.inference_mode():
-            for batch in self._batches:
-                logits = self._model(batch.to(self._model.device)).logits
-                reference.append(reference_log_probs(logits))
-        self._reference = reference
+    def _restore(self, originals: dict[str, torch.Tensor]) -> None:
+        """Copy saved weights back, poisoning the meter if that fails.
 
-    def _mean_damage(self) -> float:
+        A restore failure while another exception is in flight is
+        recorded (the meter refuses further measurements) but not
+        raised, so the root cause keeps the stage.
+
+        Args:
+            originals: Saved tensors keyed by parameter name.
+
+        Raises:
+            RuntimeError: If the restore itself fails and no other
+                exception is already propagating.
+        """
+        try:
+            with torch.no_grad():
+                for name, original in originals.items():
+                    self._param(name).copy_(original)
+        except Exception as exc:
+            self._poisoned = True
+            if sys.exc_info()[1] is None:
+                raise RuntimeError(
+                    f"failed to restore original weights: {exc}"
+                ) from exc
+
+    def _ensure_reference(self) -> list[torch.Tensor]:
+        """Run the unperturbed model once and cache its distributions.
+
+        Returns:
+            The cached per-batch reference log-probabilities.
+        """
+        if self._reference is None:
+            reference: list[torch.Tensor] = []
+            with torch.inference_mode():
+                for batch in self._batches:
+                    logits = self._model(batch.to(self._model.device)).logits
+                    reference.append(reference_log_probs(logits))
+            self._reference = reference
+        return self._reference
+
+    def _mean_damage(self, reference: list[torch.Tensor]) -> float:
         """Run the perturbed model over all batches and average KL.
+
+        Args:
+            reference: Cached per-batch reference log-probabilities.
 
         Returns:
             Token-weighted mean KL divergence.
         """
-        assert self._reference is not None  # noqa: S101 - _ensure_reference ran
         total = 0.0
         tokens = 0
         with torch.inference_mode():
-            for batch, ref in zip(self._batches, self._reference, strict=True):
+            for batch, ref in zip(self._batches, reference, strict=True):
                 logits = self._model(batch.to(self._model.device)).logits
                 total += mean_kl(ref, logits) * batch.numel()
                 tokens += batch.numel()
@@ -210,16 +261,19 @@ def _discover_groups(
     Args:
         model: The loaded model.
         group_by: ``layer`` collapses each decoder layer into one
-            group; ``tensor`` keeps every weight separate.
+            group. ``tensor`` keeps every weight separate.
 
     Returns:
         Ordered mapping of group name to member parameter names. Only
         floating-point tensors with 2+ dimensions are included.
 
     Raises:
-        ValueError: If no quantizable parameters are found.
+        ValueError: If no quantizable parameters are found, or
+            ``layer`` grouping finds no per-layer structure — silently
+            degrading to per-tensor groups would misrepresent the map.
     """
     groups: dict[str, list[str]] = {}
+    layer_matches = 0
     for name, param in model.named_parameters():
         if param.ndim < 2 or not param.is_floating_point():  # noqa: PLR2004
             continue
@@ -227,8 +281,14 @@ def _discover_groups(
             key = name.removesuffix(".weight")
         else:
             match = _LAYER_PREFIX.match(name)
+            layer_matches += bool(match)
             key = match.group(1) if match else name.removesuffix(".weight")
         groups.setdefault(key, []).append(name)
     if not groups:
         raise ValueError(f"no quantizable parameters found in {model.__class__}")
+    if group_by == "layer" and layer_matches == 0:
+        raise ValueError(
+            "no per-layer structure found in this model's parameter names — "
+            "pass --group-by tensor"
+        )
     return groups

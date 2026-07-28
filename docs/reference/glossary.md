@@ -76,10 +76,11 @@ change.
     `<stem>.checkpoint.json`. Not "cache" or "state file".
 
 **Fingerprint**
-:   The identity string that ties a scan checkpoint to exactly one
-    scan: model, metric, calibration, token count, grouping, and
-    precisions. Two scans with the same fingerprint are
-    interchangeable.
+:   The identity string that ties a scan checkpoint to one scan's
+    recorded provenance: model, metric, calibration, token count,
+    grouping, precisions, and within-group method. It identifies
+    provenance, not content — swapping weights or calibration text
+    under an unchanged path defeats it.
 
 ## Budgeting
 

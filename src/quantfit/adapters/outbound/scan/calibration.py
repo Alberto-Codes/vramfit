@@ -2,7 +2,7 @@
 
 Calibration arrives as a plain UTF-8 text file — no dataset framework
 in the dependency tree (ADR-0005). The choice of text is an open
-question recorded in ``docs/how-to/scan-a-model.md``; the file path is
+question recorded in ``docs/how-to/scan-a-model.md``. The file path is
 recorded in the map's ``scan.calibration`` provenance.
 
 Examples:
@@ -50,8 +50,9 @@ def load_calibration(
         The batches and the total token count they cover.
 
     Raises:
-        ValueError: If ``max_tokens`` or ``sequence_length`` is not
-            positive, or the file yields fewer than two tokens.
+        ValueError: If ``max_tokens`` is not positive,
+            ``sequence_length`` is below 2, or the file yields fewer
+            than two tokens.
         OSError: If the file cannot be read.
 
     Examples:
@@ -64,8 +65,8 @@ def load_calibration(
     """
     if max_tokens <= 0:
         raise ValueError("max_tokens must be positive")
-    if sequence_length <= 0:
-        raise ValueError("sequence_length must be positive")
+    if sequence_length < 2:  # noqa: PLR2004 - one next-token prediction needs two
+        raise ValueError("sequence_length must be at least 2")
     text = path.read_text(encoding="utf-8")
     ids = tokenizer(text, return_tensors="pt", truncation=False).input_ids[0]
     ids = ids[:max_tokens]
