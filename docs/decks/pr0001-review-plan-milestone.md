@@ -11,7 +11,7 @@ footer: quantfit · PR #1
 
 **Making a big AI model fit on the computer we already own.**
 
-Milestone 1 review — July 27, 2026
+Milestone 1 review — July 28, 2026
 [github.com/Alberto-Codes/quantfit/pull/1](https://github.com/Alberto-Codes/quantfit/pull/1)
 
 ---
@@ -60,7 +60,10 @@ Milestone 1 review — July 27, 2026
 - A **recipe maker**: decides how much to squeeze each part,
   staying inside the budget, and says why for every decision.
 - If a plan is impossible, it says so honestly — and by how much.
-- 88 automated tests check all of it on every change.
+- 156 automated tests and thirteen automatic quality checks guard
+  every change.
+- Eight independent automated reviews checked the work; every issue
+  found was fixed or explained.
 
 ---
 

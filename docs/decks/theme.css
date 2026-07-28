@@ -1,90 +1,212 @@
 /* @theme quantfit */
-/* Shared Marp theme for quantfit decks. Build with:
-   marp --theme-set docs/decks/theme.css --pdf <deck>.md */
+/* Copper on slate — the material world of the board itself.
+   Signature: the precision ladder under every heading, four segments
+   in width ratio 8:4:3:2 (the candidate bit-widths).
+   Build: marp --theme-set docs/decks/theme.css --pdf <deck>.md */
 
 @import 'default';
 
 :root {
-  --qf-ink: #1a2332;
-  --qf-accent: #0e7490;
-  --qf-accent-soft: #e0f2f7;
-  --qf-muted: #64748b;
-  font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+  --paper: #f3f5f1;
+  --ink: #1a222e;
+  --board: #16202b;
+  --copper: #b4531d;
+  --copper-2: #c97b45;
+  --copper-3: #dba37a;
+  --copper-4: #ebccb0;
+  --muted: #5b6673;
+  --rule: #d9dfe3;
+  --well: #e9ece5;
+  font-family: 'Adwaita Sans', 'Noto Sans', 'Liberation Sans', sans-serif;
 }
 
 section {
-  color: var(--qf-ink);
-  background: #ffffff;
-  padding: 64px 72px;
-  font-size: 27px;
-  line-height: 1.45;
+  background: var(--paper);
+  color: var(--ink);
+  padding: 58px 84px 64px;
+  font-size: 26px;
+  line-height: 1.5;
+  font-weight: 400;
 }
 
+/* --- headings + the precision ladder ------------------------------- */
+
 h1 {
-  color: var(--qf-accent);
-  font-size: 1.5em;
-  border-bottom: 3px solid var(--qf-accent-soft);
-  padding-bottom: 0.2em;
+  font-weight: 800;
+  font-size: 1.55em;
+  letter-spacing: -0.015em;
+  color: var(--ink);
+  margin-bottom: 0.75em;
+}
+
+h1::after {
+  content: '';
+  display: block;
+  height: 7px;
+  margin-top: 0.35em;
+  border-radius: 2px;
+  background: linear-gradient(
+    to right,
+    var(--copper) 0 44%, transparent 44% 46.5%,
+    var(--copper-2) 46.5% 68.5%, transparent 68.5% 71%,
+    var(--copper-3) 71% 87.5%, transparent 87.5% 90%,
+    var(--copper-4) 90% 100%
+  );
 }
 
 h2 {
-  color: var(--qf-ink);
+  font-weight: 700;
+  font-size: 1.05em;
+  color: var(--copper);
 }
 
 strong {
-  color: var(--qf-accent);
+  font-weight: 700;
+  color: var(--ink);
+}
+
+em {
+  color: var(--copper);
+  font-style: normal;
+  font-weight: 600;
 }
 
 a {
-  color: var(--qf-accent);
+  color: var(--copper);
+  text-decoration: none;
+  border-bottom: 1.5px solid var(--copper-3);
 }
 
+ul li::marker,
+ol li::marker {
+  color: var(--copper);
+}
+
+/* --- code and numbers: the ledger voice ----------------------------- */
+
 code {
-  background: var(--qf-accent-soft);
-  color: var(--qf-ink);
-  padding: 0.1em 0.3em;
-  border-radius: 4px;
+  font-family: 'Adwaita Mono', 'Fira Code', 'Liberation Mono', monospace;
+  font-size: 0.82em;
+  background: var(--well);
+  color: var(--ink);
+  padding: 0.08em 0.32em;
+  border-radius: 3px;
 }
 
 pre {
-  background: #f6f8fa;
-  border-left: 4px solid var(--qf-accent);
-  font-size: 0.75em;
+  background: var(--well);
+  border-left: 4px solid var(--copper);
+  border-radius: 0 6px 6px 0;
+  font-size: 0.72em;
+  line-height: 1.45;
+  padding: 0.8em 1em;
 }
 
 pre code {
   background: transparent;
+  padding: 0;
 }
 
 table {
-  font-size: 0.85em;
+  font-family: 'Adwaita Mono', 'Liberation Mono', monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.82em;
+  border-collapse: collapse;
+  margin: 0.6em auto;
+  background: transparent;
+}
+
+section table tr,
+section table tr:nth-child(2n),
+section table th,
+section table td {
+  background: transparent;
+  background-color: transparent;
 }
 
 th {
-  background: var(--qf-accent);
-  color: #ffffff;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 600;
+  border: none;
+  border-bottom: 2.5px solid var(--copper);
+  padding: 0.3em 0.9em;
+  text-align: left;
 }
 
+td {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--rule);
+  padding: 0.34em 0.9em;
+}
+
+tr:last-child td {
+  border-bottom: 2.5px solid var(--copper);
+  font-weight: 700;
+}
+
+/* --- lead: dark board, copper trace --------------------------------- */
+
 section.lead {
-  text-align: left;
-  background: linear-gradient(160deg, #ffffff 60%, var(--qf-accent-soft));
+  background: var(--board);
+  color: var(--paper);
+  justify-content: center;
+  padding-left: 96px;
 }
 
 section.lead h1 {
-  font-size: 2em;
-  border-bottom: none;
+  color: var(--paper);
+  font-size: 2.3em;
+  letter-spacing: -0.02em;
 }
 
+section.lead h1::after {
+  height: 10px;
+  width: 62%;
+}
+
+section.lead strong {
+  color: var(--copper-3);
+}
+
+section.lead a {
+  color: var(--copper-3);
+  border-bottom-color: var(--copper);
+}
+
+section.lead code {
+  background: #223041;
+  color: var(--copper-4);
+}
+
+section.lead footer,
+section.lead::after {
+  color: #4d5a68;
+}
+
+/* --- density + chrome ------------------------------------------------ */
+
 section.dense {
-  font-size: 23px;
+  font-size: 22.5px;
+  line-height: 1.45;
 }
 
 footer {
-  color: var(--qf-muted);
-  font-size: 0.55em;
+  font-family: 'Adwaita Mono', monospace;
+  font-size: 0.5em;
+  color: var(--muted);
+  letter-spacing: 0.06em;
 }
 
 section::after {
-  color: var(--qf-muted);
-  font-size: 0.6em;
+  font-family: 'Adwaita Mono', monospace;
+  font-size: 0.55em;
+  color: var(--muted);
+}
+
+blockquote {
+  border-left: 4px solid var(--copper-3);
+  color: var(--muted);
+  font-size: 0.9em;
 }

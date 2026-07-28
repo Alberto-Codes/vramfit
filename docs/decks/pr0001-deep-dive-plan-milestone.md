@@ -11,7 +11,7 @@ footer: quantfit · PR #1
 
 Milestone 1: artifact schemas, VRAM budget math, greedy solver
 
-Branch `feat/plan-solver-schemas-budget` · 2026-07-27
+Branch `feat/plan-solver-schemas-budget` · 2026-07-28
 [github.com/Alberto-Codes/quantfit/pull/1](https://github.com/Alberto-Codes/quantfit/pull/1)
 
 ---
@@ -31,18 +31,19 @@ Branch `feat/plan-solver-schemas-budget` · 2026-07-27
 
 ---
 
-# Architecture
+# Architecture (hexagonal, ADR-0008)
 
-Three new modules, one extended:
+Layers enforced by import-linter — a violation is a failed commit:
 
-- `artifacts.py` — SensitivityMap / Recipe dataclasses;
-  validating `from_dict / to_dict / load / save`.
-- `budget.py` — size parsing, KV-cache math, weight-budget ledger.
-- `solver.py` — greedy damage-per-byte solver (ADR-0007).
-- `cli.py` — new `quantfit budget` and `quantfit plan` commands.
+- `domain/` — model dataclasses (self-validating), budget math,
+  greedy solver. Pure: no json, pathlib, os, io, or typer.
+- `ports/outbound.py` — Protocols (map source, recipe sink,
+  shape source), each with a verified-fake contract suite.
+- `adapters/outbound/` — JSON artifacts (schema envelope lives
+  here), HF config parsing. `adapters/inbound/cli.py` — Typer,
+  composition root.
 
-Dependency shape: `solver → artifacts`; `budget` standalone;
-`cli → all three`. Nothing imports torch.
+Nothing imports torch (also a contract).
 
 ---
 
@@ -87,10 +88,10 @@ Dependency shape: `solver → artifacts`; `budget` standalone;
 }
 ```
 
-- `format_overhead` + `trace` were schema additions found during design:
-  without them a recipe isn't reproducible and has no explanation.
-- Replaying `trace` from all-highest-precision reproduces the
-  assignments exactly (tested).
+- All plan fields are **required** — the loader rejects truncated or
+  hand-edited artifacts rather than backfilling defaults.
+- Replaying `trace` from the starting state (pinned groups at their
+  pin) reproduces the assignments exactly (property-tested).
 
 ---
 
@@ -102,11 +103,13 @@ Real target config (`config.json`, DeciLM/NAS):
 - 49 attention blocks, GQA group size 8 → 8 KV heads × head_dim 128.
 - FFN widths vary 10× (`ffn_mult` 0.5 → 5.25).
 
-Consequences baked into `budget.py`:
+Consequences baked into the code:
 
-- KV cost = **sum over attention layers**, never `layers × constant`.
-- `ModelShape.from_config_json` parses both DeciLM `block_configs`
-  and standard llama configs.
+- KV cost = **sum over attention layers**, never `layers × constant`
+  (`domain/budget.py`).
+- The HF config adapter parses DeciLM `block_configs` and llama
+  configs, rejecting bad geometry: non-divisible GQA groups,
+  non-boolean skip flags, invalid `head_dim` — never silent fallback.
 - Hand-computed anchor test: 2 × 49 × 8 × 128 × 2 = **200,704
   bytes/token** at fp16.
 
@@ -123,9 +126,9 @@ Consequences baked into `budget.py`:
 | − runtime overhead | 2.00 GiB | 2.00 GiB |
 | **weight budget** | **18.94 GiB** | **20.47 GiB** |
 
-→ ~3.3–3.5 average bits/parameter over ~49B params.
-Better than the docs' original ~3.2 estimate; still under vLLM's
-4-bit kernel floor (see risks slide).
+→ ~3.3–3.5 average bits/parameter over ~49B params — better than the
+original ~3.2 estimate, still under vLLM's 4-bit kernel floor (see
+risks slide). Re-run after the full refactor: **byte-identical**.
 
 ---
 
@@ -148,9 +151,11 @@ Multiple-choice knapsack, greedy by damage-per-byte:
 - Moves consider **all** lower precisions → non-convex damage curves
   get direct multi-step jumps (8→2 without stopping at 3).
 - Selection key is a total order → deterministic, input-order
-  invariant (tested under shuffle + pytest-randomly).
+  invariant (hypothesis-tested under permutation).
 - Pins: `fnmatchcase` globs; zero-match = hard error; later overrides
-  earlier; pinned groups never move.
+  earlier; pinned groups never move (tested under budget pressure).
+- The final downgrade is refined when a milder step also fits with
+  less damage — kills the dominated-recipe case review found.
 - Integer byte math (`ceil` once per size) — no float accumulation
   to threaten determinism.
 
@@ -169,17 +174,24 @@ Multiple-choice knapsack, greedy by damage-per-byte:
 
 ---
 
+<!-- _class: dense -->
+
 # Verification
 
-- **88 tests, 99% line coverage** (gate: 90%).
-- Determinism: repeated runs identical; shuffled group order →
-  identical assignments and trace.
-- Budget safety: property-style sweep asserts
-  `predicted_total ≤ budget` across the feasible range.
-- Full gates green: ruff, ruff format, ty, pytest, docvet
-  (0 findings, 100% docstring coverage).
-- Deliberately not covered: no GPU tests exist yet (`gpu` marker
-  reserved); scan pipeline is still a stub.
+- **156 tests, 99% coverage** across a marked pyramid (ADR-0009):
+  unit + hypothesis properties, verified-fake contract suites per
+  port, subprocess e2e. Fast suite < 1 s; pre-push runs the
+  thorough profile.
+- Properties: budget always respected, exact infeasibility gaps,
+  determinism under permutation, trace replay, pins under pressure.
+- **13 gates** on every commit: ruff (Sonar-adjacent set), ty,
+  import-linter (3 contracts), 300/320 LOC cap, docs-reference
+  check, docvet — all with `always_run`.
+- Reviewed 8 ways: 3 Copilot rounds + 5 specialist agents — 50+
+  findings triaged, every accept fixed and every decline explained
+  on the PR threads.
+- Not covered yet: GPU paths (`gpu` marker reserved) — scan is
+  still a stub.
 
 ---
 
@@ -214,9 +226,11 @@ Multiple-choice knapsack, greedy by damage-per-byte:
 # Links
 
 - PR #1: `github.com/Alberto-Codes/quantfit/pull/1`
-- ADRs: `docs/adr/` — 0007 promoted to Accepted this milestone.
+- ADRs: `docs/adr/` — 0007 Accepted; 0008 (hex) and 0009 (testing)
+  added during this PR.
 - Schemas: `docs/reference/sensitivity-map.md`, `docs/reference/recipe.md`
   (both promoted sketch → draft).
 - Budget math: `docs/explanation/vram-budget.md` (promoted → stable,
   real numbers).
 - Glossary: `docs/reference/glossary.md` — one term per concept.
+- Roadmap for the next session: issue #2.
