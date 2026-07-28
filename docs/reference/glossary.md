@@ -123,6 +123,31 @@ change.
     (scales, zero-points). CLI flag `--format-overhead`, recorded in
     `plan.format_overhead`. Default 0.05 until measured per format.
 
+## Packing
+
+**Type mapping**
+:   The pack backend's translation from nominal precision to a runtime
+    quantization type. [ADR-0012](../adr/0012-gguf-type-mapping.md)
+    fixes the GGUF tensor-type table (8→Q8_0, 4→Q4_K, 3→Q3_K,
+    2→Q2_K) and a separate base-ftype table for the quantizer's
+    positional argument. Effective bits exceed nominal bits, which is
+    why pack re-checks real sizes.
+
+**Base GGUF**
+:   The full-precision (f16) GGUF conversion of the source checkpoint
+    that `llama-quantize` consumes. Created once per model, reused
+    across packs. Not "intermediate file".
+
+**Type override**
+:   One (tensor pattern → quantization type) pair driven into the
+    runtime's quantizer. One per layer group, first match wins. Code
+    type `quantfit.domain.pack.TypeOverride`.
+
+**Pack result**
+:   The pack step's accounting record: real packed bytes plus the type
+    mapping driven into the quantizer. Code type
+    `quantfit.domain.pack.PackResult`.
+
 ## Architecture
 
 **Domain**

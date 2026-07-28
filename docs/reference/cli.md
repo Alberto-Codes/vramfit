@@ -4,8 +4,8 @@ status: draft
 
 # CLI reference
 
-> **Status: draft** — `version`, `budget`, `plan`, and `scan` are
-> implemented. `pack` is design-stage.
+> **Status: draft** — `version`, `budget`, `plan`, `scan`, and `pack`
+> are implemented. `pack` covers the GGUF backend only (ADR-0010).
 
 ## `quantfit version`
 
@@ -126,11 +126,43 @@ written. Exit 2 on malformed `--precisions`, `--group-by`, or
 `--gpu-memory`, a `--gpu-memory` without `--device auto`, or a missing
 `--out` directory.
 
-## `quantfit pack` *(planned)*
+## `quantfit pack`
+
+Implemented for the GGUF backend (ADR-0010, ADR-0012). Applies a
+recipe through llama.cpp's quantizer: one f16 base GGUF conversion
+(reused when present), then `llama-quantize` with one type override
+per layer group and the embedding assignment bound via
+`--token-embedding-type` and `--output-tensor-type` — the second
+flag keeps an untied output head at the embedding's precision. The
+base type is the recipe's precision floor, applied with `--pure`, so
+no heuristic mixing leaks in.
 
 ```
-quantfit pack MODEL_ID
-  --recipe PATH          Recipe produced by `quantfit plan`
-  --runtime TEXT         Target runtime (GGUF first per ADR-0010)
-  --out PATH             Output checkpoint directory
+quantfit pack RECIPE
+  --llama-cpp PATH       llama.cpp checkout with convert_hf_to_gguf.py
+                         and build/bin/llama-quantize  [required]
+  --model PATH           Model checkpoint directory
+                         [default: the recipe's model_id]
+  --out PATH             Packed model path  [default: packed.gguf]
+  --base-gguf PATH       f16 base GGUF, reused when present
+                         [default: <model name>-f16.gguf beside --out]
+  --python-bin PATH      Interpreter for the convert script — install
+                         quantfit[pack] to provision it
+                         [default: current]
+  --threads INT          Quantizer thread count  [default: 8]
+  --runlog PATH          Run-log path (JSONL)
+                         [default: <stem>.runlog.jsonl]
 ```
+
+After quantizing, the command re-checks the packed file's real bytes
+against `plan.weight_budget_bytes` — nominal-bit predictions
+undershoot GGUF's effective bits (ADR-0012). Every run appends the
+pack events to the run log: pack_started, gguf_converted (with
+`reused`), model_packed (real bytes, base type, override count),
+size_checked (margin and `fits`), then pack_finished or pack_halted
+(stage: convert, quantize, or size_check).
+
+Exit codes: 1 when the recipe is invalid, the model directory does
+not exist, a toolchain stage fails, or the packed model exceeds the
+weight budget (the file is kept). Exit 2 when the llama.cpp checkout
+misses its tools or the `--out`/`--runlog` directory does not exist.

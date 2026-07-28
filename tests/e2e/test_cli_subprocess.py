@@ -89,6 +89,61 @@ def test_scan_without_the_extra_reports_the_install_hint(tmp_path) -> None:
     assert "quantfit[scan]" in result.stderr + result.stdout
 
 
+def test_pack_flow_with_stub_toolchain_produces_the_packed_file(tmp_path) -> None:
+    from quantfit.adapters.outbound.recipe_json import save_recipe
+    from quantfit.adapters.outbound.run_log_jsonl import read_run_log
+    from quantfit.domain.model import Assignment, PlanMeta, Recipe
+
+    checkout = tmp_path / "llama.cpp"
+    (checkout / "build" / "bin").mkdir(parents=True)
+    (checkout / "convert_hf_to_gguf.py").write_text(
+        "import sys\n"
+        'out = sys.argv[sys.argv.index("--outfile") + 1]\n'
+        'open(out, "wb").write(b"G" * 1000)\n'
+    )
+    quantize = checkout / "build" / "bin" / "llama-quantize"
+    quantize.write_text(
+        "#!/usr/bin/env python3\n"
+        "import sys\n"
+        'open(sys.argv[-3], "wb").write(b"Q" * 500)\n'
+    )
+    quantize.chmod(0o700)
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    recipe = Recipe(
+        model_id=str(model_dir),
+        plan=PlanMeta(
+            vram_budget_bytes=4_000,
+            kv_headroom_bytes=1_000,
+            weight_budget_bytes=3_000,
+            predicted_total_bytes=2_500,
+            predicted_damage=0.05,
+            solver="greedy-damage-per-byte",
+            pins={},
+            format_overhead=0.05,
+            trace=(),
+        ),
+        assignments=(
+            Assignment(group="model.embed_tokens", bits=8, bytes=1_000, damage=0.001),
+            Assignment(group="model.layers.0", bits=4, bytes=500, damage=0.01),
+        ),
+    )
+    recipe_path = tmp_path / "recipe.json"
+    save_recipe(recipe, recipe_path)
+    out = tmp_path / "packed.gguf"
+
+    result = run(
+        "pack", str(recipe_path), "--llama-cpp", str(checkout), "--out", str(out)
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert out.read_bytes() == b"Q" * 500
+    assert "margin" in result.stdout
+    events = [e["event"] for e in read_run_log(out.with_name("packed.runlog.jsonl"))]
+    assert events[0] == "pack_started"
+    assert events[-1] == "pack_finished"
+
+
 def test_infeasible_plan_exits_one_via_console_script(tmp_path) -> None:
     map_path = tmp_path / "sensitivity.json"
     map_path.write_text(
