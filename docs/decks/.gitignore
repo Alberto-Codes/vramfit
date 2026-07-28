@@ -1,0 +1,2 @@
+# PDFs are build outputs — regenerate with marp-cli, distribute via releases
+*.pdf

@@ -1,0 +1,220 @@
+/* @theme quantfit */
+/* Circuit green on slate — solder mask and substrate.
+   Signature: the precision ladder under every heading, four segments
+   in width ratio 8:4:3:2 (the candidate bit-widths).
+   Build: marp --theme-set docs/decks/theme.css --pdf <deck>.md */
+
+@import 'default';
+
+:root {
+  --paper: #f3f5f1;
+  --ink: #1a222e;
+  --board: #16202b;
+  --accent: #2f6b4f;
+  --accent-2: #265a41;
+  --accent-3: #1d4934;
+  --accent-4: #143827;
+  --accent-bright: #5fa885;
+  --muted: #5b6673;
+  --rule: #d9dfe3;
+  --well: #e9ece5;
+  font-family: 'Adwaita Sans', 'Noto Sans', 'Liberation Sans', sans-serif;
+}
+
+section {
+  background: var(--paper);
+  color: var(--ink);
+  padding: 58px 84px 64px;
+  font-size: 26px;
+  line-height: 1.5;
+  font-weight: 400;
+}
+
+/* --- headings + the precision ladder ------------------------------- */
+
+h1 {
+  font-weight: 800;
+  font-size: 1.55em;
+  letter-spacing: -0.015em;
+  color: var(--ink);
+  margin-bottom: 0.75em;
+}
+
+h1::after {
+  content: '';
+  display: block;
+  height: 7px;
+  margin-top: 0.35em;
+  border-radius: 2px;
+  background: linear-gradient(
+    to right,
+    var(--accent) 0 44%, transparent 44% 46.5%,
+    var(--accent-2) 46.5% 68.5%, transparent 68.5% 71%,
+    var(--accent-3) 71% 87.5%, transparent 87.5% 90%,
+    var(--accent-4) 90% 100%
+  );
+}
+
+h2 {
+  font-weight: 700;
+  font-size: 1.05em;
+  color: var(--accent);
+}
+
+strong {
+  font-weight: 700;
+  color: var(--ink);
+}
+
+em {
+  color: var(--accent);
+  font-style: normal;
+  font-weight: 600;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1.5px solid #9dc4b1;
+}
+
+ul li::marker,
+ol li::marker {
+  color: var(--accent);
+}
+
+/* --- code and numbers: the ledger voice ----------------------------- */
+
+code {
+  font-family: 'Adwaita Mono', 'Fira Code', 'Liberation Mono', monospace;
+  font-size: 0.82em;
+  background: var(--well);
+  color: var(--ink);
+  padding: 0.08em 0.32em;
+  border-radius: 3px;
+}
+
+pre {
+  background: var(--well);
+  border-left: 4px solid var(--accent);
+  border-radius: 0 6px 6px 0;
+  font-size: 0.72em;
+  line-height: 1.45;
+  padding: 0.8em 1em;
+}
+
+pre code {
+  background: transparent;
+  padding: 0;
+}
+
+table {
+  font-family: 'Adwaita Mono', 'Liberation Mono', monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.82em;
+  border-collapse: collapse;
+  margin: 0.6em auto;
+  background: transparent;
+}
+
+section table tr,
+section table tr:nth-child(2n),
+section table th,
+section table td {
+  background: transparent;
+  background-color: transparent;
+}
+
+th {
+  background: transparent;
+  color: var(--muted);
+  font-weight: 600;
+  border: none;
+  border-bottom: 2.5px solid var(--accent);
+  padding: 0.3em 0.9em;
+  text-align: left;
+}
+
+td {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--rule);
+  padding: 0.34em 0.9em;
+}
+
+tr:last-child td {
+  border-bottom: 2.5px solid var(--accent);
+  font-weight: 700;
+}
+
+/* --- lead: dark board, bright trace --------------------------------- */
+
+section.lead {
+  background: var(--board);
+  color: var(--paper);
+  justify-content: center;
+  padding-left: 96px;
+}
+
+section.lead h1 {
+  color: var(--paper);
+  font-size: 2.3em;
+  letter-spacing: -0.02em;
+}
+
+section.lead h1::after {
+  height: 10px;
+  width: 62%;
+  background: linear-gradient(
+    to right,
+    var(--accent-bright) 0 44%, transparent 44% 46.5%,
+    #3f8464 46.5% 68.5%, transparent 68.5% 71%,
+    var(--accent) 71% 87.5%, transparent 87.5% 90%,
+    var(--accent-2) 90% 100%
+  );
+}
+
+section.lead strong {
+  color: var(--accent-bright);
+}
+
+section.lead a {
+  color: var(--accent-bright);
+  border-bottom-color: var(--accent);
+}
+
+section.lead code {
+  background: #223041;
+  color: #9ed3b6;
+}
+
+section.lead footer,
+section.lead::after {
+  color: #4d5a68;
+}
+
+/* --- density + chrome ------------------------------------------------ */
+
+section.dense {
+  font-size: 22.5px;
+  line-height: 1.45;
+}
+
+footer {
+  font-family: 'Adwaita Mono', monospace;
+  font-size: 0.5em;
+  color: var(--muted);
+  letter-spacing: 0.06em;
+}
+
+section::after {
+  font-family: 'Adwaita Mono', monospace;
+  font-size: 0.55em;
+  color: var(--muted);
+}
+
+blockquote {
+  border-left: 4px solid #9dc4b1;
+  color: var(--muted);
+  font-size: 0.9em;
+}
