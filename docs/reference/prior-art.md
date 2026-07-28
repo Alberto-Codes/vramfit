@@ -37,8 +37,16 @@ status: draft
     overrides, which is the mechanism the GGUF pack backend drives
     ([ADR-0010](../adr/0010-sub-4-bit-serving-path.md)).
 
+**[Unsloth dynamic GGUFs](https://huggingface.co/unsloth)**
+:   Selective per-layer bit assignment shipped as ready-made GGUFs —
+    the closest prior art by shipped output, where EXL2 below is
+    closest by method. The recipes are expert heuristics, and Unsloth
+    does not publish the selection evidence. quantfit bets that a
+    measured, published sensitivity map beats this recipe class. See
+    [the artifact ecosystem](../explanation/artifact-ecosystem.md).
+
 **[EXL2 / exllamav2](https://github.com/turboderp-org/exllamav2)**
-:   The closest prior art. Measured per-layer variable bitrate (2–8 bpw
+:   The closest prior art by method. Measured per-layer variable bitrate (2–8 bpw
     mixing) hitting a target *average* bits-per-weight, with a reusable
     measurement pass. Differences quantfit bets on: EXL2 is tied to its own
     runtime (quantfit targets vLLM), optimizes to an average bpw rather than
