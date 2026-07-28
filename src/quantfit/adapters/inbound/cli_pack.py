@@ -157,7 +157,8 @@ def pack(
     runs the convert script — the ``pack`` extra provisions its
     dependencies. The command re-checks the packed file's real bytes
     against the recipe's weight budget — nominal-bit predictions
-    undershoot GGUF's effective bits.
+    undershoot GGUF's effective bits. A run-log write failure warns
+    once, naming the file, and disables the log (ADR-0011).
 
     Raises:
         typer.BadParameter: If the llama.cpp checkout misses its
@@ -207,7 +208,7 @@ def pack(
         raise typer.BadParameter(
             f"--runlog: directory {runlog_path.parent} does not exist"
         )
-    run_log = SafeRunLog(JsonlRunLogFile(runlog_path))
+    run_log = SafeRunLog(JsonlRunLogFile(runlog_path), path=runlog_path)
     run_log.emit(
         "pack_started",
         {
