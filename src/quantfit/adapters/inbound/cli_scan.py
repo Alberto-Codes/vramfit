@@ -74,6 +74,7 @@ def _build_meter(
     group_by: Literal["layer", "tensor"],
     device: str,
     trust_remote_code: bool,
+    gpu_memory: str | None,
 ) -> DamageMeter:
     """Build the torch-backed meter, importing torch only now.
 
@@ -89,6 +90,7 @@ def _build_meter(
         group_by: Grouping granularity.
         device: transformers ``device_map`` value.
         trust_remote_code: Allow repos with custom modeling code.
+        gpu_memory: Cap on GPU model shards under ``auto`` sharding.
 
     Returns:
         The loaded meter.
@@ -115,6 +117,7 @@ def _build_meter(
         group_by=group_by,
         device=device,
         trust_remote_code=trust_remote_code,
+        max_gpu_memory=gpu_memory,
     )
 
 
@@ -224,12 +227,22 @@ def scan(
     resume: Annotated[
         bool, typer.Option(help="Resume from the checkpoint file if present.")
     ] = True,
+    gpu_memory: Annotated[
+        str | None,
+        typer.Option(
+            help="Cap GPU model shards under auto sharding, e.g. 17GiB. "
+            "Leaves workspace for activations and quantization."
+        ),
+    ] = None,
 ) -> None:
     """Measure per-group quantization damage and write a sensitivity map.
 
     Every finished cell lands in a checkpoint file next to ``--out``
     (``<out stem>.checkpoint.json``), so a crashed scan resumes instead
     of restarting. ``--no-resume`` discards any existing checkpoint.
+    For models larger than VRAM, ``--gpu-memory`` caps the shards that
+    ``auto`` sharding places on the card, keeping workspace free for
+    activations and logits.
 
     Raises:
         typer.BadParameter: If ``--precisions`` or ``--group-by`` is
@@ -262,7 +275,13 @@ def scan(
     # memory, bad repo) must surface as themselves.
     try:
         meter = _build_meter(
-            model, calibration, max_tokens, grouping, device, trust_remote_code
+            model,
+            calibration,
+            max_tokens,
+            grouping,
+            device,
+            trust_remote_code,
+            gpu_memory,
         )
     except (OSError, ValueError, RuntimeError, ImportError) as exc:
         typer.echo(f"error: {exc}", err=True)

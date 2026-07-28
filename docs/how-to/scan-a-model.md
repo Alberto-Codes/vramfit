@@ -37,7 +37,10 @@ uv run quantfit scan nvidia/Llama-3_3-Nemotron-Super-49B-v1_5 \
 `--calibration` takes a plain UTF-8 text file. The north-star target
 ships custom modeling code, hence `--trust-remote-code`. Lower
 `--max-tokens` below the 131,072 default for large models — see the
-memory math below.
+memory math below. For models larger than VRAM, also pass
+`--gpu-memory 17GiB` (on a 24 GiB card): without a cap, `auto`
+sharding packs the card full and the first measurement dies of CUDA
+out-of-memory.
 
 ## Resume
 

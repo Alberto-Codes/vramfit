@@ -40,7 +40,11 @@ def rtn_quantize_dequantize(
         block_size: Elements sharing one scale.
 
     Returns:
-        The dequantized tensor, same shape and dtype as the input.
+        The dequantized tensor, same shape, dtype, and device as the
+        input. The round trip computes on the CPU — the float32
+        temporaries are several times the tensor's size, which would
+        exhaust a GPU already packed with model shards (a 2 GiB
+        embedding table needs >8 GiB of workspace).
 
     Raises:
         ValueError: If ``bits`` is below 2 or ``block_size`` is not
@@ -61,7 +65,7 @@ def rtn_quantize_dequantize(
     if block_size <= 0:
         raise ValueError("block_size must be positive")
     qmax = 2 ** (bits - 1) - 1
-    flat = weight.detach().to(torch.float32).reshape(-1)
+    flat = weight.detach().to(device="cpu", dtype=torch.float32).reshape(-1)
     pad = (-flat.numel()) % block_size
     if pad:
         flat = torch.nn.functional.pad(flat, (0, pad))
@@ -72,4 +76,4 @@ def rtn_quantize_dequantize(
     result = quantized.reshape(-1)
     if pad:
         result = result[: weight.numel()]
-    return result.reshape(weight.shape).to(weight.dtype)
+    return result.reshape(weight.shape).to(device=weight.device, dtype=weight.dtype)

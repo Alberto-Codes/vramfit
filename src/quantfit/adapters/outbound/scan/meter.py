@@ -81,6 +81,7 @@ class TorchDamageMeter:
         device: str = "auto",
         trust_remote_code: bool = False,
         block_size: int = DEFAULT_BLOCK_SIZE,
+        max_gpu_memory: str | None = None,
     ) -> None:
         """Load the model, tokenize the calibration set, discover groups.
 
@@ -95,16 +96,26 @@ class TorchDamageMeter:
             trust_remote_code: Allow model repos with custom modeling
                 code (the north-star target needs this).
             block_size: Elements per quantization scale block.
+            max_gpu_memory: Cap on GPU 0 model shards for ``auto``
+                sharding, e.g. ``"17GiB"``. Without a cap, sharding
+                packs the card full and leaves no workspace for
+                activations and logits.
 
         Raises:
             ValueError: If the calibration file yields too few tokens.
             OSError: If the model or calibration file cannot be read.
         """
         self.model_id = model_id
+        max_memory = (
+            {0: max_gpu_memory, "cpu": "999GiB"}
+            if max_gpu_memory is not None and device == "auto"
+            else None
+        )
         self._model = AutoModelForCausalLM.from_pretrained(
             model_id,
             dtype=torch.bfloat16,
             device_map=device,
+            max_memory=max_memory,
             trust_remote_code=trust_remote_code,
         )
         self._model.eval()

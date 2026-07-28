@@ -92,6 +92,9 @@ quantfit scan MODEL
   --trust-remote-code    Allow model repos with custom code (the
                          north-star target needs this)
   --resume / --no-resume Continue from the checkpoint file  [default: resume]
+  --gpu-memory SIZE      Cap GPU model shards under auto sharding
+                         (e.g. 17GiB) so activations and quantization
+                         keep workspace  [default: none]
 ```
 
 Every finished (group x precision) cell lands in a checkpoint file next
