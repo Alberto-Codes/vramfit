@@ -2,6 +2,9 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-27
+- **Note (2026-07-28):**
+  [ADR-0013](0013-runtime-capability-in-recipes.md) adds the deferred
+  runtime-capability constraint as a filter on the candidate set.
 
 ## Context
 

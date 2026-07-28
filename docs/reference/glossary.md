@@ -113,6 +113,18 @@ change.
 :   The algorithm that assigns precisions under the weight budget. Strategy
     tracked in [ADR-0007](../adr/0007-recipe-solver-strategy.md).
 
+**Target runtime**
+:   The serving stack a recipe is planned for, recorded in the recipe's
+    `runtime` field (`--runtime`, default `llama.cpp`). Not "backend"
+    (that word belongs to pack adapters) or "engine". Decided in
+    [ADR-0013](../adr/0013-runtime-capability-in-recipes.md).
+
+**Runtime capability**
+:   The set of nominal precisions a target runtime can serve. The solver
+    filters its candidate set through the capability table
+    (`quantfit.domain.runtime.RUNTIME_CAPABILITIES`) so a recipe never
+    assigns a precision its target runtime lacks kernels for.
+
 **Trace**
 :   The solver's ordered downgrade log, recorded in `plan.trace`. Replaying
     it from the starting state reproduces the assignments — it is the
