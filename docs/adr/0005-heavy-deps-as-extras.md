@@ -1,7 +1,11 @@
 # ADR-0005: Heavy ML dependencies stay out of the base install
 
-- **Status:** Accepted
+- **Status:** Accepted, amended by
+  [ADR-0011](0011-run-logs-and-error-root.md)
 - **Date:** 2026-07-27
+- **Amendment (2026-07-28):** the base-dependency clause changes —
+  the base install carries typer and structlog. Everything else
+  stands.
 
 ## Context
 

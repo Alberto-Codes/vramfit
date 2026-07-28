@@ -1,7 +1,7 @@
 # ADR-0011: Run logs as artifacts, and one error root
 
-- **Status:** Proposed
-- **Date:** 2026-07-28
+- **Status:** Accepted
+- **Date:** 2026-07-28 (accepted 2026-07-28)
 
 ## Context
 
@@ -22,7 +22,7 @@ a foreign exception too eagerly.
 The human channel works: `typer.echo` progress lines and clean
 `error:` messages. The gap is the machine channel.
 
-## Decision (proposed)
+## Decision
 
 1. **Two channels, never mixed.** `typer.echo` stays the human
    channel. Machine events go to a **run log**: JSON Lines, one event

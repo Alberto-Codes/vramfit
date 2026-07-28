@@ -21,7 +21,7 @@ pytestmark = pytest.mark.unit
     ids=["pin", "infeasible", "artifact", "extra-missing"],
 )
 def test_every_quantfit_exception_inherits_the_root_and_its_legacy_base(
-    exc: type, legacy_base: type
+    exc: type[BaseException], legacy_base: type[BaseException]
 ) -> None:
     assert issubclass(exc, QuantfitError)
     assert issubclass(exc, legacy_base)

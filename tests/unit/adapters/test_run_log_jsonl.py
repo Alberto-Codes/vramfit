@@ -38,3 +38,15 @@ def test_events_append_across_adapter_instances(tmp_path) -> None:
 def test_emit_into_a_missing_directory_raises_os_error(tmp_path) -> None:
     with pytest.raises(OSError):
         JsonlRunLogFile(tmp_path / "nope" / "x.jsonl").emit("scan_started", {})
+
+
+def test_events_reach_disk_before_the_handle_closes(tmp_path) -> None:
+    # The black-box guarantee: a crash must not lose emitted events.
+    # structlog's PrintLogger flushes per line — pin it.
+    path = tmp_path / "scan.runlog.jsonl"
+    sink = JsonlRunLogFile(path)
+
+    sink.emit("scan_started", {})
+
+    assert path.stat().st_size > 0
+    assert read_run_log(path)[0]["event"] == "scan_started"

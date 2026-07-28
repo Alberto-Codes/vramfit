@@ -264,7 +264,8 @@ def _start_run(
 
     Raises:
         typer.Exit: With code 1 when the meter cannot be built — the
-            failure is echoed and logged as ``scan_halted``.
+            command echoes the failure and logs ``scan_halted`` with
+            ``cells_kept`` 0.
     """
     run_log.emit("scan_started", build)
     build_started = time.monotonic()
@@ -277,7 +278,12 @@ def _start_run(
         typer.echo(f"error: {exc}", err=True)
         run_log.emit(
             "scan_halted",
-            {"stage": "meter_build", "error": str(exc), "rss_hwm_gb": _rss_hwm_gb()},
+            {
+                "stage": "meter_build",
+                "error": str(exc),
+                "cells_kept": 0,
+                "rss_hwm_gb": _rss_hwm_gb(),
+            },
         )
         raise typer.Exit(code=1) from exc
     run_log.emit(
@@ -340,7 +346,8 @@ def scan(
     GPU 0 (parsed with the project size grammar, validated up front),
     keeping workspace free for activations and logits. Every run
     appends machine-readable events to ``--runlog`` (default beside
-    ``--out``) — the run log from ADR-0011. The meter
+    ``--out``) — the run log from ADR-0011, whose every halt event
+    carries the same ``cells_kept`` and memory fields. The meter
     refuses models whose groups fall off real devices — see the
     how-to for the current size limit.
 
@@ -440,7 +447,15 @@ def scan(
             f"error: {checkpoint_path}: {exc} — pass --no-resume to discard it",
             err=True,
         )
-        run_log.emit("scan_halted", {"stage": "checkpoint_load", "error": str(exc)})
+        run_log.emit(
+            "scan_halted",
+            {
+                "stage": "checkpoint_load",
+                "error": str(exc),
+                "cells_kept": 0,
+                "rss_hwm_gb": _rss_hwm_gb(),
+            },
+        )
         raise typer.Exit(code=1) from exc
 
     if done:
@@ -454,7 +469,15 @@ def scan(
         sink.save(map_)
     except (ValueError, OSError) as exc:
         typer.echo(f"error: {out}: {exc}", err=True)
-        run_log.emit("scan_halted", {"stage": "map_write", "error": str(exc)})
+        run_log.emit(
+            "scan_halted",
+            {
+                "stage": "map_write",
+                "error": str(exc),
+                "cells_kept": len(measurements),
+                "rss_hwm_gb": _rss_hwm_gb(),
+            },
+        )
         raise typer.Exit(code=1) from exc
     run_log.emit(
         "scan_finished",
