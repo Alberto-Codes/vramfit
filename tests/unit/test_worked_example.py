@@ -72,8 +72,9 @@ def test_nemotron_config_pins_the_documented_parameter_arithmetic() -> None:
 
     # docs/explanation/vram-budget.md: 80 blocks, ~49B parameters.
     assert len(config["block_configs"]) == 80
-    # ADR-0010: 49.87B parameters, ~23.2 GiB at uniform 4-bit — over
-    # both measured weight budgets (18.94 / 20.47 GiB).
+    # 49.87B parameters, ~23.2 GiB at uniform 4-bit — over both
+    # measured weight budgets (18.94 / 20.47 GiB) per
+    # docs/explanation/vram-budget.md and ADR-0010 on main.
     assert params == pytest.approx(49.87e9, rel=0.001)
     assert uniform_4bit_gib == pytest.approx(23.2, abs=0.1)
     assert uniform_4bit_gib > 20.47

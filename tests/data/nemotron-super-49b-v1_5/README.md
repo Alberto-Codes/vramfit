@@ -7,7 +7,7 @@ fetched 2026-07-28. It is the north-star target's real geometry
 49 with attention, 64 heads, hidden size 8192.
 
 The worked-example integration test
-(`tests/integration/test_worked_example.py`) checks the stable numbers
+(`tests/unit/test_worked_example.py`) checks the stable numbers
 in [VRAM budget math](../../../docs/explanation/vram-budget.md) against
 this file. Re-fetch only if NVIDIA revises the checkpoint, and update
 the docs in the same change.
