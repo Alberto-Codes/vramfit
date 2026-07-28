@@ -1,16 +1,17 @@
 ---
-status: sketch
+status: draft
 ---
 
 # How to fit a model to a VRAM budget
 
-> **Status: sketch** — `quantfit plan` is not implemented; this records the
-> intended workflow.
+> **Status: draft** — `quantfit plan` and `quantfit budget` are implemented
+> and tested. No recipe has been packed and served yet, so the
+> quality-review advice below is reasoned, not measured.
 
 ## Goal
 
 Turn a sensitivity map into a mixed-precision recipe that lands a model under
-a hard VRAM ceiling with acceptable quality loss.
+a hard VRAM ceiling with acceptable damage.
 
 ## Work out the real budget
 

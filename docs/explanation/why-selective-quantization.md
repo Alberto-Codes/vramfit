@@ -4,8 +4,9 @@ status: draft
 
 # Why selective quantization
 
-> **Status: draft** — the reasoning is well-grounded in published work; our
-> own measurements don't exist yet.
+> **Status: draft** — the reasoning is well-grounded in published work. Our
+> own measurements so far: a tiny-model scan shows ~50× sensitivity spread
+> between groups. The first full-size scan is in progress.
 
 ## The arithmetic that forces the issue
 
@@ -50,10 +51,11 @@ the project's core hypothesis, and the 49B-on-a-4090 benchmark is its test.
 - **llama.cpp k-quants + imatrix** — non-uniform layer recipes (heuristic)
   plus measured activation statistics applied *within* blocks.
 - **EXL2/exllamav2** — the closest relative: measured per-layer bitrate
-  mixing to hit a target average bpw. quantfit differs in target runtime
-  (vLLM), in optimizing against an explicit VRAM+KV budget instead of an
-  average bitrate, and in treating the measurement and recipe as standalone
-  artifacts.
+  mixing to hit a target average bpw. quantfit differs in target runtimes
+  (llama.cpp for the sub-4-bit benchmark path, vLLM at ≥4-bit, per
+  [ADR-0010](../adr/0010-sub-4-bit-serving-path.md)), in optimizing against
+  an explicit VRAM+KV budget instead of an average bitrate, and in treating
+  the measurement and recipe as standalone artifacts.
 - **AWQ / GPTQ** — calibration-aware weight quantization within a uniform
   target precision; quantfit's selectivity operates a level above (which
   precision per group), and can use these as the within-group method.
