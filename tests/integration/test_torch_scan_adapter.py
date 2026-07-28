@@ -72,6 +72,31 @@ class TestRtnQuantize:
         with pytest.raises(ValueError, match="block_size"):
             rtn_quantize_dequantize(torch.randn(4, 4), 4, block_size=0)
 
+    def test_input_tensor_is_never_modified(self) -> None:
+        torch.manual_seed(0)
+        for shape in ((64, 64), (17, 5)):
+            w = torch.randn(*shape)
+            before = w.clone()
+
+            result = rtn_quantize_dequantize(w, 2)
+
+            assert torch.equal(w, before)
+            assert result.data_ptr() != w.data_ptr()
+
+    @pytest.mark.gpu
+    def test_cuda_round_trip_returns_on_cuda_unmodified(self) -> None:
+        if not torch.cuda.is_available():
+            pytest.skip("no CUDA device")
+        torch.manual_seed(0)
+        w = torch.randn(64, 64, dtype=torch.bfloat16, device="cuda")
+        before = w.clone()
+
+        result = rtn_quantize_dequantize(w, 4)
+
+        assert result.device == w.device
+        assert result.dtype == w.dtype
+        assert torch.equal(w, before)
+
 
 class TestMeanKl:
     def test_identical_logits_diverge_by_zero(self) -> None:
@@ -190,6 +215,37 @@ class TestTorchDamageMeter:
         groups = _discover_groups(Gpt2Like(), "layer")
 
         assert set(groups) == {"transformer.h.0", "transformer.h.1"}
+
+    def test_max_memory_maps_cap_and_cpu_for_auto_only(self) -> None:
+        from quantfit.adapters.outbound.scan.meter import _max_memory
+
+        assert _max_memory("auto", 17 * 2**30) == {
+            0: 17 * 2**30,
+            "cpu": 999 * 2**30,
+        }
+        assert _max_memory("cpu", 17 * 2**30) is None
+        assert _max_memory("auto", None) is None
+
+    def test_groups_with_meta_parameters_are_refused(self) -> None:
+        # transformers exposes offloaded weights as meta tensors only on
+        # models large enough to engage accelerate dispatch, so the
+        # refusal is pinned directly against a stub with a meta param.
+        from quantfit.adapters.outbound.scan.meter import _reject_offloaded_groups
+
+        class PartlyOffloaded(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.resident = torch.nn.Linear(4, 4)
+                self.ghost = torch.nn.Module()
+                self.ghost.weight = torch.nn.Parameter(torch.empty(4, 4, device="meta"))
+
+        groups = {
+            "resident": ["resident.weight"],
+            "ghost": ["ghost.weight"],
+        }
+
+        with pytest.raises(ValueError, match=r"offloaded.*ghost"):
+            _reject_offloaded_groups(PartlyOffloaded(), groups)
 
     def test_layer_grouping_without_layer_structure_raises(self) -> None:
         from quantfit.adapters.outbound.scan.meter import _discover_groups

@@ -37,7 +37,9 @@ uv run quantfit scan nvidia/Llama-3_3-Nemotron-Super-49B-v1_5 \
 `--calibration` takes a plain UTF-8 text file. The north-star target
 ships custom modeling code, hence `--trust-remote-code`. Lower
 `--max-tokens` below the 131,072 default for large models — see the
-memory math below.
+memory math below. Pass `--gpu-memory` to cap GPU 0 model shards:
+without a cap, `auto` sharding packs the card full and leaves no
+workspace for activations.
 
 ## Resume
 
@@ -52,18 +54,21 @@ The fingerprint records provenance, not content. It cannot detect new
 weights or edited calibration text behind an unchanged path — do not
 change either between a crash and its resume.
 
-## Scanning a model that doesn't fit in VRAM
+## Scanning a model that doesn't fit in VRAM — not yet
 
-The interesting targets are exactly the models that don't fit. The v1
-meter loads the model with `--device auto`, which shards across GPU and
-system RAM (the reference box holds the 49B reference in its 124 GB).
-Reference distributions are computed once and cached on the CPU in
-float16 — roughly 0.25 GiB per 1024 calibration tokens at a 128k
-vocabulary. Budget `--max-tokens` against system RAM: at the 131,072
-default the cache costs ~32 GiB, which does not fit next to ~98 GiB of
-bf16 weights on the 124 GB reference box. Start the 49B target at
-`--max-tokens 32768` (~8 GiB cache). Streaming groups to the GPU one
-at a time is the planned optimization, not yet built.
+The v1 meter perturbs weights in place, which needs every quantizable
+group on a real device. `auto` sharding offloads overflow modules and
+exposes their weights as meta tensors — unperturbable, and a silent
+perturbation no-op would record zero damage. The meter therefore
+refuses to start when any group is offloaded, and names the groups.
+
+Consequence: today a scan needs the model's quantizable groups to fit
+on the card under `--gpu-memory`. The north-star 49B target does not
+fit, so its first scan waits on offload-aware perturbation (through
+accelerate's weights map) or group streaming — tracked in issue #16.
+The reference distributions still cache on the CPU — roughly 0.25 GiB
+per 1024 calibration tokens at a 128k vocabulary — so `--max-tokens`
+budgets against system RAM either way.
 
 ## Choosing calibration data
 

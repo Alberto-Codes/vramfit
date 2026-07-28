@@ -28,7 +28,19 @@ DAMAGES = {
 
 
 def install_meter(monkeypatch, meter) -> None:
-    monkeypatch.setattr(cli_scan, "_build_meter", lambda *args: meter)
+    def build(
+        model,
+        calibration,
+        *,
+        max_tokens,
+        group_by,
+        device,
+        trust_remote_code,
+        gpu_memory,
+    ):
+        return meter
+
+    monkeypatch.setattr(cli_scan, "_build_meter", build)
 
 
 def invoke_scan(tmp_path, *extra: str):
@@ -118,7 +130,7 @@ def test_no_resume_discards_a_stale_checkpoint(tmp_path, monkeypatch) -> None:
 
 
 def test_missing_scan_extra_reports_install_hint(tmp_path, monkeypatch) -> None:
-    def raise_extra_missing(*args):
+    def raise_extra_missing(*args, **kwargs):
         raise cli_scan.ScanExtraMissingError(cli_scan.INSTALL_HINT)
 
     monkeypatch.setattr(cli_scan, "_build_meter", raise_extra_missing)
@@ -130,7 +142,7 @@ def test_missing_scan_extra_reports_install_hint(tmp_path, monkeypatch) -> None:
 
 
 def test_backend_import_error_surfaces_as_itself(tmp_path, monkeypatch) -> None:
-    def raise_backend_error(*args):
+    def raise_backend_error(*args, **kwargs):
         raise ImportError("requires the SentencePiece library")
 
     monkeypatch.setattr(cli_scan, "_build_meter", raise_backend_error)
@@ -143,7 +155,7 @@ def test_backend_import_error_surfaces_as_itself(tmp_path, monkeypatch) -> None:
 
 
 def test_meter_build_failure_reports_error(tmp_path, monkeypatch) -> None:
-    def raise_value_error(*args):
+    def raise_value_error(*args, **kwargs):
         raise ValueError("calibration text yields 0 tokens")
 
     monkeypatch.setattr(cli_scan, "_build_meter", raise_value_error)
@@ -233,7 +245,7 @@ def test_checkpoint_write_failure_reports_a_clean_error(tmp_path, monkeypatch) -
 def test_missing_out_directory_exits_before_loading_the_model(
     tmp_path, monkeypatch
 ) -> None:
-    def explode(*args):
+    def explode(*args, **kwargs):
         raise AssertionError("the meter must not be built")
 
     monkeypatch.setattr(cli_scan, "_build_meter", explode)
@@ -288,3 +300,57 @@ def test_completed_checkpoint_reassembles_without_new_measurements(
     assert second.exit_code == 0, second.output
     assert meter.calls == calls_after_first
     assert load_sensitivity_map(out).model_id == "test/model"
+
+
+def test_gpu_memory_reaches_the_meter_as_bytes(tmp_path, monkeypatch) -> None:
+    received = {}
+
+    def record(model, calibration, *, gpu_memory, **kwargs):
+        received["gpu_memory"] = gpu_memory
+        return MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES), tokens=64)
+
+    monkeypatch.setattr(cli_scan, "_build_meter", record)
+
+    result, _ = invoke_scan(tmp_path, "--gpu-memory", "17GiB")
+
+    assert result.exit_code == 0, result.output
+    assert received["gpu_memory"] == 17 * 2**30
+
+
+def test_gpu_memory_defaults_to_no_cap(tmp_path, monkeypatch) -> None:
+    received = {}
+
+    def record(model, calibration, *, gpu_memory, **kwargs):
+        received["gpu_memory"] = gpu_memory
+        return MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES), tokens=64)
+
+    monkeypatch.setattr(cli_scan, "_build_meter", record)
+
+    result, _ = invoke_scan(tmp_path)
+
+    assert result.exit_code == 0, result.output
+    assert received["gpu_memory"] is None
+
+
+def test_malformed_gpu_memory_exits_with_usage_error(tmp_path, monkeypatch) -> None:
+    install_meter(
+        monkeypatch, MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES), tokens=64)
+    )
+
+    result, _ = invoke_scan(tmp_path, "--gpu-memory", "lots")
+
+    assert result.exit_code == 2
+    assert "--gpu-memory" in result.output
+
+
+def test_gpu_memory_without_auto_device_exits_with_usage_error(
+    tmp_path, monkeypatch
+) -> None:
+    install_meter(
+        monkeypatch, MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES), tokens=64)
+    )
+
+    result, _ = invoke_scan(tmp_path, "--gpu-memory", "17GiB", "--device", "cpu")
+
+    assert result.exit_code == 2
+    assert "requires --device auto" in result.output

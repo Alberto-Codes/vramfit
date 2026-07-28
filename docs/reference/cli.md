@@ -92,6 +92,11 @@ quantfit scan MODEL
   --trust-remote-code    Allow model repos with custom code (the
                          north-star target needs this)
   --resume / --no-resume Continue from the checkpoint file  [default: resume]
+  --gpu-memory SIZE      Byte cap on GPU 0 model shards (e.g. 17GiB),
+                         parsed with the same grammar as --vram.
+                         Requires --device auto. Keeps workspace free
+                         for activations and quantization
+                         [default: none]
 ```
 
 Every finished (group x precision) cell lands in a checkpoint file next
@@ -103,11 +108,17 @@ The fingerprint identifies provenance, not content: do not swap weights
 or calibration text under an unchanged path between resumes.
 `--no-resume` deletes the checkpoint first and says so.
 
+The scan refuses a model whose quantizable groups get offloaded off
+the card — offloaded weights cannot be perturbed, and measuring them
+would record zero damage. Raise `--gpu-memory` or use a smaller model.
+
 Exit codes: 1 when the scan extra is missing, the model or calibration
-cannot load, the checkpoint belongs to a different scan, a measurement
-fails (the checkpoint keeps completed cells), a checkpoint write fails,
-or the map cannot be written. Exit 2 on malformed `--precisions` or
-`--group-by`, or a missing `--out` directory.
+cannot load, sharding offloaded a quantizable group, the checkpoint
+belongs to a different scan, a measurement fails (the checkpoint keeps
+completed cells), a checkpoint write fails, or the map cannot be
+written. Exit 2 on malformed `--precisions`, `--group-by`, or
+`--gpu-memory`, a `--gpu-memory` without `--device auto`, or a missing
+`--out` directory.
 
 ## `quantfit pack` *(planned)*
 
