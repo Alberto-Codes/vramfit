@@ -61,12 +61,18 @@ Hooks that run on each commit:
 | uv-lock | Lockfile is in sync with pyproject.toml |
 | uv-secure | Known vulnerabilities in the lockfile |
 | ty | Type checking |
-| pytest | Test suite (GPU tests excluded) |
+| pytest | Fast suite: unit + contract (hermetic) |
 | import-linter | Hex layers, domain purity, no heavy ML deps (ADR-0008) |
 | loc-check | 300/320 code-line cap per module |
 | docvet | Docstring quality on staged files |
 
-All hooks must pass before the commit succeeds.
+All hooks must pass before the commit succeeds. A **pre-push** hook
+additionally runs the full suite (thorough hypothesis profile, e2e via
+subprocess, 90% coverage gate). Install both stages:
+
+```bash
+pre-commit install --hook-type pre-commit --hook-type pre-push
+```
 
 ## Quality Gates
 
@@ -102,17 +108,19 @@ uv run ruff format .
 ## Testing
 
 ```bash
-uv run pytest                  # All tests (GPU tests skip without CUDA)
-uv run pytest -m unit          # Unit tests only
-uv run pytest -m integration   # Integration tests only
-uv run pytest -m gpu           # CUDA-required tests only
-uv run pytest -m "not slow"    # Skip slow tests
+uv run pytest                  # Default: fast suite (unit + contract)
+uv run pytest -m e2e           # Console-script flows via subprocess
+uv run pytest -m contract      # Verified-fake port suites only
 uv run pytest -k test_name     # Single test by name
+HYPOTHESIS_PROFILE=thorough uv run pytest -m "not gpu and not integration"
 ```
 
 Test naming convention: `test_<what>_<condition>_<expected_result>`
 
-Markers: `unit` (fast, no GPU), `integration` (real weights, slower), `gpu` (requires CUDA), `slow`.
+Tiers per [ADR-0009](docs/adr/0009-testing-strategy.md): `unit` (pure
+logic + hypothesis properties), `contract` (verified fakes — required
+for every new port), `integration` (real resources, resource-gated),
+`e2e` (console script), plus `gpu`/`slow` axes.
 
 GPU-dependent tests must carry the `gpu` marker and skip cleanly when CUDA is
 absent -- CI runners have no GPU, so anything unmarked must pass on CPU.

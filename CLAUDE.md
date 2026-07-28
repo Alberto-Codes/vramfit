@@ -83,7 +83,7 @@ uv run quantfit --help # CLI
 uv run ruff check .
 uv run ruff format --check .
 uv run ty check
-uv run pytest -m "not gpu"     # CI enforces 90% coverage
+uv run pytest                  # fast suite; push gate adds thorough+e2e+cov
 uv run lint-imports            # hex layers + domain purity + no-torch (ADR-0008)
 uv run python scripts/check_loc.py src   # 300/320 code-line cap
 uv run docvet check --all
@@ -91,9 +91,16 @@ uv run docvet check --all
 
 ## Testing
 
-- Markers: `unit` (fast, no GPU), `integration` (real weights), `gpu`
-  (requires CUDA), `slow`.
-- GPU tests must skip cleanly without CUDA — CI has no GPU.
+Pyramid per ADR-0009, rules in `.claude/rules/pytest.md`:
+
+- Default run = `unit` + `contract` (hermetic); `integration`/`e2e`/
+  `gpu`/`slow` are deselected by addopts.
+- **Every new port requires a verified-fake contract suite**
+  (`tests/contract/`, fakes in `tests/fakes.py`).
+- Solver invariants get hypothesis properties (`tests/strategies.py`);
+  profiles `fast`/`thorough` via `HYPOTHESIS_PROFILE`.
+- Pre-commit runs the fast suite; pre-push runs thorough + e2e +
+  coverage. GPU tests must skip cleanly without CUDA.
 - Test naming: `test_<what>_<condition>_<expected_result>`.
 
 ## Key Constraints
@@ -110,5 +117,5 @@ uv run docvet check --all
 - Single default branch `main`; feature branches `feat/<scope>-<description>`
   squash-merge via draft PRs.
 - Conventional commits: `type(scope): description`.
-  Scopes: scan, plan, pack, cli, config, docs.
+  Scopes: scan, plan, pack, cli, config, docs, arch, domain, ports, adapters.
 - No `Co-Authored-By` trailers.

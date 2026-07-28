@@ -159,16 +159,22 @@ include = ["src", "tests"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [
-    "unit: Unit tests (fast, isolated, no GPU)",
-    "integration: Integration tests (real model weights, slower)",
+    "unit: Unit tests (fast, isolated, no GPU); includes hypothesis properties",
+    "contract: Verified-fake port suites — real and fake adapters proven equivalent",
+    "integration: Real external resources (model weights, GPU runtimes); resource-gated",
+    "e2e: Full stack through the console script via subprocess",
     "gpu: Tests that require a CUDA device",
     "slow: Slow-running tests",
 ]
+# Default run is the hermetic fast suite (unit + contract). Tier selection
+# per ADR-0009; a CLI -m flag overrides this.
 addopts = [
     "-ra",
     "--strict-markers",
     "--strict-config",
     "--showlocals",
+    "-m",
+    "not gpu and not integration and not e2e and not slow",
 ]
 
 # --------------------------------------------------------------------------- #
@@ -225,6 +231,7 @@ forbidden_modules = ["torch", "transformers", "safetensors", "vllm"]
 [dependency-groups]
 dev = [
     "docvet>=1.15",
+    "hypothesis>=6.100",
     "import-linter>=2.11",
     "pytest>=9.0",
     "pytest-cov>=7.0",

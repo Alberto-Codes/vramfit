@@ -1,3 +1,7 @@
+# Commit stage = fast hermetic gates; push stage = full suite with
+# thorough hypothesis profile, e2e, and the coverage gate (ADR-0009).
+default_stages: [pre-commit]
+
 repos:
   - repo: https://github.com/adrienverge/yamllint
     rev: v1.38.0
@@ -36,11 +40,22 @@ repos:
         pass_filenames: false
 
       - id: pytest
-        name: pytest
-        entry: uv run pytest -m "not gpu" --tb=short -q
+        name: pytest (fast, unit+contract)
+        entry: uv run pytest --tb=short -q
         language: system
         types: [python]
         pass_filenames: false
+
+      - id: pytest-push
+        name: pytest full (thorough + e2e + coverage)
+        entry: >-
+          env HYPOTHESIS_PROFILE=thorough
+          uv run pytest -m "not gpu and not integration"
+          --cov=quantfit --tb=short -q
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]
 
       - id: lint-imports
         name: import-linter
