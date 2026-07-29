@@ -32,9 +32,9 @@ VRAM budget:
    recipe damage against the solver's prediction
    ([ADR-0006](docs/adr/0006-sensitivity-metric.md)).
 4. **Pack** — apply the recipe and emit a checkpoint the target runtime can
-   actually serve (GGUF for the sub-4-bit benchmark path, per
-   [ADR-0010](docs/adr/0010-sub-4-bit-serving-path.md); a vLLM backend for
-   ≥4-bit recipes is planned).
+   actually serve. GGUF covers the sub-4-bit benchmark path, per
+   [ADR-0010](docs/adr/0010-sub-4-bit-serving-path.md). A vLLM backend for
+   ≥4-bit recipes is planned.
 
 **The goal:** NVIDIA **Nemotron Super 49B running on a 24 GB RTX 4090** — a
 model that does not fit today, made to fit selectively, with measured (not
