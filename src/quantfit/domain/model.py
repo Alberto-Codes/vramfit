@@ -281,8 +281,10 @@ class PlanMeta:
         solver (str): Name of the solver that produced the recipe.
         pins (Mapping[str, int]): User pin patterns, verbatim; later
             patterns override earlier ones.
-        format_overhead (float): Quantization-format overhead fraction
-            used for size predictions.
+        format_overhead (float): Overhead fraction used for size
+            predictions — a residual over the runtime's effective-bits
+            table, or the full quantization-format cost without one
+            (ADR-0014).
         trace (tuple[TraceStep, ...]): Ordered downgrade steps explaining
             the recipe.
 

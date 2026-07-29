@@ -15,7 +15,9 @@ exit. Domain failures surface through one catch of the
 Malformed options — including a NaN or infinite overhead — are
 usage errors, rejected before any work starts. ``plan`` records
 its ``--runtime`` in the recipe and reports what the runtime
-filter drops (ADR-0013).
+filter drops (ADR-0013). ``--format-overhead`` defaults per size
+model (ADR-0014): the residual when the runtime has an
+effective-bits table, the scalar otherwise.
 
 Examples:
     Show the installed version:
@@ -56,7 +58,11 @@ from quantfit.domain.budget import (
 )
 from quantfit.domain.errors import QuantfitError
 from quantfit.domain.runtime import LLAMA_CPP, RUNTIME_CAPABILITIES
-from quantfit.domain.solver import DEFAULT_FORMAT_OVERHEAD, solve
+from quantfit.domain.solver import (
+    DEFAULT_FORMAT_OVERHEAD,
+    DEFAULT_RESIDUAL_OVERHEAD,
+    solve,
+)
 from quantfit.ports.outbound import (
     ModelShapeSource,
     RecipeSink,
@@ -224,9 +230,14 @@ def plan(
         "recipe.json"
     ),
     format_overhead: Annotated[
-        float,
-        typer.Option(min=0.0, help="Quantization-format overhead fraction."),
-    ] = DEFAULT_FORMAT_OVERHEAD,
+        float | None,
+        typer.Option(
+            min=0.0,
+            help="Overhead fraction on top of the size model. Default: "
+            f"{DEFAULT_RESIDUAL_OVERHEAD} when the runtime has an "
+            f"effective-bits table, {DEFAULT_FORMAT_OVERHEAD} otherwise.",
+        ),
+    ] = None,
     runtime: Annotated[
         str,
         typer.Option(help="Target runtime the recipe is planned for."),
@@ -237,11 +248,14 @@ def plan(
     The candidate precisions come from the map, filtered to what
     ``--runtime`` (default llama.cpp) can serve (ADR-0013) — the
     recipe records the runtime for the pack step, and the command
-    reports any scanned precisions the runtime dropped. Solver
-    rejections (bad pins, an infeasible budget, a runtime serving
-    nothing) surface through one catch of the `QuantfitError` root.
-    The solver's own messages carry the details, including the
-    infeasibility gap.
+    reports any scanned precisions the runtime dropped. Sizes are
+    predicted at the runtime's effective bits when it has a table
+    (ADR-0014), and an omitted ``--format-overhead`` resolves to
+    the size model's default — the recipe records the resolved
+    value. Solver rejections (bad pins, an infeasible budget, a
+    runtime serving nothing) surface through one catch of the
+    `QuantfitError` root. The solver's own messages carry the
+    details, including the infeasibility gap.
 
     Raises:
         typer.BadParameter: If a ``--pin`` is not of the form
@@ -263,7 +277,7 @@ def plan(
     # typer's min=0.0 lets NaN and inf through (nan < 0.0 is False),
     # and the solver's own guard is a plain ValueError — reject both
     # here as the usage error they are.
-    if not math.isfinite(format_overhead):
+    if format_overhead is not None and not math.isfinite(format_overhead):
         raise typer.BadParameter(
             f"--format-overhead: must be finite, got {format_overhead}"
         )

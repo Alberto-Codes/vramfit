@@ -26,7 +26,7 @@ that produced it.
     "predicted_damage": 0.0871,
     "solver": "greedy-damage-per-byte",
     "pins": {"model.layers.0.*": 8},
-    "format_overhead": 0.05,
+    "format_overhead": 0.005,
     "trace": [
       {
         "step": 1,
@@ -60,9 +60,12 @@ that produced it.
   filtered its candidates to this runtime's capability, and pack
   backends refuse a recipe recorded for a runtime they do not serve.
 - **`assignments`** — every group from the sensitivity map appears exactly
-  once, in map order. `bytes` includes quantization-format overhead
-  (scales, zero-points), and `damage` is the *measured* value at the assigned
-  precision — an all-8-bit recipe still carries the measured 8-bit damage.
+  once, in map order. `bytes` is the predicted size at the runtime's
+  effective bits when the runtime has a table
+  ([ADR-0014](../adr/0014-per-type-effective-bits.md)), at nominal bits
+  otherwise — format overhead included either way. `damage` is the
+  *measured* value at the assigned precision — an all-8-bit recipe still
+  carries the measured 8-bit damage.
 - **`predicted_damage`** — sum of per-group damage at the chosen precisions.
   A *prediction* from marginal measurements, not a guarantee — the pack step's
   post-quantization eval is the ground truth.
@@ -73,8 +76,10 @@ that produced it.
   provenance. Patterns are case-sensitive `fnmatch` globs against the full
   group name, and later pins override earlier ones.
 - **`format_overhead`** — the overhead fraction used for every size
-  prediction. Together with the map, the pins, and the recorded weight
-  budget, it makes the recipe reproducible.
+  prediction, resolved from the size model's default when `--format-overhead`
+  is not given (0.005 with an effective-bits table, 0.05 without). Together
+  with the map, the pins, the runtime, and the recorded weight budget, it
+  makes the recipe reproducible.
 - **`trace`** — the solver's ordered downgrade log. Replaying it from the
   starting state (all groups at highest precision, pinned groups at their
   pin) reproduces the assignments exactly. This is the human-readable

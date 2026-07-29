@@ -40,9 +40,9 @@ The pack step drives external tools — none ship with quantfit:
 ## Basic invocation
 
 ```bash
-uv run quantfit pack recipe-4GiB-fo10.json \
+uv run quantfit pack recipe-4GiB.json \
   --llama-cpp ~/llama.cpp \
-  --out qwen2.5-3b-recipe-4GiB-fo10.gguf \
+  --out qwen2.5-3b-recipe-4GiB.gguf \
   --threads 14
 ```
 
@@ -57,8 +57,8 @@ the same model reuses the base GGUF and skips the conversion.
 The human channel prints the re-check line:
 
 ```
-packed 37 groups -> qwen2.5-3b-recipe-4GiB-fo10.gguf (1.98 GiB),
-weight budget 2.00 GiB, margin 17.23 MiB under
+packed 37 groups -> qwen2.5-3b-recipe-4GiB.gguf (1.99 GiB),
+weight budget 2.00 GiB, margin 5.26 MiB under
 ```
 
 The run log (`<stem>.runlog.jsonl`) carries the same run as machine
@@ -66,17 +66,18 @@ events — `size_checked` records `packed_bytes`,
 `weight_budget_bytes`, `margin_bytes`, and `fits`. An over-budget
 pack exits 1 and keeps the file, so you can inspect what overflowed.
 
-## Choosing `--format-overhead` at plan time
+## Sizes at plan time
 
-Real bytes exceed the nominal-bit prediction because GGUF types
-spend 6-31 % more effective bits than their nominal precision
-(ADR-0012). Measured on Qwen2.5-3B: a recipe planned with the 0.05
-default packed to 2.05 GiB against a 2.00 GiB weight budget — 56 MiB
-over, exit 1. Re-planning the same map with `--format-overhead 0.10`
-produced a recipe that packed to 1.98 GiB, 17 MiB under. Until the
-solver consumes per-type effective-bit tables (open question in
-ADR-0012), plan GGUF-bound recipes with `--format-overhead 0.10` for
-Q8_0/Q4_K mixes.
+The solver prices llama.cpp recipes at per-type effective bits
+([ADR-0014](../adr/0014-per-type-effective-bits.md)): Q4_K costs 4.5
+bits/weight in the prediction, exactly what `llama-quantize` writes.
+Leave `--format-overhead` alone — the 0.005 default covers the file
+metadata and unquantized tensors the per-type table cannot see. The
+hand-tuned overheads this section used to recommend (0.10, then
+0.105 for 5-bit mixes) are obsolete: they were one scalar chasing
+the mix-weighted drift of whatever types the solver picked, and the
+6/5/4 mix overflowed the value that fit its predecessor. The re-check
+above stays as the backstop.
 
 ## Evaluating the packed model
 
