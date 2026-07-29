@@ -377,6 +377,43 @@ def test_scan_writes_a_run_log_with_the_full_event_story(tmp_path, monkeypatch) 
     assert all(e["quantfit_runlog"] == 1 for e in events)
 
 
+def test_meter_built_reports_null_offload_for_meters_without_the_notion(
+    tmp_path, monkeypatch
+) -> None:
+    from quantfit.adapters.outbound.run_log_jsonl import read_run_log
+
+    install_meter(
+        monkeypatch, MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES), tokens=64)
+    )
+
+    result, _ = invoke_scan(tmp_path)
+
+    assert result.exit_code == 0, result.output
+    events = read_run_log(tmp_path / "sensitivity.runlog.jsonl")
+    built = next(e for e in events if e["event"] == "meter_built")
+    # Null, not zero: the fake has no offload notion, and a renamed
+    # attribute on the torch meter must show as absence, never as
+    # "nothing offloaded".
+    assert built["offloaded_groups"] is None
+
+
+def test_meter_built_reports_the_offloaded_group_count(tmp_path, monkeypatch) -> None:
+    from quantfit.adapters.outbound.run_log_jsonl import read_run_log
+
+    class OffloadAwareFake(MemoryDamageMeter):
+        offloaded_group_count = 1
+
+    meter = OffloadAwareFake(specs=SPECS, damages=dict(DAMAGES), tokens=64)
+    install_meter(monkeypatch, meter)
+
+    result, _ = invoke_scan(tmp_path)
+
+    assert result.exit_code == 0, result.output
+    events = read_run_log(tmp_path / "sensitivity.runlog.jsonl")
+    built = next(e for e in events if e["event"] == "meter_built")
+    assert built["offloaded_groups"] == 1
+
+
 def test_halted_scan_logs_the_failing_cell(tmp_path, monkeypatch) -> None:
     from quantfit.adapters.outbound.run_log_jsonl import read_run_log
 

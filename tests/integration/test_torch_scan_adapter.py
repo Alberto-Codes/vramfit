@@ -226,27 +226,6 @@ class TestTorchDamageMeter:
         assert _max_memory("cpu", 17 * 2**30) is None
         assert _max_memory("auto", None) is None
 
-    def test_groups_with_meta_parameters_are_refused(self) -> None:
-        # transformers exposes offloaded weights as meta tensors only on
-        # models large enough to engage accelerate dispatch, so the
-        # refusal is pinned directly against a stub with a meta param.
-        from quantfit.adapters.outbound.scan.meter import _reject_offloaded_groups
-
-        class PartlyOffloaded(torch.nn.Module):
-            def __init__(self) -> None:
-                super().__init__()
-                self.resident = torch.nn.Linear(4, 4)
-                self.ghost = torch.nn.Module()
-                self.ghost.weight = torch.nn.Parameter(torch.empty(4, 4, device="meta"))
-
-        groups = {
-            "resident": ["resident.weight"],
-            "ghost": ["ghost.weight"],
-        }
-
-        with pytest.raises(ValueError, match=r"offloaded.*ghost"):
-            _reject_offloaded_groups(PartlyOffloaded(), groups)
-
     def test_poisoned_meter_refuses_measure_recipe(self, tiny_meter) -> None:
         tiny_meter._poisoned = True
         recipe = {spec.name: 8 for spec in tiny_meter.groups()}

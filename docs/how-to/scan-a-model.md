@@ -54,21 +54,27 @@ The fingerprint records provenance, not content. It cannot detect new
 weights or edited calibration text behind an unchanged path — do not
 change either between a crash and its resume.
 
-## Scanning a model that doesn't fit in VRAM — not yet
+## Scanning a model that doesn't fit in VRAM
 
-The v1 meter perturbs weights in place, which needs every quantizable
-group on a real device. `auto` sharding offloads overflow modules and
-exposes their weights as meta tensors — unperturbable, and a silent
-perturbation no-op would record zero damage. The meter therefore
-refuses to start when any group is offloaded, and names the groups.
+Models larger than the card scan through accelerate's weights map
+([ADR-0015](../adr/0015-offload-aware-scanning.md)). Under
+`--gpu-memory`, `auto` sharding keeps overflow weights in host RAM,
+and the meter perturbs those weights where they live. The forward
+hooks stream the perturbed values to the GPU each pass, so damage
+numbers for offloaded groups are exact. The run log's `meter_built`
+event reports `offloaded_groups`.
 
-Consequence: today a scan needs the model's quantizable groups to fit
-on the card under `--gpu-memory`. The north-star 49B target does not
-fit, so its first scan waits on offload-aware perturbation (through
-accelerate's weights map) or group streaming — tracked in issue #16.
-The reference distributions still cache on the CPU — roughly 0.25 GiB
-per 1024 calibration tokens at a 128k vocabulary — so `--max-tokens`
-budgets against system RAM either way.
+Two limits remain. Weights offloaded beyond host RAM (disk spill)
+are refused at construction — size `--gpu-memory` and system RAM so
+the model fits both. And expect offloaded cells to run slower: every
+forward pass streams the offloaded weights over PCIe. On the
+north-star 49B at a 17 GiB cap, one 2048-token forward takes ~9 s,
+so a 32,768-token cell costs ~145 s.
+
+The reference distributions still cache on the CPU — roughly
+0.25 GiB per 1024 calibration tokens at a 128k vocabulary — so
+`--max-tokens` budgets against system RAM. At 49B scale the floor is
+the offloaded weights (~76 GB) plus those distributions.
 
 ## Reading the run log
 

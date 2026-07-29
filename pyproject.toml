@@ -45,6 +45,9 @@ dependencies = [
 # the plan step stay importable without torch.
 scan = [
     "accelerate>=1.0",
+    # Direct import in the scan adapter (shard restore, ADR-0015) —
+    # declared, not left to the transformers transitive closure.
+    "safetensors>=0.4",
     "torch>=2.4",
     # The floor is where from_pretrained's dtype kwarg landed — older
     # versions ignore it silently and load fp32 at twice the memory.
@@ -198,7 +201,9 @@ include = [
     "src/quantfit/adapters/outbound/scan/**",
     "tests/conftest.py",
     "tests/contract/test_damage_meter_contract.py",
+    "tests/integration/test_offload.py",
     "tests/integration/test_torch_scan_adapter.py",
+    "tests/unit/adapters/test_scan_offload.py",
 ]
 
 [tool.ty.overrides.rules]
@@ -282,6 +287,7 @@ forbidden_modules = ["torch", "transformers", "accelerate", "safetensors", "vllm
 ignore_imports = [
     "quantfit.adapters.outbound.scan.* -> torch",
     "quantfit.adapters.outbound.scan.* -> transformers",
+    "quantfit.adapters.outbound.scan.* -> safetensors",
 ]
 
 # --------------------------------------------------------------------------- #

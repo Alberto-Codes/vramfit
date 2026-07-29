@@ -34,6 +34,52 @@ CALIBRATION_TEXT = (
 ) * 40
 
 
+# GPU cap that forces `auto` sharding to offload most of the
+# offload-scale model while keeping its first layers on the card.
+OFFLOAD_GPU_CAP = 120 * 2**20
+
+
+@pytest.fixture(scope="session")
+def offload_model_dir(tmp_path_factory) -> Path:
+    """A synthetic Llama checkpoint big enough to engage accelerate dispatch.
+
+    transformers collapses small models under a GPU cap to plain CPU
+    tensors — no hooks, no meta parameters (verified 2026-07-28 on
+    transformers 5.14). The offload path only exists at scale, so this
+    checkpoint carries ~310 MB of bf16 weights: under
+    ``OFFLOAD_GPU_CAP`` the overflow layers offload for real. Skips
+    when the scan extra is not installed.
+    """
+    torch = pytest.importorskip("torch", reason="scan extra not installed")
+    pytest.importorskip("transformers", reason="scan extra not installed")
+    from tokenizers import Tokenizer, models, pre_tokenizers, trainers
+    from transformers import (
+        LlamaConfig,
+        LlamaForCausalLM,
+        PreTrainedTokenizerFast,
+    )
+
+    directory = tmp_path_factory.mktemp("offload-model")
+    tokenizer = Tokenizer(models.BPE(unk_token="<unk>"))
+    tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel()
+    trainer = trainers.BpeTrainer(vocab_size=384, special_tokens=["<unk>"])
+    tokenizer.train_from_iterator([CALIBRATION_TEXT], trainer)
+    fast = PreTrainedTokenizerFast(tokenizer_object=tokenizer, unk_token="<unk>")
+    fast.save_pretrained(directory)
+    config = LlamaConfig(
+        vocab_size=512,
+        hidden_size=1024,
+        intermediate_size=2816,
+        num_hidden_layers=12,
+        num_attention_heads=8,
+        num_key_value_heads=4,
+        max_position_embeddings=4096,
+    )
+    torch.manual_seed(0)
+    LlamaForCausalLM(config).to(torch.bfloat16).save_pretrained(directory)
+    return directory
+
+
 @pytest.fixture(scope="session")
 def tiny_model_dir(tmp_path_factory) -> Path:
     """A tiny random Llama checkpoint with a trained tokenizer, built offline.

@@ -127,12 +127,16 @@ The fingerprint identifies provenance, not content: do not swap weights
 or calibration text under an unchanged path between resumes.
 `--no-resume` deletes the checkpoint first and says so.
 
-The scan refuses a model whose quantizable groups get offloaded off
-the card — offloaded weights cannot be perturbed, and measuring them
-would record zero damage. Raise `--gpu-memory` or use a smaller model.
+Groups that `auto` sharding offloads to host RAM measure through
+accelerate's weights map (ADR-0015) — `meter_built` reports the count
+as `offloaded_groups`. The scan refuses a model whose weights fall
+beyond host RAM (disk spill) — an unperturbable weight would record
+zero damage. Raise `--gpu-memory`, free host RAM, or use a smaller
+model.
 
 Exit codes: 1 when the scan extra is missing, the model or calibration
-cannot load, sharding offloaded a quantizable group, the checkpoint
+cannot load, sharding offloaded a quantizable group beyond host RAM,
+the checkpoint
 belongs to a different scan, a measurement fails (the checkpoint keeps
 completed cells), a checkpoint write fails, or the map cannot be
 written. Exit 2 on malformed `--precisions`, `--group-by`, or
@@ -163,6 +167,11 @@ quantfit validate RECIPE
   --runlog PATH          Run-log path (JSONL)
                          [default: <recipe stem>.validation.runlog.jsonl]
 ```
+
+With offloaded groups, the whole-recipe pass restores their originals
+from the model's safetensors shards (ADR-0015), so `--model` must
+point at a local safetensors directory — a bare hub id is refused
+before any weight changes.
 
 Use the scan's calibration file and token budget — damage values are
 only comparable within one calibration set. The command refuses a
