@@ -339,7 +339,7 @@ it.
 One more contributor surfaced the same evening: the 32,768-token
 convergence re-scan showed the 8,192-token map this recipe was
 planned from had not converged — re-planning the same budget on the
-32k map flips 41 of 82 assignments
+32,768-token map flips 41 of 82 assignments
 ([ADR-0006](../adr/0006-sensitivity-metric.md)). The imatrix
 remains the measured dominant cause. Map quality joins the
 candidate list for the residual 0.26 PPL against same-conditions

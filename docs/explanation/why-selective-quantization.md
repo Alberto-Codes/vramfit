@@ -190,9 +190,10 @@ the 4-bit spread shrank from ~2,500× to ~360× — while the top of the
 stack *rose* (layer 74's 2-bit cell 3.7×) and the qualitative shape
 held (the U-curve, the 2-bit worst set of layer 79 and the output
 head, layer 0 as the 4-bit worst). Re-planning the same budget on
-the 32k map flips 41 of 82 assignments. Treat the 8k numbers quoted
-above as the pilot they turned out to be; the convergence
-measurement lives in [ADR-0006](../adr/0006-sensitivity-metric.md).
+the 32,768-token map flips 41 of 82 assignments. Treat the
+8,192-token numbers quoted above as the pilot they turned out to
+be; the convergence measurement lives in
+[ADR-0006](../adr/0006-sensitivity-metric.md).
 
 ## Why non-uniform works
 

@@ -53,9 +53,9 @@ Points fixed at acceptance (2026-07-28):
   flips 41 of 82 assignments. Rank order holds better than
   magnitudes (Spearman 0.99 at 8-bit down to 0.79 at 2-bit): the
   U-curve and the worst-group set survive, the middle reorders.
-  Whether 32,768 suffices stays open — it needs a point beyond 32k.
-  Until then the 131,072-token default stands and 8k-token maps are
-  pilots, not maps.
+  Whether 32,768 tokens suffices stays open — it needs a point
+  beyond 32,768. Until then the 131,072-token default stands and
+  8,192-token maps are pilots, not maps.
 - The "one task eval as ground truth" leg has not run as decided.
   What ran on the first packed 49B: a perplexity and whole-model-KL
   head-to-head, plus a now-mandatory post-pack smoke test (ADR-0012,
