@@ -153,7 +153,7 @@ def pack(
     Converts the checkpoint to an f16 base GGUF once (reusing an
     existing file), then drives ``llama-quantize`` with one type
     override per layer group. An ``lm_head`` group drives the output
-    head directly; without one the embedding assignment pins an
+    head directly. Without one the embedding assignment pins an
     untied head (ADR-0012). The ``--python-bin`` interpreter
     runs the convert script — the ``pack`` extra provisions its
     dependencies. The command re-checks the packed file's real bytes

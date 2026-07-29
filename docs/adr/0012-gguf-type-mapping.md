@@ -6,6 +6,10 @@
 - **Amendment (2026-07-28):** the type tables in decisions 1 and 3
   gain 6- and 5-bit rows (6→`Q6_K`, 5→`Q5_K`, base ftype
   5→`Q5_K_S`). Everything else stands.
+- **Amendment (2026-07-29):** decision 2 changes. An `lm_head`
+  group drives `--output-tensor-type` with its own assignment. The
+  embedding assignment stands in only when the scan measured no
+  head. The first untied-head pack (the 49B target) forced this.
 
 ## Context
 
@@ -53,16 +57,14 @@ scan does not produce one today. K-quants need no extra input.
 2. **One override per layer group.** The group `model.layers.<n>`
    becomes the override `blk\.<n>\.` = type, dots escaped. The group
    `model.embed_tokens` becomes `--token-embedding-type`. The group
-   `lm_head` — scanned on models with an untied head — becomes
-   `--output-tensor-type` with its own assignment. Without an
-   `lm_head` group the embedding assignment drives the output flag:
-   on a model that ties embeddings (Qwen2.5-3B does) the flag never
-   applies, and on an untied model without a scanned head the flag
-   keeps `--pure` from dropping the head to the recipe's floor with
-   no warning. The v1 backend rejects tensor-level groups with a
-   clear error. *(Amended 2026-07-29: the first untied-head pack —
-   the 49B target — showed the scan emits `lm_head` as its own
-   group, so the head's assignment is measured, not pinned.)*
+   `lm_head`, scanned on models with an untied head, becomes
+   `--output-tensor-type` with its own assignment (amendment
+   2026-07-29). Without an `lm_head` group the embedding assignment
+   drives the output flag. On a model that ties embeddings
+   (Qwen2.5-3B does) the flag never applies. On an untied model
+   with no scanned head the flag stops `--pure` from dropping the
+   head to the recipe's floor. The v1 backend rejects tensor-level
+   groups with a clear error.
 3. **The base type is the recipe's floor, applied with `--pure`.**
    The quantizer's positional type argument speaks ftype names, not
    tensor-type names, so the floor maps through a second table:
@@ -100,9 +102,9 @@ scan does not produce one today. K-quants need no extra input.
 ## Open questions
 
 - The i-quant table, once the scan emits an importance matrix.
-  **Escalated 2026-07-29:** the 49B head-to-head loss traced ~81 %
-  of its perplexity gap to the baseline's importance matrix (the
-  control experiment in
+  **Escalated 2026-07-29:** the control experiment traced ~81 % of
+  the 49B head-to-head perplexity gap to the baseline's importance
+  matrix (see
   [evaluating packed models](../explanation/evaluating-packed-models.md)).
   This question now gates the north-star claim.
 - Whether pack persists the toolchain's own output as a sidecar

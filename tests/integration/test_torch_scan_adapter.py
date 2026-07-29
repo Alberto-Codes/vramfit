@@ -201,6 +201,20 @@ class TestTorchDamageMeter:
 
         assert embed.bytes_fp16 == 512 * 32 * 2
 
+    def test_discovered_groups_match_the_pack_flag_literals(self, tiny_meter) -> None:
+        # The GGUF backend keys its embedding and output flags on these
+        # exact names (ADR-0012). If discovery ever renames them, the
+        # head silently falls to the --pure base type.
+        from quantfit.adapters.outbound.gguf.types import (
+            EMBEDDING_GROUP,
+            OUTPUT_GROUP,
+        )
+
+        names = {spec.name for spec in tiny_meter.groups()}
+
+        assert EMBEDDING_GROUP in names
+        assert OUTPUT_GROUP in names
+
     def test_gpt2_style_names_group_by_layer(self) -> None:
         from quantfit.adapters.outbound.scan.meter import _discover_groups
 

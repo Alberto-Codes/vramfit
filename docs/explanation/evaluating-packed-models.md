@@ -270,7 +270,7 @@ hard gate this is a negative result, recorded as such.
 
 Reading it honestly, in both directions:
 
-- **The control experiment locates the loss.** Our own uniform
+- **The control experiment locates the gap.** Our own uniform
   Q3_K_S, quantized from the same f16 base with default mixing and
   no imatrix, lands at 9.655 — within 352 bytes of the baseline's
   size, same tensor types, and still 1.12 PPL behind it. The
@@ -296,8 +296,8 @@ Reading it honestly, in both directions:
   transfer is what leaked.
 - **Size math held.** Every predicted byte count over-reserved by
   under half a percent, the budget re-check passed first try, and
-  the packed file serves the card the loop planned for. The loss is
-  a quality loss at equal size, not a budget failure.
+  the packed file serves the card the loop planned for. The defeat
+  is a quality gap at equal size, not a budget failure.
 
 ### The diagnostic that broke: a warning the meter cannot give
 
