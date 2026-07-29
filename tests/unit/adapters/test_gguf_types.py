@@ -12,6 +12,7 @@ from quantfit.adapters.outbound.gguf.types import (
     base_type,
     check_runtime,
     ggml_type_for,
+    output_tensor_type,
     tensor_overrides,
     token_embedding_type,
 )
@@ -140,6 +141,28 @@ def test_token_embedding_type_without_embedding_group_is_none() -> None:
     assert token_embedding_type(recipe) is None
 
 
+def test_output_tensor_type_with_lm_head_group_uses_its_own_assignment() -> None:
+    recipe = make_recipe(
+        ("model.embed_tokens", 8),
+        ("lm_head", 4),
+        ("model.layers.0", 2),
+    )
+
+    assert output_tensor_type(recipe) == "q4_k"
+
+
+def test_output_tensor_type_without_lm_head_group_pins_to_the_embedding() -> None:
+    recipe = make_recipe(("model.embed_tokens", 8), ("model.layers.0", 4))
+
+    assert output_tensor_type(recipe) == "q8_0"
+
+
+def test_output_tensor_type_without_either_group_is_none() -> None:
+    recipe = make_recipe(("model.layers.0", 4))
+
+    assert output_tensor_type(recipe) is None
+
+
 def test_tensor_overrides_escape_dots_so_layer_1_never_matches_layer_11() -> None:
     recipe = make_recipe(("model.layers.1", 8), ("model.layers.11", 4))
 
@@ -150,9 +173,10 @@ def test_tensor_overrides_escape_dots_so_layer_1_never_matches_layer_11() -> Non
     assert not re.search(patterns[0], "blk.11.attn_q.weight")
 
 
-def test_tensor_overrides_keep_recipe_order_and_skip_the_embedding() -> None:
+def test_tensor_overrides_keep_recipe_order_and_skip_the_flag_groups() -> None:
     recipe = make_recipe(
         ("model.embed_tokens", 8),
+        ("lm_head", 4),
         ("model.layers.0", 4),
         ("model.layers.1", 2),
     )

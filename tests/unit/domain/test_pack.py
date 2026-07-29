@@ -35,6 +35,7 @@ class TestPackResult:
             packed_bytes=100,
             base_type="Q4_K_S",
             token_embedding_type=None,
+            output_tensor_type=None,
             overrides=(TypeOverride(pattern=r"blk\.0\.", quant_type="q4_k"),),
         )
 
@@ -46,6 +47,7 @@ class TestPackResult:
                 packed_bytes=1,
                 base_type="Q4_K_S",
                 token_embedding_type="",
+                output_tensor_type=None,
                 overrides=(),
             )
 
@@ -58,6 +60,7 @@ class TestPackResult:
                 packed_bytes=1,
                 base_type="Q4_K_S",
                 token_embedding_type=None,
+                output_tensor_type=None,
                 overrides=(duplicate, shadowed),
             )
 
@@ -68,13 +71,28 @@ class TestPackResult:
                 packed_bytes=bad_bytes,
                 base_type="Q4_K_S",
                 token_embedding_type=None,
+                output_tensor_type=None,
                 overrides=(),
             )
 
     def test_empty_base_type_raises_value_error(self) -> None:
         with pytest.raises(ValueError, match="base_type"):
             PackResult(
-                packed_bytes=1, base_type="", token_embedding_type=None, overrides=()
+                packed_bytes=1,
+                base_type="",
+                token_embedding_type=None,
+                output_tensor_type=None,
+                overrides=(),
+            )
+
+    def test_empty_output_tensor_type_raises_value_error(self) -> None:
+        with pytest.raises(ValueError, match="output_tensor_type"):
+            PackResult(
+                packed_bytes=1,
+                base_type="Q4_K_S",
+                token_embedding_type=None,
+                output_tensor_type="",
+                overrides=(),
             )
 
     @pytest.mark.parametrize(
