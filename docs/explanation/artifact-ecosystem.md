@@ -5,8 +5,10 @@ status: sketch
 # The artifact ecosystem: how this work could outlive the tool
 
 > **Status: sketch** — strategy thinking recorded 2026-07-28, before the
-> 49B benchmark ran. Nothing here is committed work. The
-> triggers that would activate each phase are tracked in issue #11.
+> 49B benchmark ran. The benchmark ran 2026-07-29 and **lost** — see
+> [the fourth data point](evaluating-packed-models.md) and the gate
+> notes below. Nothing else here is committed work. The triggers that
+> would activate each phase are tracked in issue #11.
 
 ## The honest competitive picture
 
@@ -45,10 +47,12 @@ carries a portable recipe with provenance. quantfit's differentiated assets
    [ADR-0010](../adr/0010-sub-4-bit-serving-path.md)), with the
    validation pass checking our own additivity assumption on the way.
 
-The core experiment can still fail: heuristic recipes may prove
-near-optimal, and the additivity assumption may leak badly. If so, the
-published measurement infrastructure and curves remain the durable
-contribution.
+The core experiment can still fail. The additivity worry has since
+been measured and points the safe way (sub-additive by 2.05× and
+2.94× on the two validation passes). The competitive worry is live:
+the first head-to-head went to the heuristic-plus-imatrix quant. If
+the gap does not close, the published measurement infrastructure and
+curves remain the durable contribution.
 
 ## The thesis: make the artifact the standard, not the tool
 
@@ -104,26 +108,28 @@ one-command reproduction line. The closing move on every card:
 invitation that turns downloaders into publishers.
 
 This amends the phase ordering in one way: small models do not wait
-for the 49B result. The Qwen2.5-3B scan runs at ~23 s per cell on the
-reference box (148 cells ≈ one hour), so a measured Qwen-class packed
-model can be publication number one while the 49B pipeline finishes —
-offload-aware scanning landed
-([ADR-0015](../adr/0015-offload-aware-scanning.md)) and the first 49B
-scan runs at ~42 s per cell at 8,192 tokens. The 49B writeup remains the gate for
-everything *else* in the phase list.
+for the 49B result. The Qwen2.5-3B scan ran at ~23 s per cell on the
+reference box (148 cells ≈ one hour), and the first 49B scan ran at
+~41 s per cell at 8,192 tokens
+([ADR-0015](../adr/0015-offload-aware-scanning.md)). The 49B writeup
+remains the gate for everything *else* in the phase list.
 
-Hard gates before any publication:
+Hard gates before any publication, with their 2026-07-29 status:
 
 1. `quantfit pack` exists (the GGUF backend of
-   [ADR-0010](../adr/0010-sub-4-bit-serving-path.md)).
+   [ADR-0010](../adr/0010-sub-4-bit-serving-path.md)). **Satisfied** —
+   it packed the 49B, 169.7 MiB under budget, first try.
 2. The whole-recipe validation pass exists — publishing a recipe whose
    additivity assumption was never checked is the exact sin the
-   project criticizes.
+   project criticizes. **Satisfied** — `quantfit validate` has two
+   measurements, both sub-additive.
 3. The packed model measurably beats the size-matched heuristic GGUF,
    judged per [evaluating packed models](evaluating-packed-models.md).
    One bad debut kills a "measured beats folklore" brand permanently.
    If it loses, publish the negative result in the writeup instead of
-   the model.
+   the model. **This branch is live**: the 49B recipe lost to the
+   imatrix Q3_K_S, the negative result is published in the fourth
+   data point, and no model ships until the imatrix gap closes.
 
 Conventions to settle at publication time: a `quantfit` HF tag, the
 budget in the repo name (e.g. `-fit24gib`), and which artifacts sit

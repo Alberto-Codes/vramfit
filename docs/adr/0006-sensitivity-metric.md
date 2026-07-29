@@ -45,9 +45,15 @@ Points fixed at acceptance (2026-07-28):
 
 ## Open questions
 
-- How many calibration tokens before per-group KL stabilizes? Plan:
-  the first real scan reports per-group KL at 1/4, 1/2, and full
-  calibration, and the observed convergence sets the new default.
+- How many calibration tokens before per-group KL stabilizes? The
+  mechanism became a dedicated convergence scan: the 49B is
+  re-scanned at 32,768 tokens for comparison against its 8,192-token
+  map, and the observed convergence sets the new default.
+- The "one task eval as ground truth" leg has not run as decided.
+  What ran on the first packed 49B: a perplexity and whole-model-KL
+  head-to-head, plus a now-mandatory post-pack smoke test (ADR-0012,
+  second 2026-07-29 amendment). The task-eval leg (tier 3) stays
+  open.
 - How large a marginal-vs-whole-recipe gap invalidates a scan? The
   validation pass exists (`quantfit validate`). First measurement
   (2026-07-28, Qwen2.5-3B, the 6/5/4 mix, 32,768 tokens): measured

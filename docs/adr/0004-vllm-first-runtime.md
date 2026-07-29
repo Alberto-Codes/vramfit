@@ -1,10 +1,15 @@
 # ADR-0004: vLLM as the first target runtime
 
-- **Status:** Accepted
+- **Status:** Accepted, amended by
+  [ADR-0010](0010-sub-4-bit-serving-path.md)
 - **Date:** 2026-07-27
-- **Note (2026-07-28):** [ADR-0010](0010-sub-4-bit-serving-path.md)
-  resolves the open tension below: the benchmark serving path moves to
-  GGUF, and vLLM stays first for ≥4-bit recipes.
+- **Amendment (2026-07-28):** ADR-0010 resolves the open tension
+  below. The benchmark serving path moves to GGUF, and vLLM stays
+  first for ≥4-bit recipes.
+- **Amendment (2026-07-29):** the decision's build order inverted in
+  practice. The GGUF backend shipped first (ADR-0012) and packed the
+  49B target. No vLLM pack backend exists yet — it remains the plan
+  for ≥4-bit recipes.
 
 ## Context
 
@@ -35,7 +40,8 @@ runtime-neutral so a pack backend is additive.
   non-uniform schemes over W4A16, W8A16, W8A8, and the FP4 microscaling
   formats (NVFP4A16, MXFP4A16) — there are no 2/3-bit vLLM kernels. The
   candidate-precision set for vLLM recipes is effectively {8, 4-int, 4-fp}
-  until that changes; sub-4-bit recipes need the future GGUF backend.
+  until that changes. Sub-4-bit recipes run through the GGUF backend
+  (shipped, ADR-0012).
 - `quantfit pack` should drive [llm-compressor](https://github.com/vllm-project/llm-compressor)
   rather than reimplement checkpoint writing.
 - **Open tension with ADR-0003:** the north-star budget forces ~3.3–3.5

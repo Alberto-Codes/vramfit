@@ -5,8 +5,11 @@ status: draft
 # How to fit a model to a VRAM budget
 
 > **Status: draft** — `quantfit plan` and `quantfit budget` are implemented
-> and tested. No recipe has been packed and served yet, so the
-> quality-review advice below is reasoned, not measured.
+> and tested, and a planned 49B recipe packed to 20.30 GiB against a
+> 20.47 GiB weight budget and served
+> ([evidence](../explanation/evaluating-packed-models.md)). Run
+> `quantfit validate` between plan and pack — it measures the whole
+> recipe against the prediction.
 
 ## Goal
 
@@ -21,8 +24,9 @@ The card's sticker capacity is not the budget. Subtract:
   [VRAM budget math](../explanation/vram-budget.md)
 - **Runtime overhead** — CUDA context, workspace, fragmentation (~1–2 GiB)
 
-For a 24 GiB RTX 4090 serving a 49B model at moderate context, a realistic
-weight budget is roughly 18–19 GiB.
+For a 24 GiB RTX 4090 serving a 49B model at 16k context, the measured
+loop budgeted 20.47 GiB for weights (fp8 KV) and packed 20.30 GiB. At
+fp16 KV the budget drops to 18.94 GiB.
 
 ## Basic invocation
 

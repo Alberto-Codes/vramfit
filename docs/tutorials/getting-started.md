@@ -4,9 +4,9 @@ status: draft
 
 # Getting started
 
-> **Status: draft** — steps 1–3 (install, scan, plan) run against real
-> code today. Step 4 (pack) is design-stage, so the loop does not close
-> yet.
+> **Status: draft** — every step runs against real code. The same loop
+> ran end to end on the 49B target on 2026-07-29
+> ([evidence](../explanation/evaluating-packed-models.md)).
 
 This tutorial walks you from a clean checkout to a measured
 mixed-precision recipe, using a small model so the scan finishes in
@@ -64,11 +64,31 @@ its assigned precision, plus the downgrade trace explaining each
 choice. Try loosening or tightening `--vram` and watch the assignments
 move.
 
-## 4. Pack and serve *(not yet implemented)*
+## 4. Validate the recipe
 
-The pack step will apply the recipe and emit a checkpoint a runtime can
-serve — GGUF/llama.cpp first, per
-[ADR-0010](../adr/0010-sub-4-bit-serving-path.md). Until it lands, the
-recipe is the end of the loop. The
+The validation pass replays the whole recipe in one pass and reports
+the measured damage next to the solver's prediction (ADR-0006):
+
+```bash
+uv run quantfit validate recipe.json --calibration calibration.txt --max-tokens 2048
+```
+
+Expect the measured number below the prediction — both real
+measurements so far came in sub-additive.
+
+## 5. Pack and serve
+
+The pack step applies the recipe and emits a GGUF that llama.cpp can
+serve ([ADR-0010](../adr/0010-sub-4-bit-serving-path.md)). It needs a
+llama.cpp checkout with built tools and the `pack` extra
+(`uv sync --extra scan --extra pack`):
+
+```bash
+uv run quantfit pack recipe.json --llama-cpp ~/llama.cpp --out packed.gguf
+```
+
+Pack converts the checkpoint to an f16 base GGUF once, drives
+`llama-quantize` with the recipe's type mapping, and re-checks the
+packed file's real bytes against the weight budget. The
 [how-to guides](../how-to/scan-a-model.md) cover scanning models that
 *don't* trivially fit.

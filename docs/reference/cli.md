@@ -84,7 +84,8 @@ Pins are recorded in the recipe in their effective order.
 Exit codes: 1 when the map is invalid, the output is unwritable, or no
 recipe fits the budget (the gap is reported). Exit 2 on malformed options
 (`--pin` not of the form `pattern=bits` with positive bits, unparseable
-sizes, negative `--format-overhead`).
+sizes, a negative, NaN, or infinite `--format-overhead`, or a
+`--runtime` outside the capability table).
 
 ## `quantfit scan`
 
@@ -141,7 +142,7 @@ belongs to a different scan, a measurement fails (the checkpoint keeps
 completed cells), a checkpoint write fails, or the map cannot be
 written. Exit 2 on malformed `--precisions`, `--group-by`, or
 `--gpu-memory`, a `--gpu-memory` without `--device auto`, or a missing
-`--out` directory.
+`--out` or `--runlog` directory.
 
 ## `quantfit validate`
 
@@ -206,9 +207,10 @@ auto`, or a missing `--runlog` directory.
 Implemented for the GGUF backend (ADR-0010, ADR-0012). Applies a
 recipe through llama.cpp's quantizer: one f16 base GGUF conversion
 (reused when present), then `llama-quantize` with one type override
-per layer group and the embedding assignment bound via
-`--token-embedding-type` and `--output-tensor-type` — the second
-flag keeps an untied output head at the embedding's precision. The
+per layer group. The embedding assignment binds
+`--token-embedding-type`. An `lm_head` group binds
+`--output-tensor-type` with its own assignment — without one, the
+embedding assignment pins an untied head (ADR-0012 as amended). The
 base type is the recipe's precision floor, applied with `--pure`, so
 no heuristic mixing leaks in.
 
@@ -233,9 +235,10 @@ After quantizing, the command re-checks the packed file's real bytes
 against `plan.weight_budget_bytes` — nominal-bit predictions
 undershoot GGUF's effective bits (ADR-0012). Every run appends the
 pack events to the run log: pack_started, gguf_converted (with
-`reused`), model_packed (real bytes, base type, override count),
-size_checked (margin and `fits`), then pack_finished or pack_halted
-(stage: convert, quantize, or size_check).
+`reused`), model_packed (real bytes, base type, embedding and output
+tensor types, override count), size_checked (margin and `fits`), then
+pack_finished or pack_halted (stage: convert, quantize, or
+size_check).
 
 Exit codes: 1 when the recipe is invalid, the model directory does
 not exist, a toolchain stage fails, or the packed model exceeds the

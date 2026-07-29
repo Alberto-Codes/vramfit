@@ -1,8 +1,11 @@
 # Copilot instructions for quantfit
 
 quantfit measures per-layer quantization sensitivity of LLMs (`scan`),
-solves mixed-precision recipes under a VRAM budget (`plan`), and packs
-checkpoints for vLLM (`pack`). Only the plan step is implemented so far.
+solves mixed-precision recipes under a VRAM budget (`plan`), measures
+whole-recipe damage against the prediction (`validate`), and packs GGUF
+models for llama.cpp (`pack`, ADR-0010/0012). All five commands plus
+`budget` are implemented. A vLLM pack backend for ≥4-bit recipes is
+planned.
 
 ## Project stances (do not flag these as issues)
 
@@ -14,8 +17,8 @@ checkpoints for vLLM (`pack`). Only the plan step is implemented so far.
   "sensitivity map" (never "scan results"). Naming that follows the
   glossary is intentional.
 - **No heavy ML deps in the base install** (ADR-0005): torch/transformers
-  land behind future extras. Enforced by an import-linter forbidden
-  contract. Torch lands later as outbound adapters behind ports.
+  live behind the `scan` and `pack` extras. Enforced by an import-linter
+  forbidden contract. Torch code lives in outbound adapters behind ports.
 - **Docs carry statuses** (`sketch/draft/stable`; ADRs
   `Proposed/Accepted`). A `sketch` page describing unimplemented behavior
   is a design artifact, not a doc bug.
@@ -45,7 +48,7 @@ checkpoints for vLLM (`pack`). Only the plan step is implemented so far.
   relative imports, no `__main__.py`.
 - Google-style docstrings with typed Attributes and Examples sections —
   enforced by docvet in CI; missing sections are build failures.
-- Conventional commits `type(scope): description`; scopes:
-  scan, plan, pack, cli, config, docs.
+- Conventional commits `type(scope): description`; scopes: scan, plan,
+  pack, cli, config, docs, arch, domain, ports, adapters.
 - Architecture decisions live in `docs/adr/`; cite ADR numbers when a
   review comment touches a recorded decision.

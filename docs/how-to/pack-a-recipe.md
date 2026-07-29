@@ -5,8 +5,9 @@ status: draft
 # How to pack a recipe
 
 > **Status: draft** — `quantfit pack` is implemented for the GGUF
-> backend and verified on Qwen2.5-3B against the reference box. The
-> vLLM backend does not exist yet (ADR-0004, ADR-0010).
+> backend, verified on Qwen2.5-3B, and packed the 49B target 169.7 MiB
+> under budget on the first try. The vLLM backend does not exist yet
+> (ADR-0004, ADR-0010).
 
 ## Goal
 
@@ -49,7 +50,10 @@ uv run quantfit pack recipe-4GiB.json \
 The recipe's `model_id` names the checkpoint directory when it is a
 local path — pass `--model` otherwise. The command converts the
 checkpoint to an f16 base GGUF once (minutes at 3B scale), then
-quantizes it with one type override per layer group. A second pack of
+quantizes it with one type override per layer group. The embedding and
+`lm_head` groups drive the quantizer's dedicated
+`--token-embedding-type` and `--output-tensor-type` flags instead of
+pattern overrides (ADR-0012). A second pack of
 the same model reuses the base GGUF and skips the conversion.
 
 ## Reading the result

@@ -172,7 +172,7 @@ CI runs `uv-secure` to scan for known vulnerabilities in the lockfile. If it fla
 
 ## Key Constraints
 
-- Keep heavy ML dependencies (torch, transformers) out of the base install until the scan pipeline lands -- they will be optional extras
+- Keep heavy ML dependencies (torch, transformers) out of the base install -- they live behind the `scan` and `pack` extras (ADR-0005)
 - Never use relative imports
 - Never use `__main__.py` (entry point is `[project.scripts]`)
 - Always target `main` for PRs (single-branch workflow)

@@ -5,8 +5,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project Overview
 
 **quantfit** measures per-layer quantization sensitivity, solves for a
-mixed-precision recipe under a VRAM budget, and packs the result for a target
-runtime. Acceptance test: Nemotron Super 49B serving on a 24 GiB RTX 4090
+mixed-precision recipe under a VRAM budget, validates the recipe against
+the prediction, and packs the result for a target runtime. Acceptance test: Nemotron Super 49B serving on a 24 GiB RTX 4090
 ([ADR-0003](docs/adr/0003-north-star-benchmark.md)). Full pitch in
 [README.md](README.md); design decisions in [docs/adr/](docs/adr/index.md).
 
@@ -62,7 +62,8 @@ a `sketch` page is still a sketch.
 
 Hexagonal, mechanically enforced by import-linter (ADR-0008):
 `adapters/inbound` (CLI, composition root) → `adapters/outbound` (JSON
-artifacts, HF configs) → `ports` (Protocols) → `domain` (pure — no
+artifacts, HF configs, the torch scan meter, the GGUF pack toolchain) →
+`ports` (Protocols) → `domain` (pure — no
 json/pathlib/os/io/typer, enforced). The `quantfit_schema` envelope
 belongs to the JSON adapters, never to domain dataclasses. New external
 integrations (torch, llm-compressor, runtimes) are outbound adapters

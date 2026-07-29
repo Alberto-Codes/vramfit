@@ -2,6 +2,14 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-27
+- **Note (2026-07-28):** the serving path moved to GGUF/llama.cpp for
+  the benchmark ([ADR-0010](0010-sub-4-bit-serving-path.md)). The
+  "vLLM-served" clause below reads through that amendment.
+- **Note (2026-07-29):** the orthogonality claim below met a
+  measurement. The first 49B head-to-head lost to an imatrix quant,
+  with ~81 % of the gap in the within-group method
+  ([ADR-0012](0012-gguf-type-mapping.md) open questions). *How to
+  round* is not separable from the outcome at 3-bit scale.
 
 ## Context
 
@@ -38,4 +46,5 @@ over heuristics; fitting one model well over fitting all models adequately.
 - Within-group quantization method (RTN, AWQ, GPTQ) stays orthogonal and
   swappable; quantfit decides *how many bits where*, not *how to round*.
 - The additivity assumption behind marginal scanning is a known risk,
-  mitigated by a final whole-recipe evaluation (see ADR-0006).
+  mitigated by the validation pass (see ADR-0006, measured twice
+  since).
