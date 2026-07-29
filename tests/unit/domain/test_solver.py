@@ -168,7 +168,9 @@ class TestSolve:
 
     def test_runtime_dropping_nothing_keeps_the_plain_message(self) -> None:
         map_ = load(make_map([("g0", 1600, CONVEX_CURVE)]))
-        floor = group_bytes(1600, 2, 0.05)
+        # The llama.cpp floor: Q2_K's 2.625 effective bits plus the
+        # auto-resolved 0.005 residual.
+        floor = group_bytes(1600, 2.625, 0.005)
 
         # llama.cpp serves the whole scanned set — the message must
         # not blame the runtime for the floor.
@@ -176,6 +178,70 @@ class TestSolve:
             solve_simple(map_, budget=floor - 10, runtime="llama.cpp")
 
         assert "cannot serve" not in str(excinfo.value)
+        assert excinfo.value.minimum_bytes == floor
+
+    def test_infeasible_floor_is_priced_at_effective_bits(self) -> None:
+        map_ = load(make_map([("g0", 1600, CONVEX_CURVE)]))
+
+        # 250 fits the nominal 2-bit floor (200) but not Q2_K's real
+        # 263 — the precheck must price the floor at the table, or
+        # the loop would run and break the solver invariant.
+        with pytest.raises(InfeasibleBudgetError) as excinfo:
+            solve_simple(map_, budget=250, runtime="llama.cpp", format_overhead=0.0)
+
+        assert excinfo.value.minimum_bytes == 263
+        assert excinfo.value.gap_bytes == 13
+
+    def test_pinned_group_is_priced_at_effective_bits(self) -> None:
+        map_ = load(make_map([("g0", 1600, CONVEX_CURVE), ("g1", 1600, CONVEX_CURVE)]))
+
+        recipe = solve_simple(
+            map_,
+            budget=2000,
+            runtime="llama.cpp",
+            format_overhead=0.0,
+            pins={"g0": 8},
+        )
+
+        by_group = {a.group: a.bytes for a in recipe.assignments}
+        assert by_group["g0"] == 850
+
+    def test_pinned_floor_is_priced_at_effective_bits(self) -> None:
+        map_ = load(make_map([("g0", 1600, CONVEX_CURVE), ("g1", 1600, CONVEX_CURVE)]))
+
+        # 1100 fits the nominal pinned floor (800 + 200) but not the
+        # effective one (850 + 263).
+        with pytest.raises(InfeasibleBudgetError):
+            solve_simple(
+                map_,
+                budget=1100,
+                runtime="llama.cpp",
+                format_overhead=0.0,
+                pins={"g0": 8},
+            )
+
+        # The same budget is feasible without the runtime — the
+        # regression signal that the pinned floor uses the table.
+        unconstrained = solve_simple(
+            map_, budget=1100, format_overhead=0.0, pins={"g0": 8}
+        )
+        assert unconstrained.plan.predicted_total_bytes <= 1100
+
+    def test_refined_final_step_is_priced_at_effective_bits(self) -> None:
+        # Best ratio at budget-crossing time is the 8->2 jump, but
+        # Q4_K's 450 bytes also fit; the refinement must price the
+        # milder step at the table.
+        curve = {8: 0.0, 4: 0.5, 3: 1.0, 2: 0.6}
+        map_ = load(make_map([("g0", 1600, curve)]))
+
+        recipe = solve_simple(
+            map_, budget=460, runtime="llama.cpp", format_overhead=0.0
+        )
+
+        assert recipe.assignments[0].bits == 4
+        assert recipe.assignments[0].bytes == 450
+        assert recipe.plan.trace[-1].to_bits == 4
+        assert recipe.plan.trace[-1].bytes_freed == 850 - 450
 
     def test_pin_outside_runtime_set_raises_pin_error(self) -> None:
         map_ = load(make_map([("g0", 1000, CONVEX_CURVE)]))

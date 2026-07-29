@@ -40,9 +40,9 @@ The pack step drives external tools — none ship with quantfit:
 ## Basic invocation
 
 ```bash
-uv run quantfit pack recipe-4GiB-fo10.json \
+uv run quantfit pack recipe-4GiB.json \
   --llama-cpp ~/llama.cpp \
-  --out qwen2.5-3b-recipe-4GiB-fo10.gguf \
+  --out qwen2.5-3b-recipe-4GiB.gguf \
   --threads 14
 ```
 
@@ -57,8 +57,8 @@ the same model reuses the base GGUF and skips the conversion.
 The human channel prints the re-check line:
 
 ```
-packed 37 groups -> qwen2.5-3b-recipe-4GiB-fo10.gguf (1.98 GiB),
-weight budget 2.00 GiB, margin 17.23 MiB under
+packed 37 groups -> qwen2.5-3b-recipe-4GiB.gguf (1.99 GiB),
+weight budget 2.00 GiB, margin 5.26 MiB under
 ```
 
 The run log (`<stem>.runlog.jsonl`) carries the same run as machine
@@ -77,7 +77,7 @@ hand-tuned overheads this section used to recommend (0.10, then
 0.105 for 5-bit mixes) are obsolete: they were one scalar chasing
 the mix-weighted drift of whatever types the solver picked, and the
 6/5/4 mix overflowed the value that fit its predecessor. The re-check
-below stays as the backstop.
+above stays as the backstop.
 
 ## Evaluating the packed model
 
