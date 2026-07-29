@@ -46,7 +46,7 @@ def offload_meter(offload_model_dir, tmp_path_factory):
     )
 
 
-def _partly_offloaded_group(meter) -> str:
+def _offloaded_group(meter) -> str:
     return next(
         name
         for name, members in meter._groups.items()
@@ -62,6 +62,25 @@ def _fully_offloaded_group(meter) -> str:
     )
 
 
+def _two_distinct_offloaded_groups(meter) -> set[str]:
+    """The fully offloaded group plus a second offloaded group when one exists.
+
+    The first ``any``-offloaded group can be the fully offloaded one,
+    so a naive pair could collapse to a single element and lose the
+    two-group coverage silently.
+    """
+    fully = _fully_offloaded_group(meter)
+    second = next(
+        (
+            name
+            for name, members in meter._groups.items()
+            if name != fully and any(m in meter._offloaded for m in members)
+        ),
+        fully,
+    )
+    return {fully, second}
+
+
 @pytest.mark.gpu
 class TestOffloadedMeter:
     def test_cap_engages_dispatch_and_every_group_resolves(self, offload_meter) -> None:
@@ -72,7 +91,7 @@ class TestOffloadedMeter:
         assert offload_meter._offloaded
 
     def test_offloaded_group_measures_nonzero_damage(self, offload_meter) -> None:
-        damage = offload_meter.measure(_partly_offloaded_group(offload_meter), 2)
+        damage = offload_meter.measure(_offloaded_group(offload_meter), 2)
 
         assert damage > 0.0
 
@@ -92,7 +111,7 @@ class TestOffloadedMeter:
     def test_offloaded_measurement_is_deterministic_and_restores(
         self, offload_meter
     ) -> None:
-        group = _partly_offloaded_group(offload_meter)
+        group = _offloaded_group(offload_meter)
 
         first = offload_meter.measure(group, 2)
         second = offload_meter.measure(group, 2)
@@ -106,10 +125,7 @@ class TestOffloadedMeter:
         # offloaded group measured exactly zero. The capped meter must
         # agree with an all-GPU meter on the same cells — including a
         # group with no resident member to hide behind.
-        groups = {
-            _partly_offloaded_group(offload_meter),
-            _fully_offloaded_group(offload_meter),
-        }
+        groups = _two_distinct_offloaded_groups(offload_meter)
         capped = {group: offload_meter.measure(group, 2) for group in groups}
         from quantfit.adapters.outbound.scan.meter import TorchDamageMeter
 

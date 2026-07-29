@@ -74,32 +74,32 @@ class TestResolveOffloadedParams:
     def test_meta_param_without_hook_is_refused(self) -> None:
         model = _ghost_model(None)
 
-        with pytest.raises(ValueError, match=r"offloaded beyond host RAM.*ghost"):
+        with pytest.raises(ValueError, match=r"cannot reach.*ghost"):
             resolve_offloaded_params(model, GHOST_GROUPS)
 
     def test_unstable_weights_map_storage_is_refused(self) -> None:
         model = _ghost_model(_CloningMap({"ghost.weight": torch.randn(4, 4)}))
 
-        with pytest.raises(ValueError, match="offloaded beyond host RAM"):
+        with pytest.raises(ValueError, match="cannot reach"):
             resolve_offloaded_params(model, GHOST_GROUPS)
 
     def test_wrong_shape_backing_tensor_is_refused(self) -> None:
         model = _ghost_model({"ghost.weight": torch.randn(2, 2)})
 
-        with pytest.raises(ValueError, match="offloaded beyond host RAM"):
+        with pytest.raises(ValueError, match="cannot reach"):
             resolve_offloaded_params(model, GHOST_GROUPS)
 
     def test_missing_weights_map_entry_is_refused(self) -> None:
         model = _ghost_model({"other.weight": torch.randn(4, 4)})
 
-        with pytest.raises(ValueError, match="offloaded beyond host RAM"):
+        with pytest.raises(ValueError, match="cannot reach"):
             resolve_offloaded_params(model, GHOST_GROUPS)
 
     def test_meta_backing_tensor_is_refused(self) -> None:
         ghost = torch.empty(4, 4, device="meta")
         model = _ghost_model({"ghost.weight": ghost})
 
-        with pytest.raises(ValueError, match="offloaded beyond host RAM"):
+        with pytest.raises(ValueError, match="cannot reach"):
             resolve_offloaded_params(model, GHOST_GROUPS)
 
     def test_group_with_late_unresolvable_member_is_refused_whole(self) -> None:
@@ -110,7 +110,7 @@ class TestResolveOffloadedParams:
         model.ghost.bias2 = torch.nn.Parameter(torch.empty(4, 4, device="meta"))
         groups = {"ghost": ["ghost.weight", "ghost.bias2"]}
 
-        with pytest.raises(ValueError, match=r"offloaded beyond host RAM.*ghost"):
+        with pytest.raises(ValueError, match=r"cannot reach.*ghost"):
             resolve_offloaded_params(model, groups)
 
 

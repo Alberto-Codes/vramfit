@@ -59,9 +59,10 @@ def resolve_offloaded_params(
 
     Raises:
         ValueError: If any group holds a meta parameter without a
-            verified backing tensor — disk-offloaded weights, or an
-            accelerate layout this adapter does not recognize. The
-            message counts affected groups and names the first three.
+            verified backing tensor. The message counts affected
+            groups, names the first three, and names both causes —
+            disk spill, or an accelerate layout this adapter does not
+            recognize.
     """
     params = dict(model.named_parameters())
     backing: dict[str, torch.Tensor] = {}
@@ -81,9 +82,10 @@ def resolve_offloaded_params(
     if unreachable:
         shown = ", ".join(unreachable[:3])
         raise ValueError(
-            f"{len(unreachable)} of {len(groups)} groups were offloaded beyond "
-            f"host RAM and cannot be measured (first: {shown}) — raise "
-            "--gpu-memory, free host RAM, or use a smaller model"
+            f"{len(unreachable)} of {len(groups)} groups hold offloaded "
+            f"weights the meter cannot reach (first: {shown}) — disk spill "
+            "or an unrecognized accelerate layout. Raise --gpu-memory, free "
+            "host RAM, or use a smaller model"
         )
     return backing
 
