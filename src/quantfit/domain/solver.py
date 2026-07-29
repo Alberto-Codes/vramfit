@@ -10,14 +10,23 @@ The algorithm: start every group at the highest candidate precision
 damage-per-byte-freed ratio until the total fits the weight budget. The
 ordered downgrade log is recorded in the recipe as its explanation
 trace, and the final downgrade is refined when a milder step also fits.
-Inputs are validated at the API boundary: a negative ``format_overhead``
-raises ``ValueError`` before any solving starts.
+Size predictions follow ADR-0014: a runtime with an effective-bits
+table prices each precision at its real per-weight cost, and the
+overhead fraction shrinks to a residual for what the table cannot
+see (unquantized tensors, file metadata). Without a table the
+nominal-bits prediction and the 0.05 scalar remain. Inputs are
+validated at the API boundary: a negative ``format_overhead`` raises
+``ValueError`` before any solving starts.
 
 Attributes:
     SOLVER_NAME (str): Identifier recorded in ``plan.solver`` for
         reproducibility.
-    DEFAULT_FORMAT_OVERHEAD (float): Default quantization-format overhead
-        fraction (scales, zero-points) applied to size predictions.
+    DEFAULT_FORMAT_OVERHEAD (float): Default overhead fraction when no
+        effective-bits table applies — one scalar has to cover scales,
+        zero-points, and everything else.
+    DEFAULT_RESIDUAL_OVERHEAD (float): Default overhead fraction when
+        an effective-bits table prices the quantization metadata —
+        covers only unquantized tensors and file metadata (ADR-0014).
 
 Examples:
     Solve a map against a byte budget:
@@ -56,10 +65,11 @@ from quantfit.domain.model import (
     SensitivityMap,
     TraceStep,
 )
-from quantfit.domain.runtime import servable_precisions
+from quantfit.domain.runtime import effective_bits, servable_precisions
 
 SOLVER_NAME: Final[str] = "greedy-damage-per-byte"
 DEFAULT_FORMAT_OVERHEAD: Final[float] = 0.05
+DEFAULT_RESIDUAL_OVERHEAD: Final[float] = 0.005
 
 
 class PinError(QuantfitError, ValueError):
@@ -155,24 +165,27 @@ class InfeasibleBudgetError(QuantfitError):
         self.dropped_precisions = dropped_precisions
 
 
-def group_bytes(bytes_fp16: int, bits: int, format_overhead: float) -> int:
-    """Predict a group's size at a target precision.
+def group_bytes(bytes_fp16: int, bits: float, format_overhead: float) -> int:
+    """Predict a group's size at a per-weight bit cost.
 
     Args:
         bytes_fp16: The group's size at 16-bit reference precision.
-        bits: Target precision.
-        format_overhead: Overhead fraction for quantization metadata.
+        bits: Bits spent per weight — a nominal precision, or a
+            fractional effective-bits value from a runtime table
+            (ADR-0014).
+        format_overhead: Overhead fraction for whatever ``bits`` does
+            not price in.
 
     Returns:
         Predicted bytes, rounded up.
 
     Examples:
-        4-bit with 5% overhead is ~26% of the fp16 size:
+        A 4-bit group priced at Q4_K's 4.5 effective bits:
 
         ```python
         from quantfit.domain.solver import group_bytes
 
-        assert group_bytes(1600, 4, 0.05) == 420
+        assert group_bytes(1600, 4.5, 0.0) == 450
         ```
     """
     return math.ceil(bytes_fp16 * bits / 16 * (1 + format_overhead))
@@ -338,7 +351,7 @@ def solve(
     vram_budget_bytes: int,
     kv_headroom_bytes: int,
     pins: Mapping[str, int] | None = None,
-    format_overhead: float = DEFAULT_FORMAT_OVERHEAD,
+    format_overhead: float | None = None,
     runtime: str | None = None,
 ) -> Recipe:
     """Assign a precision to every group so the total fits the budget.
@@ -347,7 +360,9 @@ def solve(
     through the ADR-0013 capability table — a precision the runtime
     cannot serve is never assigned, and the recipe records the
     runtime. An infeasible budget then names the precisions the
-    runtime removed, so the reported floor is explainable. Every
+    runtime removed, so the reported floor is explainable. A runtime
+    with an effective-bits table prices every candidate at its real
+    per-weight cost (ADR-0014) — Q4_K spends 4.5 bits, not 4. Every
     group starts at the highest candidate precision (or its pin).
     While the total exceeds the budget, the solver applies the downgrade
     with the minimum ``(damage_delta / bytes_freed, group name, smallest
@@ -367,7 +382,11 @@ def solve(
             provenance.
         pins: Ordered glob-pattern pins forcing precisions; later patterns
             override earlier ones.
-        format_overhead: Overhead fraction for quantization metadata.
+        format_overhead: Overhead fraction on top of the per-weight
+            bit cost. None means the default for the size model:
+            `DEFAULT_RESIDUAL_OVERHEAD` when the runtime has an
+            effective-bits table, `DEFAULT_FORMAT_OVERHEAD` otherwise.
+            The recipe records the resolved value.
         runtime: Target runtime name, or None for no capability
             constraint.
 
@@ -400,6 +419,11 @@ def solve(
         )
         ```
     """
+    table = effective_bits(runtime)
+    if format_overhead is None:
+        format_overhead = (
+            DEFAULT_RESIDUAL_OVERHEAD if table is not None else DEFAULT_FORMAT_OVERHEAD
+        )
     if not (math.isfinite(format_overhead) and format_overhead >= 0):
         raise ValueError(
             f"format_overhead must be finite and non-negative, got {format_overhead}"
@@ -412,16 +436,18 @@ def solve(
     pinned = _expand_pins(pins, sensitivity_map, candidates)
 
     def size(bytes_fp16: int, bits: int) -> int:
-        """Shorthand for `group_bytes` with the solver's overhead.
+        """Shorthand for `group_bytes` with the solver's size model.
 
         Args:
             bytes_fp16: Group size at reference precision.
-            bits: Target precision.
+            bits: Target nominal precision.
 
         Returns:
-            Predicted bytes at the target precision.
+            Predicted bytes at the target precision — priced at the
+            runtime's effective bits when a table exists.
         """
-        return group_bytes(bytes_fp16, bits, format_overhead)
+        spent = table[bits] if table is not None else bits
+        return group_bytes(bytes_fp16, spent, format_overhead)
 
     state: dict[str, int] = {}
     for group in sensitivity_map.groups:

@@ -1,7 +1,12 @@
 # ADR-0013: Recipes record their target runtime
 
-- **Status:** Accepted
+- **Status:** Accepted, amended by
+  [ADR-0014](0014-per-type-effective-bits.md)
 - **Date:** 2026-07-28 (accepted 2026-07-28)
+- **Amendment (2026-07-28):** decision 1's note that effective bits
+  stay a pack concern is revised — the domain now records effective
+  bits per runtime, and the solver prices sizes from them. The
+  capability table and everything else stand.
 
 ## Context
 
@@ -87,6 +92,7 @@ time.
 - Whether the capability table should version per runtime release
   (llama.cpp gains types; vLLM kernels evolve). Today it tracks what
   the current serving path exercises.
-- Whether the solver should consume per-type effective-bit tables
+- ~~Whether the solver should consume per-type effective-bit tables
   instead of one `format_overhead` fraction (carried from ADR-0012,
-  ties to this table).
+  ties to this table).~~ Resolved by
+  [ADR-0014](0014-per-type-effective-bits.md).

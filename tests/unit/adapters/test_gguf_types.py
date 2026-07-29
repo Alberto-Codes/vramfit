@@ -17,9 +17,21 @@ from quantfit.adapters.outbound.gguf.types import (
 )
 from quantfit.domain.errors import QuantfitError
 from quantfit.domain.model import Assignment, PlanMeta, Recipe
-from quantfit.domain.runtime import RUNTIME_CAPABILITIES
+from quantfit.domain.runtime import EFFECTIVE_BITS, LLAMA_CPP, RUNTIME_CAPABILITIES
 
 pytestmark = pytest.mark.unit
+
+# Block-layout costs of the K-quant types this backend drives, in
+# bits per weight. Independent of the domain table on purpose: the
+# pairing test below fails if either side drifts.
+BITS_PER_GGML_TYPE = {
+    "q8_0": 8.5,
+    "q6_k": 6.5625,
+    "q5_k": 5.5,
+    "q4_k": 4.5,
+    "q3_k": 3.4375,
+    "q2_k": 2.625,
+}
 
 
 def make_recipe(*assignments: tuple[str, int]) -> Recipe:
@@ -48,6 +60,14 @@ def test_type_table_covers_the_llama_cpp_capability_set() -> None:
     assert set(GGML_TYPE_BY_BITS) == {8, 6, 5, 4, 3, 2}
     assert set(BASE_FTYPE_BY_BITS) == {8, 6, 5, 4, 3, 2}
     assert set(GGML_TYPE_BY_BITS) == RUNTIME_CAPABILITIES["llama.cpp"]
+
+
+def test_gguf_types_spend_the_domains_effective_bits() -> None:
+    # The domain's EFFECTIVE_BITS values are only correct while this
+    # backend maps each nominal precision to the type they price
+    # (ADR-0014). Swapping q5_k for q5_1 must fail here, loudly.
+    for bits, ggml_type in GGML_TYPE_BY_BITS.items():
+        assert EFFECTIVE_BITS[LLAMA_CPP][bits] == BITS_PER_GGML_TYPE[ggml_type]
 
 
 @pytest.mark.parametrize(

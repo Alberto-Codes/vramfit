@@ -60,8 +60,20 @@ quantfit plan SENSITIVITY_MAP
   --kv-headroom SIZE     Reserved for KV cache + runtime  [default: 4GiB]
   --pin TEXT             Pin groups to a precision, repeatable (glob=bits)
   --out PATH             Output recipe  [default: recipe.json]
-  --format-overhead F    Quantization-format overhead fraction  [default: 0.05]
+  --runtime TEXT         Target runtime the recipe is planned for
+                         [default: llama.cpp]
+  --format-overhead F    Overhead fraction on top of the size model
+                         [default: 0.005 with an effective-bits
+                         table, 0.05 without]
 ```
+
+Size predictions follow
+[ADR-0014](../adr/0014-per-type-effective-bits.md): a runtime with an
+effective-bits table prices each precision at its real per-weight
+cost (llama.cpp: Q4_K spends 4.5 bits, not 4), and the overhead
+fraction covers only unquantized tensors and file metadata. A
+runtime without a table (vLLM, or `--runtime` omitted via the API)
+keeps the nominal-bits prediction and the 0.05 scalar.
 
 Pin semantics: patterns are case-sensitive `fnmatch` globs matched against
 the full group name (`--pin "model.layers.0.*=8"`). A pattern that matches

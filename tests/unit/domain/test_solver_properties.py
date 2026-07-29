@@ -8,7 +8,11 @@ from hypothesis import event, given
 from hypothesis import strategies as st
 
 from quantfit.adapters.outbound.sensitivity_map_json import map_from_dict
-from quantfit.domain.runtime import RUNTIME_CAPABILITIES, RuntimeCapabilityError
+from quantfit.domain.runtime import (
+    EFFECTIVE_BITS,
+    RUNTIME_CAPABILITIES,
+    RuntimeCapabilityError,
+)
 from quantfit.domain.solver import InfeasibleBudgetError, group_bytes, solve
 from tests.strategies import raw_sensitivity_maps
 
@@ -80,6 +84,39 @@ class TestSolverProperties:
         runtime=st.sampled_from(sorted(RUNTIME_CAPABILITIES)),
         data=st.data(),
     )
+    def test_infeasible_gap_under_a_runtime_is_priced_by_its_table(
+        self, raw, runtime, data
+    ) -> None:
+        map_ = map_from_dict(raw)
+        capability = RUNTIME_CAPABILITIES[runtime]
+        servable = [p for p in map_.scan.precisions if p in capability]
+        if not servable:
+            event("no servable precision")
+            return
+        # The reported floor must be the table-priced floor — a
+        # nominal-bits precheck would let budgets between the two
+        # floors reach the downgrade loop and break its invariant.
+        table = EFFECTIVE_BITS.get(runtime)
+
+        def spent(bits: int) -> float:
+            return table[bits] if table is not None else bits
+
+        floor = sum(
+            group_bytes(g.bytes_fp16, spent(servable[-1]), 0.0) for g in map_.groups
+        )
+        budget = data.draw(st.integers(min_value=0, max_value=floor - 1))
+
+        with pytest.raises(InfeasibleBudgetError) as excinfo:
+            solve_simple(map_, budget, 0.0, runtime=runtime)
+
+        assert excinfo.value.minimum_bytes == floor
+        assert excinfo.value.gap_bytes == floor - budget
+
+    @given(
+        raw=raw_sensitivity_maps(),
+        runtime=st.sampled_from(sorted(RUNTIME_CAPABILITIES)),
+        data=st.data(),
+    )
     def test_runtime_never_assigns_an_unservable_precision(
         self, raw, runtime, data
     ) -> None:
@@ -94,9 +131,20 @@ class TestSolverProperties:
             return
         # Budget between the *filtered* floor and ceiling, so the
         # downgrade loop actually runs — an unfiltered candidate could
-        # only leak under budget pressure.
-        floor = sum(group_bytes(g.bytes_fp16, servable[-1], 0.0) for g in map_.groups)
-        ceiling = sum(group_bytes(g.bytes_fp16, servable[0], 0.0) for g in map_.groups)
+        # only leak under budget pressure. A runtime with an
+        # effective-bits table prices each precision at that table
+        # (ADR-0014), so the bounds must too.
+        table = EFFECTIVE_BITS.get(runtime)
+
+        def spent(bits: int) -> float:
+            return table[bits] if table is not None else bits
+
+        floor = sum(
+            group_bytes(g.bytes_fp16, spent(servable[-1]), 0.0) for g in map_.groups
+        )
+        ceiling = sum(
+            group_bytes(g.bytes_fp16, spent(servable[0]), 0.0) for g in map_.groups
+        )
         budget = data.draw(st.integers(min_value=floor, max_value=ceiling))
         event("pressured" if budget < ceiling else "unpressured")
 
@@ -105,6 +153,11 @@ class TestSolverProperties:
         assert all(a.bits in capability for a in recipe.assignments)
         assert recipe.plan.predicted_total_bytes <= budget
         assert recipe.runtime == runtime
+        by_name = {g.name: g for g in map_.groups}
+        assert all(
+            a.bytes == group_bytes(by_name[a.group].bytes_fp16, spent(a.bits), 0.0)
+            for a in recipe.assignments
+        )
 
     @given(raw=raw_sensitivity_maps(), overhead=overheads, data=st.data())
     def test_group_order_never_changes_the_recipe(self, raw, overhead, data) -> None:

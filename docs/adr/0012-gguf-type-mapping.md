@@ -99,8 +99,9 @@ scan does not produce one today. K-quants need no extra input.
 - Whether pack persists the toolchain's own output as a sidecar
   artifact. Today a zero-exit tool's warnings (for example an
   override pattern that matched no tensor) are discarded.
-- Whether the solver should consume per-type effective-bit tables
+- ~~Whether the solver should consume per-type effective-bit tables
   instead of one `format_overhead` fraction (ties to the
-  runtime-capability milestone from ADR-0010).
+  runtime-capability milestone from ADR-0010).~~ Resolved by
+  [ADR-0014](0014-per-type-effective-bits.md): it should, and does.
 - Whether pack should verify the base GGUF matches the recipe's
   `model_id` (today the caller vouches for the pairing).

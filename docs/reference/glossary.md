@@ -139,10 +139,21 @@ change.
     it from the starting state reproduces the assignments — it is the
     recipe's explanation. Not "log" or "history".
 
+**Effective bits**
+:   Bits per weight a quantization type really stores, block scales
+    included — `Q4_K` spends 4.5 effective bits on a nominal 4-bit
+    assignment. Recorded per runtime in
+    `quantfit.domain.runtime.EFFECTIVE_BITS`
+    ([ADR-0014](../adr/0014-per-type-effective-bits.md)). The solver
+    prices sizes at effective bits when the target runtime has a
+    table.
+
 **Format overhead**
-:   The fraction added to predicted sizes for quantization metadata
-    (scales, zero-points). CLI flag `--format-overhead`, recorded in
-    `plan.format_overhead`. Default 0.05 until measured per format.
+:   The fraction added to predicted sizes for what the size model does
+    not price in. CLI flag `--format-overhead`, recorded in
+    `plan.format_overhead`. With an effective-bits table it covers
+    unquantized tensors and file metadata (default 0.005). Without
+    one it also covers scales and zero-points (default 0.05).
 
 ## Packing
 
@@ -151,8 +162,8 @@ change.
     quantization type. [ADR-0012](../adr/0012-gguf-type-mapping.md)
     fixes the GGUF tensor-type table (8→Q8_0, 4→Q4_K, 3→Q3_K,
     2→Q2_K) and a separate base-ftype table for the quantizer's
-    positional argument. Effective bits exceed nominal bits, which is
-    why pack re-checks real sizes.
+    positional argument. The solver prices these types at their
+    effective bits (ADR-0014), and pack re-checks real sizes.
 
 **Base GGUF**
 :   The full-precision (f16) GGUF conversion of the source checkpoint

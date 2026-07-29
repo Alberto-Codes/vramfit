@@ -9,6 +9,8 @@ from quantfit.adapters.outbound.sensitivity_map_json import map_from_dict
 from quantfit.domain.budget import format_size
 from quantfit.domain.model import SensitivityMap
 from quantfit.domain.solver import (
+    DEFAULT_FORMAT_OVERHEAD,
+    DEFAULT_RESIDUAL_OVERHEAD,
     SOLVER_NAME,
     InfeasibleBudgetError,
     PinError,
@@ -166,7 +168,9 @@ class TestSolve:
 
     def test_runtime_dropping_nothing_keeps_the_plain_message(self) -> None:
         map_ = load(make_map([("g0", 1600, CONVEX_CURVE)]))
-        floor = group_bytes(1600, 2, 0.05)
+        # The llama.cpp floor: Q2_K's 2.625 effective bits plus the
+        # auto-resolved 0.005 residual.
+        floor = group_bytes(1600, 2.625, 0.005)
 
         # llama.cpp serves the whole scanned set — the message must
         # not blame the runtime for the floor.
@@ -174,6 +178,70 @@ class TestSolve:
             solve_simple(map_, budget=floor - 10, runtime="llama.cpp")
 
         assert "cannot serve" not in str(excinfo.value)
+        assert excinfo.value.minimum_bytes == floor
+
+    def test_infeasible_floor_is_priced_at_effective_bits(self) -> None:
+        map_ = load(make_map([("g0", 1600, CONVEX_CURVE)]))
+
+        # 250 fits the nominal 2-bit floor (200) but not Q2_K's real
+        # 263 — the precheck must price the floor at the table, or
+        # the loop would run and break the solver invariant.
+        with pytest.raises(InfeasibleBudgetError) as excinfo:
+            solve_simple(map_, budget=250, runtime="llama.cpp", format_overhead=0.0)
+
+        assert excinfo.value.minimum_bytes == 263
+        assert excinfo.value.gap_bytes == 13
+
+    def test_pinned_group_is_priced_at_effective_bits(self) -> None:
+        map_ = load(make_map([("g0", 1600, CONVEX_CURVE), ("g1", 1600, CONVEX_CURVE)]))
+
+        recipe = solve_simple(
+            map_,
+            budget=2000,
+            runtime="llama.cpp",
+            format_overhead=0.0,
+            pins={"g0": 8},
+        )
+
+        by_group = {a.group: a.bytes for a in recipe.assignments}
+        assert by_group["g0"] == 850
+
+    def test_pinned_floor_is_priced_at_effective_bits(self) -> None:
+        map_ = load(make_map([("g0", 1600, CONVEX_CURVE), ("g1", 1600, CONVEX_CURVE)]))
+
+        # 1100 fits the nominal pinned floor (800 + 200) but not the
+        # effective one (850 + 263).
+        with pytest.raises(InfeasibleBudgetError):
+            solve_simple(
+                map_,
+                budget=1100,
+                runtime="llama.cpp",
+                format_overhead=0.0,
+                pins={"g0": 8},
+            )
+
+        # The same budget is feasible without the runtime — the
+        # regression signal that the pinned floor uses the table.
+        unconstrained = solve_simple(
+            map_, budget=1100, format_overhead=0.0, pins={"g0": 8}
+        )
+        assert unconstrained.plan.predicted_total_bytes <= 1100
+
+    def test_refined_final_step_is_priced_at_effective_bits(self) -> None:
+        # Best ratio at budget-crossing time is the 8->2 jump, but
+        # Q4_K's 450 bytes also fit; the refinement must price the
+        # milder step at the table.
+        curve = {8: 0.0, 4: 0.5, 3: 1.0, 2: 0.6}
+        map_ = load(make_map([("g0", 1600, curve)]))
+
+        recipe = solve_simple(
+            map_, budget=460, runtime="llama.cpp", format_overhead=0.0
+        )
+
+        assert recipe.assignments[0].bits == 4
+        assert recipe.assignments[0].bytes == 450
+        assert recipe.plan.trace[-1].to_bits == 4
+        assert recipe.plan.trace[-1].bytes_freed == 850 - 450
 
     def test_pin_outside_runtime_set_raises_pin_error(self) -> None:
         map_ = load(make_map([("g0", 1000, CONVEX_CURVE)]))
@@ -345,6 +413,71 @@ class TestSolve:
         assert recipe.assignments[0].bits == 4
         assert recipe.assignments[0].damage == 0.5
         assert recipe.plan.trace[-1].to_bits == 4
+
+    def test_llama_cpp_runtime_prices_groups_at_effective_bits(self) -> None:
+        map_ = load(make_map([("g0", 1600, CONVEX_CURVE)]))
+
+        recipe = solve_simple(
+            map_, budget=10_000, runtime="llama.cpp", format_overhead=0.0
+        )
+
+        # Q8_0 spends 8.5 bits per weight, not the nominal 8.
+        assert recipe.assignments[0].bytes == 850
+
+    def test_no_runtime_keeps_nominal_bit_pricing(self) -> None:
+        map_ = load(make_map([("g0", 1600, CONVEX_CURVE)]))
+
+        recipe = solve_simple(map_, budget=10_000, format_overhead=0.0)
+
+        assert recipe.assignments[0].bytes == 800
+
+    def test_runtime_without_a_table_keeps_nominal_bit_pricing(self) -> None:
+        map_ = load(make_map([("g0", 1600, CONVEX_CURVE)]))
+
+        recipe = solve_simple(map_, budget=10_000, runtime="vllm", format_overhead=0.0)
+
+        assert recipe.assignments[0].bytes == 800
+
+    def test_effective_bits_force_a_downgrade_nominal_bits_would_skip(self) -> None:
+        map_ = load(make_map([("g0", 1600, CONVEX_CURVE)]))
+
+        # 820 fits the nominal 8-bit size (800) but not Q8_0's real
+        # 850 — the effective-bits solver must downgrade, the
+        # unconstrained one must not.
+        constrained = solve_simple(
+            map_, budget=820, runtime="llama.cpp", format_overhead=0.0
+        )
+        unconstrained = solve_simple(map_, budget=820, format_overhead=0.0)
+
+        assert constrained.assignments[0].bits == 4
+        assert unconstrained.assignments[0].bits == 8
+
+    def test_auto_overhead_resolves_to_residual_with_a_table(self) -> None:
+        map_ = load(make_map([("g0", 1600, CONVEX_CURVE)]))
+
+        recipe = solve_simple(map_, budget=10_000, runtime="llama.cpp")
+
+        assert recipe.plan.format_overhead == DEFAULT_RESIDUAL_OVERHEAD
+
+    @pytest.mark.parametrize("runtime", [None, "vllm"], ids=["none", "vllm"])
+    def test_auto_overhead_resolves_to_scalar_without_a_table(self, runtime) -> None:
+        map_ = load(make_map([("g0", 1600, CONVEX_CURVE)]))
+
+        recipe = solve_simple(map_, budget=10_000, runtime=runtime)
+
+        assert recipe.plan.format_overhead == DEFAULT_FORMAT_OVERHEAD
+
+    def test_explicit_overhead_overrides_the_auto_default(self) -> None:
+        map_ = load(make_map([("g0", 1600, CONVEX_CURVE)]))
+
+        recipe = solve_simple(
+            map_, budget=10_000, runtime="llama.cpp", format_overhead=0.02
+        )
+
+        assert recipe.plan.format_overhead == 0.02
+        # ceil(1600 * 8.5 / 16 * 1.02): the residual rides on top of
+        # the effective bits.
+        assert recipe.assignments[0].bytes == 867
 
     def test_recipe_carries_provenance(self) -> None:
         map_ = load(make_map([("g0", 1000, CONVEX_CURVE)]))
