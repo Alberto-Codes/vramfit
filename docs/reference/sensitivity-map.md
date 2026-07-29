@@ -1,12 +1,13 @@
 ---
-status: draft
+status: stable
 ---
 
 # Sensitivity map format
 
-> **Status: draft** — implemented in
+> **Status: stable** — implemented in
 > `quantfit.adapters.outbound.sensitivity_map_json`, whose loader enforces
-> everything described here. `quantfit scan` produces these files.
+> everything described here. `quantfit scan` produces these files, and
+> real maps (Qwen2.5-3B, the 49B target) drove the full loop.
 
 The sensitivity map is the output of `quantfit scan` and the input to
 `quantfit plan`: JSON, one entry per (layer group × candidate precision).
@@ -46,8 +47,10 @@ The sensitivity map is the output of `quantfit scan` and the input to
   [ADR-0006](../adr/0006-sensitivity-metric.md) (mean final-logits KL).
   Higher = more damage. Values are comparable *within* a scan, not across
   scans with different calibration sets.
-- **`bytes_fp16`** — group size at reference precision; the solver derives
-  per-precision sizes from this plus quantization-format overhead.
+- **`bytes_fp16`** — group size at reference precision. The solver derives
+  per-precision sizes from this — at the runtime's per-type effective
+  bits when it has a table ([ADR-0014](../adr/0014-per-type-effective-bits.md)),
+  at nominal bits plus the overhead fraction otherwise.
 - **`groups`** — granularity is set by `--group-by`. Marginal (one group at a
   time) measurement is assumed — interaction effects between groups are a
   known blind spot recorded in ADR-0006. Group names must be unique, and

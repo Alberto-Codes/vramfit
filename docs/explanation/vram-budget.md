@@ -7,7 +7,9 @@ status: stable
 > **Status: stable** — implemented in `quantfit.domain.budget` and computable via
 > `quantfit budget`; the worked example below uses the target model's real
 > config. The runtime-overhead constant remains a planning figure until
-> measured under vLLM on the reference box.
+> measured under the serving runtime (llama.cpp per
+> [ADR-0010](../adr/0010-sub-4-bit-serving-path.md)) on the reference
+> box.
 
 The plan step optimizes against a *weight budget*, which is what's left of
 the card after everything else takes its cut.

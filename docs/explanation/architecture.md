@@ -4,12 +4,12 @@ status: draft
 
 # Architecture
 
-> **Status: draft** — describes the code on `main` as of the scan
-> milestone. The mechanical enforcement (import-linter contracts) is
-> real; the pack stage is design-stage.
+> **Status: draft** — describes the code on `main` through the pack
+> and validate milestones. The mechanical enforcement (import-linter
+> contracts) is real, and every stage below is landed code.
 
 Two architectures coexist in quantfit, at different scales. The big one
-is the pipeline: three processes connected by versioned JSON files. The
+is the pipeline: separate processes connected by versioned JSON files. The
 small one is hexagonal layering inside each process. The big one does
 the heavy lifting.
 
@@ -22,15 +22,21 @@ flowchart LR
     SCAN["quantfit scan"] -->|writes| MAP[/"sensitivity.json"/]
     MAP -->|reads| PLAN["quantfit plan"]
     PLAN -->|writes| RECIPE[/"recipe.json"/]
-    RECIPE -->|reads| PACK["quantfit pack *"]
+    RECIPE -->|reads| VAL["quantfit validate"]
+    W --> VAL
+    VAL -->|reports| GAP["measured vs<br/>predicted damage"]
+    RECIPE -->|reads| PACK["quantfit pack"]
     W --> PACK
-    PACK -->|writes| OUT[("packed<br/>model")]
+    PACK -->|writes| OUT[("packed<br/>model (GGUF)")]
     SCAN -.->|checkpoints| CKPT[/"sensitivity.checkpoint.json"/]
     CKPT -.->|resumes| SCAN
 ```
 
-\* pack is design-stage (GGUF first, per
-[ADR-0010](../adr/0010-sub-4-bit-serving-path.md)).
+Pack drives the llama.cpp toolchain (GGUF first, per
+[ADR-0010](../adr/0010-sub-4-bit-serving-path.md) and
+[ADR-0012](../adr/0012-gguf-type-mapping.md)). Validate replays the
+whole recipe through the scan's meter and reports the additivity gap
+([ADR-0006](../adr/0006-sensitivity-metric.md)).
 
 Each stage is a separate process run. The artifacts between them carry a
 `quantfit_schema` version and survive machine and language boundaries —
@@ -49,15 +55,16 @@ they are the strongest seams in the system
 ```mermaid
 flowchart TD
     subgraph inbound["adapters.inbound"]
-        CLI["cli / cli_scan<br/>(composition root)"]
+        CLI["cli / cli_scan / cli_validate /<br/>cli_pack (composition root)"]
     end
     subgraph outbound["adapters.outbound"]
         JSONAD["artifact + checkpoint<br/>JSON files"]
         HF["hf_config"]
         TORCH["scan/ torch meter<br/>(behind the scan extra)"]
+        GGUF["gguf/ pack toolchain<br/>(subprocess, no torch)"]
     end
     subgraph ports["ports"]
-        P["Protocols: SensitivityMapSource/Sink,<br/>RecipeSink, ModelShapeSource,<br/>DamageMeter, ScanCheckpointStore,<br/>RunLogSink"]
+        P["Protocols: SensitivityMapSource/Sink,<br/>RecipeSink, ModelShapeSource,<br/>DamageMeter, ScanCheckpointStore,<br/>RunLogSink, RecipePacker"]
     end
     subgraph domain["domain (pure)"]
         D["model · budget · solver · scan"]
@@ -65,10 +72,12 @@ flowchart TD
     CLI --> JSONAD
     CLI --> HF
     CLI -.->|lazy import| TORCH
+    CLI --> GGUF
     CLI --> P
     JSONAD --> P
     HF --> P
     TORCH --> P
+    GGUF --> P
     P --> D
 ```
 

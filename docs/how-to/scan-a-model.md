@@ -4,9 +4,10 @@ status: draft
 
 # How to run a sensitivity scan
 
-> **Status: draft** — `quantfit scan` is implemented and verified on a
-> tiny model (CPU). No full-size scan has run yet, so the cost numbers
-> below are estimates.
+> **Status: draft** — `quantfit scan` is implemented and has produced
+> full-size maps: Qwen2.5-3B (148 cells, ~1 h) and the 49B target
+> (328 cells, 3 h 42 m, offload-aware per
+> [ADR-0015](../adr/0015-offload-aware-scanning.md)).
 
 ## Goal
 

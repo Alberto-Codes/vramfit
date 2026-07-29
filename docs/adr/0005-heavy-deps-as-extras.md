@@ -19,7 +19,8 @@ same principle: minimal runtime deps, everything else optional.
 ## Decision
 
 The base install carries **typer only**. GPU-touching functionality lands
-behind optional extras (planned: `quantfit[scan]`, `quantfit[pack]`), and the
+behind optional extras (`quantfit[scan]` and `quantfit[pack]`, both
+shipped), and the
 default test suite must pass on a CPU-only machine — GPU-dependent tests
 carry the `gpu` marker and skip cleanly without CUDA.
 

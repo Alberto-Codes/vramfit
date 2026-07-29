@@ -8,9 +8,10 @@
 The hex refactor (ADR-0008) gives "contract test" a precise meaning, and
 the upcoming scan/pack milestones introduce expensive tiers (GPU, model
 weights) that must not pollute the fast suite. Adapted from the
-maintainer's agent-harness ADR-0012, minus the LLM eval axis — quantfit
-has no model output to grade until pack ships; that axis returns as an
-ADR when it does. Two Copilot review rounds also showed our dominant
+maintainer's agent-harness ADR-0012, minus the LLM eval axis. Pack has
+since shipped and packed models are graded through the external
+llama.cpp harness ([evaluating packed models](../explanation/evaluating-packed-models.md)).
+A dedicated eval-axis ADR remains an open item. Two Copilot review rounds also showed our dominant
 defect class is *validation edge cases* — exactly what property-based
 testing hunts.
 
@@ -31,8 +32,9 @@ its tier):
   runtime writer), their orchestration gets tested against proven
   fakes — no GPU in CI.
 - **`integration`** — real resources (model weights, GPU runtimes).
-  Empty today. Tests must skip with an explicit reason when their
-  resource is absent, never fail for absence.
+  Holds the real-torch scan and offload suites today. Tests must skip
+  with an explicit reason when their resource is absent, never fail
+  for absence.
 - **`e2e`** — the installed console script via subprocess, full
   file-in/file-out flows.
 - `gpu` / `slow` — orthogonal resource axes.

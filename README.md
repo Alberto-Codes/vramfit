@@ -28,13 +28,17 @@ VRAM budget:
 2. **Plan** — a budget problem: given the map and a hard VRAM constraint
    (minus KV-cache headroom), spend bits where the scan says they matter and
    crush where it says they don't. Bits are cost, quality is value.
-3. **Pack** — apply the recipe and emit a checkpoint the target runtime can
-   actually serve (GGUF for the sub-4-bit benchmark path, vLLM for ≥4-bit
-   recipes, per [ADR-0010](docs/adr/0010-sub-4-bit-serving-path.md)).
+3. **Validate** — replay the whole recipe in one pass and measure real
+   recipe damage against the solver's prediction
+   ([ADR-0006](docs/adr/0006-sensitivity-metric.md)).
+4. **Pack** — apply the recipe and emit a checkpoint the target runtime can
+   actually serve. GGUF covers the sub-4-bit benchmark path, per
+   [ADR-0010](docs/adr/0010-sub-4-bit-serving-path.md). A vLLM backend for
+   ≥4-bit recipes is planned.
 
 **The goal:** NVIDIA **Nemotron Super 49B running on a 24 GB RTX 4090** — a
 model that does not fit today, made to fit selectively, with measured (not
-vibes-based) quality loss versus running a smaller model instead.
+vibes-based) damage versus running a smaller model instead.
 
 Philosophy borrowed from [antirez/ds4](https://github.com/antirez/ds4): depth
 over breadth. One model profiled properly beats a generic recipe applied to a
@@ -45,9 +49,15 @@ maturity status). Design decisions are recorded as [ADRs](docs/adr/index.md).
 
 ## Status
 
-Early scaffold — CLI skeleton only. The scan/plan/pack pipeline is being built
-in the open. See [Issues](https://github.com/Alberto-Codes/quantfit/issues) for
-the roadmap.
+The full pipeline is implemented: `scan`, `plan`, `validate`, `pack`, plus
+`budget` for the VRAM arithmetic. The first complete loop ran on the 49B
+target on 2026-07-29. The packed model fits the card (20.30 GiB against a
+20.47 GiB weight budget) and **lost the quality head-to-head** to the
+size-matched community imatrix quant. A control experiment traced ~81 % of
+the gap to the importance matrix the v1 pack path does not use. The
+[evidence page](docs/explanation/evaluating-packed-models.md) records the
+result. Closing that gap is the current work. See
+[Issues](https://github.com/Alberto-Codes/quantfit/issues) for the roadmap.
 
 ## Requirements
 
@@ -69,10 +79,11 @@ uv sync
 # Show the CLI
 uv run quantfit --help
 
-# Planned interface (not yet implemented):
-quantfit scan  nvidia/Nemotron-Super-49B --out sensitivity.json
-quantfit plan  sensitivity.json --vram 24GiB --kv-headroom 4GiB --out recipe.json
-quantfit pack  nvidia/Nemotron-Super-49B --recipe recipe.json --out ./quantfit-49b
+# The pipeline (heavy steps need the extras: uv sync --extra scan --extra pack)
+quantfit scan MODEL --calibration calib.txt --out sensitivity.json
+quantfit plan sensitivity.json --vram 24GiB --out recipe.json
+quantfit validate recipe.json --calibration calib.txt
+quantfit pack recipe.json --llama-cpp ~/llama.cpp --out packed.gguf
 ```
 
 ## Development

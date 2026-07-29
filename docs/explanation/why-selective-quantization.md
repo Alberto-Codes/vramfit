@@ -9,8 +9,9 @@ status: draft
 > (Qwen2.5-3B) is folded in below, and the first 49B map — the
 > north-star target, measured through offload-aware scanning
 > ([ADR-0015](../adr/0015-offload-aware-scanning.md)) — followed the
-> same night. The prior-art landscape below was re-surveyed
-> 2026-07-28.
+> same night. The packed 49B head-to-head then lost to an imatrix
+> quant (see the end of the 49B section). The prior-art landscape
+> below was re-surveyed 2026-07-28.
 
 ## The arithmetic that forces the issue
 
@@ -91,7 +92,12 @@ The 2.00 GiB row is the thesis in one line: the nine groups the
 solver kept at 8-bit are exactly the nine with the highest measured
 8→4-bit damage increase — the embeddings, layers 1 and 2 at the
 front, and the fragile top of the stack (27, 30, 31, 33–35). Nobody
-encoded "protect both ends and layer 1". The map did.
+encoded "protect both ends and layer 1". The map did. (The first
+*packed* artifact came from a re-plan of this row at 10 % format
+overhead — 7×8-bit, 30×4-bit — which is the variant
+[evaluating packed models](evaluating-packed-models.md) scores; the
+two are the same map at two overhead settings, from before ADR-0014
+removed the scalar.)
 
 The 1.32 GiB row shows something subtler: **fragility rank depends on
 precision.** The solver holds the embeddings, layer 1, layer 10, and
@@ -126,7 +132,8 @@ calibration tokens, 3 h 42 m on the reference box — with 73 of the
 against the Qwen findings above:
 
 1. **The fragility spread widens with scale.** At 4-bit the
-   best-to-worst spread is ~2,500× (Qwen: ~870×). Layer 0 costs
+   best-to-worst spread is ~2,500× (Qwen's widest, at 3-bit, was
+   ~870×). Layer 0 costs
    0.483 at 4-bit; layers 58–66 cost ~0.0002. More spread is more
    room for selective assignment to work.
 2. **The U-curve holds at 80 layers, and precision still flips the
@@ -171,7 +178,8 @@ The packed artifact then **lost the head-to-head** against the
 size-matched community baseline — and a control experiment showed
 ~81 % of the gap is the baseline's importance matrix, which the v1
 pack path does not use. The full scoreboard and diagnosis live in
-[the fourth data point](evaluating-packed-models.md). The map's
+[the fourth data point](evaluating-packed-models.md#the-fourth-data-point-the-north-star-attempt-lost-honestly).
+The map's
 selectivity survives that result; the pack path's missing imatrix
 does not.
 
