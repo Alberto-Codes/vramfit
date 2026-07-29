@@ -201,7 +201,9 @@ include = [
     "src/quantfit/adapters/outbound/scan/**",
     "tests/conftest.py",
     "tests/contract/test_damage_meter_contract.py",
+    "tests/integration/test_offload.py",
     "tests/integration/test_torch_scan_adapter.py",
+    "tests/unit/adapters/test_scan_offload.py",
 ]
 
 [tool.ty.overrides.rules]
