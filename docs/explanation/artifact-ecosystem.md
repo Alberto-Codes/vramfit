@@ -14,7 +14,8 @@ Non-uniform per-layer quantization is not new, and a 2026-07-28
 re-survey shows the field actively converging on measure-then-mix.
 EXL2 measured per-layer bitrates years ago. Unsloth's Dynamic 2.0
 GGUFs measure per-layer sensitivity and assign every layer its own
-type, shipped at scale with leading KL benchmarks. NVIDIA's Model
+type, shipped at scale with leading (self-reported) KL benchmarks.
+NVIDIA's Model
 Optimizer searches per-layer formats under an effective-bits
 constraint. llama.cpp itself now carries an
 [auto-adaptive mixed-precision effort](https://github.com/ggml-org/llama.cpp/discussions/18531)
@@ -24,8 +25,8 @@ validates the approach and closes the "only measure-then-solve tool"
 window for good.
 
 What none of them publish is the measurement itself — every one
-consumes a sensitivity proxy internally and discards it, and every
-one is welded to its own engine. quantfit's differentiated assets
+consumes a sensitivity proxy internally and discards it, and none
+carries a portable recipe with provenance. quantfit's differentiated assets
 (fuller argument in
 [why selective quantization](why-selective-quantization.md)):
 
@@ -108,7 +109,7 @@ reference box (148 cells ≈ one hour), so a measured Qwen-class packed
 model can be publication number one while the 49B pipeline finishes —
 offload-aware scanning landed
 ([ADR-0015](../adr/0015-offload-aware-scanning.md)) and the first 49B
-scan runs at ~42 s per cell. The 49B writeup remains the gate for
+scan runs at ~42 s per cell at 8,192 tokens. The 49B writeup remains the gate for
 everything *else* in the phase list.
 
 Hard gates before any publication:

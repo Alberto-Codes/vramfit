@@ -167,9 +167,9 @@ approach is right — and it means the honest claim is a differentiated
 
 Four edges survive contact with the landscape, and they compound:
 
-1. **Telemetry.** Every other tool measures a proxy — local weight
-   error, Fisher scores, gradients — consumes it internally, and
-   discards it. quantfit's damage is end-to-end KL at the final
+1. **Telemetry.** Every other tool measures a proxy — layer-local
+   reconstruction error, Fisher scores, gradients — consumes it
+   internally, and discards it. quantfit's damage is end-to-end KL at the final
    logits, and the measurement *is* the product: a versioned,
    resumable, inspectable sensitivity map, with run logs beside it
    ([ADR-0011](../adr/0011-run-logs-and-error-root.md)).
@@ -183,7 +183,8 @@ Four edges survive contact with the landscape, and they compound:
    checkpoint, carry the recipe as a portable artifact with
    provenance and trace, retarget runtimes through the capability
    table ([ADR-0013](../adr/0013-runtime-capability-in-recipes.md)).
-   Everyone else is welded to one engine.
+   The others ship engine-specific outputs and keep no portable
+   recipe with provenance.
 4. **Target-use customization.** The solver packs against *your
    deployment*: VRAM minus KV headroom at your intended context and
    concurrency — not a file-size or average-bits target. Issue #29
