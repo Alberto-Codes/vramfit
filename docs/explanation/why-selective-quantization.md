@@ -6,8 +6,10 @@ status: draft
 
 > **Status: draft** — the reasoning is grounded in published work and,
 > since 2026-07-28, in our own data: the first real-model scan
-> (Qwen2.5-3B) is folded in below. The 49B scan waits on offload-aware
-> scanning (issue #16).
+> (Qwen2.5-3B) is folded in below. Offload-aware scanning landed the
+> same week ([ADR-0015](../adr/0015-offload-aware-scanning.md)), and
+> the first 49B scan is running. The prior-art landscape below was
+> re-surveyed 2026-07-28.
 
 ## The arithmetic that forces the issue
 
@@ -130,17 +132,60 @@ measured-per-model bet is the project's core hypothesis, and the
 
 ## The prior art we're standing on
 
+A 2026-07-28 survey found the field converging on measure-then-mix
+from several directions at once. That convergence is evidence the
+approach is right — and it means the honest claim is a differentiated
+*pipeline*, not a novel *idea*.
+
 - **antirez/ds4** — proved the depth-over-breadth ethos: selective
   quantization hand-tuned for one model (DeepSeek V4 Flash) beat generic
   runtimes' recipes for that model.
 - **llama.cpp k-quants + imatrix** — non-uniform layer recipes (heuristic)
-  plus measured activation statistics applied *within* blocks.
-- **EXL2/exllamav2** — the closest relative: measured per-layer bitrate
-  mixing to hit a target average bpw. quantfit differs in target runtimes
-  (llama.cpp for the sub-4-bit benchmark path, vLLM at ≥4-bit, per
-  [ADR-0010](../adr/0010-sub-4-bit-serving-path.md)), in optimizing against
-  an explicit VRAM+KV budget instead of an average bitrate, and in treating
-  the measurement and recipe as standalone artifacts.
+  plus measured activation statistics applied *within* blocks. And now
+  more: an active
+  [auto-adaptive mixed-precision effort](https://github.com/ggml-org/llama.cpp/discussions/18531)
+  measures per-tensor quantization error across formats and runs a
+  Lagrangian solver against a `--target-size` or `--target-bpw`. The
+  closest convergent work, inside the runtime we pack for — either the
+  strongest competitor or a future pack backend.
+- **EXL2/exllamav2** — the longest-standing relative: measured per-layer
+  bitrate mixing to hit a target average bpw, welded into its own engine
+  and format.
+- **Unsloth Dynamic 2.0 GGUFs** — per-layer sensitivity measured during
+  quantization, every layer assigned its own type, schemes differing per
+  architecture, shipped at scale with leading KL benchmarks. The
+  measurement stays inside their pipeline.
+- **NVIDIA Model Optimizer `auto_quantize`** — gradient-based per-layer
+  sensitivity scores searched under an *effective-bits* constraint (the
+  same concept [ADR-0014](../adr/0014-per-type-effective-bits.md) reached
+  independently), targeting NVIDIA's serving stack.
 - **AWQ / GPTQ** — calibration-aware weight quantization within a uniform
   target precision; quantfit's selectivity operates a level above (which
   precision per group), and can use these as the within-group method.
+
+### Where quantfit stands in that field
+
+Four edges survive contact with the landscape, and they compound:
+
+1. **Telemetry.** Every other tool measures a proxy — local weight
+   error, Fisher scores, gradients — consumes it internally, and
+   discards it. quantfit's damage is end-to-end KL at the final
+   logits, and the measurement *is* the product: a versioned,
+   resumable, inspectable sensitivity map, with run logs beside it
+   ([ADR-0011](../adr/0011-run-logs-and-error-root.md)).
+2. **Thoroughness.** End-to-end measurement costs more per cell and
+   buys fidelity the proxies cannot see (error propagating through
+   depth — [ADR-0006](../adr/0006-sensitivity-metric.md) rejected
+   layer-local error for exactly this). The validation pass then
+   re-measures the whole recipe against the summed prediction — no
+   other tool in the list checks its own additivity assumption.
+3. **Plug and play.** The pipeline stands alone: scan any HF
+   checkpoint, carry the recipe as a portable artifact with
+   provenance and trace, retarget runtimes through the capability
+   table ([ADR-0013](../adr/0013-runtime-capability-in-recipes.md)).
+   Everyone else is welded to one engine.
+4. **Target-use customization.** The solver packs against *your
+   deployment*: VRAM minus KV headroom at your intended context and
+   concurrency — not a file-size or average-bits target. Issue #29
+   sketches deepening this into a budget command that derives the
+   weight budget from stated intent.

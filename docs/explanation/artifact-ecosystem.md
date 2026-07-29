@@ -10,25 +10,39 @@ status: sketch
 
 ## The honest competitive picture
 
-Non-uniform per-layer quantization is not new. EXL2 measured per-layer
-bitrates years ago. llama.cpp k-quants ship heuristic per-layer
-recipes, and imatrix adds measurement below the bit-assignment level.
-Unsloth's dynamic GGUFs are the closest living relative — selective
-per-layer bits, shipped at scale, chosen by expert heuristic.
+Non-uniform per-layer quantization is not new, and a 2026-07-28
+re-survey shows the field actively converging on measure-then-mix.
+EXL2 measured per-layer bitrates years ago. Unsloth's Dynamic 2.0
+GGUFs measure per-layer sensitivity and assign every layer its own
+type, shipped at scale with leading KL benchmarks. NVIDIA's Model
+Optimizer searches per-layer formats under an effective-bits
+constraint. llama.cpp itself now carries an
+[auto-adaptive mixed-precision effort](https://github.com/ggml-org/llama.cpp/discussions/18531)
+— per-tensor error measurement plus a Lagrangian solver against a
+target size, inside the runtime we pack for. Convergence this broad
+validates the approach and closes the "only measure-then-solve tool"
+window for good.
 
-What none of them publish is the measurement itself. EXL2's
-measurement is reusable only inside its own pipeline, never a
-standalone, inspectable artifact. Heuristic recipes carry no
-evidence. quantfit's differentiated assets are exactly three:
+What none of them publish is the measurement itself — every one
+consumes a sensitivity proxy internally and discards it, and every
+one is welded to its own engine. quantfit's differentiated assets
+(fuller argument in
+[why selective quantization](why-selective-quantization.md)):
 
-1. **The sensitivity map as a standalone, versioned artifact** — damage
-   curves as first-class, inspectable data.
-2. **Budget-first solving** — an explicit VRAM + KV budget, not an
-   average-bits target.
-3. **The falsifiable benchmark** — measured against named baselines,
+1. **Telemetry** — the sensitivity map as a standalone, versioned
+   artifact: end-to-end damage curves as first-class, inspectable
+   data, run logs beside them.
+2. **Budget-first solving** — an explicit VRAM + KV budget derived
+   from the user's intended serving shape, not an average-bits or
+   file-size target (issue #29 sketches the budget command that
+   deepens this).
+3. **Portability** — recipes as runtime-agnostic artifacts with
+   provenance and trace, retargetable through the capability table.
+4. **The falsifiable benchmark** — measured against named baselines,
    negative result publishable
    ([ADR-0003](../adr/0003-north-star-benchmark.md),
-   [ADR-0010](../adr/0010-sub-4-bit-serving-path.md)).
+   [ADR-0010](../adr/0010-sub-4-bit-serving-path.md)), with the
+   validation pass checking our own additivity assumption on the way.
 
 The core experiment can still fail: heuristic recipes may prove
 near-optimal, and the additivity assumption may leak badly. If so, the
@@ -91,9 +105,11 @@ invitation that turns downloaders into publishers.
 This amends the phase ordering in one way: small models do not wait
 for the 49B result. The Qwen2.5-3B scan runs at ~23 s per cell on the
 reference box (148 cells ≈ one hour), so a measured Qwen-class packed
-model can be publication number one while the 49B north star is still
-blocked on offload-aware scanning (issue #16). The 49B writeup remains the gate for everything
-*else* in the phase list.
+model can be publication number one while the 49B pipeline finishes —
+offload-aware scanning landed
+([ADR-0015](../adr/0015-offload-aware-scanning.md)) and the first 49B
+scan runs at ~42 s per cell. The 49B writeup remains the gate for
+everything *else* in the phase list.
 
 Hard gates before any publication:
 
