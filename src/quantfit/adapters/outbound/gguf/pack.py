@@ -6,7 +6,8 @@ a caller-supplied interpreter — that interpreter carries torch, this
 package never imports it (ADR-0005). `pack` first rejects a recipe
 recorded for a foreign runtime (ADR-0013), then runs
 ``llama-quantize`` with the recipe's type mapping from
-[quantfit.adapters.outbound.gguf.types][]. Every failure — a tool
+[quantfit.adapters.outbound.gguf.types][] — pattern overrides per
+layer group plus dedicated embedding and output-head flags. Every failure — a tool
 that cannot start, exits nonzero, dies to a signal, or leaves no
 usable file — translates to `PackError` at this boundary (ADR-0011),
 carrying the tool's last output lines.
@@ -44,6 +45,7 @@ from quantfit.adapters.outbound.gguf.types import (
     PackError,
     base_type,
     check_runtime,
+    output_tensor_type,
     tensor_overrides,
     token_embedding_type,
 )
@@ -183,11 +185,17 @@ class LlamaCppPacker:
     def pack(self, recipe: Recipe) -> PackResult:
         """Quantize the base GGUF into the recipe's packed model.
 
+        The embedding and output-head flags resolve independently: an
+        ``lm_head`` group drives the output flag with its own
+        assignment, and the embedding assignment stands in when the
+        scan measured no head (ADR-0012).
+
         Args:
             recipe: The recipe to apply.
 
         Returns:
-            The accounting record, with the real packed size.
+            The accounting record, with the real packed size and the
+            resolved flag types.
 
         Raises:
             PackError: If the recipe targets another runtime
@@ -202,14 +210,15 @@ class LlamaCppPacker:
             )
         base = base_type(recipe)
         embedding = token_embedding_type(recipe)
+        output = output_tensor_type(recipe)
         overrides = tensor_overrides(recipe)
         command = [str(self.quantize_bin), "--pure"]
         if embedding is not None:
-            # The embedding assignment drives both flags: on a model
-            # with an untied output head, the head would otherwise fall
-            # to the --pure base type — the recipe's floor (ADR-0012).
             command += ["--token-embedding-type", embedding]
-            command += ["--output-tensor-type", embedding]
+        if output is not None:
+            # Without the flag an untied output head would fall to the
+            # --pure base type — the recipe's floor (ADR-0012).
+            command += ["--output-tensor-type", output]
         for override in overrides:
             command += ["--tensor-type", f"{override.pattern}={override.quant_type}"]
         command += [str(self.base_gguf), str(self.out_path), base, str(self.threads)]
@@ -218,5 +227,6 @@ class LlamaCppPacker:
             packed_bytes=_sized_file(self.out_path, stage="quantize"),
             base_type=base,
             token_embedding_type=embedding,
+            output_tensor_type=output,
             overrides=overrides,
         )

@@ -8,6 +8,7 @@ from quantfit.adapters.outbound.gguf.types import (
     PackError,
     base_type,
     check_runtime,
+    output_tensor_type,
     tensor_overrides,
     token_embedding_type,
 )
@@ -185,6 +186,7 @@ class MemoryRecipePacker:
             packed_bytes=self.packed_bytes,
             base_type=base_type(recipe),
             token_embedding_type=token_embedding_type(recipe),
+            output_tensor_type=output_tensor_type(recipe),
             overrides=tensor_overrides(recipe),
         )
         self.packed.append(recipe)

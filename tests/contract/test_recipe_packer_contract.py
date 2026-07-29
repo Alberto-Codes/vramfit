@@ -80,6 +80,7 @@ def sample_pack_recipe() -> Recipe:
         ),
         assignments=(
             Assignment(group="model.embed_tokens", bits=8, bytes=1_000, damage=0.001),
+            Assignment(group="lm_head", bits=4, bytes=500, damage=0.002),
             Assignment(group="model.layers.0", bits=8, bytes=1_000, damage=0.001),
             Assignment(group="model.layers.1", bits=4, bytes=500, damage=0.01),
         ),
@@ -178,6 +179,7 @@ class TestRecipePackerContract:
 
         assert result.base_type == "Q4_K_S"
         assert result.token_embedding_type == "q8_0"  # noqa: S105 - a ggml type name, not a secret
+        assert result.output_tensor_type == "q4_k"
         assert result.overrides == (
             TypeOverride(pattern=r"blk\.0\.", quant_type="q8_0"),
             TypeOverride(pattern=r"blk\.1\.", quant_type="q4_k"),
@@ -245,7 +247,7 @@ class TestLlamaCppCommandLines:
         argv = json.loads((tmp_path / "quantize-argv.json").read_text())
         assert argv[0] == "--pure"
         assert argv[argv.index("--token-embedding-type") + 1] == "q8_0"
-        assert argv[argv.index("--output-tensor-type") + 1] == "q8_0"
+        assert argv[argv.index("--output-tensor-type") + 1] == "q4_k"
         pairs = [argv[i + 1] for i, flag in enumerate(argv) if flag == "--tensor-type"]
         assert pairs == [r"blk\.0\.=q8_0", r"blk\.1\.=q4_k"]
         assert argv[-4:] == [

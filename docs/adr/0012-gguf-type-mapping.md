@@ -52,13 +52,17 @@ scan does not produce one today. K-quants need no extra input.
    byproduct. That part of ADR-0010's open question stays open.
 2. **One override per layer group.** The group `model.layers.<n>`
    becomes the override `blk\.<n>\.` = type, dots escaped. The group
-   `model.embed_tokens` becomes `--token-embedding-type` **and**
-   `--output-tensor-type`. On a model that ties embeddings
-   (Qwen2.5-3B does), the output flag never applies. On a model with
-   an untied output head (the 49B target), the head takes the
-   embedding's precision — without the flag, `--pure` would drop it
-   to the recipe's floor with no warning. The v1 backend rejects
-   tensor-level groups with a clear error.
+   `model.embed_tokens` becomes `--token-embedding-type`. The group
+   `lm_head` — scanned on models with an untied head — becomes
+   `--output-tensor-type` with its own assignment. Without an
+   `lm_head` group the embedding assignment drives the output flag:
+   on a model that ties embeddings (Qwen2.5-3B does) the flag never
+   applies, and on an untied model without a scanned head the flag
+   keeps `--pure` from dropping the head to the recipe's floor with
+   no warning. The v1 backend rejects tensor-level groups with a
+   clear error. *(Amended 2026-07-29: the first untied-head pack —
+   the 49B target — showed the scan emits `lm_head` as its own
+   group, so the head's assignment is measured, not pinned.)*
 3. **The base type is the recipe's floor, applied with `--pure`.**
    The quantizer's positional type argument speaks ftype names, not
    tensor-type names, so the floor maps through a second table:

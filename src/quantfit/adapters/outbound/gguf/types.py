@@ -4,8 +4,8 @@ The decision core of the GGUF backend, kept free of IO so the mapping
 is testable and the verified fake can share it. Nominal precisions
 map to K-quant types (the full llama.cpp capability set since
 ADR-0013), layer groups map to escaped `blk.<n>.` regex patterns,
-and the embedding group maps to the quantizer's dedicated embedding
-flag. The backend's own runtime name is the domain's `LLAMA_CPP`
+and the embedding and `lm_head` groups map to the quantizer's
+dedicated embedding and output flags. The backend's own runtime name is the domain's `LLAMA_CPP`
 constant, so the table key and the pack check cannot drift apart. A
 recipe recorded for a foreign runtime, or anything the table cannot
 map, raises `PackError` instead of guessing.
@@ -62,6 +62,8 @@ BASE_FTYPE_BY_BITS: Final[dict[int, str]] = {
 GGUF_RUNTIME: Final[str] = LLAMA_CPP
 
 EMBEDDING_GROUP: Final[str] = "model.embed_tokens"
+
+OUTPUT_GROUP: Final[str] = "lm_head"
 
 _LAYER_GROUP: Final[re.Pattern[str]] = re.compile(r"^model\.layers\.(\d+)$")
 
@@ -206,13 +208,46 @@ def token_embedding_type(recipe: Recipe) -> str | None:
     return None
 
 
+def output_tensor_type(recipe: Recipe) -> str | None:
+    """Map the output head's assignment to the output flag.
+
+    ``--output-tensor-type`` binds the output tensor before any
+    pattern override. An ``lm_head`` group — scanned on models with
+    an untied head — carries its own assignment. Without one, the
+    embedding assignment pins the head, so a tied model's single
+    scanned group governs both tensors (ADR-0012).
+
+    Args:
+        recipe: The recipe to pack.
+
+    Returns:
+        The tensor-type name for the output head, or None when the
+        recipe has neither an ``lm_head`` nor an embedding group.
+
+    Raises:
+        PackError: If the governing assignment's precision has no
+            table entry.
+
+    Examples:
+        An untied head held at 4-bit:
+
+        ```python
+        assert output_tensor_type(recipe) == "q4_k"
+        ```
+    """
+    for assignment in recipe.assignments:
+        if assignment.group == OUTPUT_GROUP:
+            return ggml_type_for(assignment.bits)
+    return token_embedding_type(recipe)
+
+
 def tensor_overrides(recipe: Recipe) -> tuple[TypeOverride, ...]:
     r"""Translate layer groups into quantizer tensor-type overrides.
 
     One override per layer group: ``model.layers.<n>`` becomes the
     escaped pattern ``blk\.<n>\.``. Escaping matters — an unescaped
-    ``blk.1.`` would also match ``blk.11.``. The embedding group maps
-    to a dedicated flag and is skipped here.
+    ``blk.1.`` would also match ``blk.11.``. The embedding and
+    ``lm_head`` groups map to dedicated flags and are skipped here.
 
     Args:
         recipe: The recipe to pack.
@@ -222,8 +257,8 @@ def tensor_overrides(recipe: Recipe) -> tuple[TypeOverride, ...]:
         match, and the patterns are mutually exclusive.
 
     Raises:
-        PackError: If a group is neither a layer group nor the
-            embedding, or its precision has no table entry.
+        PackError: If a group is not a layer group, the embedding,
+            or the output head, or its precision has no table entry.
 
     Examples:
         The group ``model.layers.7`` at 4-bit becomes an escaped
@@ -235,13 +270,14 @@ def tensor_overrides(recipe: Recipe) -> tuple[TypeOverride, ...]:
     """
     overrides: list[TypeOverride] = []
     for assignment in recipe.assignments:
-        if assignment.group == EMBEDDING_GROUP:
+        if assignment.group in (EMBEDDING_GROUP, OUTPUT_GROUP):
             continue
         match = _LAYER_GROUP.match(assignment.group)
         if match is None:
             raise PackError(
                 f'group "{assignment.group}" has no GGUF tensor mapping — the '
-                "v1 backend maps layer groups and the embedding (ADR-0012)"
+                "v1 backend maps layer groups, the embedding, and the output "
+                "head (ADR-0012)"
             )
         overrides.append(
             TypeOverride(
