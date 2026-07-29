@@ -52,9 +52,13 @@ Points fixed at acceptance (2026-07-28):
   validation pass exists (`quantfit validate`). First measurement
   (2026-07-28, Qwen2.5-3B, the 6/5/4 mix, 32,768 tokens): measured
   0.0322 against predicted 0.0661 — the marginal damages are
-  sub-additive by 2.05x. Over-prediction is the safe direction. The
-  open threshold narrows to under-prediction: how much measured
-  damage above predicted invalidates a scan.
+  sub-additive by 2.05x. Second measurement (2026-07-29, Nemotron
+  Super 49B, the 8/4/3/2 recipe at the 20.47 GiB budget, 8,192
+  tokens): measured 0.1682 against predicted 0.4949 — sub-additive
+  by 2.94x, at 80-layer depth and a 3-and-2-bit-dominant mix. Both
+  measurements over-predict, which is the safe direction. The open
+  threshold narrows to under-prediction: how much measured damage
+  above predicted invalidates a scan.
 
 ## Consequences
 

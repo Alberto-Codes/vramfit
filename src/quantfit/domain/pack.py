@@ -74,9 +74,12 @@ class PackResult:
         base_type (str): Quantizer base type for tensors no override
             covers.
         token_embedding_type (str | None): Type forced on the
-            embedding tensor — and, through the quantizer's output
-            flag, on an untied output head (ADR-0012). None when the
-            recipe has no embedding group.
+            embedding tensor. None when the recipe has no embedding
+            group.
+        output_tensor_type (str | None): Type forced on the output
+            head — the ``lm_head`` group's own assignment when the
+            scan measured one, the embedding assignment otherwise
+            (ADR-0012). None when the recipe has neither group.
         overrides (tuple[TypeOverride, ...]): Ordered per-tensor
             overrides, in recipe order. Patterns are unique — the
             quantizer applies the first match, so a duplicate would
@@ -93,6 +96,7 @@ class PackResult:
     packed_bytes: int
     base_type: str
     token_embedding_type: str | None
+    output_tensor_type: str | None
     overrides: tuple[TypeOverride, ...]
 
     def __post_init__(self) -> None:
@@ -100,8 +104,9 @@ class PackResult:
 
         Raises:
             ValueError: If ``packed_bytes`` is not positive,
-                ``base_type`` is empty, ``token_embedding_type`` is
-                empty, or two overrides share a pattern.
+                ``base_type`` is empty, ``token_embedding_type`` or
+                ``output_tensor_type`` is empty, or two overrides
+                share a pattern.
         """
         if self.packed_bytes <= 0:
             raise ValueError("packed_bytes must be positive")
@@ -109,6 +114,8 @@ class PackResult:
             raise ValueError("base_type must not be empty")
         if self.token_embedding_type is not None and not self.token_embedding_type:
             raise ValueError("token_embedding_type must not be empty")
+        if self.output_tensor_type is not None and not self.output_tensor_type:
+            raise ValueError("output_tensor_type must not be empty")
         patterns = [override.pattern for override in self.overrides]
         if len(set(patterns)) != len(patterns):
             raise ValueError("override patterns must be unique")

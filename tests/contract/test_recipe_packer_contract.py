@@ -80,6 +80,7 @@ def sample_pack_recipe() -> Recipe:
         ),
         assignments=(
             Assignment(group="model.embed_tokens", bits=8, bytes=1_000, damage=0.001),
+            Assignment(group="lm_head", bits=4, bytes=500, damage=0.002),
             Assignment(group="model.layers.0", bits=8, bytes=1_000, damage=0.001),
             Assignment(group="model.layers.1", bits=4, bytes=500, damage=0.01),
         ),
@@ -178,6 +179,7 @@ class TestRecipePackerContract:
 
         assert result.base_type == "Q4_K_S"
         assert result.token_embedding_type == "q8_0"  # noqa: S105 - a ggml type name, not a secret
+        assert result.output_tensor_type == "q4_k"
         assert result.overrides == (
             TypeOverride(pattern=r"blk\.0\.", quant_type="q8_0"),
             TypeOverride(pattern=r"blk\.1\.", quant_type="q4_k"),
@@ -245,7 +247,7 @@ class TestLlamaCppCommandLines:
         argv = json.loads((tmp_path / "quantize-argv.json").read_text())
         assert argv[0] == "--pure"
         assert argv[argv.index("--token-embedding-type") + 1] == "q8_0"
-        assert argv[argv.index("--output-tensor-type") + 1] == "q8_0"
+        assert argv[argv.index("--output-tensor-type") + 1] == "q4_k"
         pairs = [argv[i + 1] for i, flag in enumerate(argv) if flag == "--tensor-type"]
         assert pairs == [r"blk\.0\.=q8_0", r"blk\.1\.=q4_k"]
         assert argv[-4:] == [
@@ -254,6 +256,42 @@ class TestLlamaCppCommandLines:
             "Q4_K_S",
             "1",
         ]
+
+    def test_quantize_argv_without_lm_head_pins_output_to_the_embedding(
+        self, tmp_path
+    ) -> None:
+        packer = _real_packer(tmp_path)
+        packer.convert()
+        recipe = sample_pack_recipe()
+        tied = replace(
+            recipe,
+            assignments=tuple(a for a in recipe.assignments if a.group != "lm_head"),
+        )
+
+        packer.pack(tied)
+
+        argv = json.loads((tmp_path / "quantize-argv.json").read_text())
+        assert argv[argv.index("--token-embedding-type") + 1] == "q8_0"
+        assert argv[argv.index("--output-tensor-type") + 1] == "q8_0"
+
+    def test_quantize_argv_without_flag_groups_omits_both_flags(self, tmp_path) -> None:
+        packer = _real_packer(tmp_path)
+        packer.convert()
+        recipe = sample_pack_recipe()
+        layers_only = replace(
+            recipe,
+            assignments=tuple(
+                a
+                for a in recipe.assignments
+                if a.group not in ("lm_head", "model.embed_tokens")
+            ),
+        )
+
+        packer.pack(layers_only)
+
+        argv = json.loads((tmp_path / "quantize-argv.json").read_text())
+        assert "--token-embedding-type" not in argv
+        assert "--output-tensor-type" not in argv
 
     def test_convert_writing_no_file_raises_pack_error(self, tmp_path) -> None:
         packer = _real_packer(tmp_path, silent_stage="convert")
