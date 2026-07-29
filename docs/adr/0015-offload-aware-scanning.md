@@ -1,7 +1,7 @@
 # ADR-0015: The meter perturbs offloaded groups through accelerate's weights map
 
-- **Status:** Proposed
-- **Date:** 2026-07-28
+- **Status:** Accepted
+- **Date:** 2026-07-28 (accepted 2026-07-28)
 
 ## Context
 
@@ -66,6 +66,17 @@ dtype conversion, so the shards on disk already hold their originals.
 4. **Group streaming stays a throughput optimization.** It is tracked
    in #8 and does not gate correctness. This ADR changes which
    devices the meter accepts, not the scan loop.
+
+Acceptance evidence (2026-07-28, the first 49B scan): at a 15 GiB
+cap, 73 of 82 groups offloaded, and `model.layers.9` — previously an
+unmeasurable meta tensor — measured 0.00028 damage at 8 bits over
+8,192 calibration tokens, at ~37 s per cell. Two operational facts
+from the same runs: a 17 GiB cap leaves too little contiguous
+workspace for the 2.1 GB embedding copy-back, and
+`PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` corrupts memory
+near out-of-memory pressure on torch 2.13 — the scan measured NaN
+where the default allocator measures 0.0045, twice, bit-identically.
+Launch 49B scans at a 15 GiB cap with the default allocator.
 
 ## Consequences
 
