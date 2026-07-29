@@ -8,6 +8,7 @@ from typer.testing import CliRunner
 from quantfit import __version__
 from quantfit.adapters.inbound.cli import app
 from quantfit.adapters.outbound.recipe_json import load_recipe
+from quantfit.domain.solver import DEFAULT_RESIDUAL_OVERHEAD
 from tests.unit.conftest import make_map
 
 runner = CliRunner()
@@ -173,6 +174,55 @@ class TestPlanCommand:
 
         assert result.exit_code == 0, result.output
         assert load_recipe(out).runtime == "llama.cpp"
+
+    def test_default_overhead_is_the_residual_for_llama_cpp(self, tmp_path) -> None:
+        map_path = self._write_map(tmp_path)
+        out = tmp_path / "recipe.json"
+
+        result = runner.invoke(
+            app,
+            [
+                "plan",
+                str(map_path),
+                "--vram",
+                "400000",
+                "--kv-headroom",
+                "50000",
+                "--out",
+                str(out),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        recipe = load_recipe(out)
+        # Default runtime llama.cpp has an effective-bits table
+        # (ADR-0014): sizes are per-type and the overhead shrinks to
+        # the residual.
+        assert recipe.plan.format_overhead == DEFAULT_RESIDUAL_OVERHEAD
+        assert recipe.assignments[0].bytes == 85_425  # ceil(160000*8.5/16*1.005)
+
+    def test_explicit_format_overhead_is_recorded_verbatim(self, tmp_path) -> None:
+        map_path = self._write_map(tmp_path)
+        out = tmp_path / "recipe.json"
+
+        result = runner.invoke(
+            app,
+            [
+                "plan",
+                str(map_path),
+                "--vram",
+                "400000",
+                "--kv-headroom",
+                "50000",
+                "--format-overhead",
+                "0.03",
+                "--out",
+                str(out),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert load_recipe(out).plan.format_overhead == 0.03
 
     def test_unknown_runtime_exits_two(self, tmp_path) -> None:
         map_path = self._write_map(tmp_path)

@@ -19,12 +19,17 @@ weight_budget = vram_total − kv_cache − runtime_overhead
 ## Weights
 
 ```
-weight_bytes ≈ Σ_groups (params_in_group × bits_group ÷ 8) × (1 + format_overhead)
+weight_bytes ≈ Σ_groups (params_in_group × effective_bits_group ÷ 8) × (1 + format_overhead)
 ```
 
-`format_overhead` covers quantization metadata (scales, zero-points, block
-structure) — typically 3–10% depending on format and block size. Embedding
-and output-projection tensors are usually kept at 8-bit or higher and must be
+`effective_bits` is what the runtime's quantization type really spends per
+weight, block scales included — Q4_K stores a nominal 4-bit group at 4.5
+bits/weight. When the target runtime has a measured table
+([ADR-0014](../adr/0014-per-type-effective-bits.md)) the solver uses it and
+`format_overhead` shrinks to a residual (~0.5%) for file metadata and
+unquantized tensors. Without a table, nominal bits stand in and the scalar
+(default 5%) has to cover the quantization metadata too. Embedding and
+output-projection tensors are usually kept at 8-bit or higher and must be
 counted; on large-vocab models they are gigabytes, not a rounding error.
 
 ## KV cache

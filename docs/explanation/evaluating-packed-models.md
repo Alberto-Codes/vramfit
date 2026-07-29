@@ -170,10 +170,22 @@ The {8, 4} recipe's largest tensor was a `Q8_0` embedding at
 +6.25 % drift, which pulled its aggregate under the 10 % scalar.
 The new mix packs only types drifting +9.4 % (`Q6_K`) to +12.5 %
 (`Q4_K`), so its aggregate lands just above 10 % — and the scalar
-that fit one recipe overflowed the next. That is direct evidence
-for the open question ADR-0012 and ADR-0013 both carry: the solver
-should consume per-type effective-bit tables instead of one
+that fit one recipe overflowed the next. That was direct evidence
+for the open question ADR-0012 and ADR-0013 both carried: the
+solver should consume per-type effective-bit tables instead of one
 fraction.
+
+[ADR-0014](../adr/0014-per-type-effective-bits.md) closed that
+question the same day. The solver now prices llama.cpp recipes at
+per-type effective bits, and the overhead fraction shrinks to a
+0.5 % residual for file metadata and unquantized tensors. The
+rematch of the rematch: re-planning this same map and budget with
+pure defaults — no `--format-overhead` at all — reproduced the
+6/5/4 mix assignment for assignment and packed first try. Predicted
+2,145,721,400 bytes, real 2,141,968,896: a 0.18 % over-reserve, in
+the safe direction. The packed file is byte-identical in size to
+the hand-tuned artifact this section evaluates, so every number in
+the table above stands for it.
 
 ## The third data point: the first validation pass
 
