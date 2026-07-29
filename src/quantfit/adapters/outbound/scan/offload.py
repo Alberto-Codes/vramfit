@@ -11,7 +11,9 @@ Resolution verifies behavior, not accelerate versions: the backing
 tensor must be a real CPU tensor of the parameter's shape, and two
 map reads must return one storage. A parameter that fails any check
 keeps the honest refusal — the meter degrades to "cannot measure",
-never to zero damage.
+never to zero damage. Tied names that alias one storage collapse to
+one group (`dedupe_aliased_groups`), so a capped tied model keeps
+the uncapped group set instead of perturbing one tensor twice.
 
 `ShardReader` is the second half: a whole-recipe pass cannot stage
 ~93 GB of original clones in host RAM at 49B scale, so offloaded
@@ -99,13 +101,13 @@ def _backing_tensor(
     Returns:
         The verified backing tensor, or None when any check fails:
         no hook, no weights map, no entry, a non-CPU or wrong-shape
-        tensor, or two reads returning different storages.
+        tensor, or two reads returning different storages. A defect
+        raised by custom modeling code propagates as itself.
     """
-    module_name, _, _ = name.rpartition(".")
-    try:
-        module = model.get_submodule(module_name)
-    except AttributeError:
-        return None
+    # get_submodule cannot fail here: the name came from
+    # named_parameters, so a raise is a model-code defect that must
+    # surface as itself, not as an offload refusal.
+    module = model.get_submodule(name.rpartition(".")[0])
     hook = getattr(module, "_hf_hook", None)
     weights_map = None
     for candidate in [hook, *getattr(hook, "hooks", ())]:
@@ -131,6 +133,50 @@ def _backing_tensor(
     return first
 
 
+def dedupe_aliased_groups(
+    groups: dict[str, list[str]], backing: dict[str, torch.Tensor]
+) -> tuple[dict[str, list[str]], dict[str, torch.Tensor]]:
+    """Collapse offloaded parameters that share one backing storage.
+
+    Uncapped, ``named_parameters`` deduplicates tied weights by
+    identity — one name survives. Under a cap, transformers installs
+    a separate meta tensor per tied name, and every alias resolves to
+    the same CPU storage. Measuring aliases as separate groups would
+    perturb one tensor per alias, capture a quantized "original", and
+    restore corrupt weights without poisoning. The first name in
+    group order keeps the storage. A group left without members is
+    dropped, which matches the uncapped group set.
+
+    Args:
+        groups: Discovered group membership.
+        backing: Backing tensors from `resolve_offloaded_params`.
+
+    Returns:
+        The groups and backing map with aliases removed.
+    """
+    seen: set[int] = set()
+    kept_groups: dict[str, list[str]] = {}
+    kept_backing: dict[str, torch.Tensor] = {}
+    for group_name, members in groups.items():
+        kept: list[str] = []
+        for member in members:
+            tensor = backing.get(member)
+            if tensor is None:
+                # A real parameter — named_parameters already
+                # deduplicated identity ties among these.
+                kept.append(member)
+                continue
+            pointer = tensor.data_ptr()
+            if pointer in seen:
+                continue
+            seen.add(pointer)
+            kept.append(member)
+            kept_backing[member] = tensor
+        if kept:
+            kept_groups[group_name] = kept
+    return kept_groups, kept_backing
+
+
 class ShardReader:
     """Reads original tensors back from a model's safetensors shards.
 
@@ -142,12 +188,13 @@ class ShardReader:
         index (dict[str, Path]): Shard file per tensor name.
 
     Examples:
-        Verify, then restore after a measurement:
+        Verify against the live tensor, then restore after a
+        measurement:
 
         ```python
         reader = open_shard_reader("./model")
-        assert reader.verify({"model.layers.0.mlp.w": (64, 64)}) is None
-        reader.read_into({"model.layers.0.mlp.w": target})
+        assert reader.verify({"model.layers.0.mlp.w": live}) is None
+        reader.read_into({"model.layers.0.mlp.w": live})
         ```
     """
 
@@ -173,32 +220,46 @@ class ShardReader:
             by_file.setdefault(self.index[name], []).append(name)
         return by_file
 
-    def verify(self, shapes: Mapping[str, tuple[int, ...]]) -> str | None:
+    def verify(self, live: Mapping[str, torch.Tensor]) -> str | None:
         """Check that every tensor is restorable before weights change.
 
+        Beyond name and shape, the first row of each shard entry must
+        equal the live tensor's — a value drift between the files and
+        the loaded model would otherwise restore a wrong baseline
+        without any error.
+
         Args:
-            shapes: Expected shape per tensor name.
+            live: The loaded tensor per tensor name, unperturbed.
 
         Returns:
-            None when every tensor resolves to a shard entry of the
-            expected shape, otherwise the first mismatch, named.
+            None when every tensor resolves to a shard entry with the
+            live shape and matching sample values, otherwise the first
+            mismatch, named.
 
         Raises:
             OSError: If a shard file cannot be read.
         """
-        missing = sorted(set(shapes) - set(self.index))
+        missing = sorted(set(live) - set(self.index))
         if missing:
             return f'no shard entry for "{missing[0]}"'
-        for file, names in self._by_file(sorted(shapes)).items():
+        for file, names in self._by_file(sorted(live)).items():
             with safe_open(file, framework="pt", device="cpu") as shard:
                 for name in names:
                     if name not in shard.keys():  # noqa: SIM118 - not a dict
                         return f'"{name}" missing from {file.name}'
-                    found = tuple(shard.get_slice(name).get_shape())
-                    if found != shapes[name]:
+                    entry = shard.get_slice(name)
+                    found = tuple(entry.get_shape())
+                    if found != tuple(live[name].shape):
                         return (
                             f'"{name}" has shape {found} in {file.name}, '
-                            f"expected {shapes[name]}"
+                            f"expected {tuple(live[name].shape)}"
+                        )
+                    sample = entry[0:1].to(live[name].dtype)
+                    if not torch.equal(sample, live[name][0:1].cpu()):
+                        return (
+                            f'"{name}" differs from the loaded model in '
+                            f"{file.name} — the files changed since the "
+                            "model loaded"
                         )
         return None
 
@@ -236,14 +297,19 @@ def open_shard_reader(model_id: str) -> ShardReader | None:
 
     Raises:
         OSError: If an index or shard file exists but cannot be read.
-        ValueError: If the index file is not valid JSON.
+        ValueError: If the index file is not valid JSON, or holds no
+            ``weight_map`` object.
     """
     directory = Path(model_id)
     if not directory.is_dir():
         return None
     index_path = directory / _INDEX_FILE
     if index_path.is_file():
-        weight_map = json.loads(index_path.read_text(encoding="utf-8"))["weight_map"]
+        weight_map = json.loads(index_path.read_text(encoding="utf-8")).get(
+            "weight_map"
+        )
+        if not isinstance(weight_map, dict):
+            raise ValueError(f"{index_path} has no weight_map object")
         return ShardReader(
             {name: directory / file for name, file in weight_map.items()}
         )

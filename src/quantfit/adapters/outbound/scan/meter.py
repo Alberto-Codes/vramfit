@@ -10,6 +10,7 @@ vocabulary) so the reference model runs exactly once.
 
 Only floating-point tensors with 2+ dimensions join layer groups —
 norms and biases stay at reference precision and are not scanned.
+Tied names that alias one storage collapse to one group.
 A measurement that fails to restore the model poisons the meter: it
 refuses further cells rather than measure against corrupt weights.
 Groups that ``auto`` sharding offloaded to host RAM perturb through
@@ -37,6 +38,7 @@ See Also:
 from __future__ import annotations
 
 import re
+import sys
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Literal
@@ -48,6 +50,7 @@ from quantfit.adapters.outbound.scan.calibration import load_calibration
 from quantfit.adapters.outbound.scan.kl import mean_kl, reference_log_probs
 from quantfit.adapters.outbound.scan.offload import (
     ShardReader,
+    dedupe_aliased_groups,
     open_shard_reader,
     resolve_offloaded_params,
 )
@@ -105,6 +108,10 @@ class TorchDamageMeter:
     ) -> None:
         """Load the model, tokenize the calibration set, discover groups.
 
+        Offloaded parameters resolve to their weights-map backing
+        tensors, and tied names that alias one storage collapse to
+        one group (ADR-0015).
+
         Args:
             model_id: Hugging Face model id or local checkpoint path.
             calibration_path: UTF-8 calibration text file.
@@ -143,8 +150,9 @@ class TorchDamageMeter:
             calibration_path, tokenizer, max_tokens
         )
         self._block_size = block_size
-        self._groups = _discover_groups(self._model, group_by)
-        self._offloaded = resolve_offloaded_params(self._model, self._groups)
+        groups = _discover_groups(self._model, group_by)
+        backing = resolve_offloaded_params(self._model, groups)
+        self._groups, self._offloaded = dedupe_aliased_groups(groups, backing)
         self.offloaded_group_count = sum(
             1
             for members in self._groups.values()
@@ -153,6 +161,7 @@ class TorchDamageMeter:
         self._shards: ShardReader | None = None
         self._reference: list[torch.Tensor] | None = None
         self._poisoned = False
+        self._poisoned_reason = ""
 
     def groups(self) -> tuple[GroupSpec, ...]:
         """Discover the model's layer groups.
@@ -244,11 +253,13 @@ class TorchDamageMeter:
         Raises:
             RuntimeError: If a prior measurement failed to restore the
                 model — the meter refuses to produce corrupt numbers.
+                The message carries the recorded restore failure.
         """
         if self._poisoned:
             raise RuntimeError(
-                "a prior measurement failed to restore the model — "
-                "rebuild the meter before measuring again"
+                "a prior measurement failed to restore the model "
+                f"({self._poisoned_reason}) — rebuild the meter before "
+                "measuring again"
             )
 
     def _measure_perturbed(self, assignments: dict[str, int]) -> float:
@@ -262,7 +273,8 @@ class TorchDamageMeter:
         footprint. Offloaded originals in a multi-group pass are not
         staged at all — staging them would double the model's host
         footprint — and restore from the safetensors shards instead
-        (ADR-0015).
+        (ADR-0015). The restore runs in a finally clause, so every
+        exit either restores the weights or poisons the meter.
 
         Args:
             assignments: Assigned precision per validated group name.
@@ -284,6 +296,9 @@ class TorchDamageMeter:
         shard_plan = self._plan_shard_restore(assignments) if stage_on_cpu else None
         from_shards = shard_plan[1] if shard_plan else set()
         originals: dict[str, torch.Tensor] = {}
+        # The restore runs in a finally so no exception — including an
+        # interrupt between measurement and restore — can leave the
+        # weights perturbed without either restoring or poisoning.
         try:
             with torch.no_grad():
                 for group, bits in assignments.items():
@@ -300,10 +315,8 @@ class TorchDamageMeter:
                             rtn_quantize_dequantize(param, bits, self._block_size)
                         )
             damage = self._mean_damage(reference)
-        except BaseException:
-            self._restore(originals, shard_plan, in_flight=True)
-            raise
-        self._restore(originals, shard_plan, in_flight=False)
+        finally:
+            self._restore(originals, shard_plan, in_flight=sys.exception() is not None)
         return damage
 
     def _param(self, name: str) -> torch.Tensor:
@@ -336,8 +349,8 @@ class TorchDamageMeter:
 
         Raises:
             ValueError: If the model is not a local safetensors
-                directory, or a tensor has no shard entry of the
-                recorded shape.
+                directory, or a tensor has no shard entry matching the
+                live tensor's shape and sample values.
             OSError: If a shard file cannot be read.
         """
         names = {
@@ -355,9 +368,7 @@ class TorchDamageMeter:
                 f'from the model\'s safetensors shards, and "{self.model_id}" '
                 "is not a local safetensors directory (ADR-0015)"
             )
-        problem = reader.verify(
-            {name: tuple(self._offloaded[name].shape) for name in names}
-        )
+        problem = reader.verify({name: self._offloaded[name] for name in names})
         if problem:
             raise ValueError(
                 f"cannot restore offloaded originals from {self.model_id}: {problem}"
@@ -377,8 +388,9 @@ class TorchDamageMeter:
         meter: a partial restore leaves corrupt weights, and the flag
         is what stops them being measured. Interrupts and exits always
         propagate. A restore failure while another exception is in
-        flight is recorded but not raised, so the root cause keeps the
-        stage.
+        flight is recorded on the meter and noted on the in-flight
+        exception, so the root cause keeps the stage without losing
+        the restore detail.
 
         Args:
             originals: Saved tensors keyed by parameter name.
@@ -400,12 +412,20 @@ class TorchDamageMeter:
                 reader.read_into({name: self._param(name) for name in from_shards})
         except BaseException as exc:
             self._poisoned = True
+            self._poisoned_reason = repr(exc)
             if not isinstance(exc, Exception):
                 raise
             if not in_flight:
                 raise RuntimeError(
                     f"failed to restore original weights: {exc}"
                 ) from exc
+            # Raising inside the unwind chains the in-flight exception
+            # as __context__ — note the restore failure on it so the
+            # detail survives past this suppression.
+            if exc.__context__ is not None:
+                exc.__context__.add_note(
+                    f"the weight restore also failed: {exc!r} — the meter is poisoned"
+                )
 
     def _ensure_reference(self) -> list[torch.Tensor]:
         """Run the unperturbed model once and cache its distributions.

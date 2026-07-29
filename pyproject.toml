@@ -45,6 +45,9 @@ dependencies = [
 # the plan step stay importable without torch.
 scan = [
     "accelerate>=1.0",
+    # Direct import in the scan adapter (shard restore, ADR-0015) —
+    # declared, not left to the transformers transitive closure.
+    "safetensors>=0.4",
     "torch>=2.4",
     # The floor is where from_pretrained's dtype kwarg landed — older
     # versions ignore it silently and load fp32 at twice the memory.

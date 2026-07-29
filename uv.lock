@@ -1490,12 +1490,14 @@ docs = [
 ]
 pack = [
     { name = "accelerate" },
+    { name = "safetensors" },
     { name = "sentencepiece" },
     { name = "torch" },
     { name = "transformers" },
 ]
 scan = [
     { name = "accelerate" },
+    { name = "safetensors" },
     { name = "torch" },
     { name = "transformers" },
 ]
@@ -1521,6 +1523,7 @@ requires-dist = [
     { name = "mkdocs-material", marker = "extra == 'docs'", specifier = ">=9.6" },
     { name = "mkdocstrings", extras = ["python"], marker = "extra == 'docs'", specifier = ">=1.0" },
     { name = "quantfit", extras = ["scan"], marker = "extra == 'pack'" },
+    { name = "safetensors", marker = "extra == 'scan'", specifier = ">=0.4" },
     { name = "sentencepiece", marker = "extra == 'pack'", specifier = ">=0.2" },
     { name = "structlog", specifier = ">=24.1" },
     { name = "torch", marker = "extra == 'scan'", specifier = ">=2.4" },

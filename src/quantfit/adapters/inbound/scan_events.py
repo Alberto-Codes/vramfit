@@ -42,7 +42,7 @@ def start_run(
 
     ``meter_built`` records build seconds, calibration tokens, the
     group count, and ``offloaded_groups`` — how many groups measure
-    through the weights map (ADR-0015), zero for meters without the
+    through the weights map (ADR-0015), null for meters without the
     notion.
 
     Args:
@@ -92,8 +92,9 @@ def start_run(
             "groups": len(meter.groups()),
             # Adapter detail the port does not carry: the torch meter
             # counts groups measured through the weights map
-            # (ADR-0015). Meters without the notion report zero.
-            "offloaded_groups": getattr(meter, "offloaded_group_count", 0),
+            # (ADR-0015). Meters without the notion report null —
+            # distinct from a real zero.
+            "offloaded_groups": getattr(meter, "offloaded_group_count", None),
             "rss_hwm_gb": rss_hwm_gb(),
         },
     )
