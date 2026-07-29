@@ -60,8 +60,10 @@ The human channel works: `typer.echo` progress lines and clean
 
 ## Open questions
 
-- The event set for `plan` and `pack` (start with `scan`, the only
-  long-running stage).
+- The event set for `plan` (start with `scan`, the only long-running
+  stage). ~~The event set for `pack`.~~ Resolved by
+  [ADR-0012](0012-gguf-type-mapping.md) decision 5 and implemented in
+  `cli_pack`.
 - A `reference_pass_finished` event: the reference pass runs inside
   the meter, invisible to the CLI. A dedicated event needs a port
   change, and the first `cell_measured` absorbs its seconds today.

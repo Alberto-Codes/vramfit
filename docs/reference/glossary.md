@@ -184,7 +184,8 @@ change.
 
 **Pack result**
 :   The pack step's accounting record: real packed bytes plus the type
-    mapping driven into the quantizer. Code type
+    mapping driven into the quantizer — base type, embedding and
+    output-head flag types, and the pattern overrides. Code type
     `quantfit.domain.pack.PackResult`.
 
 ## Architecture

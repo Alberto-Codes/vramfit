@@ -10,6 +10,12 @@
   group drives `--output-tensor-type` with its own assignment. The
   embedding assignment stands in only when the scan measured no
   head. The first untied-head pack (the 49B target) forced this.
+- **Amendment (2026-07-29, second):** the size re-check in decision 4
+  is not a sufficient acceptance gate. A 3-bit-heavy 49B recipe
+  passed the size check and produced a destroyed artifact (PPL ~10⁶
+  on two backends, payloads finite). Pack output needs a smoke test —
+  a few perplexity chunks — before anything downstream trusts it.
+  Implementation is an open question below.
 
 ## Context
 
@@ -116,3 +122,7 @@ scan does not produce one today. K-quants need no extra input.
   [ADR-0014](0014-per-type-effective-bits.md): it should, and does.
 - Whether pack should verify the base GGUF matches the recipe's
   `model_id` (today the caller vouches for the pairing).
+- Where the post-pack smoke test lives (second 2026-07-29 amendment):
+  inside `quantfit pack` behind a flag, or as the first step of the
+  evaluation tier. The destroyed-artifact evidence is in
+  [evaluating packed models](../explanation/evaluating-packed-models.md).

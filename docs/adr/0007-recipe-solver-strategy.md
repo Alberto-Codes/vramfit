@@ -5,6 +5,10 @@
 - **Note (2026-07-28):**
   [ADR-0013](0013-runtime-capability-in-recipes.md) adds the deferred
   runtime-capability constraint as a filter on the candidate set.
+- **Note (2026-07-29):**
+  [ADR-0014](0014-per-type-effective-bits.md) revises the size model:
+  when the target runtime has an effective-bits table, the solver
+  prices candidates at per-type effective bits, not nominal bits.
 
 ## Context
 
@@ -52,11 +56,11 @@ Specifics fixed at implementation (`quantfit.domain.solver` — implemented 2026
   `--solver exact` to quantify.
 - The recipe records `format_overhead` and the full downgrade `trace`.
 
-Resolved open questions: tie-breaking is specified above. Hard floors and
-the runtime-capability constraint set are **deferred** — the candidate
-precision set comes solely from `scan.precisions`, so both can be encoded
-upstream (in what the scan measures) or added later as solver constraints
-without changing the recipe format.
+Resolved open questions: tie-breaking is specified above. Hard floors
+stay deferred. The runtime-capability constraint landed as a candidate
+filter (ADR-0013), and the size model moved to per-type effective bits
+(ADR-0014) — both arrived as solver inputs without changing the recipe
+format, as this section predicted.
 
 ## Consequences
 

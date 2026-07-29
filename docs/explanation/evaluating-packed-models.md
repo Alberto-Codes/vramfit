@@ -100,9 +100,14 @@ reference box (llama.cpp b10172, Vulkan).
 | Model | File size | Fits 2.00 GiB budget | PPL ↓ | Mean KLD ↓ | Same top token ↑ |
 |-------|-----------|----------------------|-------|------------|------------------|
 | f16 reference | 5.75 GiB | no | 8.422 ± 0.057 | — | — |
-| **quantfit recipe** (7×8-bit incl. embed, 30×4-bit) | 1.98 GiB | **yes** (17 MiB under) | **8.661 ± 0.058** | **0.0382** | **90.5 %** |
+| **quantfit recipe** (7×8-bit incl. embed, 30×4-bit)* | 1.98 GiB | **yes** (17 MiB under) | **8.661 ± 0.058** | **0.0382** | **90.5 %** |
 | Q4_K_M heuristic | 1.80 GiB | yes | 8.790 ± 0.060 | 0.0494 | 88.9 % |
 | Q5_K_S heuristic | 2.02 GiB | no (21 MiB over) | 8.520 ± 0.057 | 0.0161 | 93.3 % |
+
+\* A 10 %-overhead re-plan of the same map's 2 GiB solve — the
+default-overhead variant (9×8-bit, 28×4-bit) in
+[why selective quantization](why-selective-quantization.md) is the
+same recipe family before the overhead re-plan (pre-ADR-0014).
 
 Reading it honestly, in both directions:
 
@@ -208,8 +213,8 @@ scan's own 32,768 calibration tokens, 34 s on the reference box.
 
 The additivity assumption over-predicts by 2.05×. The marginal
 damages are **sub-additive**: quantize 37 groups at once and the
-joint damage is half the sum of the one-at-a-time damages. Errors
-did not compound through depth for this recipe — they partially
+joint damage is half the sum of the one-at-a-time damages. The
+damage did not compound through depth for this recipe — it partially
 cancelled.
 
 Reading it honestly, in both directions:
@@ -259,10 +264,15 @@ f16 reference measures PPL 8.228 ± 0.141 on those 100 chunks.
 
 | Model | File size | Fits 20.47 GiB budget | imatrix | PPL ↓ | Mean KLD ↓ | Same top token ↑ |
 |-------|-----------|----------------------|---------|-------|------------|------------------|
+| f16 reference | 93 GiB | no | — | 8.228 ± 0.141* | — | — |
 | **quantfit recipe** (8/4/3/2 mix) | **20.30 GiB** | **yes** (169.7 MiB under) | no | 9.917 ± 0.075 | 0.3748 | 75.4 % |
 | Q3_K_S heuristic (bartowski) | 20.45 GiB | yes (21.7 MiB under) | yes | **8.532 ± 0.064** | **0.1584** | **83.8 %** |
 | IQ3_M heuristic (bartowski) | 21.10 GiB | no (648 MiB over) | yes | 8.300 ± 0.060 | 0.1633 | 84.1 % |
 | control Q3_K_S (ours, same f16 base) | 20.45 GiB | yes | no | 9.655 ± 0.073 | 0.3451 | 76.9 % |
+
+\* The f16 PPL covers the tier-2 100 chunks only — the 93 GiB
+reference is too slow for the full 584-chunk set on this box. All
+other PPLs are full-set.
 
 **The recipe lost, and not narrowly**: 1.39 PPL and 2.4× mean KLD
 behind the size-matched baseline. Under the artifact ecosystem's

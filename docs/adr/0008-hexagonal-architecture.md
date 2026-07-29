@@ -49,8 +49,9 @@ The in-process layers exist to keep each stage's internals swappable.
 - scan and pack land as adapters (model loading, quantization backends,
   runtime writers) against ports the domain defines — the seams exist
   before the heavy code does.
-- The `pack` runtime backend port (vLLM now, GGUF later per ADR-0004)
-  has a designated home.
+- The `pack` runtime backend port has a designated home — filled by
+  the GGUF backend (ADR-0010/0012, `RecipePacker`), with vLLM later
+  per ADR-0004 as amended.
 - More files and some indirection at today's size; accepted — the
   contracts make violations a failed commit rather than a review debate.
 - Supporting gate: modules are capped at 300 (soft) / 320 (hard) lines

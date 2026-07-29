@@ -80,9 +80,10 @@ Launch 49B scans at a 15 GiB cap with the default allocator.
 
 ## Consequences
 
-- The first real 49B scan can start. Expected cost from the probe:
-  ~145 s per cell at 32,768 tokens, ~20 h for the full 82 × 6 grid.
-  The first scan trims tokens or precisions to fit a night.
+- The first real 49B scan ran the night this ADR landed: 328 cells at
+  8,192 tokens, 3 h 42 m, mean 40.7 s per cell (acceptance note
+  below). A 32,768-token convergence re-scan measures ~155 s per
+  cell, close to the probe's ~145 s estimate.
 - The meter couples to two accelerate names: `_hf_hook` on offloaded
   modules and `weights_map` on the hook. The behavior checks in
   decision 2 turn an accelerate layout change into a construction

@@ -2,6 +2,14 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-28 (accepted 2026-07-28)
+- **Amendment (2026-07-29):** the decision-3 claim was measured and
+  lost. The first packed recipe fit the budget and scored PPL 9.917
+  against the size-matched imatrix Q3_K_S at 8.532. The control
+  experiment traced ~81 % of the gap to the importance matrix
+  ([evaluating packed models](../explanation/evaluating-packed-models.md)).
+  The size-matched baseline in practice is Q3_K_S, not the IQ3
+  quants listed below. ADR-0012's i-quant question now gates the
+  claim.
 
 ## Context
 
@@ -77,16 +85,23 @@ from measurement.
   target). `--format-overhead` absorbs the gap today. Pack must
   re-check real sizes against the budget.
 - The headline of ADR-0003 stays: 49B, one 4090, 16k context, measured
-  quality loss.
+  damage.
 
 ## Open questions
 
-- Which GGUF types map to nominal 3 and 2 bits? K-quants need no extra
-  input. I-quants need an importance matrix, which the scan's
-  calibration pass can produce as a byproduct.
-- Are byte predictions from nominal bits too coarse for the solver once
-  GGUF types set the real sizes? If yes, the sensitivity map grows
-  per-precision measured byte counts.
+- ~~Which GGUF types map to nominal 3 and 2 bits? K-quants need no
+  extra input. I-quants need an importance matrix, which the scan's
+  calibration pass can produce as a byproduct.~~ Resolved by
+  [ADR-0012](0012-gguf-type-mapping.md): K-quants for v1. The i-quant
+  half escalated on 2026-07-29 to north-star-gating (see ADR-0012's
+  open questions).
+- ~~Are byte predictions from nominal bits too coarse for the solver
+  once GGUF types set the real sizes? If yes, the sensitivity map
+  grows per-precision measured byte counts.~~ Resolved by
+  [ADR-0014](0014-per-type-effective-bits.md): yes — and exact
+  per-type block constants replaced the guess, no map change needed.
 - The 18.94 / 20.47 GiB budgets assume vLLM's 2 GiB runtime overhead
   and KV layout. Measure both under llama.cpp on the reference box —
-  the budgets move if llama.cpp allocates differently.
+  the budgets move if llama.cpp allocates differently. The 2026-07-29
+  loop packed 20.30 GiB against the 20.47 GiB budget, but a measured
+  llama.cpp overhead figure at 16k context still does not exist.

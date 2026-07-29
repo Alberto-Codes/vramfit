@@ -1,12 +1,13 @@
 ---
-status: draft
+status: stable
 ---
 
 # Recipe format
 
-> **Status: draft** — implemented in `quantfit.adapters.outbound.recipe_json`.
+> **Status: stable** — implemented in `quantfit.adapters.outbound.recipe_json`.
 > The loader enforces the structural rules below (required fields, types,
-> positive sizes, unique groups). Cross-artifact claims — map order, trace
+> positive sizes, unique groups), and real recipes carried the full 49B
+> loop. Cross-artifact claims — map order, trace
 > consistency — are properties of `quantfit plan`, not of loading.
 
 The recipe is the output of `quantfit plan` and the input to `quantfit pack`:
@@ -67,10 +68,11 @@ that produced it.
   *measured* value at the assigned precision — an all-8-bit recipe still
   carries the measured 8-bit damage.
 - **`predicted_damage`** — sum of per-group damage at the chosen precisions.
-  A *prediction* from marginal measurements, not a guarantee — the pack step's
-  post-quantization eval is the ground truth.
+  A *prediction* from marginal measurements, not a guarantee —
+  `quantfit validate` measures the whole recipe against it
+  ([ADR-0006](../adr/0006-sensitivity-metric.md)).
 - **`solver`** — which strategy produced the recipe (see
-  [ADR-0007](../adr/0007-recipe-solver-strategy.md)); recorded so recipes are
+  [ADR-0007](../adr/0007-recipe-solver-strategy.md)). Recorded so recipes are
   reproducible and comparable.
 - **`pins`** — user-forced precision overrides, kept verbatim for
   provenance. Patterns are case-sensitive `fnmatch` globs against the full
