@@ -40,6 +40,11 @@ def start_run(
 ) -> DamageMeter:
     """Emit the opening events and build the meter.
 
+    ``meter_built`` records build seconds, calibration tokens, the
+    group count, and ``offloaded_groups`` — how many groups measure
+    through the weights map (ADR-0015), null for meters without the
+    notion.
+
     Args:
         run_log: Sink for the started, ``meter_built``, and halt
             events.
@@ -85,6 +90,11 @@ def start_run(
             "seconds": round(time.monotonic() - build_started, 3),
             "calibration_tokens": meter.calibration_tokens(),
             "groups": len(meter.groups()),
+            # Adapter detail the port does not carry: the torch meter
+            # counts groups measured through the weights map
+            # (ADR-0015). Meters without the notion report null —
+            # distinct from a real zero.
+            "offloaded_groups": getattr(meter, "offloaded_group_count", None),
             "rss_hwm_gb": rss_hwm_gb(),
         },
     )

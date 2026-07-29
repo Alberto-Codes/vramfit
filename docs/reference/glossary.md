@@ -79,6 +79,13 @@ change.
     (`quantfit.ports.outbound.DamageMeter`). The torch adapter
     implements it behind the `scan` extra.
 
+**Offloaded group**
+:   A layer group whose weights `auto` sharding moved off the GPU to
+    host RAM under the `--gpu-memory` cap. The meter perturbs it
+    through accelerate's weights map
+    ([ADR-0015](../adr/0015-offload-aware-scanning.md)). Not
+    "swapped", "spilled", or "CPU group".
+
 **Scan checkpoint**
 :   The incremental record of finished (group x precision) cells that
     makes a scan resumable. Written next to the map as

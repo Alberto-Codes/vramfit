@@ -241,9 +241,9 @@ def scan(
     appends machine-readable events to ``--runlog`` (default beside
     ``--out``), the ADR-0011 run log. Every halt event carries the
     same fields, with ``cells_kept`` null when the stage cannot know
-    the count. The meter
-    refuses models whose groups fall off real devices — see the
-    how-to for the current size limit.
+    the count. Groups offloaded to host RAM under the cap measure
+    through accelerate's weights map (ADR-0015). The meter refuses
+    weights offloaded beyond host RAM — see the how-to.
 
     Raises:
         typer.BadParameter: If ``--precisions``, ``--group-by``, or

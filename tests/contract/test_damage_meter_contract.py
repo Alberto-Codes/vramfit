@@ -38,6 +38,11 @@ FAKE_DAMAGES = {
             id="real-torch",
             marks=[pytest.mark.integration, pytest.mark.slow],
         ),
+        pytest.param(
+            "offloaded",
+            id="real-torch-offloaded",
+            marks=[pytest.mark.integration, pytest.mark.slow, pytest.mark.gpu],
+        ),
     ]
 )
 def meter(request, tmp_path) -> DamageMeter:
@@ -45,12 +50,40 @@ def meter(request, tmp_path) -> DamageMeter:
         return MemoryDamageMeter(
             specs=FAKE_SPECS, damages=dict(FAKE_DAMAGES), tokens=64
         )
+    if request.param == "offloaded":
+        # The port contract must hold when groups measure through the
+        # weights map (ADR-0015) — same behavior, different devices.
+        return request.getfixturevalue("offloaded_contract_meter")
     tiny = request.getfixturevalue("tiny_model_dir")
     from quantfit.adapters.outbound.scan.meter import TorchDamageMeter
 
     calibration = tmp_path / "calib.txt"
     calibration.write_text(CALIBRATION_TEXT)
     return TorchDamageMeter(str(tiny), calibration, max_tokens=128, device="cpu")
+
+
+@pytest.fixture(scope="session")
+def offloaded_contract_meter(offload_model_dir, tmp_path_factory) -> DamageMeter:
+    """One capped meter for the whole contract run — loads are expensive.
+
+    Sharing is safe: every port operation restores the model, and the
+    suite asserts exactly that.
+    """
+    torch = pytest.importorskip("torch", reason="scan extra not installed")
+    if not torch.cuda.is_available():
+        pytest.skip("no CUDA device")
+    from quantfit.adapters.outbound.scan.meter import TorchDamageMeter
+    from tests.conftest import OFFLOAD_GPU_CAP
+
+    calibration = tmp_path_factory.mktemp("contract-calib") / "calib.txt"
+    calibration.write_text(CALIBRATION_TEXT)
+    return TorchDamageMeter(
+        str(offload_model_dir),
+        calibration,
+        max_tokens=128,
+        device="auto",
+        max_gpu_memory=OFFLOAD_GPU_CAP,
+    )
 
 
 def test_groups_are_unique_and_positively_sized(meter: DamageMeter) -> None:
