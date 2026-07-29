@@ -14,14 +14,20 @@ status: draft
 ## The arithmetic that forces the issue
 
 Weights dominate a model's memory footprint: `parameters × bits ÷ 8`.
-Nemotron Super 49B at bf16 is ~98 GB. On a 24 GiB RTX 4090:
+Nemotron Super 49B at bf16 is ~93 GB of weights on disk (the name
+rounds the parameter count up). On a 24 GiB RTX 4090:
 
 | Uniform precision | Approx. weight size | Fits with KV headroom? |
 |-------------------|--------------------|------------------------|
-| 16-bit | ~98 GB | No |
+| 16-bit | ~93 GB | No |
 | 8-bit | ~49 GB | No |
 | 4-bit | ~26 GB | No — over the card's total, before KV |
-| 3-bit | ~19.5 GB | Barely — and uniform 3-bit quality is poor |
+| 3-bit | ~20 GB | Barely — and uniform 3-bit quality is poor |
+
+Rows below 16-bit price the *served* formats at their effective bits
+(Q8_0 8.5, Q4_K 4.5, Q3_K 3.4375 bits per weight —
+[ADR-0014](../adr/0014-per-type-effective-bits.md)), not the nominal
+arithmetic.
 
 Uniform quantization has no answer here: the bit-width that fits wrecks the
 model, and the bit-width that preserves it doesn't fit.
@@ -190,3 +196,23 @@ Four edges survive contact with the landscape, and they compound:
    concurrency — not a file-size or average-bits target. Issue #29
    sketches deepening this into a budget command that derives the
    weight budget from stated intent.
+
+### The line the hardware draws
+
+Test the field against the north-star pairing — the 49B on one
+24 GiB RTX 4090 — and it splits. llama.cpp *can* quantize it there:
+its error measurement is weight-local and streams tensor by tensor,
+no full forward pass needed, which is why heuristic 49B GGUFs
+already exist. EXL2 streams its conversion but does not support the
+49B's NAS-pruned architecture. Unsloth's measurement is not a tool
+users run on their own models. Model Optimizer's gradient scoring is
+sized for data-center GPUs. So producing *a* quant of a too-big
+model on consumer hardware is commonplace — but none of these can
+**measure this model end-to-end** there, because that takes full
+forward passes of ~93 GB of bf16 weights through a 24 GiB card.
+Offload-aware scanning
+([ADR-0015](../adr/0015-offload-aware-scanning.md)) crossed that
+line: the first 49B sensitivity map was measured on the reference
+box the day the ADR landed. Anyone can quantize a model their card
+cannot hold. Measuring one there — then spending its bits by what
+the measurement says — is the new capability.
