@@ -6,10 +6,11 @@ status: draft
 
 > **Status: draft** — the reasoning is grounded in published work and,
 > since 2026-07-28, in our own data: the first real-model scan
-> (Qwen2.5-3B) is folded in below. Offload-aware scanning landed the
-> same week ([ADR-0015](../adr/0015-offload-aware-scanning.md)), and
-> the first 49B scan is running. The prior-art landscape below was
-> re-surveyed 2026-07-28.
+> (Qwen2.5-3B) is folded in below, and the first 49B map — the
+> north-star target, measured through offload-aware scanning
+> ([ADR-0015](../adr/0015-offload-aware-scanning.md)) — followed the
+> same night. The prior-art landscape below was re-surveyed
+> 2026-07-28.
 
 ## The arithmetic that forces the issue
 
@@ -107,11 +108,64 @@ so every downgrade is replayable.
 One model, one calibration set. Damage values are only comparable
 within one calibration set, and the scan measures groups marginally —
 the additivity assumption (total recipe damage ≈ sum of marginal
-damages) stays unverified until the whole-recipe validation pass
-(issue #8) runs. The findings above are evidence the fragility
-profile is real, sharp, and model-specific. They are not yet evidence
-that a packed recipe wins end-to-end — that is what
+damages) leaks, and the whole-recipe validation pass measures the
+leak: sub-additive by 2.05× on this model's 6/5/4 mix, by 2.94× on
+the 49B below — over-prediction both times, the safe direction. The
+findings above are evidence the fragility profile is real, sharp,
+and model-specific. They are not yet evidence that a packed recipe
+wins end-to-end — that is what
 [evaluating packed models](evaluating-packed-models.md) is for.
+
+## The north-star map: 49B measured on the 24 GiB card
+
+The 2026-07-28 Nemotron Super 49B scan is the map the project was
+built to produce: 82 groups × {8, 4, 3, 2} = 328 cells, 8,192
+calibration tokens, 3 h 42 m on the reference box — with 73 of the
+82 groups living off-GPU behind a 15 GiB cap while being measured
+([ADR-0015](../adr/0015-offload-aware-scanning.md)). What it found,
+against the Qwen findings above:
+
+1. **The fragility spread widens with scale.** At 4-bit the
+   best-to-worst spread is ~2,500× (Qwen: ~870×). Layer 0 costs
+   0.483 at 4-bit; layers 58–66 cost ~0.0002. More spread is more
+   room for selective assignment to work.
+2. **The U-curve holds at 80 layers, and precision still flips the
+   ranking.** At 4-bit the expensive real estate is the front of the
+   stack (layers 0, 3, 1, the embeddings, layer 4, in that order).
+   At 2-bit the worst groups are layer 79 (1.90) and the output head
+   (1.23) — the *top* of the stack. Layer 79 is nearly free at 4-bit
+   (0.005) and the model's worst group at 2-bit: fragility rank is a
+   function of precision, at 49B exactly as at 3B.
+3. **One layer is fragile even at 8-bit.** Layer 0 measures 0.138 at
+   8-bit — ~30× the next group (the embeddings at 0.0045). The other
+   81 groups sit in a 0.0001–0.005 band, the instrument's noise
+   floor. Layer 0 of this NAS-pruned stack does not tolerate
+   quantization at any measured precision, and only a per-group map
+   can know that.
+
+### What the solver did with it
+
+`quantfit plan` solved this map for llama.cpp at the real deployment
+budget: 24 GiB card, 16k context at fp8 KV plus runtime overhead
+reserved (3.53 GiB), 20.47 GiB left for weights — ~3.5 effective
+bits/parameter against a model that is ~93 GB at bf16
+([vram budget](vram-budget.md)). The recipe
+(190 downgrades, 20.39 GiB predicted, [ADR-0014](../adr/0014-per-type-effective-bits.md)
+effective-bits pricing):
+
+| Bits | Groups | Where |
+|------|--------|-------|
+| 8 | 3 | layers 0, 1, 3 — the 4-bit-expensive front |
+| 4 | 6 | embeddings, output head, layers 2, 4, 5, 79 — the 2-bit cliffs |
+| 3 | 35 | front-adjacent and upper-mid stack |
+| 2 | 38 | the cheap mid-stack, layers 21–65 |
+
+Nobody encoded "hold the front at 8, catch layer 79 and the head
+before 2-bit, crush the middle". The map did. The whole-recipe
+validation pass then measured the recipe at 0.168 against the
+additive prediction of 0.495 — sub-additive by 2.94×
+([ADR-0006](../adr/0006-sensitivity-metric.md)), the prediction a
+conservative upper bound at 80-layer depth, same as at 3B.
 
 ## Why non-uniform works
 
