@@ -11,6 +11,9 @@ status: draft
 > [the second data point](#the-second-data-point-the-runtime-capability-mix)
 > below). The validation pass — the middle leg — ran the same night
 > ([the third data point](#the-third-data-point-the-first-validation-pass)).
+> On 2026-07-29 the full loop ran on the 49B acceptance target and
+> **lost to the size-matched baseline**
+> ([the fourth data point](#the-fourth-data-point-the-north-star-attempt-lost-honestly)).
 > Tier 3 has not run. The publication gates that consume
 > these evaluations live in [the artifact ecosystem](artifact-ecosystem.md)
 > and issue #11.
@@ -232,6 +235,106 @@ and both land below the additive prediction (0.0661). The runtime's
 quantizer should beat the scan's approximation — and does — while
 the prediction stays a conservative upper bound. That is the shape
 you want the three numbers to have on a model card.
+
+## The fourth data point: the north-star attempt, lost honestly
+
+The first full loop on the acceptance target ran 2026-07-29:
+Nemotron Super 49B, the 8,192-token sensitivity map, planned at the
+real deployment budget (24 GiB card, 16k context at fp8 KV → a
+20.47 GiB weight budget), packed to GGUF, and scored against
+size-matched community baselines. The packed file came out at
+20.30 GiB — the effective-bits prediction over-reserved by 0.44 %
+(ADR-0014) and the pack fit first try, 169.7 MiB under budget. The
+recipe: 3 groups at 8-bit, 6 at 4-bit, 35 at 3-bit, 38 at 2-bit —
+~3.50 effective bits/parameter.
+
+The baselines are bartowski's community GGUFs, both **imatrix**
+quants: Q3_K_S (20.45 GiB, fits the budget 21.7 MiB under — the
+size match) and IQ3_M (21.10 GiB, 648 MiB over budget — the
+over-budget quality reference). Tier 1 is the full WikiText-2 test
+set (584 chunks). Tier 2 is whole-model KL against the f16
+reference over the first 100 chunks (51,200 tokens), the f16 pass
+GPU-assisted on the reference box (llama.cpp b10172, Vulkan). The
+f16 reference measures PPL 8.228 ± 0.141 on those 100 chunks.
+
+| Model | File size | Fits 20.47 GiB budget | imatrix | PPL ↓ | Mean KLD ↓ | Same top token ↑ |
+|-------|-----------|----------------------|---------|-------|------------|------------------|
+| **quantfit recipe** (8/4/3/2 mix) | **20.30 GiB** | **yes** (169.7 MiB under) | no | 9.917 ± 0.075 | 0.3748 | 75.4 % |
+| Q3_K_S heuristic (bartowski) | 20.45 GiB | yes (21.7 MiB under) | yes | **8.532 ± 0.064** | **0.1584** | **83.8 %** |
+| IQ3_M heuristic (bartowski) | 21.10 GiB | no (648 MiB over) | yes | 8.300 ± 0.060 | 0.1633 | 84.1 % |
+| control Q3_K_S (ours, same f16 base) | 20.45 GiB | yes | no | 9.655 ± 0.073 | 0.3451 | 76.9 % |
+
+**The recipe lost, and not narrowly**: 1.39 PPL and 2.4× mean KLD
+behind the size-matched baseline. Under the artifact ecosystem's
+hard gate this is a negative result, recorded as such.
+
+Reading it honestly, in both directions:
+
+- **The control experiment locates the loss.** Our own uniform
+  Q3_K_S, quantized from the same f16 base with default mixing and
+  no imatrix, lands at 9.655 — within 352 bytes of the baseline's
+  size, same tensor types, and still 1.12 PPL behind it. The
+  importance matrix alone accounts for ~81 % of the recipe's gap.
+  Against same-conditions competition the measured mix loses by
+  0.26 PPL, not 1.39. The v1 pack path packs plain K-quants
+  (ADR-0012 deferred the i-quant/imatrix table until the scan emits
+  an importance matrix) — at the 3-bit class, that deferral costs
+  more than every other decision in the loop combined.
+- **The three-number chain inverted.** On Qwen, the packed artifact
+  (real K-quants) beat the scan-frame measurement: 0.0180 < 0.0322
+  < 0.0661. Here the packed model's KL (0.3748, WikiText) sits
+  *above* the scan-frame whole-recipe measurement (0.1682,
+  calibration text) — different text, so indicative rather than
+  exact, but the direction flipped. The scan's round-to-nearest
+  2-bit is an optimistic stand-in for un-assisted `--pure` Q2_K.
+  At 6/5/4-bit the scan frame under-promised the runtime; at
+  3/2-bit it over-promises.
+- **The additive prediction still over-predicted its own frame.**
+  Validation measured 0.1682 against the predicted 0.4949
+  (sub-additive by 2.94×, the safe direction — ADR-0006's second
+  measurement). The prediction machinery behaved; the frame
+  transfer is what leaked.
+- **Size math held.** Every predicted byte count over-reserved by
+  under half a percent, the budget re-check passed first try, and
+  the packed file serves the card the loop planned for. The loss is
+  a quality loss at equal size, not a budget failure.
+
+### The diagnostic that broke: a warning the meter cannot give
+
+To isolate the 2-bit contribution, the same map was re-planned with
+its 2-bit cells removed. The solver produced a near-uniform 3-bit
+recipe (79 groups at 3-bit, layers 0–2 at 4-bit, 20.24 GiB,
+predicted damage 1.44) and `quantfit pack` packed it cleanly. The
+artifact is **destroyed**: PPL ~10⁶, same-top-token 0.3 %, on both
+the Vulkan and CPU backends. A second variant with the output head
+at Q6_K instead of Q3_K is equally destroyed, which rules the
+output tensor out. Every Q3_K tensor in the broken file
+dequantizes to finite, sane-magnitude values — the payloads are
+fine, so the failure is an inference-time interaction with the
+type layout, not a corrupt file.
+
+What separates the broken layout from every working one is narrow:
+the working control keeps `attn_v` at Q5_K everywhere (the
+quantizer's GQA heuristic) and the working recipe keeps layers 3,
+4, 5, and 79 at 4-bit or above. The broken layout is the only one
+that takes those layers' attention tensors to Q3_K. The exact
+mechanism is not isolated, and the honest statement is the scarier
+one: **the scan predicted damage 1.44 for a recipe whose real
+damage is total.** The damage meter measures round-to-nearest
+simulation, and no gate between `plan` and the eval tier would
+have caught this. A packed artifact needs a cheap post-pack smoke
+test — a few perplexity chunks — before anything downstream trusts
+it.
+
+What this changes: the i-quant/imatrix open question in ADR-0012
+stops being deferred housekeeping and becomes the gating item for
+the north-star claim. The scan already runs the full calibration
+set through the model — emitting the importance matrix as a
+byproduct was the design intent. Second, the scan's quantization
+stand-in needs a 2-bit-honest variant (or the solver a
+runtime-frame correction) before 2-bit cells can be trusted at
+pack time. Third, the broken diagnostic above makes a post-pack
+smoke test a hard requirement, not hygiene.
 
 ## Provenance is not evidence
 

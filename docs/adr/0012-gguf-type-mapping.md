@@ -100,6 +100,11 @@ scan does not produce one today. K-quants need no extra input.
 ## Open questions
 
 - The i-quant table, once the scan emits an importance matrix.
+  **Escalated 2026-07-29:** the 49B head-to-head loss traced ~81 %
+  of its perplexity gap to the baseline's importance matrix (the
+  control experiment in
+  [evaluating packed models](../explanation/evaluating-packed-models.md)).
+  This question now gates the north-star claim.
 - Whether pack persists the toolchain's own output as a sidecar
   artifact. Today a zero-exit tool's warnings (for example an
   override pattern that matched no tensor) are discarded.

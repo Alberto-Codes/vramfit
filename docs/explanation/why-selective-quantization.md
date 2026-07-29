@@ -167,6 +167,14 @@ additive prediction of 0.495 — sub-additive by 2.94×
 ([ADR-0006](../adr/0006-sensitivity-metric.md)), the prediction a
 conservative upper bound at 80-layer depth, same as at 3B.
 
+The packed artifact then **lost the head-to-head** against the
+size-matched community baseline — and a control experiment showed
+~81 % of the gap is the baseline's importance matrix, which the v1
+pack path does not use. The full scoreboard and diagnosis live in
+[the fourth data point](evaluating-packed-models.md). The map's
+selectivity survives that result; the pack path's missing imatrix
+does not.
+
 ## Why non-uniform works
 
 The Qwen scan is one model; the literature says the shape generalizes.
