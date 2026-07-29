@@ -6,11 +6,11 @@ a caller-supplied interpreter — that interpreter carries torch, this
 package never imports it (ADR-0005). `pack` first rejects a recipe
 recorded for a foreign runtime (ADR-0013), then runs
 ``llama-quantize`` with the recipe's type mapping from
-[quantfit.adapters.outbound.gguf.types][] — pattern overrides per
-layer group plus dedicated embedding and output-head flags. Every failure — a tool
-that cannot start, exits nonzero, dies to a signal, or leaves no
-usable file — translates to `PackError` at this boundary (ADR-0011),
-carrying the tool's last output lines.
+[quantfit.adapters.outbound.gguf.types][]: pattern overrides per
+layer group plus dedicated embedding and output-head flags. Every
+failure — a tool that cannot start, exits nonzero, dies to a
+signal, or leaves no usable file — translates to `PackError` at
+this boundary (ADR-0011), carrying the tool's last output lines.
 
 Examples:
     Pack a recipe with a local llama.cpp checkout:

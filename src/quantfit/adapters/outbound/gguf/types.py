@@ -5,8 +5,9 @@ is testable and the verified fake can share it. Nominal precisions
 map to K-quant types (the full llama.cpp capability set since
 ADR-0013), layer groups map to escaped `blk.<n>.` regex patterns,
 and the embedding and `lm_head` groups map to the quantizer's
-dedicated embedding and output flags. The backend's own runtime name is the domain's `LLAMA_CPP`
-constant, so the table key and the pack check cannot drift apart. A
+dedicated embedding and output flags. The backend's own runtime
+name is the domain's `LLAMA_CPP` constant, so the table key and
+the pack check cannot drift apart. A
 recipe recorded for a foreign runtime, or anything the table cannot
 map, raises `PackError` instead of guessing.
 

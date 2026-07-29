@@ -204,7 +204,8 @@ class TestTorchDamageMeter:
     def test_discovered_groups_match_the_pack_flag_literals(self, tiny_meter) -> None:
         # The GGUF backend keys its embedding and output flags on these
         # exact names (ADR-0012). If discovery ever renames them, the
-        # head silently falls to the --pure base type.
+        # flags disengage and the renamed group surfaces only later,
+        # as a PackError for an unmapped group. This pins the drift.
         from quantfit.adapters.outbound.gguf.types import (
             EMBEDDING_GROUP,
             OUTPUT_GROUP,
