@@ -45,10 +45,17 @@ Points fixed at acceptance (2026-07-28):
 
 ## Open questions
 
-- How many calibration tokens before per-group KL stabilizes? The
-  mechanism became a dedicated convergence scan: the 49B is
-  re-scanned at 32,768 tokens for comparison against its 8,192-token
-  map, and the observed convergence sets the new default.
+- How many calibration tokens before per-group KL stabilizes? First
+  measurement (2026-07-29, the 49B at 8,192 vs 32,768 tokens, same
+  calibration file): **8,192 tokens is not enough.** Median cell
+  damage shifts by 1.3× at 8-bit up to 4.5× at 2-bit, five
+  front-stack layers drop ~100×, and re-planning the same budget
+  flips 41 of 82 assignments. Rank order holds better than
+  magnitudes (Spearman 0.99 at 8-bit down to 0.79 at 2-bit): the
+  U-curve and the worst-group set survive, the middle reorders.
+  Whether 32,768 suffices stays open — it needs a point beyond 32k.
+  Until then the 131,072-token default stands and 8k-token maps are
+  pilots, not maps.
 - The "one task eval as ground truth" leg has not run as decided.
   What ran on the first packed 49B: a perplexity and whole-model-KL
   head-to-head, plus a now-mandatory post-pack smoke test (ADR-0012,
