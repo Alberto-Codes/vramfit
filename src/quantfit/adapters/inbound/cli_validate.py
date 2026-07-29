@@ -151,7 +151,9 @@ def validate(
     and ``--max-tokens`` — damage values are only comparable within
     one calibration set. The command reports the numbers and does not
     gate on them: the invalidation threshold is an open question in
-    ADR-0006 until measured gaps exist.
+    ADR-0006 until measured gaps exist. With offloaded groups the
+    pass restores originals from the model's safetensors shards, so
+    the model must be a local safetensors directory (ADR-0015).
 
     Raises:
         typer.BadParameter: If ``--group-by`` or ``--gpu-memory`` is

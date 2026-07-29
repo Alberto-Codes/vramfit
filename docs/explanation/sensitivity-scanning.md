@@ -64,6 +64,8 @@ safety margin.
 3. **Quantization method within a group** — round-to-nearest is v1;
    AWQ-style scaling changes both the damage and the cost of scanning. A
    method change is a new scan, not a new schema.
-4. **Streaming** — the v1 meter relies on `device_map=auto` sharding.
-   Streaming one group at a time to the GPU (with cached reference
-   activations) is the planned speedup for models larger than VRAM.
+4. **Streaming** — the v1 meter relies on `device_map=auto` sharding,
+   and groups offloaded to host RAM measure through accelerate's
+   weights map (ADR-0015). Streaming one group at a time to the GPU
+   (with cached reference activations) is the planned speedup for
+   models larger than VRAM.

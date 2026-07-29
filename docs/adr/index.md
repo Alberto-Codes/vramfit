@@ -32,6 +32,7 @@ change of course gets a *new* ADR that supersedes the old one.
 | [0012](0012-gguf-type-mapping.md) | The GGUF backend maps nominal bits to K-quant types | Accepted, amended by 0013 |
 | [0013](0013-runtime-capability-in-recipes.md) | Recipes record their target runtime | Accepted, amended by 0014 |
 | [0014](0014-per-type-effective-bits.md) | The solver predicts sizes from per-type effective bits | Accepted |
+| [0015](0015-offload-aware-scanning.md) | The meter perturbs offloaded groups through accelerate's weights map | Proposed |
 
 ## Template
 

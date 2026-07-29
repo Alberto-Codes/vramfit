@@ -1,0 +1,254 @@
+"""Offloaded-group support for the meter (ADR-0015).
+
+``auto`` sharding under a GPU cap moves overflow modules to host RAM
+and replaces their parameters with meta tensors. The real values live
+in each module's ``AlignDevicesHook.weights_map``, and the forward
+hooks stream them to the GPU every pass. This module resolves each
+meta parameter to that backing CPU tensor, so the meter can perturb
+and restore offloaded groups in place.
+
+Resolution verifies behavior, not accelerate versions: the backing
+tensor must be a real CPU tensor of the parameter's shape, and two
+map reads must return one storage. A parameter that fails any check
+keeps the honest refusal — the meter degrades to "cannot measure",
+never to zero damage.
+
+`ShardReader` is the second half: a whole-recipe pass cannot stage
+~93 GB of original clones in host RAM at 49B scale, so offloaded
+originals restore from the model's safetensors shards instead.
+
+Examples:
+    Resolve a sharded model's offloaded parameters:
+
+    ```python
+    backing = resolve_offloaded_params(model, groups)
+    ```
+
+See Also:
+    - [quantfit.adapters.outbound.scan.meter][]: The meter both halves
+      serve.
+"""
+
+from __future__ import annotations
+
+import json
+from collections.abc import Mapping
+from pathlib import Path
+
+import torch
+from safetensors import safe_open
+
+_INDEX_FILE = "model.safetensors.index.json"
+_SINGLE_FILE = "model.safetensors"
+
+
+def resolve_offloaded_params(
+    model: torch.nn.Module, groups: dict[str, list[str]]
+) -> dict[str, torch.Tensor]:
+    """Map every offloaded group parameter to its backing CPU tensor.
+
+    Args:
+        model: The loaded model.
+        groups: Discovered group membership.
+
+    Returns:
+        Backing CPU tensors keyed by parameter name. Empty when no
+        group parameter is offloaded.
+
+    Raises:
+        ValueError: If any group holds a meta parameter without a
+            verified backing tensor — disk-offloaded weights, or an
+            accelerate layout this adapter does not recognize. The
+            message counts affected groups and names the first three.
+    """
+    params = dict(model.named_parameters())
+    backing: dict[str, torch.Tensor] = {}
+    unreachable: list[str] = []
+    for group_name, members in groups.items():
+        resolved: dict[str, torch.Tensor] = {}
+        for member in members:
+            if not params[member].is_meta:
+                continue
+            tensor = _backing_tensor(model, member, params[member].shape)
+            if tensor is None:
+                unreachable.append(group_name)
+                break
+            resolved[member] = tensor
+        else:
+            backing.update(resolved)
+    if unreachable:
+        shown = ", ".join(unreachable[:3])
+        raise ValueError(
+            f"{len(unreachable)} of {len(groups)} groups were offloaded beyond "
+            f"host RAM and cannot be measured (first: {shown}) — raise "
+            "--gpu-memory, free host RAM, or use a smaller model"
+        )
+    return backing
+
+
+def _backing_tensor(
+    model: torch.nn.Module, name: str, shape: torch.Size
+) -> torch.Tensor | None:
+    """Find and verify one meta parameter's backing CPU tensor.
+
+    Args:
+        model: The loaded model.
+        name: The parameter's dotted name.
+        shape: The meta parameter's shape.
+
+    Returns:
+        The verified backing tensor, or None when any check fails:
+        no hook, no weights map, no entry, a non-CPU or wrong-shape
+        tensor, or two reads returning different storages.
+    """
+    module_name, _, _ = name.rpartition(".")
+    try:
+        module = model.get_submodule(module_name)
+    except AttributeError:
+        return None
+    hook = getattr(module, "_hf_hook", None)
+    weights_map = None
+    for candidate in [hook, *getattr(hook, "hooks", ())]:
+        weights_map = getattr(candidate, "weights_map", None)
+        if weights_map is not None:
+            break
+    if weights_map is None:
+        return None
+    # PrefixedDataset wraps the loader that keys on full dotted names.
+    dataset = getattr(weights_map, "dataset", weights_map)
+    try:
+        first, second = dataset[name], dataset[name]
+    except KeyError:
+        return None
+    if (
+        not isinstance(first, torch.Tensor)
+        or first.is_meta
+        or first.device.type != "cpu"
+        or first.shape != shape
+        or first.data_ptr() != second.data_ptr()
+    ):
+        return None
+    return first
+
+
+class ShardReader:
+    """Reads original tensors back from a model's safetensors shards.
+
+    The restore source for offloaded originals in a whole-recipe pass
+    (ADR-0015): offloaded tensors load from the shards without dtype
+    conversion, so the files on disk already hold their originals.
+
+    Attributes:
+        index (dict[str, Path]): Shard file per tensor name.
+
+    Examples:
+        Verify, then restore after a measurement:
+
+        ```python
+        reader = open_shard_reader("./model")
+        assert reader.verify({"model.layers.0.mlp.w": (64, 64)}) is None
+        reader.read_into({"model.layers.0.mlp.w": target})
+        ```
+    """
+
+    def __init__(self, index: dict[str, Path]) -> None:
+        """Wrap a resolved tensor-name-to-shard-file index.
+
+        Args:
+            index: Shard file per tensor name.
+        """
+        self.index = index
+
+    def _by_file(self, names: list[str]) -> dict[Path, list[str]]:
+        """Group tensor names by shard file, opening each file once.
+
+        Args:
+            names: Tensor names to group.
+
+        Returns:
+            Names per shard file.
+        """
+        by_file: dict[Path, list[str]] = {}
+        for name in names:
+            by_file.setdefault(self.index[name], []).append(name)
+        return by_file
+
+    def verify(self, shapes: Mapping[str, tuple[int, ...]]) -> str | None:
+        """Check that every tensor is restorable before weights change.
+
+        Args:
+            shapes: Expected shape per tensor name.
+
+        Returns:
+            None when every tensor resolves to a shard entry of the
+            expected shape, otherwise the first mismatch, named.
+
+        Raises:
+            OSError: If a shard file cannot be read.
+        """
+        missing = sorted(set(shapes) - set(self.index))
+        if missing:
+            return f'no shard entry for "{missing[0]}"'
+        for file, names in self._by_file(sorted(shapes)).items():
+            with safe_open(file, framework="pt", device="cpu") as shard:
+                for name in names:
+                    if name not in shard.keys():  # noqa: SIM118 - not a dict
+                        return f'"{name}" missing from {file.name}'
+                    found = tuple(shard.get_slice(name).get_shape())
+                    if found != shapes[name]:
+                        return (
+                            f'"{name}" has shape {found} in {file.name}, '
+                            f"expected {shapes[name]}"
+                        )
+        return None
+
+    def read_into(self, targets: Mapping[str, torch.Tensor]) -> None:
+        """Copy each named original from its shard into a live tensor.
+
+        One tensor loads at a time, so peak extra memory is one
+        tensor's bytes. ``copy_`` casts when the model loaded at a
+        different dtype than the shards store.
+
+        Args:
+            targets: Destination tensor per tensor name.
+
+        Raises:
+            KeyError: If a name has no shard entry — `verify` runs
+                first on every path that reaches here.
+            OSError: If a shard file cannot be read.
+        """
+        with torch.no_grad():
+            for file, names in self._by_file(sorted(targets)).items():
+                with safe_open(file, framework="pt", device="cpu") as shard:
+                    for name in names:
+                        targets[name].copy_(shard.get_tensor(name))
+
+
+def open_shard_reader(model_id: str) -> ShardReader | None:
+    """Locate the safetensors shards behind a local model path.
+
+    Args:
+        model_id: Hugging Face model id or local checkpoint path.
+
+    Returns:
+        A reader over the sharded or single-file layout, or None when
+        ``model_id`` is not a local directory with safetensors files.
+
+    Raises:
+        OSError: If an index or shard file exists but cannot be read.
+        ValueError: If the index file is not valid JSON.
+    """
+    directory = Path(model_id)
+    if not directory.is_dir():
+        return None
+    index_path = directory / _INDEX_FILE
+    if index_path.is_file():
+        weight_map = json.loads(index_path.read_text(encoding="utf-8"))["weight_map"]
+        return ShardReader(
+            {name: directory / file for name, file in weight_map.items()}
+        )
+    single = directory / _SINGLE_FILE
+    if single.is_file():
+        with safe_open(single, framework="pt", device="cpu") as shard:
+            return ShardReader(dict.fromkeys(shard.keys(), single))
+    return None

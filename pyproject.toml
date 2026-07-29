@@ -282,6 +282,7 @@ forbidden_modules = ["torch", "transformers", "accelerate", "safetensors", "vllm
 ignore_imports = [
     "quantfit.adapters.outbound.scan.* -> torch",
     "quantfit.adapters.outbound.scan.* -> transformers",
+    "quantfit.adapters.outbound.scan.* -> safetensors",
 ]
 
 # --------------------------------------------------------------------------- #
