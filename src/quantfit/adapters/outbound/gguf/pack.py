@@ -7,10 +7,14 @@ package never imports it (ADR-0005). `pack` first rejects a recipe
 recorded for a foreign runtime (ADR-0013), then runs
 ``llama-quantize`` with the recipe's type mapping from
 [quantfit.adapters.outbound.gguf.types][]: pattern overrides per
-layer group plus dedicated embedding and output-head flags. Every
-failure — a tool that cannot start, exits nonzero, dies to a
-signal, or leaves no usable file — translates to `PackError` at
-this boundary (ADR-0011), carrying the tool's last output lines.
+layer group plus dedicated embedding and output-head flags. With an
+importance matrix (ADR-0016) the adapter also scans the quantizer's
+zero-exit output for tensors the matrix did not cover — the
+quantizer only warns, and a silently unassisted tensor must not
+pass unrecorded. Every failure — a tool that cannot start, exits
+nonzero, dies to a signal, or leaves no usable file — translates to
+`PackError` at this boundary (ADR-0011), carrying the tool's last
+output lines.
 
 Examples:
     Pack a recipe with a local llama.cpp checkout:
@@ -35,12 +39,12 @@ See Also:
 
 from __future__ import annotations
 
-import signal
-import subprocess
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
+from quantfit.adapters.outbound.gguf.toolrun import run_tool, sized_file
 from quantfit.adapters.outbound.gguf.types import (
     PackError,
     base_type,
@@ -52,71 +56,10 @@ from quantfit.adapters.outbound.gguf.types import (
 from quantfit.domain.model import Recipe
 from quantfit.domain.pack import PackResult
 
-_TAIL_LINES: Final[int] = 15
-
-
-def _sized_file(path: Path, stage: str) -> int:
-    """Measure a tool's output file, rejecting absent or empty results.
-
-    Args:
-        path: The file the tool reported writing.
-        stage: Stage name for the error message.
-
-    Returns:
-        The file size in bytes, always positive.
-
-    Raises:
-        PackError: If the file is absent, empty, or unreadable — a
-            zero-exit tool that wrote nothing must not pass as
-            success.
-    """
-    try:
-        size = path.stat().st_size
-    except OSError as exc:
-        raise PackError(f"{stage} output {path} cannot be inspected: {exc}") from exc
-    if size == 0:
-        raise PackError(f"{stage} exited 0 but wrote an empty file at {path}")
-    return size
-
-
-def _run_tool(command: list[str], stage: str) -> None:
-    """Run one toolchain subprocess, translating failure to `PackError`.
-
-    stderr merges into stdout so the failure tail is the tool's real
-    last words, whichever stream carried them.
-
-    Args:
-        command: Argument vector. The first element is the tool path.
-        stage: Stage name for the error message (``convert`` or
-            ``quantize``).
-
-    Raises:
-        PackError: If the tool cannot start, exits nonzero, or dies
-            to a signal (named in the message). The message carries
-            the last `_TAIL_LINES` lines the tool wrote.
-    """
-    try:
-        # No timeout on purpose: a 49B conversion legitimately runs for
-        # a long time, and a wrong guess kills real work. stderr merges
-        # into stdout so the failure tail never hides the wrong stream.
-        completed = subprocess.run(  # noqa: S603 - fixed tool paths from the composition root, no shell
-            command,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            check=False,
-        )
-    except OSError as exc:
-        raise PackError(f"{stage}: cannot run {command[0]}: {exc}") from exc
-    if completed.returncode != 0:
-        tail = "\n".join((completed.stdout or "").splitlines()[-_TAIL_LINES:])
-        code = completed.returncode
-        died = (
-            f"killed by signal {signal.Signals(-code).name}"
-            if code < 0
-            else f"failed with exit code {code}"
-        )
-        raise PackError(f"{stage} {died}:\n{tail or '(no output captured)'}")
+# The quantizer's zero-exit warning for a tensor the importance
+# matrix does not cover (llama.cpp src/llama-quant.cpp). The tensor
+# is then quantized without importance data.
+_IMATRIX_MISS: Final[re.Pattern[str]] = re.compile(r"did not find weights for (\S+)")
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,6 +76,8 @@ class LlamaCppPacker:
         python_bin (Path): Interpreter for the convert script. Must
             import torch.
         threads (int): Quantizer thread count.
+        imatrix (Path | None): Importance matrix file for the
+            quantizer (ADR-0016). None packs without one.
 
     Examples:
         The composition root wires the paths:
@@ -156,9 +101,13 @@ class LlamaCppPacker:
     quantize_bin: Path
     python_bin: Path
     threads: int = 8
+    imatrix: Path | None = None
 
     def convert(self) -> int:
         """Materialize the f16 base GGUF, reusing any existing file.
+
+        The convert tool runs through the shared toolchain plumbing
+        ([quantfit.adapters.outbound.gguf.toolrun][]).
 
         Returns:
             Size of the base GGUF in bytes.
@@ -168,7 +117,7 @@ class LlamaCppPacker:
                 file, or the file cannot be inspected.
         """
         if not self.base_gguf.exists():
-            _run_tool(
+            run_tool(
                 [
                     str(self.python_bin),
                     str(self.convert_script),
@@ -180,7 +129,7 @@ class LlamaCppPacker:
                 ],
                 stage="convert",
             )
-        return _sized_file(self.base_gguf, stage="convert")
+        return sized_file(self.base_gguf, stage="convert")
 
     def pack(self, recipe: Recipe) -> PackResult:
         """Quantize the base GGUF into the recipe's packed model.
@@ -188,7 +137,10 @@ class LlamaCppPacker:
         The embedding and output-head flags resolve independently: an
         ``lm_head`` group drives the output flag with its own
         assignment, and the embedding assignment stands in when the
-        scan measured no head (ADR-0012).
+        scan measured no head (ADR-0012). A configured importance
+        matrix reaches the quantizer as ``--imatrix``, lands in the
+        result's provenance, and the quantizer's output is scanned
+        for tensors the matrix did not cover (ADR-0016).
 
         Args:
             recipe: The recipe to apply.
@@ -213,6 +165,8 @@ class LlamaCppPacker:
         output = output_tensor_type(recipe)
         overrides = tensor_overrides(recipe)
         command = [str(self.quantize_bin), "--pure"]
+        if self.imatrix is not None:
+            command += ["--imatrix", str(self.imatrix)]
         if embedding is not None:
             command += ["--token-embedding-type", embedding]
         if output is not None:
@@ -222,11 +176,18 @@ class LlamaCppPacker:
         for override in overrides:
             command += ["--tensor-type", f"{override.pattern}={override.quant_type}"]
         command += [str(self.base_gguf), str(self.out_path), base, str(self.threads)]
-        _run_tool(command, stage="quantize")
+        quantize_output = run_tool(command, stage="quantize")
+        uncovered = (
+            tuple(dict.fromkeys(_IMATRIX_MISS.findall(quantize_output)))
+            if self.imatrix is not None
+            else ()
+        )
         return PackResult(
-            packed_bytes=_sized_file(self.out_path, stage="quantize"),
+            packed_bytes=sized_file(self.out_path, stage="quantize"),
             base_type=base,
             token_embedding_type=embedding,
             output_tensor_type=output,
             overrides=overrides,
+            imatrix_path=None if self.imatrix is None else str(self.imatrix),
+            imatrix_uncovered=uncovered,
         )
