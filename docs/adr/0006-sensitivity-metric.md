@@ -69,9 +69,18 @@ Points fixed at acceptance (2026-07-28):
   Super 49B, the 8/4/3/2 recipe at the 20.47 GiB budget, 8,192
   tokens): measured 0.1682 against predicted 0.4949 — sub-additive
   by 2.94x, at 80-layer depth and a 3-and-2-bit-dominant mix. Both
-  measurements over-predict, which is the safe direction. The open
-  threshold narrows to under-prediction: how much measured damage
-  above predicted invalidates a scan.
+  measurements over-predict, which is the safe direction.
+  **Third measurement (2026-07-29, the same budget re-planned on the
+  32,768-token map): measured 1.1234 against predicted 0.0940 —
+  super-additive by 11.9x.** The dangerous direction exists. The
+  recipe that produced it moves 18 more groups to 2-bit (42 of 82)
+  on the strength of collapsed marginal damages, and the joint
+  measurement says those marginals do not add. Sub-additivity is a property of
+  particular recipes, not of the meter. The packed artifact
+  confirmed the warning: 10.48 PPL against the pilot-map recipe's
+  9.92 at the same budget (the fifth data point). The invalidation
+  threshold is now a live question with one point on each side of
+  1.0 — and the super-additive side is the one that packs badly.
 
 ## Consequences
 

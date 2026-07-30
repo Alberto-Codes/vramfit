@@ -7,8 +7,9 @@ port carries one machine event at a time (ADR-0011). The scan ports
 cell so a crashed scan can resume — the meter also measures a whole
 recipe at once for the validation pass (ADR-0006). The pack port (`RecipePacker`)
 carries its two toolchain stages separately so the composition root
-can log each (ADR-0012). Concrete implementations live in
-[quantfit.adapters.outbound][].
+can log each (ADR-0012), and the smoke port (`SmokeTester`) carries
+the post-pack proof that the artifact emits language (ADR-0017).
+Concrete implementations live in [quantfit.adapters.outbound][].
 
 Examples:
     A test double satisfying `RecipeSink`:
@@ -300,6 +301,40 @@ class RecipePacker(Protocol):
             RuntimeError: If the base GGUF is missing, the recipe has
                 a group or precision the backend cannot map, or the
                 quantizer fails.
+        """
+        ...
+
+
+class SmokeTester(Protocol):
+    """Measures a packed model's perplexity over a few chunks.
+
+    The post-pack smoke test (ADR-0017): a cheap proof that the
+    packed artifact emits language before anything downstream trusts
+    it. The llama.cpp adapter drives ``llama-perplexity`` by
+    subprocess. The measurement is the port's whole job — the verdict
+    against the ceiling is domain arithmetic
+    (`quantfit.domain.pack.smoke_passed`).
+
+    Examples:
+        The pack command drives the port like this:
+
+        ```python
+        perplexity = tester.smoke()
+        passed = smoke_passed(perplexity, threshold)
+        ```
+    """
+
+    def smoke(self) -> float:
+        """Run the smoke chunks and report the final perplexity.
+
+        Returns:
+            The tool's final perplexity estimate. May be non-finite —
+            a destroyed artifact's NaN is a valid measurement and the
+            caller's ceiling rejects it.
+
+        Raises:
+            RuntimeError: If the tool cannot start, exits nonzero, or
+                reports no final estimate.
         """
         ...
 

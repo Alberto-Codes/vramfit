@@ -3,7 +3,12 @@ from __future__ import annotations
 import pytest
 
 from quantfit.domain.model import Assignment, PlanMeta, Recipe
-from quantfit.domain.pack import PackResult, TypeOverride, weight_budget_margin
+from quantfit.domain.pack import (
+    PackResult,
+    TypeOverride,
+    smoke_passed,
+    weight_budget_margin,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -104,6 +109,39 @@ class TestPackResult:
         with pytest.raises(ValueError, match="must not be empty"):
             TypeOverride(pattern=pattern, quant_type=quant_type)
 
+    def test_empty_imatrix_path_raises_value_error(self) -> None:
+        with pytest.raises(ValueError, match="imatrix_path"):
+            PackResult(
+                packed_bytes=1,
+                base_type="Q4_K_S",
+                token_embedding_type=None,
+                output_tensor_type=None,
+                overrides=(),
+                imatrix_path="",
+            )
+
+    def test_uncovered_tensors_without_imatrix_raise_value_error(self) -> None:
+        with pytest.raises(ValueError, match="imatrix_uncovered"):
+            PackResult(
+                packed_bytes=1,
+                base_type="Q4_K_S",
+                token_embedding_type=None,
+                output_tensor_type=None,
+                overrides=(),
+                imatrix_uncovered=("token_embd.weight",),
+            )
+
+    def test_imatrix_path_defaults_to_none(self) -> None:
+        result = PackResult(
+            packed_bytes=1,
+            base_type="Q4_K_S",
+            token_embedding_type=None,
+            output_tensor_type=None,
+            overrides=(),
+        )
+
+        assert result.imatrix_path is None
+
 
 class TestWeightBudgetMargin:
     def test_under_budget_margin_is_positive(self) -> None:
@@ -118,3 +156,36 @@ class TestWeightBudgetMargin:
     def test_non_positive_packed_bytes_raises_value_error(self) -> None:
         with pytest.raises(ValueError, match="packed_bytes"):
             weight_budget_margin(make_recipe(3_000), 0)
+
+
+class TestSmokePassed:
+    def test_working_perplexity_under_ceiling_passes(self) -> None:
+        assert smoke_passed(9.92, threshold=1000.0) is True
+
+    def test_destroyed_perplexity_over_ceiling_fails(self) -> None:
+        assert smoke_passed(1_020_627.87, threshold=1000.0) is False
+
+    def test_perplexity_at_the_ceiling_fails(self) -> None:
+        assert smoke_passed(1000.0, threshold=1000.0) is False
+
+    @pytest.mark.parametrize(
+        "perplexity",
+        [float("nan"), float("inf"), float("-inf")],
+        ids=["nan", "inf", "-inf"],
+    )
+    def test_non_finite_perplexity_fails(self, perplexity) -> None:
+        assert smoke_passed(perplexity, threshold=1000.0) is False
+
+    def test_non_positive_threshold_raises_value_error(self) -> None:
+        with pytest.raises(ValueError, match="threshold"):
+            smoke_passed(9.5, threshold=0.0)
+
+    def test_infinite_threshold_raises_value_error(self) -> None:
+        # An infinite ceiling would silently disable the gate.
+        with pytest.raises(ValueError, match="threshold"):
+            smoke_passed(1_020_627.87, threshold=float("inf"))
+
+    def test_perplexity_below_one_fails(self) -> None:
+        # Perplexity is mathematically at least 1 — lower values
+        # signal a broken tool, not a good artifact.
+        assert smoke_passed(0.0, threshold=1000.0) is False

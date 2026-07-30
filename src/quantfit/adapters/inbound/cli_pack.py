@@ -3,10 +3,13 @@
 The composition root for the pack step (ADR-0010, ADR-0012). It
 validates the toolchain paths up front, loads the recipe, wires the
 `RecipePacker` port to the llama.cpp adapter, and drives the two
-stages — convert, then quantize — emitting one run-log event per
-stage. After packing it re-checks the real bytes against the
-recipe's weight budget and exits 1 when the packed model does not
-fit, keeping the file for inspection.
+stages — convert, then quantize (imatrix-assisted when ``--imatrix``
+is given, ADR-0016) — emitting one run-log event per stage. After
+packing it re-checks the real bytes against the recipe's weight
+budget, then proves the artifact emits language when ``--smoke-text``
+is given (ADR-0017 — the smoke stage lives in
+[quantfit.adapters.inbound.cli_pack_smoke][]). A failed check exits
+1 and keeps the file for inspection.
 
 Examples:
     Pack a recipe with a local llama.cpp checkout:
@@ -30,6 +33,11 @@ from typing import Annotated
 
 import typer
 
+from quantfit.adapters.inbound.cli_pack_smoke import (
+    _check_inputs,
+    _halt,
+    _run_smoke,
+)
 from quantfit.adapters.inbound.run_log import SafeRunLog
 from quantfit.adapters.outbound.gguf.pack import LlamaCppPacker
 from quantfit.adapters.outbound.json_common import ArtifactError
@@ -48,6 +56,7 @@ def _build_packer(
     llama_cpp: Path,
     python_bin: Path,
     threads: int,
+    imatrix: Path | None,
 ) -> RecipePacker:
     """Wire the llama.cpp adapter for one pack run.
 
@@ -62,6 +71,7 @@ def _build_packer(
         llama_cpp: llama.cpp checkout with built tools.
         python_bin: Interpreter for the convert script.
         threads: Quantizer thread count.
+        imatrix: Importance matrix file, or None (ADR-0016).
 
     Returns:
         The wired packer.
@@ -74,23 +84,8 @@ def _build_packer(
         quantize_bin=llama_cpp / "build" / "bin" / "llama-quantize",
         python_bin=python_bin,
         threads=threads,
+        imatrix=imatrix,
     )
-
-
-def _halt(run_log: SafeRunLog, stage: str, exc: Exception) -> typer.Exit:
-    """Report one failed stage on both channels.
-
-    Args:
-        run_log: Sink for the ``pack_halted`` event.
-        stage: The stage that failed.
-        exc: The failure.
-
-    Returns:
-        The exit to raise, code 1.
-    """
-    typer.echo(f"error: {exc}", err=True)
-    run_log.emit("pack_halted", {"stage": stage, "error": str(exc)})
-    return typer.Exit(code=1)
 
 
 def _load_recipe(path: Path) -> Recipe:
@@ -142,7 +137,33 @@ def pack(
             "provisions its dependencies. Default: this one."
         ),
     ] = None,
-    threads: Annotated[int, typer.Option(min=1, help="Quantizer thread count.")] = 8,
+    threads: Annotated[
+        int,
+        typer.Option(min=1, help="Thread count for the quantizer and the smoke test."),
+    ] = 8,
+    imatrix: Annotated[
+        Path | None,
+        typer.Option(
+            help="Importance matrix for the quantizer (ADR-0016). "
+            "Generate with llama-imatrix against the base GGUF."
+        ),
+    ] = None,
+    smoke_text: Annotated[
+        Path | None,
+        typer.Option(
+            help="Text for the post-pack smoke test (ADR-0017). "
+            "Without it the packed model stays unproven."
+        ),
+    ] = None,
+    smoke_chunks: Annotated[
+        int, typer.Option(min=1, help="Smoke-test chunk count.")
+    ] = 2,
+    smoke_threshold: Annotated[
+        float,
+        typer.Option(
+            min=0.0, help="Perplexity ceiling a passing smoke test stays under."
+        ),
+    ] = 1000.0,
     runlog: Annotated[
         Path | None,
         typer.Option(help="Run-log path (JSONL). Default: <stem>.runlog.jsonl."),
@@ -156,19 +177,25 @@ def pack(
     head directly. Without one the embedding assignment pins an
     untied head (ADR-0012). The ``--python-bin`` interpreter
     runs the convert script — the ``pack`` extra provisions its
-    dependencies. The command re-checks the packed file's real bytes
-    against the recipe's weight budget — nominal-bit predictions
-    undershoot GGUF's effective bits. A run-log write failure warns
-    once, naming the file, and disables the log (ADR-0011).
+    dependencies. ``--imatrix`` hands the quantizer an importance
+    matrix (ADR-0016). The command re-checks the packed file's real
+    bytes against the recipe's weight budget — nominal-bit
+    predictions undershoot GGUF's effective bits. With
+    ``--smoke-text`` it then proves the packed model emits language:
+    ``--smoke-chunks`` perplexity chunks under the
+    ``--smoke-threshold`` ceiling (ADR-0017). A run-log write
+    failure warns once, naming the file, and disables the log
+    (ADR-0011).
 
     Raises:
-        typer.BadParameter: If the llama.cpp checkout misses its
-            tools, or the ``--out`` or ``--runlog`` directory does
-            not exist.
+        typer.BadParameter: If the llama.cpp checkout misses a needed
+            tool, ``--imatrix`` or ``--smoke-text`` is not a file,
+            ``--smoke-threshold`` is not positive, or the ``--out``
+            or ``--runlog`` directory does not exist.
         typer.Exit: With code 1 when the recipe is invalid, the model
-            directory does not exist, a toolchain stage fails, or the
-            packed model exceeds the weight budget (the file is
-            kept).
+            directory does not exist, a toolchain stage fails, the
+            packed model exceeds the weight budget, or the smoke test
+            fails (the file is kept).
 
     Examples:
         Command line usage:
@@ -177,15 +204,7 @@ def pack(
         $ quantfit pack recipe.json --llama-cpp ~/llama.cpp
         ```
     """
-    convert_script = llama_cpp / "convert_hf_to_gguf.py"
-    quantize_bin = llama_cpp / "build" / "bin" / "llama-quantize"
-    if not convert_script.is_file() or not quantize_bin.is_file():
-        raise typer.BadParameter(
-            f"--llama-cpp: {llama_cpp} misses convert_hf_to_gguf.py or "
-            "build/bin/llama-quantize — build the tools first"
-        )
-    if not out.parent.is_dir():
-        raise typer.BadParameter(f"--out: directory {out.parent} does not exist")
+    _check_inputs(llama_cpp, out, imatrix, smoke_text, smoke_threshold)
 
     recipe = _load_recipe(recipe_path)
     model_dir = model if model is not None else Path(recipe.model_id)
@@ -228,6 +247,7 @@ def pack(
         llama_cpp,
         python_bin if python_bin is not None else Path(sys.executable),
         threads,
+        imatrix,
     )
 
     reused = base_path.exists()
@@ -266,8 +286,17 @@ def pack(
             "token_embedding_type": result.token_embedding_type,
             "output_tensor_type": result.output_tensor_type,
             "overrides": len(result.overrides),
+            "imatrix": result.imatrix_path,
+            "imatrix_uncovered": list(result.imatrix_uncovered),
         },
     )
+    if result.imatrix_uncovered:
+        names = ", ".join(result.imatrix_uncovered)
+        typer.echo(
+            f"warning: the importance matrix did not cover: {names} — "
+            "these tensors quantized unassisted (token_embd is expected)",
+            err=True,
+        )
 
     margin = weight_budget_margin(recipe, result.packed_bytes)
     fits = margin >= 0
@@ -292,6 +321,22 @@ def pack(
             f"— the file is kept at {out}"
         )
         raise _halt(run_log, "size_check", error)
+
+    if smoke_text is None:
+        typer.echo(
+            "warning: packed model is unproven — pass --smoke-text to run "
+            "the smoke test (ADR-0017)",
+            err=True,
+        )
+    else:
+        _run_smoke(
+            run_log, llama_cpp, out, smoke_text, smoke_chunks, smoke_threshold, threads
+        )
     run_log.emit(
-        "pack_finished", {"out": str(out), "packed_bytes": result.packed_bytes}
+        "pack_finished",
+        {
+            "out": str(out),
+            "packed_bytes": result.packed_bytes,
+            "smoked": smoke_text is not None,
+        },
     )

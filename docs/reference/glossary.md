@@ -185,8 +185,25 @@ change.
 **Pack result**
 :   The pack step's accounting record: real packed bytes plus the type
     mapping driven into the quantizer — base type, embedding and
-    output-head flag types, and the pattern overrides. Code type
+    output-head flag types, the pattern overrides, and the importance
+    matrix path when one was used. Code type
     `quantfit.domain.pack.PackResult`.
+
+**Importance matrix** (short: **imatrix**)
+:   Per-weight activation statistics collected over a calibration run,
+    consumed by the runtime's quantizer to weight its block fit
+    (`llama-quantize --imatrix`). Generated in v1 by `llama-imatrix`
+    against the base GGUF over the scan's calibration set
+    ([ADR-0016](../adr/0016-imatrix-in-the-pack-path.md)). Not
+    "calibration data" (that names the text) or "activation cache".
+
+**Smoke test**
+:   The post-pack proof that a packed model emits language: a few
+    perplexity chunks through the target runtime, gated by a
+    perplexity ceiling
+    ([ADR-0017](../adr/0017-post-pack-smoke-test.md)). Enabled by
+    `quantfit pack --smoke-text`. Not "sanity check" or "quick eval" —
+    the evaluation tiers are a different step.
 
 ## Architecture
 

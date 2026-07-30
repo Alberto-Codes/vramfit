@@ -50,13 +50,19 @@ maturity status). Design decisions are recorded as [ADRs](docs/adr/index.md).
 ## Status
 
 The full pipeline is implemented: `scan`, `plan`, `validate`, `pack`, plus
-`budget` for the VRAM arithmetic. The first complete loop ran on the 49B
-target on 2026-07-29. The packed model fits the card (20.30 GiB against a
-20.47 GiB weight budget) and **lost the quality head-to-head** to the
-size-matched community imatrix quant. A control experiment traced ~81 % of
-the gap to the importance matrix the v1 pack path does not use. The
-[evidence page](docs/explanation/evaluating-packed-models.md) records the
-result. Closing that gap is the current work. See
+`budget` for the VRAM arithmetic. Pack quantizes with an importance matrix
+(ADR-0016) and smoke-tests every artifact before trusting it (ADR-0017).
+Two complete loops have run on the 49B target (2026-07-29). Every packed
+model fits the card first try. The quality head-to-head against the
+size-matched community imatrix quant is **still lost, by half as much**:
+0.53 perplexity behind at equal size and equal toolchain, down from 1.39.
+The rematch isolated the causes — importance-weighted rounding was worth
+0.86 of the old gap, and the remaining deficit sits in the solver's
+additive damage model, which the validation pass measured breaking
+(super-additive ×11.9) on a 2-bit-heavy recipe before it packed. The
+[evidence page](docs/explanation/evaluating-packed-models.md) records all
+five data points. Making 2-bit assignments interaction-aware is the
+current work. See
 [Issues](https://github.com/Alberto-Codes/quantfit/issues) for the roadmap.
 
 ## Requirements
