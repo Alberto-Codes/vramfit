@@ -62,9 +62,12 @@ direction — measured above predicted — has not appeared
    layer-level first pass, then tensor-level refinement for the groups the
    solver puts on the budget boundary.
 2. **Calibration data** — generic text vs workload-matched, and how many
-   tokens before the measurement stabilizes? A dedicated convergence
-   scan answers this: the 49B is being re-scanned at 32,768 tokens for
-   comparison against its 8,192-token map.
+   tokens before the measurement stabilizes? First measurement
+   ([ADR-0006](../adr/0006-sensitivity-metric.md)): 8,192 tokens is
+   not enough on the 49B — the 32,768-token re-scan moves median
+   cell damage up to 4.5× and flips 41 of 82 planned assignments.
+   Whether 32,768 suffices needs a point beyond it. The
+   131,072-token default stands.
 3. **Quantization method within a group** — round-to-nearest is v1;
    AWQ-style scaling changes both the damage and the cost of scanning. A
    method change is a new scan, not a new schema. The 49B loop measured
