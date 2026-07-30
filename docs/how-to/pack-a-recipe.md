@@ -24,8 +24,11 @@ The pack step drives external tools — none ship with quantfit:
    ```bash
    git clone https://github.com/ggml-org/llama.cpp.git
    cmake -B llama.cpp/build llama.cpp -DCMAKE_BUILD_TYPE=Release
-   cmake --build llama.cpp/build -j --target llama-quantize
+   cmake --build llama.cpp/build -j --target llama-quantize llama-perplexity
    ```
+
+   `llama-perplexity` runs the post-pack smoke test (ADR-0017) —
+   build it unless you plan to skip the smoke test.
 
 2. A Python able to run `convert_hf_to_gguf.py`. The `pack` extra
    provisions it (torch, transformers, sentencepiece):
@@ -55,6 +58,50 @@ quantizes it with one type override per layer group. The embedding and
 `--token-embedding-type` and `--output-tensor-type` flags instead of
 pattern overrides (ADR-0012). A second pack of
 the same model reuses the base GGUF and skips the conversion.
+
+## Packing with an importance matrix
+
+The community baselines quantize imatrix-assisted, and the first 49B
+head-to-head traced ~81 % of the quality gap to exactly that
+([ADR-0016](../adr/0016-imatrix-in-the-pack-path.md)). Generate the
+matrix once per (base GGUF, calibration text) pair with
+`llama-imatrix`, then hand it to pack:
+
+```bash
+llama-imatrix -m model-f16.gguf -f calibration.txt -o model.imatrix.gguf
+uv run quantfit pack recipe.json \
+  --llama-cpp ~/llama.cpp \
+  --imatrix model.imatrix.gguf \
+  ...
+```
+
+Use the scan's calibration text — one text source feeds the whole
+measured pipeline. The quantizer embeds the matrix's provenance in
+the packed file, and the `model_packed` run-log event records the
+path.
+
+## The smoke test
+
+A packed artifact can pass the solver, the validation pass, and the
+size re-check and still be destroyed at inference — a 49B recipe did
+exactly that on 2026-07-29
+([ADR-0017](../adr/0017-post-pack-smoke-test.md)). Pass
+`--smoke-text` so pack proves the artifact emits language before
+anything downstream trusts it:
+
+```bash
+uv run quantfit pack recipe.json \
+  --llama-cpp ~/llama.cpp \
+  --smoke-text calibration.txt \
+  ...
+```
+
+A few chunks through `llama-perplexity` (CPU — the test never
+contends for the GPU) must land under the `--smoke-threshold`
+ceiling (default 1000). Working artifacts measure 8–10, destroyed
+ones ~10⁶. A failing smoke test exits 1 and keeps the file for
+inspection. Without `--smoke-text` the command warns that the
+artifact is unproven.
 
 ## Reading the result
 

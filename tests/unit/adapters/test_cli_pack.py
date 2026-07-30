@@ -11,7 +11,7 @@ from quantfit.adapters.inbound.cli import app
 from quantfit.adapters.outbound.recipe_json import save_recipe
 from quantfit.adapters.outbound.run_log_jsonl import read_run_log
 from quantfit.domain.model import Assignment, PlanMeta, Recipe
-from tests.fakes import MemoryRecipePacker
+from tests.fakes import MemoryRecipePacker, MemorySmokeTester
 
 runner = CliRunner()
 
@@ -48,6 +48,7 @@ def llama_cpp_dir(tmp_path: Path) -> Path:
     (checkout / "build" / "bin").mkdir(parents=True)
     (checkout / "convert_hf_to_gguf.py").touch()
     (checkout / "build" / "bin" / "llama-quantize").touch()
+    (checkout / "build" / "bin" / "llama-perplexity").touch()
     return checkout
 
 
@@ -62,6 +63,10 @@ def recipe_path(tmp_path: Path) -> Path:
 
 def patch_packer(monkeypatch, fake: MemoryRecipePacker) -> None:
     monkeypatch.setattr(cli_pack, "_build_packer", lambda *args: fake)
+
+
+def patch_smoke_tester(monkeypatch, fake: MemorySmokeTester) -> None:
+    monkeypatch.setattr(cli_pack, "_build_smoke_tester", lambda *args: fake)
 
 
 def events_of(out: Path) -> list[str]:
@@ -300,7 +305,9 @@ class TestPackCommand:
     ) -> None:
         seen: dict[str, object] = {}
 
-        def recorder(model_dir, base_gguf, out, llama_cpp, python_bin, threads):
+        def recorder(
+            model_dir, base_gguf, out, llama_cpp, python_bin, threads, imatrix
+        ):
             seen.update(
                 model_dir=model_dir,
                 base_gguf=base_gguf,
@@ -308,12 +315,15 @@ class TestPackCommand:
                 llama_cpp=llama_cpp,
                 python_bin=python_bin,
                 threads=threads,
+                imatrix=imatrix,
             )
             return MemoryRecipePacker(packed_bytes=100)
 
         monkeypatch.setattr(cli_pack, "_build_packer", recorder)
         model_dir = tmp_path / "other-model"
         model_dir.mkdir()
+        imatrix_path = tmp_path / "imatrix.gguf"
+        imatrix_path.touch()
 
         result = runner.invoke(
             app,
@@ -332,6 +342,8 @@ class TestPackCommand:
                 str(tmp_path / "python3"),
                 "--threads",
                 "3",
+                "--imatrix",
+                str(imatrix_path),
             ],
         )
 
@@ -343,6 +355,7 @@ class TestPackCommand:
             "llama_cpp": llama_cpp_dir,
             "python_bin": tmp_path / "python3",
             "threads": 3,
+            "imatrix": imatrix_path,
         }
 
     def test_unmappable_recipe_exits_1_and_halts_at_quantize(
@@ -394,3 +407,228 @@ class TestPackCommand:
 
         log = read_run_log(out.with_name(out.stem + ".runlog.jsonl"))
         assert len({line["run_id"] for line in log}) == 1
+
+
+class TestPackSmokeAndImatrix:
+    def test_missing_imatrix_file_is_a_usage_error(
+        self, tmp_path, monkeypatch, llama_cpp_dir, recipe_path
+    ) -> None:
+        patch_packer(monkeypatch, MemoryRecipePacker(packed_bytes=100))
+
+        result = runner.invoke(
+            app,
+            [
+                "pack",
+                str(recipe_path),
+                "--llama-cpp",
+                str(llama_cpp_dir),
+                "--out",
+                str(tmp_path / "packed.gguf"),
+                "--imatrix",
+                str(tmp_path / "absent.gguf"),
+            ],
+        )
+
+        assert result.exit_code == 2
+        assert "is not a file" in result.output
+
+    def test_without_smoke_text_warns_that_the_model_is_unproven(
+        self, tmp_path, monkeypatch, llama_cpp_dir, recipe_path
+    ) -> None:
+        patch_packer(monkeypatch, MemoryRecipePacker(packed_bytes=100))
+        out = tmp_path / "packed.gguf"
+
+        result = runner.invoke(
+            app,
+            [
+                "pack",
+                str(recipe_path),
+                "--llama-cpp",
+                str(llama_cpp_dir),
+                "--out",
+                str(out),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "unproven" in result.output
+        assert "smoke_tested" not in events_of(out)
+
+    def test_passing_smoke_emits_the_event_and_finishes(
+        self, tmp_path, monkeypatch, llama_cpp_dir, recipe_path
+    ) -> None:
+        patch_packer(monkeypatch, MemoryRecipePacker(packed_bytes=100))
+        tester = MemorySmokeTester(perplexity=9.5)
+        patch_smoke_tester(monkeypatch, tester)
+        out = tmp_path / "packed.gguf"
+        smoke_text = tmp_path / "smoke.txt"
+        smoke_text.write_text("calibration text")
+
+        result = runner.invoke(
+            app,
+            [
+                "pack",
+                str(recipe_path),
+                "--llama-cpp",
+                str(llama_cpp_dir),
+                "--out",
+                str(out),
+                "--smoke-text",
+                str(smoke_text),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "passed" in result.output
+        assert tester.runs == 1
+        assert events_of(out) == [
+            "pack_started",
+            "gguf_converted",
+            "model_packed",
+            "size_checked",
+            "smoke_tested",
+            "pack_finished",
+        ]
+
+    def test_failing_smoke_exits_1_and_halts_at_smoke(
+        self, tmp_path, monkeypatch, llama_cpp_dir, recipe_path
+    ) -> None:
+        patch_packer(monkeypatch, MemoryRecipePacker(packed_bytes=100))
+        patch_smoke_tester(monkeypatch, MemorySmokeTester(perplexity=1_020_627.87))
+        out = tmp_path / "packed.gguf"
+        smoke_text = tmp_path / "smoke.txt"
+        smoke_text.write_text("calibration text")
+
+        result = runner.invoke(
+            app,
+            [
+                "pack",
+                str(recipe_path),
+                "--llama-cpp",
+                str(llama_cpp_dir),
+                "--out",
+                str(out),
+                "--smoke-text",
+                str(smoke_text),
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert "FAILED" in result.output
+        assert "the file is kept" in result.output
+        log = read_run_log(out.with_name(out.stem + ".runlog.jsonl"))
+        assert log[-1]["event"] == "pack_halted"
+        assert log[-1]["stage"] == "smoke"
+        smoked = next(line for line in log if line["event"] == "smoke_tested")
+        assert smoked["passed"] is False
+
+    def test_nan_smoke_records_null_perplexity_and_fails(
+        self, tmp_path, monkeypatch, llama_cpp_dir, recipe_path
+    ) -> None:
+        patch_packer(monkeypatch, MemoryRecipePacker(packed_bytes=100))
+        patch_smoke_tester(monkeypatch, MemorySmokeTester(perplexity=float("nan")))
+        out = tmp_path / "packed.gguf"
+        smoke_text = tmp_path / "smoke.txt"
+        smoke_text.write_text("calibration text")
+
+        result = runner.invoke(
+            app,
+            [
+                "pack",
+                str(recipe_path),
+                "--llama-cpp",
+                str(llama_cpp_dir),
+                "--out",
+                str(out),
+                "--smoke-text",
+                str(smoke_text),
+            ],
+        )
+
+        assert result.exit_code == 1
+        log = read_run_log(out.with_name(out.stem + ".runlog.jsonl"))
+        smoked = next(line for line in log if line["event"] == "smoke_tested")
+        assert smoked["perplexity"] is None
+        assert smoked["passed"] is False
+
+    def test_smoke_tool_failure_exits_1_and_halts_at_smoke(
+        self, tmp_path, monkeypatch, llama_cpp_dir, recipe_path
+    ) -> None:
+        patch_packer(monkeypatch, MemoryRecipePacker(packed_bytes=100))
+        patch_smoke_tester(monkeypatch, MemorySmokeTester(fail=True))
+        out = tmp_path / "packed.gguf"
+        smoke_text = tmp_path / "smoke.txt"
+        smoke_text.write_text("calibration text")
+
+        result = runner.invoke(
+            app,
+            [
+                "pack",
+                str(recipe_path),
+                "--llama-cpp",
+                str(llama_cpp_dir),
+                "--out",
+                str(out),
+                "--smoke-text",
+                str(smoke_text),
+            ],
+        )
+
+        assert result.exit_code == 1
+        log = read_run_log(out.with_name(out.stem + ".runlog.jsonl"))
+        assert log[-1]["event"] == "pack_halted"
+        assert log[-1]["stage"] == "smoke"
+
+    def test_smoke_text_without_perplexity_tool_is_a_usage_error(
+        self, tmp_path, monkeypatch, recipe_path
+    ) -> None:
+        patch_packer(monkeypatch, MemoryRecipePacker(packed_bytes=100))
+        checkout = tmp_path / "llama.cpp-no-ppl"
+        (checkout / "build" / "bin").mkdir(parents=True)
+        (checkout / "convert_hf_to_gguf.py").touch()
+        (checkout / "build" / "bin" / "llama-quantize").touch()
+        smoke_text = tmp_path / "smoke.txt"
+        smoke_text.write_text("calibration text")
+
+        result = runner.invoke(
+            app,
+            [
+                "pack",
+                str(recipe_path),
+                "--llama-cpp",
+                str(checkout),
+                "--out",
+                str(tmp_path / "packed.gguf"),
+                "--smoke-text",
+                str(smoke_text),
+            ],
+        )
+
+        assert result.exit_code == 2
+        assert "llama-perplexity" in result.output
+
+    def test_smoke_over_budget_pack_skips_the_smoke_test(
+        self, tmp_path, monkeypatch, llama_cpp_dir, recipe_path
+    ) -> None:
+        patch_packer(monkeypatch, MemoryRecipePacker(packed_bytes=WEIGHT_BUDGET + 1))
+        tester = MemorySmokeTester(perplexity=9.5)
+        patch_smoke_tester(monkeypatch, tester)
+        smoke_text = tmp_path / "smoke.txt"
+        smoke_text.write_text("calibration text")
+
+        result = runner.invoke(
+            app,
+            [
+                "pack",
+                str(recipe_path),
+                "--llama-cpp",
+                str(llama_cpp_dir),
+                "--out",
+                str(tmp_path / "packed.gguf"),
+                "--smoke-text",
+                str(smoke_text),
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert tester.runs == 0

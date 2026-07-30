@@ -166,6 +166,7 @@ class MemoryRecipePacker:
     packed_bytes: int = 500
     fail_stage: Literal["convert", "quantize"] | None = None
     has_base: bool = False
+    imatrix: str | None = None
     packed: list[Recipe] = field(default_factory=list)
 
     def convert(self) -> int:
@@ -188,9 +189,30 @@ class MemoryRecipePacker:
             token_embedding_type=token_embedding_type(recipe),
             output_tensor_type=output_tensor_type(recipe),
             overrides=tensor_overrides(recipe),
+            imatrix_path=self.imatrix,
         )
         self.packed.append(recipe)
         return result
+
+
+@dataclass
+class MemorySmokeTester:
+    """In-memory `SmokeTester`. The measurement is configured, NaN included.
+
+    Like the real adapter, a tool failure raises `PackError` and a
+    successful run returns the estimate verbatim — the verdict
+    belongs to the caller.
+    """
+
+    perplexity: float = 9.5
+    fail: bool = False
+    runs: int = 0
+
+    def smoke(self) -> float:
+        if self.fail:
+            raise PackError("smoke failed with exit code 3:\nconfigured failure")
+        self.runs += 1
+        return self.perplexity
 
 
 @dataclass

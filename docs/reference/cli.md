@@ -227,20 +227,34 @@ quantfit pack RECIPE
                          quantfit[pack] to provision it
                          [default: current]
   --threads INT          Quantizer thread count  [default: 8]
+  --imatrix PATH         Importance matrix for the quantizer
+                         (ADR-0016)  [default: none]
+  --smoke-text PATH      Text for the post-pack smoke test (ADR-0017)
+                         [default: none — pack warns]
+  --smoke-chunks INT     Smoke-test chunk count  [default: 2]
+  --smoke-threshold F    Perplexity ceiling a passing smoke test
+                         stays under  [default: 1000]
   --runlog PATH          Run-log path (JSONL)
                          [default: <stem>.runlog.jsonl]
 ```
 
 After quantizing, the command re-checks the packed file's real bytes
 against `plan.weight_budget_bytes` — nominal-bit predictions
-undershoot GGUF's effective bits (ADR-0012). Every run appends the
-pack events to the run log: pack_started, gguf_converted (with
-`reused`), model_packed (real bytes, base type, embedding and output
-tensor types, override count), size_checked (margin and `fits`), then
-pack_finished or pack_halted (stage: convert, quantize, or
-size_check).
+undershoot GGUF's effective bits (ADR-0012). With `--smoke-text` it
+then runs the smoke test: `--smoke-chunks` perplexity chunks through
+`build/bin/llama-perplexity`, gated by the `--smoke-threshold`
+ceiling (ADR-0017). Without the flag the command warns that the
+packed model is unproven. Every run appends the pack events to the
+run log: pack_started, gguf_converted (with `reused`), model_packed
+(real bytes, base type, embedding and output tensor types, override
+count, imatrix), size_checked (margin and `fits`), smoke_tested when
+the smoke test ran (perplexity — null when non-finite — threshold,
+chunks, `passed`), then pack_finished or pack_halted (stage:
+convert, quantize, size_check, or smoke).
 
 Exit codes: 1 when the recipe is invalid, the model directory does
-not exist, a toolchain stage fails, or the packed model exceeds the
-weight budget (the file is kept). Exit 2 when the llama.cpp checkout
-misses its tools or the `--out`/`--runlog` directory does not exist.
+not exist, a toolchain stage fails, the packed model exceeds the
+weight budget, or the smoke test fails (the file is kept). Exit 2
+when the llama.cpp checkout misses a needed tool, `--imatrix` or
+`--smoke-text` is not a file, `--smoke-threshold` is not positive,
+or the `--out`/`--runlog` directory does not exist.

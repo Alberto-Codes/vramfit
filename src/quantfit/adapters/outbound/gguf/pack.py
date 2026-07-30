@@ -133,6 +133,8 @@ class LlamaCppPacker:
         python_bin (Path): Interpreter for the convert script. Must
             import torch.
         threads (int): Quantizer thread count.
+        imatrix (Path | None): Importance matrix file for the
+            quantizer (ADR-0016). None packs without one.
 
     Examples:
         The composition root wires the paths:
@@ -156,6 +158,7 @@ class LlamaCppPacker:
     quantize_bin: Path
     python_bin: Path
     threads: int = 8
+    imatrix: Path | None = None
 
     def convert(self) -> int:
         """Materialize the f16 base GGUF, reusing any existing file.
@@ -188,7 +191,9 @@ class LlamaCppPacker:
         The embedding and output-head flags resolve independently: an
         ``lm_head`` group drives the output flag with its own
         assignment, and the embedding assignment stands in when the
-        scan measured no head (ADR-0012).
+        scan measured no head (ADR-0012). A configured importance
+        matrix reaches the quantizer as ``--imatrix`` and lands in
+        the result's provenance (ADR-0016).
 
         Args:
             recipe: The recipe to apply.
@@ -213,6 +218,8 @@ class LlamaCppPacker:
         output = output_tensor_type(recipe)
         overrides = tensor_overrides(recipe)
         command = [str(self.quantize_bin), "--pure"]
+        if self.imatrix is not None:
+            command += ["--imatrix", str(self.imatrix)]
         if embedding is not None:
             command += ["--token-embedding-type", embedding]
         if output is not None:
@@ -229,4 +236,5 @@ class LlamaCppPacker:
             token_embedding_type=embedding,
             output_tensor_type=output,
             overrides=overrides,
+            imatrix_path=None if self.imatrix is None else str(self.imatrix),
         )

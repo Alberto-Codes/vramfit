@@ -99,6 +99,7 @@ def _real_packer(
     fail_stage: Literal["convert", "quantize"] | None = None,
     base_exists: bool = False,
     silent_stage: str | None = None,
+    with_imatrix: bool = False,
 ) -> RecipePacker:
     def stub_body(stage: str, template: str) -> str:
         if fail_stage == stage:
@@ -123,6 +124,7 @@ def _real_packer(
         quantize_bin=quantize,
         python_bin=Path(sys.executable),
         threads=1,
+        imatrix=tmp_path / "imatrix.gguf" if with_imatrix else None,
     )
 
 
@@ -131,12 +133,14 @@ def _fake_packer(
     fail_stage: Literal["convert", "quantize"] | None = None,
     base_exists: bool = False,
     silent_stage: str | None = None,
+    with_imatrix: bool = False,
 ) -> RecipePacker:
     return MemoryRecipePacker(
         base_bytes=BASE_BYTES,
         packed_bytes=PACKED_BYTES,
         fail_stage=fail_stage,
         has_base=base_exists,
+        imatrix=str(tmp_path / "imatrix.gguf") if with_imatrix else None,
     )
 
 
@@ -184,6 +188,22 @@ class TestRecipePackerContract:
             TypeOverride(pattern=r"blk\.0\.", quant_type="q8_0"),
             TypeOverride(pattern=r"blk\.1\.", quant_type="q4_k"),
         )
+
+    def test_pack_without_imatrix_records_none(self, build, tmp_path) -> None:
+        packer: RecipePacker = build(tmp_path)
+        packer.convert()
+
+        result = packer.pack(sample_pack_recipe())
+
+        assert result.imatrix_path is None
+
+    def test_pack_with_imatrix_records_the_path(self, build, tmp_path) -> None:
+        packer: RecipePacker = build(tmp_path, with_imatrix=True)
+        packer.convert()
+
+        result = packer.pack(sample_pack_recipe())
+
+        assert result.imatrix_path == str(tmp_path / "imatrix.gguf")
 
     def test_pack_llama_cpp_recipe_is_accepted(self, build, tmp_path) -> None:
         packer: RecipePacker = build(tmp_path, base_exists=True)
@@ -256,6 +276,24 @@ class TestLlamaCppCommandLines:
             "Q4_K_S",
             "1",
         ]
+
+    def test_quantize_argv_with_imatrix_carries_the_flag(self, tmp_path) -> None:
+        packer = _real_packer(tmp_path, with_imatrix=True)
+        packer.convert()
+
+        packer.pack(sample_pack_recipe())
+
+        argv = json.loads((tmp_path / "quantize-argv.json").read_text())
+        assert argv[argv.index("--imatrix") + 1] == str(tmp_path / "imatrix.gguf")
+
+    def test_quantize_argv_without_imatrix_omits_the_flag(self, tmp_path) -> None:
+        packer = _real_packer(tmp_path)
+        packer.convert()
+
+        packer.pack(sample_pack_recipe())
+
+        argv = json.loads((tmp_path / "quantize-argv.json").read_text())
+        assert "--imatrix" not in argv
 
     def test_quantize_argv_without_lm_head_pins_output_to_the_embedding(
         self, tmp_path

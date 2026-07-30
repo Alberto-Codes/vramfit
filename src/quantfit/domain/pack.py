@@ -2,8 +2,9 @@
 
 The pack step hands a recipe to a runtime's quantizer and gets a file
 back. The domain owns what survives that exchange without IO: the
-record of what was driven (`PackResult`) and the arithmetic that
-re-checks real bytes against the planned budget (ADR-0012). Type
+record of what was driven (`PackResult`), the arithmetic that
+re-checks real bytes against the planned budget (ADR-0012), and the
+smoke-test verdict against the perplexity ceiling (ADR-0017). Type
 tables and subprocess details live in
 [quantfit.adapters.outbound.gguf][].
 
@@ -24,6 +25,7 @@ See Also:
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 from quantfit.domain.model import Recipe
@@ -84,6 +86,9 @@ class PackResult:
             overrides, in recipe order. Patterns are unique — the
             quantizer applies the first match, so a duplicate would
             silently shadow its successor.
+        imatrix_path (str | None): Importance matrix file driven into
+            the quantizer (ADR-0016). None when the pack ran without
+            one.
 
     Examples:
         Inspect the real size of a packed model:
@@ -98,15 +103,16 @@ class PackResult:
     token_embedding_type: str | None
     output_tensor_type: str | None
     overrides: tuple[TypeOverride, ...]
+    imatrix_path: str | None = None
 
     def __post_init__(self) -> None:
         """Enforce the result invariants.
 
         Raises:
             ValueError: If ``packed_bytes`` is not positive,
-                ``base_type`` is empty, ``token_embedding_type`` or
-                ``output_tensor_type`` is empty, or two overrides
-                share a pattern.
+                ``base_type`` is empty, ``token_embedding_type``,
+                ``output_tensor_type``, or ``imatrix_path`` is empty,
+                or two overrides share a pattern.
         """
         if self.packed_bytes <= 0:
             raise ValueError("packed_bytes must be positive")
@@ -116,6 +122,8 @@ class PackResult:
             raise ValueError("token_embedding_type must not be empty")
         if self.output_tensor_type is not None and not self.output_tensor_type:
             raise ValueError("output_tensor_type must not be empty")
+        if self.imatrix_path is not None and not self.imatrix_path:
+            raise ValueError("imatrix_path must not be empty")
         patterns = [override.pattern for override in self.overrides]
         if len(set(patterns)) != len(patterns):
             raise ValueError("override patterns must be unique")
@@ -150,3 +158,33 @@ def weight_budget_margin(recipe: Recipe, packed_bytes: int) -> int:
     if packed_bytes <= 0:
         raise ValueError("packed_bytes must be positive")
     return recipe.plan.weight_budget_bytes - packed_bytes
+
+
+def smoke_passed(perplexity: float, threshold: float) -> bool:
+    """Judge one smoke-test measurement against the ceiling.
+
+    The smoke test proves a packed model emits language (ADR-0017).
+    Destroyed artifacts measure perplexity near 10^6 and working ones
+    below 100, so the verdict is a plain ceiling. A non-finite
+    measurement fails — NaN must never pass a gate.
+
+    Args:
+        perplexity: The measured perplexity over the smoke chunks.
+        threshold: The ceiling a passing measurement stays under.
+
+    Returns:
+        True when ``perplexity`` is finite and below ``threshold``.
+
+    Raises:
+        ValueError: If ``threshold`` is not positive.
+
+    Examples:
+        A destroyed artifact fails the default ceiling:
+
+        ```python
+        assert smoke_passed(1_020_627.9, threshold=1000.0) is False
+        ```
+    """
+    if threshold <= 0:
+        raise ValueError("threshold must be positive")
+    return math.isfinite(perplexity) and perplexity < threshold
