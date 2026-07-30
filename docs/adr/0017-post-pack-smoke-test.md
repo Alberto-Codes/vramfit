@@ -34,8 +34,9 @@ Two facts size the gate:
 2. **`--smoke-text <file>` enables it.** After the size re-check,
    pack runs `llama-perplexity` from the same `--llama-cpp` checkout
    over the packed file: `--smoke-chunks` chunks (default 2) of the
-   given text. The CPU binary is deliberate — the smoke test must
-   not contend for the GPU.
+   given text, with layer offload disabled (`-ngl 0`). The smoke
+   test must not contend for the GPU, whatever backend the binary
+   was built with.
 3. **The verdict is a perplexity ceiling.** `--smoke-threshold`
    defaults to 1000. A finite result below the ceiling passes.
    Anything else — non-finite, unparsable, or above — fails: pack

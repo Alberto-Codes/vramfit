@@ -47,9 +47,14 @@ import json, sys
 
 with open({{argv_log!r}}, "w") as log:
     json.dump(sys.argv[1:], log)
+print({{extra_line!r}})
 with open(sys.argv[-3], "wb") as handle:
     handle.write(b"Q" * {PACKED_BYTES})
 """
+
+UNCOVERED_WARNING = (
+    "====== llama_tensor_get_wanted_type: did not find weights for token_embd.weight"
+)
 
 _FAILING_STUB = """\
 #!/usr/bin/env python3
@@ -100,13 +105,17 @@ def _real_packer(
     base_exists: bool = False,
     silent_stage: str | None = None,
     with_imatrix: bool = False,
+    with_uncovered: bool = False,
 ) -> RecipePacker:
     def stub_body(stage: str, template: str) -> str:
         if fail_stage == stage:
             return _FAILING_STUB
         if silent_stage == stage:
             return _SILENT_STUB
-        return template.format(argv_log=str(tmp_path / f"{stage}-argv.json"))
+        return template.format(
+            argv_log=str(tmp_path / f"{stage}-argv.json"),
+            extra_line=UNCOVERED_WARNING if with_uncovered else "",
+        )
 
     convert = _write_stub(tmp_path / "convert.py", stub_body("convert", _CONVERT_STUB))
     quantize = _write_stub(
@@ -134,6 +143,7 @@ def _fake_packer(
     base_exists: bool = False,
     silent_stage: str | None = None,
     with_imatrix: bool = False,
+    with_uncovered: bool = False,
 ) -> RecipePacker:
     return MemoryRecipePacker(
         base_bytes=BASE_BYTES,
@@ -141,6 +151,7 @@ def _fake_packer(
         fail_stage=fail_stage,
         has_base=base_exists,
         imatrix=str(tmp_path / "imatrix.gguf") if with_imatrix else None,
+        imatrix_uncovered=("token_embd.weight",) if with_uncovered else (),
     )
 
 
@@ -204,6 +215,24 @@ class TestRecipePackerContract:
         result = packer.pack(sample_pack_recipe())
 
         assert result.imatrix_path == str(tmp_path / "imatrix.gguf")
+
+    def test_pack_with_imatrix_records_uncovered_tensors(self, build, tmp_path) -> None:
+        packer: RecipePacker = build(tmp_path, with_imatrix=True, with_uncovered=True)
+        packer.convert()
+
+        result = packer.pack(sample_pack_recipe())
+
+        assert result.imatrix_uncovered == ("token_embd.weight",)
+
+    def test_pack_without_imatrix_reports_no_uncovered_tensors(
+        self, build, tmp_path
+    ) -> None:
+        packer: RecipePacker = build(tmp_path, with_uncovered=True)
+        packer.convert()
+
+        result = packer.pack(sample_pack_recipe())
+
+        assert result.imatrix_uncovered == ()
 
     def test_pack_llama_cpp_recipe_is_accepted(self, build, tmp_path) -> None:
         packer: RecipePacker = build(tmp_path, base_exists=True)

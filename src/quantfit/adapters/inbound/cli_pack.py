@@ -7,8 +7,9 @@ stages — convert, then quantize (imatrix-assisted when ``--imatrix``
 is given, ADR-0016) — emitting one run-log event per stage. After
 packing it re-checks the real bytes against the recipe's weight
 budget, then proves the artifact emits language when ``--smoke-text``
-is given (ADR-0017, the `SmokeTester` port). A failed check exits 1
-and keeps the file for inspection.
+is given (ADR-0017 — the smoke stage lives in
+[quantfit.adapters.inbound.cli_pack_smoke][]). A failed check exits
+1 and keeps the file for inspection.
 
 Examples:
     Pack a recipe with a local llama.cpp checkout:
@@ -25,7 +26,6 @@ See Also:
 
 from __future__ import annotations
 
-import math
 import sys
 import time
 from pathlib import Path
@@ -33,16 +33,20 @@ from typing import Annotated
 
 import typer
 
+from quantfit.adapters.inbound.cli_pack_smoke import (
+    _check_inputs,
+    _halt,
+    _run_smoke,
+)
 from quantfit.adapters.inbound.run_log import SafeRunLog
 from quantfit.adapters.outbound.gguf.pack import LlamaCppPacker
-from quantfit.adapters.outbound.gguf.smoke import LlamaCppSmokeTester
 from quantfit.adapters.outbound.json_common import ArtifactError
 from quantfit.adapters.outbound.recipe_json import load_recipe
 from quantfit.adapters.outbound.run_log_jsonl import JsonlRunLogFile
 from quantfit.domain.budget import format_size
 from quantfit.domain.model import Recipe
-from quantfit.domain.pack import smoke_passed, weight_budget_margin
-from quantfit.ports.outbound import RecipePacker, SmokeTester
+from quantfit.domain.pack import weight_budget_margin
+from quantfit.ports.outbound import RecipePacker
 
 
 def _build_packer(
@@ -82,152 +86,6 @@ def _build_packer(
         threads=threads,
         imatrix=imatrix,
     )
-
-
-def _build_smoke_tester(
-    llama_cpp: Path,
-    out: Path,
-    smoke_text: Path,
-    chunks: int,
-    threads: int,
-) -> SmokeTester:
-    """Wire the llama.cpp smoke adapter for one packed model.
-
-    Unit tests monkeypatch this seam with the verified fake
-    (ADR-0009).
-
-    Args:
-        llama_cpp: llama.cpp checkout with built tools.
-        out: The packed model to prove.
-        smoke_text: Text the smoke chunks run over.
-        chunks: Chunk count.
-        threads: Tool thread count.
-
-    Returns:
-        The wired smoke tester.
-    """
-    return LlamaCppSmokeTester(
-        perplexity_bin=llama_cpp / "build" / "bin" / "llama-perplexity",
-        model_path=out,
-        text_path=smoke_text,
-        chunks=chunks,
-        threads=threads,
-    )
-
-
-def _check_inputs(
-    llama_cpp: Path,
-    out: Path,
-    imatrix: Path | None,
-    smoke_text: Path | None,
-    smoke_threshold: float,
-) -> None:
-    """Reject unusable inputs before any tool runs.
-
-    Args:
-        llama_cpp: llama.cpp checkout with built tools.
-        out: Packed model destination.
-        imatrix: Importance matrix file, or None (ADR-0016).
-        smoke_text: Smoke-test text file, or None (ADR-0017).
-        smoke_threshold: Perplexity ceiling for the smoke test.
-
-    Raises:
-        typer.BadParameter: If the checkout misses a needed tool, a
-            given file does not exist, the threshold is not positive,
-            or the ``--out`` directory does not exist.
-    """
-    convert_script = llama_cpp / "convert_hf_to_gguf.py"
-    quantize_bin = llama_cpp / "build" / "bin" / "llama-quantize"
-    if not convert_script.is_file() or not quantize_bin.is_file():
-        raise typer.BadParameter(
-            f"--llama-cpp: {llama_cpp} misses convert_hf_to_gguf.py or "
-            "build/bin/llama-quantize — build the tools first"
-        )
-    if imatrix is not None and not imatrix.is_file():
-        raise typer.BadParameter(f"--imatrix: {imatrix} is not a file")
-    if smoke_text is not None:
-        perplexity_bin = llama_cpp / "build" / "bin" / "llama-perplexity"
-        if not smoke_text.is_file():
-            raise typer.BadParameter(f"--smoke-text: {smoke_text} is not a file")
-        if not perplexity_bin.is_file():
-            raise typer.BadParameter(
-                f"--smoke-text: {llama_cpp} misses build/bin/llama-perplexity "
-                "— build the tools first"
-            )
-    if smoke_threshold <= 0:
-        raise typer.BadParameter("--smoke-threshold: must be positive")
-    if not out.parent.is_dir():
-        raise typer.BadParameter(f"--out: directory {out.parent} does not exist")
-
-
-def _run_smoke(
-    run_log: SafeRunLog,
-    llama_cpp: Path,
-    out: Path,
-    smoke_text: Path,
-    smoke_chunks: int,
-    smoke_threshold: float,
-    threads: int,
-) -> None:
-    """Prove the packed model emits language, or halt (ADR-0017).
-
-    Args:
-        run_log: Sink for the ``smoke_tested`` event.
-        llama_cpp: llama.cpp checkout with built tools.
-        out: The packed model to prove.
-        smoke_text: Text the smoke chunks run over.
-        smoke_chunks: Chunk count.
-        smoke_threshold: Perplexity ceiling.
-        threads: Tool thread count.
-
-    Raises:
-        typer.Exit: With code 1 when the tool fails or the measured
-            perplexity misses the ceiling (the file is kept).
-    """
-    tester = _build_smoke_tester(llama_cpp, out, smoke_text, smoke_chunks, threads)
-    try:
-        perplexity = tester.smoke()
-    except (RuntimeError, ValueError, OSError) as exc:
-        raise _halt(run_log, "smoke", exc) from exc
-    passed = smoke_passed(perplexity, smoke_threshold)
-    run_log.emit(
-        "smoke_tested",
-        {
-            # The run-log sink rejects NaN and infinity (ADR-0011),
-            # and a destroyed artifact can measure exactly that.
-            "perplexity": perplexity if math.isfinite(perplexity) else None,
-            "threshold": smoke_threshold,
-            "chunks": smoke_chunks,
-            "passed": passed,
-        },
-    )
-    typer.echo(
-        f"smoke test: perplexity {perplexity:.4f} over {smoke_chunks} "
-        f"chunks, ceiling {smoke_threshold:g} — "
-        f"{'passed' if passed else 'FAILED'}"
-    )
-    if not passed:
-        error = RuntimeError(
-            f"packed model fails the smoke test (perplexity {perplexity:.4f} "
-            f"against ceiling {smoke_threshold:g}) — the file is kept at {out}"
-        )
-        raise _halt(run_log, "smoke", error)
-
-
-def _halt(run_log: SafeRunLog, stage: str, exc: Exception) -> typer.Exit:
-    """Report one failed stage on both channels.
-
-    Args:
-        run_log: Sink for the ``pack_halted`` event.
-        stage: The stage that failed.
-        exc: The failure.
-
-    Returns:
-        The exit to raise, code 1.
-    """
-    typer.echo(f"error: {exc}", err=True)
-    run_log.emit("pack_halted", {"stage": stage, "error": str(exc)})
-    return typer.Exit(code=1)
 
 
 def _load_recipe(path: Path) -> Recipe:
@@ -279,7 +137,10 @@ def pack(
             "provisions its dependencies. Default: this one."
         ),
     ] = None,
-    threads: Annotated[int, typer.Option(min=1, help="Quantizer thread count.")] = 8,
+    threads: Annotated[
+        int,
+        typer.Option(min=1, help="Thread count for the quantizer and the smoke test."),
+    ] = 8,
     imatrix: Annotated[
         Path | None,
         typer.Option(
@@ -321,9 +182,10 @@ def pack(
     bytes against the recipe's weight budget — nominal-bit
     predictions undershoot GGUF's effective bits. With
     ``--smoke-text`` it then proves the packed model emits language:
-    a few perplexity chunks under the ``--smoke-threshold`` ceiling
-    (ADR-0017). A run-log write failure warns once, naming the file,
-    and disables the log (ADR-0011).
+    ``--smoke-chunks`` perplexity chunks under the
+    ``--smoke-threshold`` ceiling (ADR-0017). A run-log write
+    failure warns once, naming the file, and disables the log
+    (ADR-0011).
 
     Raises:
         typer.BadParameter: If the llama.cpp checkout misses a needed
@@ -425,8 +287,16 @@ def pack(
             "output_tensor_type": result.output_tensor_type,
             "overrides": len(result.overrides),
             "imatrix": result.imatrix_path,
+            "imatrix_uncovered": list(result.imatrix_uncovered),
         },
     )
+    if result.imatrix_uncovered:
+        names = ", ".join(result.imatrix_uncovered)
+        typer.echo(
+            f"warning: the importance matrix did not cover: {names} — "
+            "these tensors quantized unassisted (token_embd is expected)",
+            err=True,
+        )
 
     margin = weight_budget_margin(recipe, result.packed_bytes)
     fits = margin >= 0
@@ -463,5 +333,10 @@ def pack(
             run_log, llama_cpp, out, smoke_text, smoke_chunks, smoke_threshold, threads
         )
     run_log.emit(
-        "pack_finished", {"out": str(out), "packed_bytes": result.packed_bytes}
+        "pack_finished",
+        {
+            "out": str(out),
+            "packed_bytes": result.packed_bytes,
+            "smoked": smoke_text is not None,
+        },
     )

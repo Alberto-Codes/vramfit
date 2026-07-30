@@ -96,8 +96,8 @@ uv run quantfit pack recipe.json \
   ...
 ```
 
-A few chunks through `llama-perplexity` (CPU — the test never
-contends for the GPU) must land under the `--smoke-threshold`
+A few chunks through `llama-perplexity` (layer offload disabled —
+the test never contends for the GPU) must land under the `--smoke-threshold`
 ceiling (default 1000). Working artifacts measure 8–10, destroyed
 ones ~10⁶. A failing smoke test exits 1 and keeps the file for
 inspection. Without `--smoke-text` the command warns that the

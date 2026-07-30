@@ -104,6 +104,11 @@ class TestSmokeTesterContract:
 
         assert math.isnan(tester.smoke())
 
+    def test_smoke_with_inf_estimate_reports_inf(self, build, tmp_path) -> None:
+        tester: SmokeTester = build(tmp_path, estimate="inf")
+
+        assert tester.smoke() == float("inf")
+
     def test_smoke_tool_failure_raises_pack_error_with_exit_code(
         self, build, tmp_path
     ) -> None:
@@ -126,6 +131,9 @@ class TestLlamaCppSmokeCommandLine:
         assert argv[argv.index("-f") + 1] == str(tmp_path / "smoke.txt")
         assert argv[argv.index("--chunks") + 1] == "2"
         assert argv[argv.index("-t") + 1] == "1"
+        # Layer offload must be off — the smoke test never contends
+        # for the GPU (ADR-0017).
+        assert argv[argv.index("-ngl") + 1] == "0"
 
     def test_smoke_without_final_estimate_raises_pack_error(self, tmp_path) -> None:
         tester = LlamaCppSmokeTester(
@@ -143,6 +151,15 @@ class TestLlamaCppSmokeCommandLine:
         tester = _real_tester(tmp_path, estimate="garbage")
 
         with pytest.raises(PackError, match="unreadable estimate"):
+            tester.smoke()
+
+    def test_smoke_failure_tail_carries_the_merged_stderr(self, tmp_path) -> None:
+        # The adapter merges stderr into stdout so the failure tail is
+        # the tool's real last words — the operator's debugging
+        # lifeline (ADR-0017).
+        tester = _real_tester(tmp_path, fail=True)
+
+        with pytest.raises(PackError, match="smoke stub exploded"):
             tester.smoke()
 
     def test_smoke_with_missing_tool_raises_pack_error(self, tmp_path) -> None:

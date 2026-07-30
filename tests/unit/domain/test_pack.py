@@ -120,6 +120,17 @@ class TestPackResult:
                 imatrix_path="",
             )
 
+    def test_uncovered_tensors_without_imatrix_raise_value_error(self) -> None:
+        with pytest.raises(ValueError, match="imatrix_uncovered"):
+            PackResult(
+                packed_bytes=1,
+                base_type="Q4_K_S",
+                token_embedding_type=None,
+                output_tensor_type=None,
+                overrides=(),
+                imatrix_uncovered=("token_embd.weight",),
+            )
+
     def test_imatrix_path_defaults_to_none(self) -> None:
         result = PackResult(
             packed_bytes=1,
@@ -168,3 +179,13 @@ class TestSmokePassed:
     def test_non_positive_threshold_raises_value_error(self) -> None:
         with pytest.raises(ValueError, match="threshold"):
             smoke_passed(9.5, threshold=0.0)
+
+    def test_infinite_threshold_raises_value_error(self) -> None:
+        # An infinite ceiling would silently disable the gate.
+        with pytest.raises(ValueError, match="threshold"):
+            smoke_passed(1_020_627.87, threshold=float("inf"))
+
+    def test_perplexity_below_one_fails(self) -> None:
+        # Perplexity is mathematically at least 1 — lower values
+        # signal a broken tool, not a good artifact.
+        assert smoke_passed(0.0, threshold=1000.0) is False

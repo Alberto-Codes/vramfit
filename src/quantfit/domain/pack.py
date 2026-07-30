@@ -89,6 +89,10 @@ class PackResult:
         imatrix_path (str | None): Importance matrix file driven into
             the quantizer (ADR-0016). None when the pack ran without
             one.
+        imatrix_uncovered (tuple[str, ...]): Tensors the importance
+            matrix did not cover — the quantizer only warns and
+            quantizes them unassisted (ADR-0016). Empty without an
+            imatrix.
 
     Examples:
         Inspect the real size of a packed model:
@@ -104,6 +108,7 @@ class PackResult:
     output_tensor_type: str | None
     overrides: tuple[TypeOverride, ...]
     imatrix_path: str | None = None
+    imatrix_uncovered: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         """Enforce the result invariants.
@@ -112,7 +117,8 @@ class PackResult:
             ValueError: If ``packed_bytes`` is not positive,
                 ``base_type`` is empty, ``token_embedding_type``,
                 ``output_tensor_type``, or ``imatrix_path`` is empty,
-                or two overrides share a pattern.
+                ``imatrix_uncovered`` is set without an
+                ``imatrix_path``, or two overrides share a pattern.
         """
         if self.packed_bytes <= 0:
             raise ValueError("packed_bytes must be positive")
@@ -124,6 +130,8 @@ class PackResult:
             raise ValueError("output_tensor_type must not be empty")
         if self.imatrix_path is not None and not self.imatrix_path:
             raise ValueError("imatrix_path must not be empty")
+        if self.imatrix_uncovered and self.imatrix_path is None:
+            raise ValueError("imatrix_uncovered requires an imatrix_path")
         patterns = [override.pattern for override in self.overrides]
         if len(set(patterns)) != len(patterns):
             raise ValueError("override patterns must be unique")
@@ -166,17 +174,21 @@ def smoke_passed(perplexity: float, threshold: float) -> bool:
     The smoke test proves a packed model emits language (ADR-0017).
     Destroyed artifacts measure perplexity near 10^6 and working ones
     below 100, so the verdict is a plain ceiling. A non-finite
-    measurement fails — NaN must never pass a gate.
+    measurement fails — NaN must never pass a gate. Perplexity is
+    mathematically at least 1, so a lower value signals a broken
+    tool and fails too.
 
     Args:
         perplexity: The measured perplexity over the smoke chunks.
         threshold: The ceiling a passing measurement stays under.
 
     Returns:
-        True when ``perplexity`` is finite and below ``threshold``.
+        True when ``perplexity`` is finite, at least 1, and below
+        ``threshold``.
 
     Raises:
-        ValueError: If ``threshold`` is not positive.
+        ValueError: If ``threshold`` is not positive and finite — an
+            infinite ceiling would disable the gate.
 
     Examples:
         A destroyed artifact fails the default ceiling:
@@ -185,6 +197,6 @@ def smoke_passed(perplexity: float, threshold: float) -> bool:
         assert smoke_passed(1_020_627.9, threshold=1000.0) is False
         ```
     """
-    if threshold <= 0:
-        raise ValueError("threshold must be positive")
-    return math.isfinite(perplexity) and perplexity < threshold
+    if threshold <= 0 or not math.isfinite(threshold):
+        raise ValueError("threshold must be positive and finite")
+    return math.isfinite(perplexity) and 1.0 <= perplexity < threshold

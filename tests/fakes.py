@@ -167,6 +167,7 @@ class MemoryRecipePacker:
     fail_stage: Literal["convert", "quantize"] | None = None
     has_base: bool = False
     imatrix: str | None = None
+    imatrix_uncovered: tuple[str, ...] = ()
     packed: list[Recipe] = field(default_factory=list)
 
     def convert(self) -> int:
@@ -190,6 +191,7 @@ class MemoryRecipePacker:
             output_tensor_type=output_tensor_type(recipe),
             overrides=tensor_overrides(recipe),
             imatrix_path=self.imatrix,
+            imatrix_uncovered=self.imatrix_uncovered if self.imatrix else (),
         )
         self.packed.append(recipe)
         return result

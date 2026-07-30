@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from quantfit.adapters.inbound import cli_pack
+from quantfit.adapters.inbound import cli_pack, cli_pack_smoke
 from quantfit.adapters.inbound.cli import app
 from quantfit.adapters.outbound.recipe_json import save_recipe
 from quantfit.adapters.outbound.run_log_jsonl import read_run_log
@@ -66,7 +66,7 @@ def patch_packer(monkeypatch, fake: MemoryRecipePacker) -> None:
 
 
 def patch_smoke_tester(monkeypatch, fake: MemorySmokeTester) -> None:
-    monkeypatch.setattr(cli_pack, "_build_smoke_tester", lambda *args: fake)
+    monkeypatch.setattr(cli_pack_smoke, "_build_smoke_tester", lambda *args: fake)
 
 
 def events_of(out: Path) -> list[str]:
@@ -632,3 +632,300 @@ class TestPackSmokeAndImatrix:
 
         assert result.exit_code == 1
         assert tester.runs == 0
+
+
+class TestSmokeWiring:
+    def test_smoke_options_reach_the_tester_builder_in_the_right_slots(
+        self, tmp_path, monkeypatch, llama_cpp_dir, recipe_path
+    ) -> None:
+        patch_packer(monkeypatch, MemoryRecipePacker(packed_bytes=100))
+        seen: dict[str, object] = {}
+
+        def recorder(llama_cpp, out, smoke_text, chunks, threads):
+            seen.update(
+                llama_cpp=llama_cpp,
+                out=out,
+                smoke_text=smoke_text,
+                chunks=chunks,
+                threads=threads,
+            )
+            return MemorySmokeTester(perplexity=9.5)
+
+        monkeypatch.setattr(cli_pack_smoke, "_build_smoke_tester", recorder)
+        out = tmp_path / "packed.gguf"
+        smoke_text = tmp_path / "smoke.txt"
+        smoke_text.write_text("calibration text")
+
+        result = runner.invoke(
+            app,
+            [
+                "pack",
+                str(recipe_path),
+                "--llama-cpp",
+                str(llama_cpp_dir),
+                "--out",
+                str(out),
+                "--smoke-text",
+                str(smoke_text),
+                "--smoke-chunks",
+                "3",
+                "--threads",
+                "5",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert seen == {
+            "llama_cpp": llama_cpp_dir,
+            "out": out,
+            "smoke_text": smoke_text,
+            "chunks": 3,
+            "threads": 5,
+        }
+
+    def test_custom_smoke_threshold_reaches_the_verdict(
+        self, tmp_path, monkeypatch, llama_cpp_dir, recipe_path
+    ) -> None:
+        patch_packer(monkeypatch, MemoryRecipePacker(packed_bytes=100))
+        patch_smoke_tester(monkeypatch, MemorySmokeTester(perplexity=9.5))
+        smoke_text = tmp_path / "smoke.txt"
+        smoke_text.write_text("calibration text")
+
+        result = runner.invoke(
+            app,
+            [
+                "pack",
+                str(recipe_path),
+                "--llama-cpp",
+                str(llama_cpp_dir),
+                "--out",
+                str(tmp_path / "packed.gguf"),
+                "--smoke-text",
+                str(smoke_text),
+                "--smoke-threshold",
+                "5",
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert "FAILED" in result.output
+
+    def test_passing_smoke_records_the_full_event_payload(
+        self, tmp_path, monkeypatch, llama_cpp_dir, recipe_path
+    ) -> None:
+        patch_packer(monkeypatch, MemoryRecipePacker(packed_bytes=100))
+        patch_smoke_tester(monkeypatch, MemorySmokeTester(perplexity=9.5))
+        out = tmp_path / "packed.gguf"
+        smoke_text = tmp_path / "smoke.txt"
+        smoke_text.write_text("calibration text")
+
+        runner.invoke(
+            app,
+            [
+                "pack",
+                str(recipe_path),
+                "--llama-cpp",
+                str(llama_cpp_dir),
+                "--out",
+                str(out),
+                "--smoke-text",
+                str(smoke_text),
+                "--smoke-chunks",
+                "3",
+            ],
+        )
+
+        log = read_run_log(out.with_name(out.stem + ".runlog.jsonl"))
+        smoked = next(line for line in log if line["event"] == "smoke_tested")
+        assert smoked["perplexity"] == 9.5
+        assert smoked["threshold"] == 1000.0
+        assert smoked["chunks"] == 3
+        assert smoked["passed"] is True
+
+    def test_model_packed_event_records_the_imatrix(
+        self, tmp_path, monkeypatch, llama_cpp_dir, recipe_path
+    ) -> None:
+        imatrix_path = tmp_path / "imatrix.gguf"
+        imatrix_path.touch()
+        patch_packer(
+            monkeypatch,
+            MemoryRecipePacker(packed_bytes=100, imatrix=str(imatrix_path)),
+        )
+        out = tmp_path / "packed.gguf"
+
+        result = runner.invoke(
+            app,
+            [
+                "pack",
+                str(recipe_path),
+                "--llama-cpp",
+                str(llama_cpp_dir),
+                "--out",
+                str(out),
+                "--imatrix",
+                str(imatrix_path),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        log = read_run_log(out.with_name(out.stem + ".runlog.jsonl"))
+        packed = next(line for line in log if line["event"] == "model_packed")
+        assert packed["imatrix"] == str(imatrix_path)
+
+    def test_smoke_threshold_zero_is_a_usage_error(
+        self, tmp_path, monkeypatch, llama_cpp_dir, recipe_path
+    ) -> None:
+        patch_packer(monkeypatch, MemoryRecipePacker(packed_bytes=100))
+        smoke_text = tmp_path / "smoke.txt"
+        smoke_text.write_text("calibration text")
+
+        result = runner.invoke(
+            app,
+            [
+                "pack",
+                str(recipe_path),
+                "--llama-cpp",
+                str(llama_cpp_dir),
+                "--out",
+                str(tmp_path / "packed.gguf"),
+                "--smoke-text",
+                str(smoke_text),
+                "--smoke-threshold",
+                "0",
+            ],
+        )
+
+        assert result.exit_code == 2
+        assert "must be positive" in result.output
+
+    def test_missing_smoke_text_file_is_a_usage_error(
+        self, tmp_path, monkeypatch, llama_cpp_dir, recipe_path
+    ) -> None:
+        patch_packer(monkeypatch, MemoryRecipePacker(packed_bytes=100))
+
+        result = runner.invoke(
+            app,
+            [
+                "pack",
+                str(recipe_path),
+                "--llama-cpp",
+                str(llama_cpp_dir),
+                "--out",
+                str(tmp_path / "packed.gguf"),
+                "--smoke-text",
+                str(tmp_path / "absent.txt"),
+            ],
+        )
+
+        assert result.exit_code == 2
+        assert "is not a file" in result.output
+
+    def test_infinite_smoke_threshold_is_a_usage_error(
+        self, tmp_path, monkeypatch, llama_cpp_dir, recipe_path
+    ) -> None:
+        patch_packer(monkeypatch, MemoryRecipePacker(packed_bytes=100))
+        smoke_text = tmp_path / "smoke.txt"
+        smoke_text.write_text("calibration text")
+
+        result = runner.invoke(
+            app,
+            [
+                "pack",
+                str(recipe_path),
+                "--llama-cpp",
+                str(llama_cpp_dir),
+                "--out",
+                str(tmp_path / "packed.gguf"),
+                "--smoke-text",
+                str(smoke_text),
+                "--smoke-threshold",
+                "inf",
+            ],
+        )
+
+        assert result.exit_code == 2
+        assert "must be positive and finite" in result.output
+
+    def test_pack_finished_records_whether_the_model_was_smoked(
+        self, tmp_path, monkeypatch, llama_cpp_dir, recipe_path
+    ) -> None:
+        patch_packer(monkeypatch, MemoryRecipePacker(packed_bytes=100))
+        patch_smoke_tester(monkeypatch, MemorySmokeTester(perplexity=9.5))
+        out = tmp_path / "packed.gguf"
+        smoke_text = tmp_path / "smoke.txt"
+        smoke_text.write_text("calibration text")
+
+        runner.invoke(
+            app,
+            [
+                "pack",
+                str(recipe_path),
+                "--llama-cpp",
+                str(llama_cpp_dir),
+                "--out",
+                str(out),
+                "--smoke-text",
+                str(smoke_text),
+            ],
+        )
+
+        log = read_run_log(out.with_name(out.stem + ".runlog.jsonl"))
+        finished = next(line for line in log if line["event"] == "pack_finished")
+        assert finished["smoked"] is True
+
+    def test_unsmoked_pack_finished_records_smoked_false(
+        self, tmp_path, monkeypatch, llama_cpp_dir, recipe_path
+    ) -> None:
+        patch_packer(monkeypatch, MemoryRecipePacker(packed_bytes=100))
+        out = tmp_path / "packed.gguf"
+
+        runner.invoke(
+            app,
+            [
+                "pack",
+                str(recipe_path),
+                "--llama-cpp",
+                str(llama_cpp_dir),
+                "--out",
+                str(out),
+            ],
+        )
+
+        log = read_run_log(out.with_name(out.stem + ".runlog.jsonl"))
+        finished = next(line for line in log if line["event"] == "pack_finished")
+        assert finished["smoked"] is False
+
+    def test_uncovered_imatrix_tensors_are_warned_and_recorded(
+        self, tmp_path, monkeypatch, llama_cpp_dir, recipe_path
+    ) -> None:
+        imatrix_path = tmp_path / "imatrix.gguf"
+        imatrix_path.touch()
+        patch_packer(
+            monkeypatch,
+            MemoryRecipePacker(
+                packed_bytes=100,
+                imatrix=str(imatrix_path),
+                imatrix_uncovered=("token_embd.weight",),
+            ),
+        )
+        out = tmp_path / "packed.gguf"
+
+        result = runner.invoke(
+            app,
+            [
+                "pack",
+                str(recipe_path),
+                "--llama-cpp",
+                str(llama_cpp_dir),
+                "--out",
+                str(out),
+                "--imatrix",
+                str(imatrix_path),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "did not cover" in result.output
+        log = read_run_log(out.with_name(out.stem + ".runlog.jsonl"))
+        packed = next(line for line in log if line["event"] == "model_packed")
+        assert packed["imatrix_uncovered"] == ["token_embd.weight"]
