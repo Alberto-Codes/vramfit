@@ -226,7 +226,8 @@ quantfit pack RECIPE
   --python-bin PATH      Interpreter for the convert script — install
                          quantfit[pack] to provision it
                          [default: current]
-  --threads INT          Quantizer thread count  [default: 8]
+  --threads INT          Thread count for the quantizer and the
+                         smoke test  [default: 8]
   --imatrix PATH         Importance matrix for the quantizer
                          (ADR-0016)  [default: none]
   --smoke-text PATH      Text for the post-pack smoke test (ADR-0017)
@@ -247,9 +248,10 @@ ceiling (ADR-0017). Without the flag the command warns that the
 packed model is unproven. Every run appends the pack events to the
 run log: pack_started, gguf_converted (with `reused`), model_packed
 (real bytes, base type, embedding and output tensor types, override
-count, imatrix), size_checked (margin and `fits`), smoke_tested when
-the smoke test ran (perplexity — null when non-finite — threshold,
-chunks, `passed`), then pack_finished or pack_halted (stage:
+count, imatrix, uncovered tensors), size_checked (margin and
+`fits`), smoke_tested when the smoke test ran (perplexity — null
+when non-finite, with a text copy — threshold, chunks, `passed`),
+then pack_finished (with `smoked`) or pack_halted (stage:
 convert, quantize, size_check, or smoke).
 
 Exit codes: 1 when the recipe is invalid, the model directory does

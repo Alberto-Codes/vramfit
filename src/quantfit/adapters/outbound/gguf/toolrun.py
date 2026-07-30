@@ -1,11 +1,11 @@
 """Shared subprocess plumbing for the GGUF toolchain adapters.
 
-One place owns how a llama.cpp tool runs and fails: stderr merges
-into stdout so the failure tail is the tool's real last words, a
-signal death is named, and a zero-exit tool that wrote nothing must
-not pass as success (ADR-0011, ADR-0012). The pack and smoke
-adapters both drive tools through here, so their error messages
-cannot drift apart.
+One place owns how a llama.cpp tool runs and fails (ADR-0011,
+ADR-0012). `run_tool` merges stderr into stdout so the failure tail
+is the tool's real last words, and names a signal death. `sized_file`
+rejects a zero-exit tool that wrote no usable file. The pack and
+smoke adapters both drive tools through here, so their error
+messages cannot drift apart.
 
 Examples:
     Run one tool and keep its output for inspection:
