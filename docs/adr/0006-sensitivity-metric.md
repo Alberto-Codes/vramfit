@@ -76,8 +76,11 @@ Points fixed at acceptance (2026-07-28):
   recipe that produced it moves 18 more groups to 2-bit (42 of 82)
   on the strength of collapsed marginal damages, and the joint
   measurement says those marginals do not add. Sub-additivity is a property of
-  particular recipes, not of the meter. The invalidation threshold
-  is now a live question with one point on each side of 1.0.
+  particular recipes, not of the meter. The packed artifact
+  confirmed the warning: 10.48 PPL against the pilot-map recipe's
+  9.92 at the same budget (the fifth data point). The invalidation
+  threshold is now a live question with one point on each side of
+  1.0 — and the super-additive side is the one that packs badly.
 
 ## Consequences
 

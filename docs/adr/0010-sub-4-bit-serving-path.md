@@ -10,6 +10,13 @@
   The size-matched baseline in practice is Q3_K_S, not the IQ3
   quants listed below. ADR-0012's i-quant question now gates the
   claim.
+- **Note (2026-07-29, later):** the imatrix rematch ran under
+  ADR-0016 and lost by 0.53 PPL at equal size and equal toolchain
+  (9.061 vs 8.532 — the fifth data point). The toolchain gate is
+  gone. What gates the claim now is the solver's additive damage
+  model at 2-bit: the validation pass measured it super-additive by
+  11.9× on the 32,768-token map's recipe, and that recipe packed
+  worse than the pilot map's in every cell of the 2×2.
 
 ## Context
 

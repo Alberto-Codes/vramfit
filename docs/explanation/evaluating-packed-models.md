@@ -14,6 +14,9 @@ status: draft
 > On 2026-07-29 the full loop ran on the 49B acceptance target and
 > **lost to the size-matched baseline**
 > ([the fourth data point](#the-fourth-data-point-the-north-star-attempt-lost-honestly)).
+> The imatrix rematch ran the same night and **lost again, by less,
+> for a different reason**
+> ([the fifth data point](#the-fifth-data-point-the-imatrix-rematch-and-the-map-that-made-things-worse)).
 > Tier 3 has not run. The publication gates that consume
 > these evaluations live in [the artifact ecosystem](artifact-ecosystem.md)
 > and issue #11.
@@ -354,6 +357,91 @@ stand-in needs a 2-bit-honest variant (or the solver a
 runtime-frame correction) before 2-bit cells can be trusted at
 pack time. Third, the broken diagnostic above makes a post-pack
 smoke test a hard requirement, not hygiene.
+
+## The fifth data point: the imatrix rematch, and the map that made things worse
+
+The fourth data point ended with two removable handicaps: the
+baseline quantized with an importance matrix and ours didn't, and
+the 8,192-token map turned out to be a pilot. On 2026-07-29 both
+were removed — ADR-0016 wired `--imatrix` through pack, and the
+32,768-token map's recipe existed — and the rematch ran as a full
+2×2 over (map × imatrix), so the two factors could not hide behind
+each other. The importance matrix came from `llama-imatrix` over
+the f16 base and our own calibration text (345 chunks,
+`--process-output` so the untied head is covered). Same tiers as
+before: full WikiText-2 perplexity, 100-chunk KL against the same
+f16 logit file.
+
+Before any of it packed, the validation pass earned its place in
+the loop. The 32k recipe's whole-recipe damage measured **1.1234
+against a predicted 0.0940 — super-additive by 11.9×**, the first
+dangerous-direction measurement after two sub-additive ones
+(ADR-0006's third data point). The 32k map's collapsed front-stack
+marginals let the solver move 18 more groups to 2-bit (42 of 82),
+and the joint measurement said those marginals do not add. The
+packed numbers below confirm the warning was real.
+
+| Model | Size | imatrix | PPL ↓ | Mean KLD ↓ | Same top ↑ |
+|-------|------|---------|-------|------------|------------|
+| quantfit 8k map | 20.30 GiB | no | 9.917 ± 0.075 | 0.3748 | 75.4 % |
+| **quantfit 8k map** | **20.30 GiB** | **yes** | **9.061 ± 0.067** | **0.2701** | **79.2 %** |
+| quantfit 32k map | 19.99 GiB | no | 10.483 ± 0.081 | 0.4288 | 73.8 % |
+| quantfit 32k map | 19.99 GiB | yes | 10.412 ± 0.082 | 0.4708 | 77.0 % |
+| Q3_K_S heuristic (bartowski) | 20.45 GiB | yes | **8.532 ± 0.064** | **0.1584** | **83.8 %** |
+| control Q3_K_S (ours) | 20.45 GiB | no | 9.655 ± 0.073 | 0.3451 | 76.9 % |
+
+**The rematch is lost, and the loss is now informative.** The best
+cell — 8k map with imatrix — lands 0.53 PPL and 1.7× mean KLD
+behind the size-matched baseline. That is down from 1.39 PPL and
+2.4× in the fourth data point, but both artifacts now quantize
+imatrix-assisted from the same f16 base, so no toolchain handicap
+remains to blame. Reading the grid honestly, in both directions:
+
+- **The imatrix factor is real and recipe-dependent.** On the 8k
+  recipe it bought 0.86 PPL (9.917 → 9.061). On the uniform-Q3
+  control it bought 1.12 (9.655 → 8.532). On the 32k recipe it
+  bought 0.07 (10.483 → 10.412). Importance-weighted rounding
+  improves every tensor a little — it cannot rescue a bit
+  allocation whose damage comes from interactions between 2-bit
+  groups, and it helps a 2-bit-heavy mix *less* than it helps the
+  baseline's 3-bit mix. The gap against the baseline actually
+  widened under fair conditions (0.53 vs 0.26 same-conditions in
+  the fourth data point) for exactly that reason.
+- **The better map made a worse recipe.** The 32k map is closer to
+  converged per cell (PR #34), its recipe's *predicted* damage is
+  5× lower (0.094 vs 0.495) — and its packed artifact is worse in
+  every cell of the grid. The mechanism is the super-additivity
+  above: more accurate marginals read the front stack as nearly
+  free, the solver spent those bits elsewhere and paid in 2-bit
+  interactions the additive model cannot see. Map convergence and
+  recipe quality are not the same axis.
+- **The three-number chain now points at one culprit.** Validation
+  caught the 32k recipe before packing (measured 1.12 in the scan
+  frame; the packed artifact confirms at 0.43–0.47 KL on held-out
+  text). The scan's marginal cells, the additive sum over them, and
+  the runtime's real 2-bit types each tell a different story about
+  the same recipe. The binding constraint on the north-star claim
+  is no longer the pack toolchain — it is the additive damage model
+  at 2-bit, plus the scan's round-to-nearest stand-in for Q2_K.
+- **The operational gates behaved.** All three packs fit first try
+  (ADR-0014's margins: 488.6 MiB and 169.7 MiB under). The smoke
+  test (ADR-0017) gated every artifact — 20.96, 16.50, 15.97 over
+  its two calibration chunks, all under the ceiling, none destroyed.
+  The imatrix coverage scan reported exactly one uncovered tensor
+  (`token_embd`, expected — embeddings have no activation
+  statistics). The imatrix pair differ from their blind twins by
+  ~350 bytes of embedded provenance, confirming ADR-0016's
+  size-invariance claim.
+
+What this changes: ADR-0016 and ADR-0017 carried their weight and
+are Accepted. The i-quant table stays open but is no longer the
+gating item. The gating item is now solver-shaped: a recipe whose
+validation pass measures super-additive must not reach pack
+unchallenged, and 2-bit assignments need either an
+interaction-aware solve, a validation-in-the-loop correction, or a
+runtime-frame damage measurement before the north-star claim can
+close. The residual 0.53 PPL is the price of those missing pieces,
+measured.
 
 ## Provenance is not evidence
 

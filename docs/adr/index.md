@@ -36,8 +36,8 @@ ADR that supersedes the old one.
 | [0013](0013-runtime-capability-in-recipes.md) | Recipes record their target runtime | Accepted, amended by 0014 |
 | [0014](0014-per-type-effective-bits.md) | The solver predicts sizes from per-type effective bits | Accepted |
 | [0015](0015-offload-aware-scanning.md) | The meter perturbs offloaded groups through accelerate's weights map | Accepted |
-| [0016](0016-imatrix-in-the-pack-path.md) | Pack consumes an importance matrix | Proposed |
-| [0017](0017-post-pack-smoke-test.md) | A packed model proves it emits language before anything trusts it | Proposed |
+| [0016](0016-imatrix-in-the-pack-path.md) | Pack consumes an importance matrix | Accepted |
+| [0017](0017-post-pack-smoke-test.md) | A packed model proves it emits language before anything trusts it | Accepted |
 
 ## Template
 

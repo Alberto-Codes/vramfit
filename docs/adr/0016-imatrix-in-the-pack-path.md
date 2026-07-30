@@ -1,7 +1,16 @@
 # ADR-0016: Pack consumes an importance matrix
 
-- **Status:** Proposed
-- **Date:** 2026-07-29
+- **Status:** Accepted
+- **Date:** 2026-07-29 (accepted 2026-07-29)
+
+Acceptance evidence (the same night, PR #38): the matrix generated
+in 67 minutes (345 chunks, `--process-output`, 18.3 MB). Both
+imatrix packs fit first try and differ from their blind twins by
+~350 bytes of embedded provenance — the size tables held. The
+coverage scan reported one uncovered tensor (`token_embd`,
+expected). Measured effect on the 8k recipe: PPL 9.917 → 9.061.
+The rematch numbers live in
+[the fifth data point](../explanation/evaluating-packed-models.md).
 
 ## Context
 

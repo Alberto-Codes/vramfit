@@ -1,7 +1,15 @@
 # ADR-0017: A packed model proves it emits language before anything trusts it
 
-- **Status:** Proposed
-- **Date:** 2026-07-29
+- **Status:** Accepted
+- **Date:** 2026-07-29 (accepted 2026-07-29)
+
+Acceptance evidence (the same night, PR #38): the smoke test gated
+all three rematch packs — 20.96, 16.50, and 15.97 over two
+calibration chunks, each in minutes on CPU beside a ~6-minute
+quantize, none destroyed. The gate found nothing to reject, which
+is the expected result for recipes the validation pass already
+measured. The destroyed-artifact class it exists for is recorded in
+[the fourth data point](../explanation/evaluating-packed-models.md).
 
 ## Context
 
