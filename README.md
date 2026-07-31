@@ -57,12 +57,15 @@ model fits the card first try. The quality head-to-head against the
 size-matched community imatrix quant is **still lost, by half as much**:
 0.53 perplexity behind at equal size and equal toolchain, down from 1.39.
 The rematch isolated the causes — importance-weighted rounding was worth
-0.86 of the old gap, and the remaining deficit sits in the solver's
-additive damage model, which the validation pass measured breaking
-(super-additive ×11.9) on a 2-bit-heavy recipe before it packed. The
+0.86 of the old gap, and a controlled A/B then showed the additivity
+failure is decided by which groups sit at 2-bit: the same predicted
+damage measures ×11.9 over prediction on one 2-bit set and ×0.6 on
+another. Converged marginals plus the validation gate steer the solver
+out of the bad set without interaction modeling. The
 [evidence page](docs/explanation/evaluating-packed-models.md) records all
-five data points. Making 2-bit assignments interaction-aware is the
-current work. See
+six data points. The remaining deficit sits in the scan-frame to
+runtime-frame transfer at low bits and in allocation granularity —
+closing those is the current work. See
 [Issues](https://github.com/Alberto-Codes/quantfit/issues) for the roadmap.
 
 ## Requirements

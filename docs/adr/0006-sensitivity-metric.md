@@ -53,9 +53,15 @@ Points fixed at acceptance (2026-07-28):
   flips 41 of 82 assignments. Rank order holds better than
   magnitudes (Spearman 0.99 at 8-bit down to 0.79 at 2-bit): the
   U-curve and the worst-group set survive while the middle
-  reorders. Whether 32,768 tokens suffices stays open — it needs a
-  point beyond 32,768. Until then the 131,072-token default stands
-  and 8,192-token maps are pilots, not maps.
+  reorders. Second measurement (2026-07-31, 32,768 vs 65,536
+  tokens): **32,768 tokens suffices at 3-bit and above** — median
+  ratios 1.00/1.06/1.10 at 8/4/3-bit, Spearman ≥ 0.97, and the
+  re-plan flips 15 of 82 assignments, mostly 2↔3-bit swaps.
+  **2-bit cells are not converged at 32,768**: median ratio 1.29,
+  still rising with tokens. Whether 65,536 converges 2-bit needs a
+  further point. The 131,072-token default stands for scans whose
+  recipes may assign 2-bit. Scans confined to ≥ 3-bit may stop at
+  32,768.
 - The "one task eval as ground truth" leg has not run as decided.
   What ran on the first packed 49B: a perplexity and whole-model-KL
   head-to-head, plus a now-mandatory post-pack smoke test (ADR-0012,
@@ -78,9 +84,19 @@ Points fixed at acceptance (2026-07-28):
   measurement says those marginals do not add. Sub-additivity is a property of
   particular recipes, not of the meter. The packed artifact
   confirmed the warning: 10.48 PPL against the pilot-map recipe's
-  9.92 at the same budget (the fifth data point). The invalidation
-  threshold is now a live question with one point on each side of
-  1.0 — and the super-additive side is the one that packs badly.
+  9.92 at the same budget (the fifth data point).
+  **Fourth measurement (2026-07-31, the controlled A/B):** the
+  65,536-token map's recipe, measured in the same 32,768-token
+  frame, predicts 0.0946 and measures 0.0589 — sub-additive by
+  1.6×. Same budget, same predicted sum as the super-additive
+  recipe (0.0940 → 1.1234), 19× apart in measured joint damage.
+  The only difference is *which* groups sit at 2-bit (35 vs 42,
+  different membership). Additivity failure is driven by 2-bit
+  group selection, and converged marginals steered the solver back
+  to a sub-additive recipe without any interaction modeling. The
+  invalidation threshold question stands, but the operational rule
+  is now clear: a super-additive validation is a solve-again
+  signal, not a pack input.
 
 ## Consequences
 

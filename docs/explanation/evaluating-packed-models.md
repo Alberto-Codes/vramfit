@@ -17,6 +17,10 @@ status: draft
 > The imatrix rematch ran the same night and **lost again, by less,
 > for a different reason**
 > ([the fifth data point](#the-fifth-data-point-the-imatrix-rematch-and-the-map-that-made-things-worse)).
+> On 2026-07-31 the converged map fixed the additivity failure and
+> tied the pilot's packed quality — moving the open frontier to the
+> scan-to-runtime frame transfer
+> ([the sixth data point](#the-sixth-data-point-the-converged-map-and-where-the-leak-moved)).
 > Tier 3 has not run. The publication gates that consume
 > these evaluations live in [the artifact ecosystem](artifact-ecosystem.md)
 > and issue #11.
@@ -442,6 +446,67 @@ interaction-aware solve, a validation-in-the-loop correction, or a
 runtime-frame damage measurement before the north-star claim can
 close. The residual 0.53 PPL is the price of those missing pieces,
 measured.
+
+## The sixth data point: the converged map, and where the leak moved
+
+The 65,536-token convergence scan finished on 2026-07-31 (~24.6 h,
+issue #37) and answered ADR-0006's calibration question: 32,768
+tokens suffices at 3-bit and above, and 2-bit cells are still
+rising (median ×1.29). The re-planned recipe moved 7 groups off
+2-bit (35 of 82, different membership than either predecessor) and
+set up the cleanest experiment of the week.
+
+**The controlled A/B on additivity.** Measured in the identical
+32,768-token frame, the two recipes carry the same predicted
+marginal sum and land 19× apart:
+
+| Recipe | Predicted (32k frame) | Measured | Direction |
+|--------|----------------------|----------|-----------|
+| 32k map (42 groups at 2-bit) | 0.0940 | 1.1234 | super-additive ×11.9 |
+| 64k map (35 groups at 2-bit) | 0.0946 | **0.0589** | **sub-additive ×1.6** |
+
+Which groups sit at 2-bit decides whether damages add — and
+converged marginals alone steered the solver back to a
+sub-additive recipe, no interaction modeling required. The
+operational rule this fixes: a super-additive validation is a
+solve-again signal, not a pack input.
+
+**The packed result.** The 64k recipe packed imatrix-assisted
+(20.32 GiB, 152.4 MiB under, smoke 16.22) and scored:
+
+| Model | Size | PPL ↓ | Mean KLD ↓ | Same top ↑ |
+|-------|------|-------|------------|------------|
+| quantfit 64k map + imatrix | 20.32 GiB | 9.156 ± 0.068 | 0.2653 | 80.1 % |
+| quantfit 8k map + imatrix | 20.30 GiB | 9.061 ± 0.067 | 0.2701 | 79.2 % |
+| Q3_K_S heuristic (bartowski) | 20.45 GiB | **8.532 ± 0.064** | **0.1584** | **83.8 %** |
+
+Reading it honestly, in both directions:
+
+- **The catastrophic recipe is fixed, the ceiling is not moved.**
+  The converged map's artifact ties the pilot map's within noise
+  (overlapping PPL intervals, marginally better KL and top-token).
+  Both sit ~0.55 PPL behind the baseline.
+- **The scan frame over-promises at low bits, measurably.** In its
+  own frame the 64k recipe is 2.9× less damaged than the 8k recipe
+  (0.0589 vs 0.1682) — packed, they tie. Round-to-nearest is an
+  optimistic stand-in for real Q2_K/Q3_K types, and that transfer
+  leak now bounds recipe quality more than map quality does.
+- **The suspect list reorders.** Additivity: handled by converged
+  maps plus the validation gate. Map convergence: answered. What
+  remains between 9.06 and 8.53 is the runtime-frame gap
+  (a 2-bit-honest scan variant, or measuring damage through the
+  packed types directly) and allocation granularity (the baseline
+  mixes precision *within* layers — tensor-level groups are
+  ADR-0012's declared v1 boundary).
+- **The operational record stays clean**: fourth first-try size fit
+  in a row, smoke gate on everything, one expected imatrix
+  coverage miss (`token_embd`).
+
+One operational limit surfaced: a 65,536-token validation pass
+does not fit the 24 GiB card at any weight cap tried — the
+embed-sized fp32 buffer plus 64k-token bookkeeping fragments the
+allocator. The frame-matched measurement above ran at 32,768
+tokens instead. Bigger-VRAM measurement is tracked in issue #40.
 
 ## Provenance is not evidence
 
