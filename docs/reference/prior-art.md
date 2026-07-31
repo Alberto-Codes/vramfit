@@ -58,9 +58,9 @@ status: draft
 :   The closest prior art by method, superseding EXL2 here
     (re-surveyed 2026-07-31). exllamav3 ships `util/measure.py`,
     which records KL-divergence contributions per candidate group
-    between quant levels, and an `optimize.py` that allocates bits
-    from that measurement to a target *average* bits-per-weight.
-    That is a working measure-then-solve loop. quantfit bets on
+    between quant levels. Its `optimize.py` allocates bits from
+    that measurement to a target *average* bits-per-weight. That is
+    a working measure-then-solve loop. quantfit bets on
     four differences. EXL3 is tied to its own CUDA runtime — vLLM
     declined integration
     ([vllm#19896](https://github.com/vllm-project/vllm/issues/19896)).
