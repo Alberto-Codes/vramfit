@@ -26,9 +26,12 @@ target size, inside the runtime we pack for. Convergence this broad
 validates the approach and closes the "only measure-then-solve tool"
 window for good.
 
-What none of them publish is the measurement itself — every one
-consumes a sensitivity proxy internally and discards it, and none
-carries a portable recipe with provenance. quantfit's differentiated assets
+What none of them publish is the measurement *as evidence*.
+exllamav3 persists per-group KL to a reusable file (the strongest
+exception — see [prior art](../reference/prior-art.md)), but it is
+runtime-locked and carries no provenance; the rest consume a
+sensitivity proxy internally and discard it. None carries a
+portable recipe with recorded provenance. quantfit's differentiated assets
 (fuller argument in
 [why selective quantization](why-selective-quantization.md)):
 
