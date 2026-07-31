@@ -37,9 +37,10 @@ status: draft
     Q3_K_S, with ~81 % of the perplexity gap traced to the imatrix
     ([evaluating packed models](../explanation/evaluating-packed-models.md)).
     Pack consumes an importance matrix since
-    [ADR-0016](../adr/0016-imatrix-in-the-pack-path.md). The rematch
-    narrowed the gap to 0.53 PPL, and the gating item moved to the
-    scan-to-runtime frame transfer (the sixth data point).
+    [ADR-0016](../adr/0016-imatrix-in-the-pack-path.md). The imatrix
+    rematch narrowed the gap to 0.53–0.62 PPL, and the gating item
+    moved to the scan-to-runtime frame transfer
+    ([the fifth and sixth data points](../explanation/evaluating-packed-models.md#the-sixth-data-point-the-converged-map-and-where-the-leak-moved)).
     `llama-quantize --tensor-type`
     accepts per-tensor type overrides, which is the mechanism the
     GGUF pack backend drives
