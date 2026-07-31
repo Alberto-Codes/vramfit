@@ -36,8 +36,11 @@ status: draft
     dominates there: the first packed 49B recipe lost to an imatrix
     Q3_K_S, with ~81 % of the perplexity gap traced to the imatrix
     ([evaluating packed models](../explanation/evaluating-packed-models.md)).
-    Consuming an importance matrix is now the gating item for the
-    north-star claim (ADR-0012). `llama-quantize --tensor-type`
+    Pack consumes an importance matrix since
+    [ADR-0016](../adr/0016-imatrix-in-the-pack-path.md). The rematch
+    narrowed the gap to 0.53 PPL, and the gating item moved to the
+    scan-to-runtime frame transfer (the sixth data point).
+    `llama-quantize --tensor-type`
     accepts per-tensor type overrides, which is the mechanism the
     GGUF pack backend drives
     ([ADR-0010](../adr/0010-sub-4-bit-serving-path.md)).
