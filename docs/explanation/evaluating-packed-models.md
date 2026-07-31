@@ -462,8 +462,11 @@ marginal sum and land 19× apart:
 
 | Recipe | Predicted (32k frame) | Measured | Direction |
 |--------|----------------------|----------|-----------|
-| 32k map (42 groups at 2-bit) | 0.0940 | 1.1234 | super-additive ×11.9 |
-| 64k map (35 groups at 2-bit) | 0.0946 | **0.0589** | **sub-additive ×1.6** |
+| 32k map (42 groups at 2-bit) | 0.0940 | 1.1234 | super-additive by 11.9× |
+| 64k map (35 groups at 2-bit) | 0.0946 | **0.0589** | **sub-additive by 1.6×** |
+
+Factors read at or above 1 with the direction named: super-additive
+divides measured by predicted, sub-additive the reverse.
 
 Which groups sit at 2-bit decides whether damages add — and
 converged marginals alone steered the solver back to a
@@ -485,12 +488,15 @@ Reading it honestly, in both directions:
 - **The catastrophic recipe is fixed, the ceiling is not moved.**
   The converged map's artifact ties the pilot map's within noise
   (overlapping PPL intervals, marginally better KL and top-token).
-  Both sit ~0.55 PPL behind the baseline.
-- **The scan frame over-promises at low bits, measurably.** In its
-  own frame the 64k recipe is 2.9× less damaged than the 8k recipe
-  (0.0589 vs 0.1682) — packed, they tie. Round-to-nearest is an
-  optimistic stand-in for real Q2_K/Q3_K types, and that transfer
-  leak now bounds recipe quality more than map quality does.
+  They sit 0.62 and 0.53 PPL behind the baseline.
+- **The scan frame over-promises at low bits.** Each map's recipe
+  promises less damage than its predecessor in the scan frame: the
+  64k recipe measures 0.0589 at 32,768 tokens against the 8k
+  recipe's 0.1682 at 8,192 tokens. The frames differ, so that gap
+  is indicative, not exact. Packed, the two artifacts tie —
+  round-to-nearest is an optimistic stand-in for real Q2_K/Q3_K
+  types, and that transfer leak now bounds packed quality more
+  than map quality does.
 - **The suspect list reorders.** Additivity: handled by converged
   maps plus the validation gate. Map convergence: answered. What
   remains between 9.06 and 8.53 is the runtime-frame gap
@@ -498,9 +504,9 @@ Reading it honestly, in both directions:
   packed types directly) and allocation granularity (the baseline
   mixes precision *within* layers — tensor-level groups are
   ADR-0012's declared v1 boundary).
-- **The operational record stays clean**: fourth first-try size fit
-  in a row, smoke gate on everything, one expected imatrix
-  coverage miss (`token_embd`).
+- **The operational record stays clean**: another first-try size
+  fit, the smoke gate on everything, one expected imatrix coverage
+  miss (`token_embd`).
 
 One operational limit surfaced: a 65,536-token validation pass
 does not fit the 24 GiB card at any weight cap tried — the

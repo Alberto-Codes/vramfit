@@ -52,20 +52,21 @@ maturity status). Design decisions are recorded as [ADRs](docs/adr/index.md).
 The full pipeline is implemented: `scan`, `plan`, `validate`, `pack`, plus
 `budget` for the VRAM arithmetic. Pack quantizes with an importance matrix
 (ADR-0016) and smoke-tests every artifact before trusting it (ADR-0017).
-Two complete loops have run on the 49B target (2026-07-29). Every packed
-model fits the card first try. The quality head-to-head against the
-size-matched community imatrix quant is **still lost, by half as much**:
-0.53 perplexity behind at equal size and equal toolchain, down from 1.39.
-The rematch isolated the causes — importance-weighted rounding was worth
-0.86 of the old gap, and a controlled A/B then showed the additivity
-failure is decided by which groups sit at 2-bit: the same predicted
-damage measures ×11.9 over prediction on one 2-bit set and ×0.6 on
-another. Converged marginals plus the validation gate steer the solver
-out of the bad set without interaction modeling. The
-[evidence page](docs/explanation/evaluating-packed-models.md) records all
-six data points. The remaining deficit sits in the scan-frame to
-runtime-frame transfer at low bits and in allocation granularity —
-closing those is the current work. See
+Three complete loops have run on the 49B target (2026-07-29 to
+2026-07-31). Every packed model fits the card first try. The quality
+head-to-head against the size-matched community imatrix quant is
+**still lost, by less**: 0.53 perplexity behind at equal size and
+equal toolchain, down from 1.39. The rematch isolated the causes.
+Importance-weighted rounding was worth 0.86 of the old gap. A
+controlled A/B then showed 2-bit group membership decides whether
+damages add: the same predicted damage measures super-additive by
+11.9× on one 2-bit set and sub-additive by 1.6× on another.
+Converged marginals plus the validation gate steer the solver out of
+the bad set without interaction modeling. The
+[evidence page](docs/explanation/evaluating-packed-models.md) records
+all six data points. The remaining deficit sits in the
+scan-to-runtime frame transfer at low bits and in allocation
+granularity — closing those is the current work. See
 [Issues](https://github.com/Alberto-Codes/quantfit/issues) for the roadmap.
 
 ## Requirements

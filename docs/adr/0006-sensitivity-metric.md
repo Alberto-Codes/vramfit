@@ -54,11 +54,12 @@ Points fixed at acceptance (2026-07-28):
   magnitudes (Spearman 0.99 at 8-bit down to 0.79 at 2-bit): the
   U-curve and the worst-group set survive while the middle
   reorders. Second measurement (2026-07-31, 32,768 vs 65,536
-  tokens): **32,768 tokens suffices at 3-bit and above** — median
-  ratios 1.00/1.06/1.10 at 8/4/3-bit, Spearman ≥ 0.97, and the
-  re-plan flips 15 of 82 assignments, mostly 2↔3-bit swaps.
-  **2-bit cells are not converged at 32,768**: median ratio 1.29,
-  still rising with tokens. Whether 65,536 converges 2-bit needs a
+  tokens): **32,768 tokens suffices at 3-bit and above** — the
+  median 65,536/32,768 damage ratio is 1.00/1.06/1.10 at 8/4/3-bit,
+  Spearman ≥ 0.97, and the re-plan flips 15 of 82 assignments,
+  mostly 2↔3-bit swaps. **2-bit cells are not converged at
+  32,768**: their median ratio is 1.29 and still rises with
+  tokens. Whether 65,536 converges 2-bit needs a
   further point. The 131,072-token default stands for scans whose
   recipes may assign 2-bit. Scans confined to ≥ 3-bit may stop at
   32,768.
