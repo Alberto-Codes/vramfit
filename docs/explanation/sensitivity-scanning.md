@@ -39,10 +39,12 @@ can be jointly fragile.
 
 The mitigation is implemented as `quantfit validate`: replay the exact
 recipe in one pass and compare against the sum of marginal predictions.
-Both real measurements came in **sub-additive** — the safe direction:
-2.05× over-prediction on Qwen2.5-3B (measured 0.0322 vs predicted
-0.0661) and 2.94× on the 49B (0.1682 vs 0.4949). The dangerous
-direction — measured above predicted — has not appeared
+Four real measurements have come in, and both directions have
+appeared. Three were **sub-additive** — the safe direction: 2.05×
+over-prediction on Qwen2.5-3B (0.0322 measured vs 0.0661 predicted),
+2.94× and 1.6× on the 49B. One was **super-additive by 11.9×** on a
+2-bit-heavy 49B recipe — the dangerous direction, driven by which
+groups sat at 2-bit, and caught by this pass before packing
 ([ADR-0006](../adr/0006-sensitivity-metric.md)).
 
 ## What "divergence" means here

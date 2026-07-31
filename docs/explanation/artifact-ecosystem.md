@@ -47,9 +47,10 @@ carries a portable recipe with provenance. quantfit's differentiated assets
    [ADR-0010](../adr/0010-sub-4-bit-serving-path.md)), with the
    validation pass checking our own additivity assumption on the way.
 
-The core experiment can still fail. The additivity worry has since
-been measured and points the safe way (sub-additive by 2.05× and
-2.94× on the two validation passes). The competitive worry is live:
+The core experiment can still fail. The additivity worry has been
+measured four times and points both ways: three passes sub-additive
+(2.05×, 2.94×, 1.6×), one super-additive by 11.9× on a 2-bit-heavy
+recipe — caught before packing, which is the pass doing its job. The competitive worry is live:
 the first head-to-head went to the heuristic-plus-imatrix quant. If
 the gap does not close, the published measurement infrastructure and
 curves remain the durable contribution.
@@ -122,7 +123,8 @@ Hard gates before any publication, with their 2026-07-29 status:
 2. The whole-recipe validation pass exists — publishing a recipe whose
    additivity assumption was never checked is the exact sin the
    project criticizes. **Satisfied** — `quantfit validate` has two
-   measurements, both sub-additive.
+   four measurements across both directions, including the
+   super-additive one that stopped a bad recipe before packing.
 3. The packed model measurably beats the size-matched heuristic GGUF,
    judged per [evaluating packed models](evaluating-packed-models.md).
    One bad debut kills a "measured beats folklore" brand permanently.
