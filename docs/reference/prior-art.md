@@ -36,7 +36,7 @@ status: draft
     dominates there: the first packed 49B recipe lost to an imatrix
     Q3_K_S, with ~81 % of the perplexity gap traced to the imatrix
     ([evaluating packed models](../explanation/evaluating-packed-models.md)).
-    Pack consumes an importance matrix since
+    `quantfit pack` consumes an importance matrix since
     [ADR-0016](../adr/0016-imatrix-in-the-pack-path.md). The imatrix
     rematch narrowed the gap to 0.53–0.62 PPL, and the gating item
     moved to the scan-to-runtime frame transfer
