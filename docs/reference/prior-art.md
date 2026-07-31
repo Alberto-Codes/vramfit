@@ -45,29 +45,29 @@ status: draft
 **[Unsloth dynamic GGUFs](https://huggingface.co/unsloth)**
 :   Selective per-layer bit assignment shipped as ready-made GGUFs —
     the closest prior art by shipped output. Dynamic 2.0
-    (2025) claims per-layer sensitivity measurement, but the method,
-    code, and per-model evidence stay unpublished — a direct
+    (2025) claims per-layer sensitivity measurement. The method,
+    code, and per-model evidence stay unpublished: a direct
     [transparency question](https://github.com/unslothai/unsloth/discussions/3523)
     closed with zero maintainer comments (re-checked 2026-07-31).
     quantfit bets that a measured, *published* sensitivity map beats
-    this recipe class — the bet is now specifically about evidence,
+    this recipe class. The bet is now specifically about evidence,
     not about whether selective assignment works. See
     [the artifact ecosystem](../explanation/artifact-ecosystem.md).
 
 **[EXL3 / exllamav3](https://github.com/turboderp-org/exllamav3)**
 :   The closest prior art by method, superseding EXL2 here
-    (re-surveyed 2026-07-31). exllamav3 ships `util/measure.py` —
-    per-layer and per-tensor KL-divergence contributions, compared
-    module by module between quant levels — and an `optimize.py`
-    that allocates bits from that measurement to a target *average*
-    bits-per-weight. That is a working measure-then-solve loop.
-    Differences quantfit bets on: EXL3 is tied to its own CUDA
-    runtime (vLLM declined integration,
-    [vllm#19896](https://github.com/vllm-project/vllm/issues/19896)),
-    it optimizes to an average bpw rather than an explicit VRAM
-    budget planned jointly with KV headroom, its measurement is not
-    a standalone provenance-carrying artifact, and it has no
-    whole-recipe validation pass.
+    (re-surveyed 2026-07-31). exllamav3 ships `util/measure.py`,
+    which records KL-divergence contributions per candidate group
+    between quant levels, and an `optimize.py` that allocates bits
+    from that measurement to a target *average* bits-per-weight.
+    That is a working measure-then-solve loop. quantfit bets on
+    four differences. EXL3 is tied to its own CUDA runtime — vLLM
+    declined integration
+    ([vllm#19896](https://github.com/vllm-project/vllm/issues/19896)).
+    It optimizes to an average bpw, not an explicit VRAM budget
+    planned jointly with KV headroom. Its measurement is not a
+    standalone provenance-carrying artifact. It has no whole-recipe
+    validation pass.
 
 **[Adaptive-Quantization](https://github.com/bigattichouse/Adaptive-Quantization)**
 :   A per-tensor GGUF recipe tool in quantfit's exact pack lane
@@ -75,11 +75,12 @@ status: draft
     2026-07-31. It profiles *weight reconstruction SNR* per tensor —
     layer-local error, the metric class
     [ADR-0006](../adr/0006-sensitivity-metric.md) rejected because
-    it ignores propagation. quantfit's third validation measurement
-    (super-additive ×11.9 at 2-bit) is direct evidence that
-    propagation dominates exactly where bit allocation matters most.
-    Zero adoption signals at survey time. Its existence confirms the
-    lane is visible — the differentiation is the metric and the
+    it ignores propagation. quantfit's validation measurements are
+    evidence that propagation matters exactly where bit allocation
+    matters most, and that the effect depends on which groups sit
+    at 2-bit (ADR-0006, third and fourth measurements). Zero
+    adoption signals at survey time. Its existence confirms the
+    lane is visible. The differentiation is the metric and the
     validation, not the mechanism.
 
 **[llm-compressor](https://github.com/vllm-project/llm-compressor)**
@@ -99,22 +100,24 @@ status: draft
 Added 2026-07-31, after the third validation measurement found
 super-additive joint damage (×11.9) on a 2-bit-heavy recipe.
 
-**[CLADO](https://arxiv.org/abs/2307.05657)** (DAC 2025)
+**[CLADO](https://arxiv.org/abs/2307.05657)**
 :   Names quantfit's measured problem: sensitivity-based
     mixed-precision methods assume per-layer errors are independent,
     and they are not. CLADO measures *pairwise* cross-layer error
     terms on a small calibration subset and solves the allocation as
-    an Integer Quadratic Program. Demonstrated on ImageNet-scale
-    vision models — not on serving-scale LLMs, and not in any
-    shipped quantization tool found in this survey. The candidate
-    algorithm shape for an interaction-aware `plan`
-    (O(groups²) extra measurement — priceable with the existing
-    meter).
+    an Integer Quadratic Program. It is demonstrated on
+    ImageNet-scale vision models — not on serving-scale LLMs, and
+    not in any shipped quantization tool found in this survey. It is
+    the candidate algorithm shape for an interaction-aware `plan`,
+    at O(groups²) extra measurement the existing meter can price.
+    ADR-0006's fourth measurement lowers its urgency: converged
+    marginals steered the solver sub-additive without interaction
+    terms.
 
 **[Mixed-precision quantization for language models: techniques and prospects](https://arxiv.org/abs/2510.16805)** (survey, 2025)
-:   The field map. Confirms two things about the landscape:
-    sensitivity-driven bit allocation is an active research area,
-    and the published work targets research benchmarks — none of the
+:   The field map. It confirms two things about the landscape.
+    Sensitivity-driven bit allocation is an active research area.
+    The published work targets research benchmarks — none of the
     surveyed methods ship budget-solved, provenance-carrying
     artifacts for a specific card. The gap quantfit aims at is
     engineering-shaped, not algorithm-shaped.

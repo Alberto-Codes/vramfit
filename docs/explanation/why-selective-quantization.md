@@ -261,11 +261,15 @@ approach is right — and it means the honest claim is a differentiated
 
 Four edges survive contact with the landscape, and they compound:
 
-1. **Telemetry.** Every other tool measures a proxy — layer-local
-   reconstruction error, Fisher scores, gradients — consumes it
-   internally, and discards it. quantfit's damage is end-to-end KL at the final
-   logits, and the measurement *is* the product: a versioned,
-   resumable, inspectable sensitivity map, with run logs beside it
+1. **Telemetry.** Most tools measure a proxy — layer-local
+   reconstruction error, Fisher scores, gradients — consume it
+   internally, and discard it. The strongest exception is
+   exllamav3, whose measurement pass records per-group KL to a
+   reusable file ([prior art](../reference/prior-art.md), surveyed
+   2026-07-31) — runtime-locked, without recorded provenance.
+   quantfit's damage is end-to-end KL at the final logits, and the
+   measurement *is* the product: a versioned, resumable,
+   provenance-carrying sensitivity map, with run logs beside it
    ([ADR-0011](../adr/0011-run-logs-and-error-root.md)).
 2. **Thoroughness.** End-to-end measurement costs more per cell and
    buys fidelity the proxies cannot see (error propagating through
