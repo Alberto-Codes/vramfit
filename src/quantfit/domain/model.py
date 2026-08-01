@@ -3,7 +3,9 @@
 The dataclasses enforce their own structural invariants in
 ``__post_init__`` (positive sizes, strictly descending precisions,
 unique group names, sensitivity keys matching the scan) so an instance
-that exists is safe for the solver — however it was constructed.
+that exists is safe for the solver — however it was constructed. The
+v1 within-group method token lives here as `SCAN_METHOD`, beside the
+`ScanMeta` field it is the default for (ADR-0018).
 Serialization and the JSON schema envelope (including the
 ``quantfit_schema`` version field) live in
 [quantfit.adapters.outbound.sensitivity_map_json][] and
@@ -49,6 +51,12 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Literal
 
+# The v1 within-group method token (ADR-0006): round-to-nearest,
+# 32-element scale blocks. Defined beside `ScanMeta`, whose default
+# it is. [quantfit.domain.scan][] re-exports it beside the kquant
+# token so method tokens read from one module.
+SCAN_METHOD = "rtn-block32"
+
 
 @dataclass(frozen=True, slots=True)
 class ScanMeta:
@@ -67,7 +75,8 @@ class ScanMeta:
             ``tensor``).
         started_at (str): ISO-8601 timestamp of the scan start.
         within_group (str): Within-group method token (ADR-0018) —
-            ``rtn-block32`` unless the scan selected another method.
+            `SCAN_METHOD` (``rtn-block32``) unless the scan selected
+            another method.
 
     Examples:
         The scan section of a map:
@@ -92,7 +101,7 @@ class ScanMeta:
     precisions: tuple[int, ...]
     group_by: Literal["layer", "tensor"]
     started_at: str
-    within_group: str = "rtn-block32"
+    within_group: str = SCAN_METHOD
 
     def __post_init__(self) -> None:
         """Enforce the scan invariants the solver relies on.

@@ -140,11 +140,20 @@ class TorchDamageMeter:
                 refuses precisions outside their coverage.
 
         Raises:
-            ValueError: If the calibration file yields too few tokens,
-                or a quantizable group was offloaded beyond host RAM —
-                an unperturbable weight would record zero damage.
+            ValueError: If ``within_group`` is not a known method —
+                an unknown value must not fall back to RTN and record
+                damages under the wrong token — the calibration file
+                yields too few tokens, or a quantizable group was
+                offloaded beyond host RAM (an unperturbable weight
+                would record zero damage).
             OSError: If the model or calibration file cannot be read.
         """
+        # Checked before the model load: a silent RTN fallback under
+        # a mistyped method corrupts every damage the meter measures.
+        if within_group not in ("rtn", "kquant"):
+            raise ValueError(
+                f'within_group must be "rtn" or "kquant", got "{within_group}"'
+            )
         self.model_id = model_id
         self._within_group = within_group
         self._model = AutoModelForCausalLM.from_pretrained(

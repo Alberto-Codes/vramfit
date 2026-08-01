@@ -8,6 +8,8 @@ network. They skip cleanly when torch is absent (ADR-0009).
 
 from __future__ import annotations
 
+from typing import Literal, cast
+
 import pytest
 
 torch = pytest.importorskip("torch", reason="scan extra not installed")
@@ -280,6 +282,26 @@ class TestTorchDamageMeter:
 
         assert kquant_damage != rtn_damage
         assert kquant_damage >= 0.0
+
+    def test_unknown_within_group_is_refused_before_the_model_loads(
+        self, tiny_model_dir, tmp_path
+    ) -> None:
+        # The method token is not the selector — accepting it would
+        # silently measure RTN damages under the kquant-ref label.
+        from quantfit.adapters.outbound.scan.meter import TorchDamageMeter
+
+        calibration = tmp_path / "calib.txt"
+        calibration.write_text(CALIBRATION_TEXT)
+
+        bad_method = cast('Literal["rtn", "kquant"]', "kquant-ref")
+        with pytest.raises(ValueError, match="within_group"):
+            TorchDamageMeter(
+                str(tiny_model_dir),
+                calibration,
+                max_tokens=128,
+                device="cpu",
+                within_group=bad_method,
+            )
 
     def test_kquant_meter_refuses_uncovered_bits(
         self, tiny_model_dir, tmp_path
