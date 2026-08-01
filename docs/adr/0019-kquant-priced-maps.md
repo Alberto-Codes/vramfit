@@ -51,7 +51,10 @@ model's failure mode (ADR-0006, fourth measurement).
   gap? The re-scan and re-plan answer this.
 - Does the validation pass with kquant perturbation stay
   sub-additive on the re-planned recipe? The pass must run with the
-  same within-group method as the map that priced it.
+  same within-group method as the map that priced it —
+  `quantfit validate --within-group kquant`. The recipe does not
+  record its map's method, so the pairing is the caller's duty
+  today.
 - Whether RTN should ever price a 3-bit cell again (1.05–1.7x
   distortion straddles the harmless-to-material range).
 

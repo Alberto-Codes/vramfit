@@ -1,7 +1,7 @@
 # ADR-0018: A K-quant-faithful within-group method behind a scan flag
 
-- **Status:** Proposed
-- **Date:** 2026-07-31
+- **Status:** Accepted
+- **Date:** 2026-07-31 (accepted 2026-07-31)
 
 ## Context
 
@@ -31,7 +31,7 @@ The solver buys 2-bit groups on RTN prices. If RTN under-prices
 model's 2-bit membership problem (ADR-0006, fourth measurement)
 compounds on wrong marginals.
 
-## Decision (proposed)
+## Decision
 
 1. **A new scan module ports the K-quant round trip to torch.** It
    reimplements `quantize_row_q2_K_ref`, `quantize_row_q3_K_ref`,
@@ -54,9 +54,11 @@ compounds on wrong marginals.
    is additive — `quantfit_schema` stays at 1.
 4. **The port verifies against the C reference.** A local harness
    drives `ggml_quantize_chunk` through ctypes and records small
-   golden fixtures (random, outlier-heavy, constant, and zero
-   blocks). A contract test asserts the torch round trip matches
-   the fixtures' dequantized values within float tolerance.
+   golden fixtures (random, outlier-heavy, constant, zero, and
+   subnormal-scale blocks). A unit-tier golden-fixture suite asserts
+   the torch round trip matches the fixtures' dequantized values —
+   bit-exact for `Q3_K`/`Q8_0`, error parity within representation
+   ties for `Q2_K`/`Q4_K`.
 
 ## Open questions
 

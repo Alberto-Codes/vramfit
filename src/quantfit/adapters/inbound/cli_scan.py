@@ -201,7 +201,7 @@ def _parse_precisions(text: str) -> tuple[int, ...]:
 
 def _parse_within_group(
     text: str, precisions: tuple[int, ...]
-) -> Literal["rtn", "kquant"]:
+) -> tuple[Literal["rtn", "kquant"], str]:
     """Validate the ``--within-group`` choice against the precisions.
 
     Args:
@@ -209,7 +209,8 @@ def _parse_within_group(
         precisions: The parsed candidate precisions.
 
     Returns:
-        The validated method name.
+        The validated method name and its fingerprint token — the
+        token is the vocabulary run logs and maps share (ADR-0018).
 
     Raises:
         typer.BadParameter: If the method is unknown, or ``kquant``
@@ -228,7 +229,7 @@ def _parse_within_group(
                 f"{sorted(KQUANT_PRECISIONS, reverse=True)} (ADR-0018) — "
                 f"remove {uncovered} from --precisions"
             )
-    return text
+    return text, SCAN_METHOD if text == "rtn" else KQUANT_METHOD
 
 
 def scan(
@@ -294,7 +295,9 @@ def scan(
     ``--within-group`` selects the quantization the meter applies
     inside a perturbed group (ADR-0018): ``rtn`` is the v1 default,
     and ``kquant`` prices cells with the ported K-quant reference
-    quantizers, pairing only with precisions the port covers.
+    quantizers, pairing only with precisions the port covers. The
+    map, the fingerprint, and the run log all record the method as
+    its token (``rtn-block32`` or ``kquant-ref``).
 
     Raises:
         typer.BadParameter: If ``--precisions``, ``--group-by``,
@@ -320,7 +323,9 @@ def scan(
         raise typer.BadParameter(
             f'--group-by: expected "layer" or "tensor", got "{group_by}"'
         )
-    parsed_within_group = _parse_within_group(within_group, parsed_precisions)
+    parsed_within_group, method_token = _parse_within_group(
+        within_group, parsed_precisions
+    )
     # Reject an unwritable destination now — not after the model loads
     # and the first calibration pass has burned an hour.
     if not out.parent.is_dir():
@@ -348,7 +353,7 @@ def scan(
             "max_tokens": max_tokens,
             "device": device,
             "gpu_memory_bytes": gpu_memory_bytes,
-            "within_group": within_group,
+            "within_group": method_token,
         },
         lambda: _build_meter(
             model,
@@ -369,7 +374,7 @@ def scan(
         precisions=parsed_precisions,
         group_by=group_by,
         started_at=datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        within_group=SCAN_METHOD if parsed_within_group == "rtn" else KQUANT_METHOD,
+        within_group=method_token,
     )
     fingerprint = scan_fingerprint(model, meta)
     checkpoint_path = out.with_name(out.stem + ".checkpoint.json")

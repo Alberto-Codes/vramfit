@@ -67,19 +67,8 @@ def recipe_path(tmp_path: Path) -> Path:
 def install_meter(monkeypatch, meter: MemoryDamageMeter) -> list[dict]:
     builds: list[dict] = []
 
-    def build(
-        model,
-        calibration,
-        *,
-        max_tokens,
-        group_by,
-        device,
-        trust_remote_code,
-        gpu_memory,
-    ):
-        builds.append(
-            {"model": model, "max_tokens": max_tokens, "gpu_memory": gpu_memory}
-        )
+    def build(model, calibration, **options):
+        builds.append({"model": model, **options})
         return meter
 
     monkeypatch.setattr(cli_validate, "_build_meter", build)
@@ -152,7 +141,15 @@ class TestValidateCommand:
 
         assert result.exit_code == 0, result.output
         assert builds == [
-            {"model": "test/model", "max_tokens": 131072, "gpu_memory": None}
+            {
+                "model": "test/model",
+                "max_tokens": 131072,
+                "group_by": "layer",
+                "device": "auto",
+                "trust_remote_code": False,
+                "gpu_memory": None,
+                "within_group": "rtn",
+            }
         ]
         assert "warning" not in result.output
 
@@ -290,6 +287,47 @@ class TestValidateCommand:
 
         assert result.exit_code == 2
         assert "--group-by" in result.output
+
+    def test_kquant_within_group_reaches_the_builder(
+        self, tmp_path, monkeypatch, recipe_path
+    ) -> None:
+        # DEFAULT_RECIPE assigns 4- and 8-bit — inside kquant coverage.
+        builds = install_meter(
+            monkeypatch, MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES))
+        )
+
+        result = invoke_validate(tmp_path, recipe_path, "--within-group", "kquant")
+
+        assert result.exit_code == 0, result.output
+        assert builds[0]["within_group"] == "kquant"
+
+    def test_unknown_within_group_is_a_usage_error(
+        self, tmp_path, monkeypatch, recipe_path
+    ) -> None:
+        install_meter(
+            monkeypatch, MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES))
+        )
+
+        result = invoke_validate(tmp_path, recipe_path, "--within-group", "awq")
+
+        assert result.exit_code == 2
+        assert "--within-group" in result.output
+
+    def test_kquant_with_uncovered_recipe_bits_is_a_usage_error(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        install_meter(
+            monkeypatch, MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES))
+        )
+        recipe = make_recipe((("model.layers.0", 6, 0.01), ("model.layers.1", 8, 0.0)))
+        path = tmp_path / "recipe6.json"
+        save_recipe(recipe, path)
+
+        result = invoke_validate(tmp_path, path, "--within-group", "kquant")
+
+        assert result.exit_code == 2
+        assert "kquant covers" in result.output
+        assert "[6]" in result.output
 
     def test_missing_runlog_directory_is_a_usage_error(
         self, tmp_path, monkeypatch, recipe_path

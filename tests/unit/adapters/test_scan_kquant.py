@@ -1,4 +1,4 @@
-"""Torch-tier checks of the K-quant port against libggml goldens.
+"""Checks of the K-quant port against libggml goldens.
 
 The fixtures in ``tests/data/kquant/golden.npz`` hold inputs and the
 dequantized outputs of llama.cpp's reference quantizers
@@ -7,7 +7,9 @@ Q8_0 reproduce the C output bit-exactly. Q2_K and Q4_K admit
 representation ties — sub-blocks where two (level, scale) encodings
 reconstruct identically and float summation order picks the winner —
 so their gate is reconstruction-error parity plus a floor on exact
-elements (ADR-0018).
+elements (ADR-0018). The suite sits in the unit tier so the port is
+guarded on every commit: it needs no model, no card, and no network,
+and it skips cleanly where the scan extra is absent (ADR-0009).
 """
 
 # ruff: noqa: E402 - the importorskip guard must run before adapter imports
@@ -22,14 +24,17 @@ torch = pytest.importorskip("torch", reason="scan extra not installed")
 np = pytest.importorskip("numpy", reason="scan extra not installed")
 
 from quantfit.adapters.outbound.scan.kquant import (
+    _ROUND_TRIPS,
+    KQUANT_BITS,
     kquant_quantize_dequantize,
 )
 from quantfit.adapters.outbound.scan.quantize import rtn_quantize_dequantize
+from quantfit.domain.scan import KQUANT_PRECISIONS
 
-pytestmark = [pytest.mark.integration, pytest.mark.slow]
+pytestmark = pytest.mark.unit
 
-GOLDEN = Path(__file__).parent.parent / "data" / "kquant" / "golden.npz"
-CASES = ("gauss", "outliers", "positive", "constant", "zeros")
+GOLDEN = Path(__file__).parent.parent.parent / "data" / "kquant" / "golden.npz"
+CASES = ("gauss", "outliers", "positive", "constant", "zeros", "tiny")
 
 
 @pytest.fixture(scope="module")
@@ -71,7 +76,7 @@ class TestAgainstReference:
 
         c_mse = float(np.mean((x - golden[f"q4_{case}"]) ** 2))
         our_mse = float(np.mean((x - ours) ** 2))
-        assert our_mse <= c_mse * 1.01 + 1e-12
+        assert c_mse / 1.01 - 1e-12 <= our_mse <= c_mse * 1.01 + 1e-12
         assert float((ours == golden[f"q4_{case}"]).mean()) > 0.9
 
     @pytest.mark.parametrize("case", CASES)
@@ -91,7 +96,9 @@ class TestAgainstReference:
         c_mse = float(np.mean((x - golden[f"q2_{case}"]) ** 2))
         our_mse = float(np.mean((x - ours) ** 2))
         factor = 1.10 if case == "outliers" else 1.01
-        assert our_mse <= c_mse * factor + 1e-12
+        # Two-sided: a systematically better fit is also a mis-port —
+        # the pack ships the C behavior, not an improvement on it.
+        assert c_mse / factor - 1e-12 <= our_mse <= c_mse * factor + 1e-12
         assert float((ours == golden[f"q2_{case}"]).mean()) > 0.5
 
 
@@ -150,6 +157,23 @@ class TestRoundTripProperties:
         for bits in (5, 6):
             with pytest.raises(ValueError, match="kquant"):
                 kquant_quantize_dequantize(torch.randn(1, 256), bits)
+
+    def test_domain_coverage_mirrors_the_dispatch_table(self) -> None:
+        # The CLI pre-flight validates against the domain copy; the
+        # adapter gates on the dispatch table. Drift between them
+        # fails an hour into a model load.
+        assert set(KQUANT_PRECISIONS) == set(_ROUND_TRIPS)
+        assert set(KQUANT_BITS) == set(_ROUND_TRIPS)
+
+    def test_subnormal_scale_blocks_stay_finite(self) -> None:
+        # 0 < amax < 127/FLT_MAX overflows a reciprocal to inf — the
+        # C path dequantizes such blocks to zero, never NaN.
+        w = torch.full((2, 256), 1e-38)
+        w[1] = 0.0
+
+        for bits in KQUANT_BITS:
+            q = kquant_quantize_dequantize(w, bits)
+            assert torch.isfinite(q).all(), bits
 
     def test_damage_shrinks_as_bits_rise(self) -> None:
         torch.manual_seed(0)

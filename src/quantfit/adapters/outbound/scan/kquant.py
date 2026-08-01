@@ -1,4 +1,4 @@
-"""K-quant-faithful quantize-dequantize (ADR-0018, Proposed).
+"""K-quant-faithful quantize-dequantize (ADR-0018).
 
 Torch ports of llama.cpp's reference quantizers for ``Q2_K``,
 ``Q3_K``, ``Q4_K``, and ``Q8_0`` (``ggml-quants.c``, checkout
@@ -12,7 +12,7 @@ The C reference rounds with ``nearest_int``, a round-half-to-even
 magic-number trick. ``torch.round`` rounds half to even, so the
 rounding modes match. Vectorized reductions can still order float
 sums differently from the C loops, so knife-edge fitting choices may
-diverge on isolated sub-blocks. The contract fixtures bound that
+diverge on isolated sub-blocks. The golden fixtures bound that
 drift.
 
 Examples:
@@ -33,7 +33,6 @@ import torch
 SUPER_BLOCK = 256
 SUB_BLOCK = 16
 Q8_BLOCK = 32
-KQUANT_BITS = (2, 3, 4, 8)
 # llama.cpp's all-zero guard for a sub-block (GROUP_MAX_EPS).
 _GROUP_MAX_EPS = 1e-15
 
@@ -137,7 +136,6 @@ def _make_qkx2_quants(
         accept = (det > 0) & (cand_error < best_error)
         scale = torch.where(accept, cand_scale, scale)
         fmin = torch.where(accept, cand_min, fmin)
-        levels = torch.where(accept[:, None], cand_levels, levels)
         best_error = torch.where(accept, cand_error, best_error)
 
     scale = torch.where(degenerate, torch.zeros_like(scale), scale)
@@ -277,6 +275,9 @@ def _q3k_round_trip(blocks: torch.Tensor) -> torch.Tensor:
 def _q4k_round_trip(blocks: torch.Tensor) -> torch.Tensor:
     """Round-trip super-blocks through Q4_K.
 
+    Fits with squared error under ``av_x + |x|`` weights over
+    32-element sub-blocks, then re-quantizes scales to 6 bits.
+
     Args:
         blocks: Shape ``(n, SUPER_BLOCK)``, float32.
 
@@ -298,6 +299,9 @@ def _q4k_round_trip(blocks: torch.Tensor) -> torch.Tensor:
     max_min = the_min.amax(dim=1)
     pos_scale = max_scale > 0
     safe_ms = torch.where(pos_scale, max_scale, torch.ones_like(max_scale))
+    # C stores through uint8 with MIN(63, ls) and would wrap a
+    # negative fit. Fitted scales stay positive (the minimum is
+    # deducted), so the clamp and the wrap agree on reachable data.
     sc_q = torch.round(q6scale * scale / safe_ms[:, None]).clamp(max=63)
     sc_q = torch.where(pos_scale[:, None], sc_q, torch.zeros_like(sc_q))
     d = torch.where(pos_scale, _fp16(max_scale / q6scale), torch.zeros_like(max_scale))
@@ -320,7 +324,8 @@ def _q8_0_round_trip(blocks: torch.Tensor) -> torch.Tensor:
 
     ``quantize_row_q8_0_ref`` rounds with ``roundf`` — half away from
     zero — and quantizes against the pre-fp16 scale while dequantizing
-    with the fp16-stored one.
+    with the fp16-stored one. A subnormal scale dequantizes to zero,
+    matching the C path, whose fp16 scale underflows.
 
     Args:
         blocks: Shape ``(n, Q8_BLOCK)``, float32.
@@ -330,7 +335,12 @@ def _q8_0_round_trip(blocks: torch.Tensor) -> torch.Tensor:
     """
     amax = blocks.abs().amax(dim=1, keepdim=True)
     d = amax / 127.0
-    inverse = torch.where(d != 0, 1.0 / torch.where(d != 0, d, torch.ones_like(d)), d)
+    safe_d = torch.where(d != 0, d, torch.ones_like(d))
+    raw = 1.0 / safe_d
+    # A subnormal scale overflows the reciprocal to inf, and
+    # inf * fp16(d) is NaN where the C path dequantizes to zero —
+    # its fp16 scale underflows first. Zero the levels instead.
+    inverse = torch.where((d != 0) & torch.isfinite(raw), raw, torch.zeros_like(d))
     v = blocks * inverse
     levels = torch.trunc(v + 0.5 * torch.sign(v))
     return levels * _fp16(d)
@@ -342,6 +352,10 @@ _ROUND_TRIPS = {
     4: (_q4k_round_trip, SUPER_BLOCK),
     8: (_q8_0_round_trip, Q8_BLOCK),
 }
+# The ported coverage, derived from the dispatch table so the two
+# cannot drift. domain.scan.KQUANT_PRECISIONS must mirror this —
+# the CLI validates against the domain copy before a model loads.
+KQUANT_BITS = tuple(sorted(_ROUND_TRIPS))
 
 
 def kquant_quantize_dequantize(weight: torch.Tensor, bits: int) -> torch.Tensor:
@@ -350,7 +364,10 @@ def kquant_quantize_dequantize(weight: torch.Tensor, bits: int) -> torch.Tensor:
     The tensor is flattened in row-major order — the order
     ``llama-quantize`` consumes rows — padded with zeros to the
     format's block multiple, and round-tripped through the ported
-    reference quantizer. The input is never modified. Like the RTN
+    reference quantizer. Flat blocks match the per-row C layout only
+    when row length divides by the block size. Rows that do not
+    divide would straddle blocks (every 49B weight row divides).
+    The input is never modified. Like the RTN
     round trip, the computation runs on the input's device first and
     retries on the CPU when the float32 workspace does not fit the
     card.

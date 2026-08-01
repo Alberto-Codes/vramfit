@@ -135,6 +135,17 @@ class TestScanFingerprint:
             "m", make_meta(within_group="awq-block32")
         )
 
+    def test_fingerprint_format_is_pinned(self) -> None:
+        # On-disk checkpoints key on this exact string — a format
+        # drift silently invalidates every resumable scan in flight.
+        expected = "m|kl_divergence|calib.txt|1024|layer|8,4|rtn-block32"
+
+        assert scan_fingerprint("m", make_meta()) == expected
+
+    def test_empty_within_group_raises(self) -> None:
+        with pytest.raises(ValueError, match="within_group"):
+            make_meta(within_group="")
+
     def test_separator_in_field_values_cannot_collide(self) -> None:
         injected = scan_fingerprint("m|kl_divergence", make_meta(metric="x"))
         honest = scan_fingerprint("m", make_meta(metric="kl_divergence|x"))

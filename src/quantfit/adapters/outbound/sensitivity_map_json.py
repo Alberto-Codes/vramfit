@@ -220,8 +220,8 @@ def _parse_scan_meta(obj: dict[str, Any]) -> ScanMeta:
         ArtifactError: If a field is missing or invalid, precisions are
             empty, duplicated, not integers, or not strictly descending,
             ``group_by`` is not ``layer`` or ``tensor``, or a present
-            ``within_group`` is empty (absent defaults to
-            ``rtn-block32``, ADR-0018).
+            ``within_group`` is not a non-empty string (absent
+            defaults to ``rtn-block32``, ADR-0018).
     """
     path = "$.scan"
     tokens = _get_int(obj, "calibration_tokens", path)
@@ -251,11 +251,11 @@ def _parse_scan_meta(obj: dict[str, Any]) -> ScanMeta:
         'must be "layer" or "tensor"',
     )
     # Optional and additive (ADR-0018): maps written before the field
-    # existed are rtn-block32 scans by definition.
+    # existed are rtn-block32 scans by definition. A present field
+    # validates through _get_str, which rejects empty strings.
     within_group = (
         _get_str(obj, "within_group", path) if "within_group" in obj else SCAN_METHOD
     )
-    _require(bool(within_group), f"{path}.within_group", "must not be empty")
     return ScanMeta(
         metric=_get_str(obj, "metric", path),
         calibration=_get_str(obj, "calibration", path),

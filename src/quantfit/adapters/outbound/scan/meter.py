@@ -344,7 +344,7 @@ class TorchDamageMeter:
 
         Raises:
             ValueError: If the ``kquant`` method has no port for
-                ``bits`` (ADR-0018 scopes v1 to 2 and 3).
+                ``bits`` (ADR-0018 covers 8, 4, 3, and 2).
         """
         if self._within_group == "kquant":
             return kquant_quantize_dequantize(param, bits)
