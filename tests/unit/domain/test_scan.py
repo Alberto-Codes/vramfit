@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
 from quantfit.domain.model import ScanMeta
@@ -15,7 +17,7 @@ pytestmark = pytest.mark.unit
 
 
 def make_meta(**overrides) -> ScanMeta:
-    fields = {
+    fields: dict[str, Any] = {
         "metric": "kl_divergence",
         "calibration": "calib.txt",
         "calibration_tokens": 1024,
@@ -116,8 +118,9 @@ class TestScanFingerprint:
             {"calibration_tokens": 2048},
             {"precisions": (8, 4, 3, 2)},
             {"group_by": "tensor"},
+            {"within_group": "kquant-ref"},
         ],
-        ids=["metric", "calibration", "tokens", "precisions", "group-by"],
+        ids=["metric", "calibration", "tokens", "precisions", "group-by", "method"],
     )
     def test_identity_field_changes_the_fingerprint(self, override: dict) -> None:
         assert scan_fingerprint("m", make_meta()) != scan_fingerprint(
@@ -129,7 +132,7 @@ class TestScanFingerprint:
 
     def test_method_changes_the_fingerprint(self) -> None:
         assert scan_fingerprint("m", make_meta()) != scan_fingerprint(
-            "m", make_meta(), method="awq-block32"
+            "m", make_meta(within_group="awq-block32")
         )
 
     def test_separator_in_field_values_cannot_collide(self) -> None:

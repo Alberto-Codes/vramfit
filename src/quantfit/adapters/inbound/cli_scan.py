@@ -1,11 +1,13 @@
 """The ``quantfit scan`` command: measure damage, checkpoint, emit a map.
 
 The scan loop lives here because the inbound adapter is the
-composition root: it validates every option up front (sizes parse with
-the project grammar), builds the torch-backed meter (lazily, so the
-base install never imports torch), drives the `DamageMeter` and
-`ScanCheckpointStore` ports cell by cell, and hands the finished
-measurements to the pure assembly logic in [quantfit.domain.scan][].
+composition root: it validates every option up front (sizes parse
+with the project grammar, and ``--within-group kquant`` must pair
+with precisions the port covers, ADR-0018), builds the torch-backed
+meter (lazily, so the base install never imports torch), drives the
+`DamageMeter` and `ScanCheckpointStore` ports cell by cell, and hands
+the finished measurements to the pure assembly logic in
+[quantfit.domain.scan][].
 Every failure — a missing extra, a bad destination, an unstable
 measurement, a checkpoint write — halts with a clean ``error:`` line.
 The checkpoint keeps every finished cell. The run log records the
@@ -46,6 +48,9 @@ from quantfit.domain.budget import parse_size
 from quantfit.domain.errors import QuantfitError
 from quantfit.domain.model import ScanMeta
 from quantfit.domain.scan import (
+    KQUANT_METHOD,
+    KQUANT_PRECISIONS,
+    SCAN_METHOD,
     assemble_map,
     plan_measurements,
     scan_fingerprint,
@@ -86,6 +91,7 @@ def _build_meter(
     device: str,
     trust_remote_code: bool,
     gpu_memory: int | None,
+    within_group: Literal["rtn", "kquant"] = "rtn",
 ) -> DamageMeter:
     """Build the torch-backed meter, importing torch only now.
 
@@ -103,6 +109,7 @@ def _build_meter(
         trust_remote_code: Allow repos with custom modeling code.
         gpu_memory: Byte cap on GPU 0 model shards under ``auto``
             sharding.
+        within_group: Within-group method (ADR-0018).
 
     Returns:
         The loaded meter.
@@ -130,6 +137,7 @@ def _build_meter(
         device=device,
         trust_remote_code=trust_remote_code,
         max_gpu_memory=gpu_memory,
+        within_group=within_group,
     )
 
 
@@ -191,6 +199,38 @@ def _parse_precisions(text: str) -> tuple[int, ...]:
     return precisions
 
 
+def _parse_within_group(
+    text: str, precisions: tuple[int, ...]
+) -> Literal["rtn", "kquant"]:
+    """Validate the ``--within-group`` choice against the precisions.
+
+    Args:
+        text: The flag value.
+        precisions: The parsed candidate precisions.
+
+    Returns:
+        The validated method name.
+
+    Raises:
+        typer.BadParameter: If the method is unknown, or ``kquant``
+            is combined with precisions outside its port coverage
+            (ADR-0018) — rejected before the model load burns an hour.
+    """
+    if text not in ("rtn", "kquant"):
+        raise typer.BadParameter(
+            f'--within-group: expected "rtn" or "kquant", got "{text}"'
+        )
+    if text == "kquant":
+        uncovered = [p for p in precisions if p not in KQUANT_PRECISIONS]
+        if uncovered:
+            raise typer.BadParameter(
+                f"--within-group kquant covers precisions "
+                f"{sorted(KQUANT_PRECISIONS, reverse=True)} (ADR-0018) — "
+                f"remove {uncovered} from --precisions"
+            )
+    return text
+
+
 def scan(
     model: Annotated[
         str, typer.Argument(help="Hugging Face model id or local checkpoint path.")
@@ -225,6 +265,13 @@ def scan(
             "quantization."
         ),
     ] = None,
+    within_group: Annotated[
+        str,
+        typer.Option(
+            help="Within-group method: rtn, or kquant for the "
+            "K-quant-faithful port (ADR-0018, 2/3-bit only)."
+        ),
+    ] = "rtn",
     runlog: Annotated[
         Path | None,
         typer.Option(help="Run-log path (JSONL). Default: <stem>.runlog.jsonl."),
@@ -246,9 +293,11 @@ def scan(
     weights offloaded beyond host RAM — see the how-to.
 
     Raises:
-        typer.BadParameter: If ``--precisions``, ``--group-by``, or
-            ``--gpu-memory`` is malformed, ``--gpu-memory`` is given
-            without ``--device auto``, or the ``--out`` or ``--runlog``
+        typer.BadParameter: If ``--precisions``, ``--group-by``,
+            ``--within-group``, or ``--gpu-memory`` is malformed,
+            ``--gpu-memory`` is given without ``--device auto``,
+            ``--within-group kquant`` is combined with precisions the
+            port does not cover, or the ``--out`` or ``--runlog``
             directory does not exist.
         typer.Exit: With code 1 when the scan extra is missing, the
             model or calibration cannot load, the checkpoint belongs to
@@ -267,6 +316,7 @@ def scan(
         raise typer.BadParameter(
             f'--group-by: expected "layer" or "tensor", got "{group_by}"'
         )
+    parsed_within_group = _parse_within_group(within_group, parsed_precisions)
     # Reject an unwritable destination now — not after the model loads
     # and the first calibration pass has burned an hour.
     if not out.parent.is_dir():
@@ -294,6 +344,7 @@ def scan(
             "max_tokens": max_tokens,
             "device": device,
             "gpu_memory_bytes": gpu_memory_bytes,
+            "within_group": within_group,
         },
         lambda: _build_meter(
             model,
@@ -303,17 +354,18 @@ def scan(
             device=device,
             trust_remote_code=trust_remote_code,
             gpu_memory=gpu_memory_bytes,
+            within_group=parsed_within_group,
         ),
     )
 
-    started_at = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     meta = ScanMeta(
         metric="kl_divergence",
         calibration=str(calibration),
         calibration_tokens=meter.calibration_tokens(),
         precisions=parsed_precisions,
         group_by=group_by,
-        started_at=started_at,
+        started_at=datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        within_group=SCAN_METHOD if parsed_within_group == "rtn" else KQUANT_METHOD,
     )
     fingerprint = scan_fingerprint(model, meta)
     checkpoint_path = out.with_name(out.stem + ".checkpoint.json")

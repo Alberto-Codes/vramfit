@@ -36,6 +36,31 @@ class TestSensitivityMap:
         assert load_sensitivity_map(path) == map_
         assert path.read_text().endswith("\n")
 
+    def test_absent_within_group_defaults_to_rtn(self) -> None:
+        raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
+        assert "within_group" not in raw["scan"]
+
+        map_ = map_from_dict(raw)
+
+        assert map_.scan.within_group == "rtn-block32"
+
+    def test_within_group_round_trips(self) -> None:
+        raw = make_map([("g0", 1000, {3: 0.2, 2: 0.3})], precisions=(3, 2))
+        raw["scan"]["within_group"] = "kquant-ref"
+
+        map_ = map_from_dict(raw)
+        again = map_from_dict(map_to_dict(map_))
+
+        assert map_.scan.within_group == "kquant-ref"
+        assert again == map_
+
+    def test_empty_within_group_rejected(self) -> None:
+        raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
+        raw["scan"]["within_group"] = ""
+
+        with pytest.raises(ArtifactError, match="within_group"):
+            map_from_dict(raw)
+
     def test_missing_field_raises_error_with_json_path(self) -> None:
         raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
         del raw["scan"]["metric"]

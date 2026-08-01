@@ -66,6 +66,8 @@ class ScanMeta:
         group_by (str): Layer grouping granularity (``layer`` or
             ``tensor``).
         started_at (str): ISO-8601 timestamp of the scan start.
+        within_group (str): Within-group method token (ADR-0018) —
+            ``rtn-block32`` unless the scan selected another method.
 
     Examples:
         The scan section of a map:
@@ -90,17 +92,20 @@ class ScanMeta:
     precisions: tuple[int, ...]
     group_by: Literal["layer", "tensor"]
     started_at: str
+    within_group: str = "rtn-block32"
 
     def __post_init__(self) -> None:
         """Enforce the scan invariants the solver relies on.
 
         Raises:
-            ValueError: If ``calibration_tokens`` is not positive, or
-                ``precisions`` is empty, non-positive, or not strictly
-                descending.
+            ValueError: If ``calibration_tokens`` is not positive,
+                ``within_group`` is empty, or ``precisions`` is empty,
+                non-positive, or not strictly descending.
         """
         if self.calibration_tokens <= 0:
             raise ValueError("calibration_tokens must be positive")
+        if not self.within_group:
+            raise ValueError("within_group must not be empty")
         if not self.precisions:
             raise ValueError("precisions must not be empty")
         if any(p <= 0 for p in self.precisions):

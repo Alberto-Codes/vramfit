@@ -28,16 +28,7 @@ DAMAGES = {
 
 
 def install_meter(monkeypatch, meter) -> None:
-    def build(
-        model,
-        calibration,
-        *,
-        max_tokens,
-        group_by,
-        device,
-        trust_remote_code,
-        gpu_memory,
-    ):
+    def build(model, calibration, **options):
         return meter
 
     monkeypatch.setattr(cli_scan, "_build_meter", build)
@@ -193,6 +184,47 @@ def test_invalid_group_by_exits_with_usage_error(tmp_path, monkeypatch) -> None:
 
     assert result.exit_code == 2
     assert "--group-by" in result.output
+
+
+def test_invalid_within_group_exits_with_usage_error(tmp_path, monkeypatch) -> None:
+    install_meter(
+        monkeypatch, MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES), tokens=64)
+    )
+
+    result, _ = invoke_scan(tmp_path, "--within-group", "gptq")
+
+    assert result.exit_code == 2
+    assert "--within-group" in result.output
+
+
+def test_kquant_with_uncovered_precisions_exits_with_usage_error(
+    tmp_path, monkeypatch
+) -> None:
+    # The default invoke_scan precisions are 8,4 — outside the kquant
+    # port's {3, 2} coverage (ADR-0018). Rejected before model load.
+    install_meter(
+        monkeypatch, MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES), tokens=64)
+    )
+
+    result, _ = invoke_scan(tmp_path, "--within-group", "kquant")
+
+    assert result.exit_code == 2
+    assert "kquant covers" in result.output
+
+
+def test_kquant_scan_records_the_method_in_the_map(tmp_path, monkeypatch) -> None:
+    damages = {(spec.name, bits): 0.1 for spec in SPECS for bits in (3, 2)}
+    install_meter(
+        monkeypatch, MemoryDamageMeter(specs=SPECS, damages=damages, tokens=64)
+    )
+
+    result, out = invoke_scan(
+        tmp_path, "--precisions", "3,2", "--within-group", "kquant"
+    )
+
+    assert result.exit_code == 0
+    map_ = load_sensitivity_map(out)
+    assert map_.scan.within_group == "kquant-ref"
 
 
 def cli_fingerprint(tmp_path) -> str:

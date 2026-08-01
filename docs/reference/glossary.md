@@ -57,6 +57,17 @@ change.
     sum of marginal damages. Known blind spot; checked by the validation
     pass.
 
+**Within-group method**
+:   How the meter quantizes the weights inside a perturbed group.
+    v1 is round-to-nearest with 32-element scale blocks
+    ([ADR-0006](../adr/0006-sensitivity-metric.md), token
+    `rtn-block32`). `kquant-ref` round-trips through the ported
+    llama.cpp reference quantizers
+    ([ADR-0018](../adr/0018-kquant-within-group-method.md)). A method
+    change is a new scan — the token lives in the fingerprint and in
+    the map's `scan.within_group`. Not "quantization mode" or
+    "simulation method".
+
 **Validation pass**
 :   The whole-recipe check of the additivity assumption (`quantfit
     validate`): quantize every group to its recipe-assigned precision in
