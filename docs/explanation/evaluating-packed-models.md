@@ -21,6 +21,11 @@ status: draft
 > tied the pilot's packed quality — moving the open frontier to the
 > scan-to-runtime frame transfer
 > ([the sixth data point](#the-sixth-data-point-the-converged-map-and-where-the-leak-moved)).
+> The same night, a two-probe duel settled which named leak gets
+> the next build: within-layer granularity saturates at ~14 % of
+> the gap, and the scan frame turned out to *over*-price low bits,
+> not under-price them
+> ([the seventh data point](#the-seventh-data-point-the-frontier-duel)).
 > Tier 3 has not run. The publication gates that consume
 > these evaluations live in [the artifact ecosystem](artifact-ecosystem.md)
 > and issue #11.
@@ -513,6 +518,72 @@ does not fit the 24 GiB card at any weight cap tried — the
 embed-sized fp32 buffer plus 64k-token bookkeeping fragments the
 allocator. The frame-matched measurement above ran at 32,768
 tokens instead. Bigger-VRAM measurement is tracked in issue #40.
+
+## The seventh data point: the frontier duel
+
+The sixth data point left two named suspects for the remaining
+0.53–0.62 PPL: allocation granularity (the baseline protects
+tensors inside layers we crush whole) and frame honesty (RTN as an
+optimistic stand-in for real K-quant types). Both had cheap
+falsification probes. Both ran on 2026-07-31, before building
+anything. Both verdicts surprised.
+
+**The granularity probe: the lever is real and too short.** First,
+the baseline's within-layer cleverness was read directly off its
+tensors: bartowski's Q3_K_S is flat `Q3_K` everywhere except
+`attn_v` at `Q5_K` and the output head at `Q6_K`. No 2-bit
+anywhere — and it fits the same weight budget with 21.8 MiB to
+spare. Second, the NAS architecture shrinks the lever's reach:
+only 10 of our 35 2-bit layers have attention tensors at all
+(layers 42–70 are FFN-only blocks). Hand-driven packs of
+recipe-64k with baseline-mirroring holds inside those 10 layers:
+
+| Model | Size | PPL ↓ | Mean KLD ↓ | Same top ↑ |
+|-------|------|-------|------------|------------|
+| recipe-64k + imatrix (sixth data point) | 20.32 GiB | 9.156 ± 0.068 | 0.2653 | 80.1 % |
+| + `attn_v`→`q4_k` in 2-bit layers (18.75 MiB) | 20.34 GiB | 9.103 ± 0.068 | 0.2449 | 81.2 % |
+| + `attn_output`→`q3_k` too (87 MiB total) | 20.40 GiB | 9.068 ± 0.068 | 0.2367 | 81.5 % |
+| Q3_K_S heuristic (bartowski) | 20.45 GiB | **8.532 ± 0.064** | **0.1584** | **83.8 %** |
+
+Per byte, the holds are excellent — 0.088 PPL and 27 % of the KLD
+gap for 87 MiB confirms attention tensors inside 2-bit layers are
+disproportionately fragile. As the milestone candidate, they
+saturate: the full within-layer ceiling recovers ~14 % of the PPL
+gap. Tensor-level groups (ADR-0012's v1 boundary) stay worth
+lifting eventually — they are not what separates 9.07 from 8.53.
+
+**The frame-honesty probe: the leak is real and points the other
+way.** ADR-0018 gave the meter a K-quant-faithful within-group
+method (torch ports of llama.cpp's reference quantizers, verified
+against `ggml_quantize_chunk` — `Q3_K`/`Q8_0` bit-exact,
+`Q2_K`/`Q4_K` equal within representation-tie noise). Sixteen
+cells re-measured on the 65,536-token frame, against the RTN map's
+values, frame-noise-corrected by two RTN re-measurements:
+
+| Cells | kquant / RTN damage | Reading |
+|-------|--------------------|---------|
+| 2-bit, attention-bearing layers (9–36) | 0.26–0.41 | RTN over-prices 2.4–3.9x |
+| 2-bit, FFN-only layers (46–68) | 0.50–0.72 | RTN over-prices 1.4–2.0x |
+| 3-bit (9, 46, 61, 75) | 0.59–1.19 | 0.8–1.7x, non-uniform |
+
+Every prior framing assumed RTN flatters low bits. It does the
+opposite. RTN's symmetric absmax grid cannot reach its lowest
+level at 2-bit — three usable levels stand in for `Q2_K`'s four
+fitted levels plus a minimum — so the scan charged up to 3.9x the
+real price for 2-bit cells, non-uniformly, worst exactly where the
+attention tensors live. The solver bought its whole allocation —
+two `q8_0` layers and eight `q4_k` layers paid for by 35 crushed
+layers — at that distorted exchange rate. The membership problem
+(ADR-0006, fourth measurement) compounds on the same wrong prices.
+
+**The verdict.** Granularity recovers 14 %. Re-pricing invalidates
+the arithmetic behind every sub-4-bit decision the solver has
+made. Re-pricing gets the build ([ADR-0019](../adr/0019-kquant-priced-maps.md)):
+a full kquant-priced re-scan of the 49B at 65,536 tokens is in
+flight, and the re-planned recipe walks the full loop against the
+same baselines. The falsifiable prediction on record: honest
+prices pull the recipe toward the baseline's flat-3-bit region,
+and the packed result closes most of what granularity could not.
 
 ## Provenance is not evidence
 

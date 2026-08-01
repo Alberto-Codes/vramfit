@@ -106,6 +106,11 @@ quantfit scan MODEL
   --trust-remote-code    Allow model repos with custom code (the
                          north-star target needs this)
   --resume / --no-resume Continue from the checkpoint file  [default: resume]
+  --within-group TEXT    Within-group method: rtn | kquant (ADR-0018).
+                         kquant prices cells with the ported K-quant
+                         reference quantizers and pairs only with
+                         precisions the port covers (8, 4, 3, 2)
+                         [default: rtn]
   --runlog PATH          Run-log path (JSONL)
                          [default: <stem>.runlog.jsonl]
   --gpu-memory SIZE      Byte cap on GPU 0 model shards (e.g. 17GiB),
@@ -140,15 +145,19 @@ cannot load, sharding offloaded a quantizable group beyond host RAM,
 the checkpoint
 belongs to a different scan, a measurement fails (the checkpoint keeps
 completed cells), a checkpoint write fails, or the map cannot be
-written. Exit 2 on malformed `--precisions`, `--group-by`, or
-`--gpu-memory`, a `--gpu-memory` without `--device auto`, or a missing
-`--out` or `--runlog` directory.
+written. Exit 2 on malformed `--precisions`, `--group-by`,
+`--within-group`, or `--gpu-memory`, a `--gpu-memory` without
+`--device auto`, a `--within-group kquant` combined with precisions
+the port does not cover, or a missing `--out` or `--runlog`
+directory.
 
 ## `quantfit validate`
 
 Implemented. Runs the whole-recipe validation pass (ADR-0006). The
 command quantizes every group to its assigned precision in one
-calibration pass. The pass uses the scan's own quantization. The
+calibration pass. The pass uses the scan's own quantization,
+selected with `--within-group`. Match the map that priced the
+recipe (ADR-0019). The
 command reports the measured damage next to the recipe's summed
 marginal damages. The gap is the additivity assumption leaking.
 Requires the scan extra — without it the command exits 1 with the
@@ -165,6 +174,9 @@ quantfit validate RECIPE
   --trust-remote-code    Allow model repos with custom code
   --gpu-memory SIZE      Byte cap on GPU 0 model shards (e.g. 17GiB).
                          Requires --device auto  [default: none]
+  --within-group TEXT    Within-group method: rtn | kquant (ADR-0018).
+                         Match the map that priced the recipe
+                         [default: rtn]
   --runlog PATH          Run-log path (JSONL)
                          [default: <recipe stem>.validation.runlog.jsonl]
 ```

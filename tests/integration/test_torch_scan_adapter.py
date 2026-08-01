@@ -8,6 +8,8 @@ network. They skip cleanly when torch is absent (ADR-0009).
 
 from __future__ import annotations
 
+from typing import Literal, cast
+
 import pytest
 
 torch = pytest.importorskip("torch", reason="scan extra not installed")
@@ -254,6 +256,75 @@ class TestTorchDamageMeter:
 
         with pytest.raises(RuntimeError, match="rebuild the meter"):
             tiny_meter.measure(group, 8)
+
+    def test_kquant_meter_measures_different_damage_than_rtn(
+        self, tiny_meter, tiny_model_dir, tmp_path
+    ) -> None:
+        # The flag -> meter -> quantizer chain, end to end. If the
+        # dispatch ever falls back to RTN silently, a kquant map
+        # records rtn damages under the kquant-ref token — corrupted
+        # provenance the golden fixtures cannot catch.
+        from quantfit.adapters.outbound.scan.meter import TorchDamageMeter
+
+        calibration = tmp_path / "calib.txt"
+        calibration.write_text(CALIBRATION_TEXT)
+        kquant_meter = TorchDamageMeter(
+            str(tiny_model_dir),
+            calibration,
+            max_tokens=128,
+            device="cpu",
+            within_group="kquant",
+        )
+        group = next(spec.name for spec in tiny_meter.groups() if "layers" in spec.name)
+
+        rtn_damage = tiny_meter.measure(group, 2)
+        kquant_damage = kquant_meter.measure(group, 2)
+
+        assert kquant_damage != rtn_damage
+        assert kquant_damage >= 0.0
+
+    def test_unknown_within_group_is_refused_before_the_model_loads(
+        self, tiny_model_dir, tmp_path
+    ) -> None:
+        # The method token is not the selector — accepting it would
+        # silently measure RTN damages under the kquant-ref label.
+        from quantfit.adapters.outbound.scan.meter import TorchDamageMeter
+
+        calibration = tmp_path / "calib.txt"
+        calibration.write_text(CALIBRATION_TEXT)
+
+        bad_method = cast('Literal["rtn", "kquant"]', "kquant-ref")
+        with pytest.raises(ValueError, match="within_group"):
+            TorchDamageMeter(
+                str(tiny_model_dir),
+                calibration,
+                max_tokens=128,
+                device="cpu",
+                within_group=bad_method,
+            )
+
+    def test_kquant_meter_refuses_uncovered_bits(
+        self, tiny_model_dir, tmp_path
+    ) -> None:
+        from quantfit.adapters.outbound.scan.meter import TorchDamageMeter
+
+        calibration = tmp_path / "calib.txt"
+        calibration.write_text(CALIBRATION_TEXT)
+        meter = TorchDamageMeter(
+            str(tiny_model_dir),
+            calibration,
+            max_tokens=128,
+            device="cpu",
+            within_group="kquant",
+        )
+        group = meter.groups()[0].name
+
+        with pytest.raises(ValueError, match="kquant"):
+            meter.measure(group, 6)
+
+        # The refusal happened mid-perturbation path — the meter must
+        # still be usable, not silently poisoned.
+        assert meter.measure(group, 2) >= 0.0
 
     @pytest.mark.gpu
     def test_measure_recipe_on_cuda_restores_across_devices(

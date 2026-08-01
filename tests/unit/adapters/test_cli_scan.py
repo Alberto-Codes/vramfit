@@ -27,20 +27,15 @@ DAMAGES = {
 }
 
 
-def install_meter(monkeypatch, meter) -> None:
-    def build(
-        model,
-        calibration,
-        *,
-        max_tokens,
-        group_by,
-        device,
-        trust_remote_code,
-        gpu_memory,
-    ):
+def install_meter(monkeypatch, meter) -> dict:
+    captured: dict = {}
+
+    def build(model, calibration, **options):
+        captured.update(options)
         return meter
 
     monkeypatch.setattr(cli_scan, "_build_meter", build)
+    return captured
 
 
 def invoke_scan(tmp_path, *extra: str):
@@ -193,6 +188,63 @@ def test_invalid_group_by_exits_with_usage_error(tmp_path, monkeypatch) -> None:
 
     assert result.exit_code == 2
     assert "--group-by" in result.output
+
+
+def test_invalid_within_group_exits_with_usage_error(tmp_path, monkeypatch) -> None:
+    install_meter(
+        monkeypatch, MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES), tokens=64)
+    )
+
+    result, _ = invoke_scan(tmp_path, "--within-group", "gptq")
+
+    assert result.exit_code == 2
+    assert "--within-group" in result.output
+
+
+def test_kquant_with_uncovered_precisions_exits_with_usage_error(
+    tmp_path, monkeypatch
+) -> None:
+    # 6-bit has no K-quant port yet (ADR-0018). Rejected before the
+    # model load burns an hour.
+    install_meter(
+        monkeypatch, MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES), tokens=64)
+    )
+
+    result, _ = invoke_scan(tmp_path, "--precisions", "8,6", "--within-group", "kquant")
+
+    assert result.exit_code == 2
+    assert "kquant covers" in result.output
+
+
+def test_kquant_scan_records_the_method_in_the_map(tmp_path, monkeypatch) -> None:
+    damages = {(spec.name, bits): 0.1 for spec in SPECS for bits in (3, 2)}
+    captured = install_meter(
+        monkeypatch, MemoryDamageMeter(specs=SPECS, damages=damages, tokens=64)
+    )
+
+    result, out = invoke_scan(
+        tmp_path, "--precisions", "3,2", "--within-group", "kquant"
+    )
+
+    assert result.exit_code == 0
+    map_ = load_sensitivity_map(out)
+    assert map_.scan.within_group == "kquant-ref"
+    # The map's claim must match what the meter measured with — a map
+    # that says kquant-ref over rtn damages is corrupted provenance.
+    assert captured["within_group"] == "kquant"
+
+
+def test_rtn_checkpoint_refuses_a_kquant_rerun(tmp_path, monkeypatch) -> None:
+    install_meter(
+        monkeypatch, MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES), tokens=64)
+    )
+    first, _ = invoke_scan(tmp_path)
+    assert first.exit_code == 0
+
+    second, _ = invoke_scan(tmp_path, "--within-group", "kquant")
+
+    assert second.exit_code == 1
+    assert "different scan" in second.output
 
 
 def cli_fingerprint(tmp_path) -> str:
