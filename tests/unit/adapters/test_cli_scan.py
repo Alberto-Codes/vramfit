@@ -200,13 +200,13 @@ def test_invalid_within_group_exits_with_usage_error(tmp_path, monkeypatch) -> N
 def test_kquant_with_uncovered_precisions_exits_with_usage_error(
     tmp_path, monkeypatch
 ) -> None:
-    # The default invoke_scan precisions are 8,4 — outside the kquant
-    # port's {3, 2} coverage (ADR-0018). Rejected before model load.
+    # 6-bit has no K-quant port yet (ADR-0018). Rejected before the
+    # model load burns an hour.
     install_meter(
         monkeypatch, MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES), tokens=64)
     )
 
-    result, _ = invoke_scan(tmp_path, "--within-group", "kquant")
+    result, _ = invoke_scan(tmp_path, "--precisions", "8,6", "--within-group", "kquant")
 
     assert result.exit_code == 2
     assert "kquant covers" in result.output

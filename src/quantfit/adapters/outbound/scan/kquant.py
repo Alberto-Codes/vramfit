@@ -1,11 +1,12 @@
 """K-quant-faithful quantize-dequantize (ADR-0018, Proposed).
 
-Torch ports of llama.cpp's reference quantizers for ``Q2_K`` and
-``Q3_K`` (``ggml-quants.c``, checkout e9fa078). The port reproduces
-the full round trip: sub-block scale/min fitting, super-block scale
-re-quantization, fp16 storage rounding, and the final level
-recomputation. Like the RTN module, it returns dequantized values —
-the scan measures round-trip damage, never keeps integers.
+Torch ports of llama.cpp's reference quantizers for ``Q2_K``,
+``Q3_K``, ``Q4_K``, and ``Q8_0`` (``ggml-quants.c``, checkout
+e9fa078). The ports reproduce the full round trip: sub-block
+scale/min fitting, super-block scale re-quantization, fp16 storage
+rounding, and the final level recomputation. Like the RTN module,
+the functions return dequantized values — the scan measures
+round-trip damage, never keeps integers.
 
 The C reference rounds with ``nearest_int``, a round-half-to-even
 magic-number trick. ``torch.round`` rounds half to even, so the
@@ -31,7 +32,8 @@ import torch
 
 SUPER_BLOCK = 256
 SUB_BLOCK = 16
-KQUANT_BITS = (2, 3)
+Q8_BLOCK = 32
+KQUANT_BITS = (2, 3, 4, 8)
 # llama.cpp's all-zero guard for a sub-block (GROUP_MAX_EPS).
 _GROUP_MAX_EPS = 1e-15
 
@@ -49,28 +51,47 @@ def _fp16(t: torch.Tensor) -> torch.Tensor:
 
 
 def _make_qkx2_quants(
-    x: torch.Tensor, nmax: int, rmin: float, rdelta: float, nstep: int
+    x: torch.Tensor,
+    weights: torch.Tensor,
+    nmax: int,
+    rmin: float,
+    rdelta: float,
+    nstep: int,
+    use_mad: bool,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Fit one scale and one minimum per sub-block (Q2_K path).
+    """Fit one scale and one minimum per sub-block (Q2_K/Q4_K path).
 
-    Vectorized port of ``make_qkx2_quants`` with ``use_mad=True`` and
-    ``weights=|x|``, the arguments ``quantize_row_q2_K_ref`` passes.
-    The candidate loop evaluates every scale candidate on every
-    sub-block and keeps the first strict improvement, matching the C
-    loop's accept order.
+    Vectorized port of ``make_qkx2_quants``. The candidate loop
+    evaluates every scale candidate on every sub-block and keeps the
+    first strict improvement, matching the C loop's accept order.
 
     Args:
-        x: Sub-blocks, shape ``(n, SUB_BLOCK)``, float32.
+        x: Sub-blocks, shape ``(n, sub)``, float32.
+        weights: Per-element fit weights, same shape as ``x``.
         nmax: Largest quantized level.
         rmin: First candidate offset.
         rdelta: Candidate step.
         nstep: Number of candidate steps.
+        use_mad: Score candidates by weighted absolute deviation
+            instead of weighted squared error.
 
     Returns:
         Per-sub-block ``(scale, the_min)``, each shape ``(n,)``.
         ``the_min`` is the negated fitted minimum, non-negative.
     """
-    w = x.abs()
+
+    def score(diff: torch.Tensor) -> torch.Tensor:
+        """Turn reconstruction differences into the fit's error terms.
+
+        Args:
+            diff: Reconstruction minus input, any shape.
+
+        Returns:
+            Absolute or squared deviations, per ``use_mad``.
+        """
+        return diff.abs() if use_mad else diff * diff
+
+    w = weights
     sum_w = w.sum(dim=1)
     sum_x = (w * x).sum(dim=1)
     lo = x.amin(dim=1).clamp(max=0.0)
@@ -82,7 +103,7 @@ def _make_qkx2_quants(
     scale = 1.0 / iscale
     fmin = lo.clone()
     levels = torch.round(iscale[:, None] * (x - lo[:, None])).clamp(0, nmax)
-    best_error = (w * (scale[:, None] * levels + lo[:, None] - x).abs()).sum(dim=1)
+    best_error = (w * score(scale[:, None] * levels + lo[:, None] - x)).sum(dim=1)
 
     # The C loop reads the *current* fitted minimum when it builds each
     # candidate grid — an accepted candidate shifts every later grid.
@@ -111,7 +132,7 @@ def _make_qkx2_quants(
         cand_scale = torch.where(clip, sum_xl / safe_l2, cand_scale)
         cand_min = torch.where(clip, torch.zeros_like(cand_min), cand_min)
         cand_error = (
-            w * (cand_scale[:, None] * cand_levels + cand_min[:, None] - x).abs()
+            w * score(cand_scale[:, None] * cand_levels + cand_min[:, None] - x)
         ).sum(dim=1)
         accept = (det > 0) & (cand_error < best_error)
         scale = torch.where(accept, cand_scale, scale)
@@ -185,6 +206,9 @@ def _make_q3_quants(x: torch.Tensor, nmax: int) -> torch.Tensor:
 def _q2k_round_trip(blocks: torch.Tensor) -> torch.Tensor:
     """Round-trip super-blocks through Q2_K.
 
+    Fits with absolute deviation under ``|x|`` weights, the
+    reference's Q2_K arguments.
+
     Args:
         blocks: Shape ``(n, SUPER_BLOCK)``, float32.
 
@@ -193,7 +217,9 @@ def _q2k_round_trip(blocks: torch.Tensor) -> torch.Tensor:
     """
     n = blocks.shape[0]
     subs = blocks.reshape(n * (SUPER_BLOCK // SUB_BLOCK), SUB_BLOCK)
-    scale, the_min = _make_qkx2_quants(subs, nmax=3, rmin=-0.5, rdelta=0.1, nstep=15)
+    scale, the_min = _make_qkx2_quants(
+        subs, subs.abs(), nmax=3, rmin=-0.5, rdelta=0.1, nstep=15, use_mad=True
+    )
     scale = scale.reshape(n, -1)
     the_min = the_min.reshape(n, -1)
 
@@ -248,27 +274,99 @@ def _q3k_round_trip(blocks: torch.Tensor) -> torch.Tensor:
     return torch.where(live, dl * levels, torch.zeros_like(blocks))
 
 
+def _q4k_round_trip(blocks: torch.Tensor) -> torch.Tensor:
+    """Round-trip super-blocks through Q4_K.
+
+    Args:
+        blocks: Shape ``(n, SUPER_BLOCK)``, float32.
+
+    Returns:
+        Dequantized values, same shape.
+    """
+    n = blocks.shape[0]
+    sub = 32
+    subs = blocks.reshape(n * (SUPER_BLOCK // sub), sub)
+    av_x = (subs * subs).mean(dim=1, keepdim=True).sqrt()
+    scale, the_min = _make_qkx2_quants(
+        subs, av_x + subs.abs(), nmax=15, rmin=-1.0, rdelta=0.1, nstep=20, use_mad=False
+    )
+    scale = scale.reshape(n, -1)
+    the_min = the_min.reshape(n, -1)
+
+    q6scale = 63.0
+    max_scale = scale.amax(dim=1)
+    max_min = the_min.amax(dim=1)
+    pos_scale = max_scale > 0
+    safe_ms = torch.where(pos_scale, max_scale, torch.ones_like(max_scale))
+    sc_q = torch.round(q6scale * scale / safe_ms[:, None]).clamp(max=63)
+    sc_q = torch.where(pos_scale[:, None], sc_q, torch.zeros_like(sc_q))
+    d = torch.where(pos_scale, _fp16(max_scale / q6scale), torch.zeros_like(max_scale))
+    pos_min = max_min > 0
+    safe_mm = torch.where(pos_min, max_min, torch.ones_like(max_min))
+    m_q = torch.round(q6scale * the_min / safe_mm[:, None]).clamp(max=63)
+    m_q = torch.where(pos_min[:, None], m_q, torch.zeros_like(m_q))
+    dmin = torch.where(pos_min, _fp16(max_min / q6scale), torch.zeros_like(max_min))
+
+    dl = (d[:, None] * sc_q).repeat_interleave(sub, dim=1)
+    ml = (dmin[:, None] * m_q).repeat_interleave(sub, dim=1)
+    live = dl != 0
+    safe_dl = torch.where(live, dl, torch.ones_like(dl))
+    levels = torch.round((blocks + ml) / safe_dl).clamp(0, 15)
+    return torch.where(live, dl * levels - ml, -ml)
+
+
+def _q8_0_round_trip(blocks: torch.Tensor) -> torch.Tensor:
+    """Round-trip 32-element blocks through Q8_0.
+
+    ``quantize_row_q8_0_ref`` rounds with ``roundf`` — half away from
+    zero — and quantizes against the pre-fp16 scale while dequantizing
+    with the fp16-stored one.
+
+    Args:
+        blocks: Shape ``(n, Q8_BLOCK)``, float32.
+
+    Returns:
+        Dequantized values, same shape.
+    """
+    amax = blocks.abs().amax(dim=1, keepdim=True)
+    d = amax / 127.0
+    inverse = torch.where(d != 0, 1.0 / torch.where(d != 0, d, torch.ones_like(d)), d)
+    v = blocks * inverse
+    levels = torch.trunc(v + 0.5 * torch.sign(v))
+    return levels * _fp16(d)
+
+
+_ROUND_TRIPS = {
+    2: (_q2k_round_trip, SUPER_BLOCK),
+    3: (_q3k_round_trip, SUPER_BLOCK),
+    4: (_q4k_round_trip, SUPER_BLOCK),
+    8: (_q8_0_round_trip, Q8_BLOCK),
+}
+
+
 def kquant_quantize_dequantize(weight: torch.Tensor, bits: int) -> torch.Tensor:
     """Quantize a tensor through the K-quant format for ``bits``.
 
     The tensor is flattened in row-major order — the order
-    ``llama-quantize`` consumes rows — padded with zeros to a
-    multiple of 256, and round-tripped through the ported reference
-    quantizer. The input is never modified. Like the RTN round trip,
-    the computation runs on the input's device first and retries on
-    the CPU when the float32 workspace does not fit the card.
+    ``llama-quantize`` consumes rows — padded with zeros to the
+    format's block multiple, and round-tripped through the ported
+    reference quantizer. The input is never modified. Like the RTN
+    round trip, the computation runs on the input's device first and
+    retries on the CPU when the float32 workspace does not fit the
+    card.
 
     Args:
         weight: The tensor to perturb. Any shape, any float dtype.
-        bits: Nominal precision — 2 (``Q2_K``) or 3 (``Q3_K``).
+        bits: Nominal precision — 2 (``Q2_K``), 3 (``Q3_K``),
+            4 (``Q4_K``), or 8 (``Q8_0``).
 
     Returns:
         The dequantized tensor, same shape, dtype, and device as the
         input.
 
     Raises:
-        ValueError: If ``bits`` has no K-quant port (ADR-0018 scopes
-            v1 to 2 and 3).
+        ValueError: If ``bits`` has no K-quant port (ADR-0018 leaves
+            5 and 6 open).
 
     Examples:
         Q2_K keeps at most four levels per 16-element sub-block:
@@ -281,11 +379,11 @@ def kquant_quantize_dequantize(weight: torch.Tensor, bits: int) -> torch.Tensor:
         assert all(len(sub.unique()) <= 4 for sub in q.reshape(-1, 16))
         ```
     """
-    if bits not in KQUANT_BITS:
+    if bits not in _ROUND_TRIPS:
         raise ValueError(
             f"kquant supports bits in {KQUANT_BITS}, got {bits} (ADR-0018)"
         )
-    round_trip = _q2k_round_trip if bits == KQUANT_BITS[0] else _q3k_round_trip
+    round_trip, block = _ROUND_TRIPS[bits]
 
     def prepare(device: torch.device | str) -> torch.Tensor:
         """Flatten to padded float32 blocks on ``device``.
@@ -294,13 +392,13 @@ def kquant_quantize_dequantize(weight: torch.Tensor, bits: int) -> torch.Tensor:
             device: Where the workspace copy lives.
 
         Returns:
-            Super-blocks, shape ``(n, SUPER_BLOCK)``.
+            Blocks, shape ``(n, block)``.
         """
         flat = weight.detach().to(device=device, dtype=torch.float32).reshape(-1)
-        pad = (-flat.numel()) % SUPER_BLOCK
+        pad = (-flat.numel()) % block
         if pad:
             flat = torch.nn.functional.pad(flat, (0, pad))
-        return flat.reshape(-1, SUPER_BLOCK)
+        return flat.reshape(-1, block)
 
     try:
         result = round_trip(prepare(weight.device))

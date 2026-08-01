@@ -34,17 +34,18 @@ compounds on wrong marginals.
 ## Decision (proposed)
 
 1. **A new scan module ports the K-quant round trip to torch.** It
-   reimplements `quantize_row_q2_K_ref` and `quantize_row_q3_K_ref`
-   from llama.cpp (checkout e9fa078), including sub-block scale/min
+   reimplements `quantize_row_q2_K_ref`, `quantize_row_q3_K_ref`,
+   `quantize_row_q4_K_ref`, and `quantize_row_q8_0_ref` from
+   llama.cpp (checkout e9fa078), including sub-block scale/min
    fitting, super-block scale re-quantization, and fp16 storage
    rounding. The port returns dequantized values, like the RTN
    round trip. It imports torch only — no llama.cpp dependency at
    scan time (ADR-0005).
 2. **The meter takes a within-group method argument.** `rtn` stays
    the default and the behavior is unchanged. `kquant` routes
-   2-bit cells through the `Q2_K` round trip and 3-bit cells
-   through `Q3_K`. In v1 the `kquant` method refuses precisions
-   outside {2, 3} — the frame leak under measurement lives there.
+   2-bit cells through `Q2_K`, 3-bit through `Q3_K`, 4-bit through
+   `Q4_K`, and 8-bit through `Q8_0`. The method refuses 5- and
+   6-bit cells until `Q5_K`/`Q6_K` ports exist.
 3. **The CLI exposes `--within-group {rtn,kquant}` on `scan`.** The
    fingerprint method token becomes `kquant-ref` under the flag, so
    checkpoints never mix methods (ADR-0006's rule, mechanized). The
@@ -65,14 +66,25 @@ compounds on wrong marginals.
   *unassisted* format — expect it to sit at or above the packed
   artifact's damage for imatrix-covered tensors. Whether the meter
   should consume the imatrix itself is a follow-up decision.
-- Coverage of {4, 5, 6, 8} nominal bits (`Q4_K`, `Q5_K`, `Q6_K`,
-  `Q8_0`), required before a full kquant scan can feed the solver.
-  `Q4_K`/`Q5_K` share the `make_qkx2_quants` machinery the Q2 port
-  builds.
-- What per-precision inflation factor (kquant damage over RTN
-  damage, same cell) invalidates RTN pricing. The first
-  measurement is the ~10-cell probe on the 65,536-token map that
-  this ADR exists to run.
+- ~~Coverage of {4, 8} nominal bits, required before a full kquant
+  scan can feed the solver.~~ Landed with this ADR: `Q4_K` reuses
+  the `make_qkx2_quants` machinery (squared error, 32-element
+  sub-blocks, 6-bit scales) and `Q8_0` is a 32-block absmax code.
+  `Q5_K`/`Q6_K` stay open — no recipe has assigned 5 or 6 bits yet.
+- ~~What per-precision inflation factor (kquant damage over RTN
+  damage, same cell) invalidates RTN pricing.~~ **Measured
+  (2026-07-31, 16 cells on the 65,536-token frame): the question
+  inverted.** RTN does not under-price low bits — it over-prices
+  them. RTN 2-bit damage runs 2.0–3.9x the `Q2_K` damage in-frame
+  (attention-bearing layers worst, deep FFN-only layers ~2.0x).
+  RTN 3-bit runs 1.05–1.7x `Q3_K`. The distortion is per-cell, not
+  a per-precision scalar — no rescale fixes the ranking. Mechanism:
+  RTN's symmetric absmax grid cannot reach its lowest level at
+  2-bit, so it spends three levels where `Q2_K` fits four plus a
+  minimum. Two RTN re-measurements bounded cross-process frame
+  noise at ~20 % (0.79–0.81 of the stored map values) — the
+  in-frame ratios above are corrected for it. Consequence drawn in
+  [ADR-0019](0019-kquant-priced-maps.md).
 
 ## Consequences
 

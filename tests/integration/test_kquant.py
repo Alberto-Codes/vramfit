@@ -2,12 +2,12 @@
 
 The fixtures in ``tests/data/kquant/golden.npz`` hold inputs and the
 dequantized outputs of llama.cpp's reference quantizers
-(``ggml_quantize_chunk``, checkout e9fa078, no imatrix). Q3_K
-reproduces the C output bit-exactly. Q2_K admits representation ties —
-sub-blocks where two (level, scale) encodings reconstruct identically
-and float summation order picks the winner — so its gate is
-reconstruction-error parity plus a floor on exact elements
-(ADR-0018).
+(``ggml_quantize_chunk``, checkout e9fa078, no imatrix). Q3_K and
+Q8_0 reproduce the C output bit-exactly. Q2_K and Q4_K admit
+representation ties — sub-blocks where two (level, scale) encodings
+reconstruct identically and float summation order picks the winner —
+so their gate is reconstruction-error parity plus a floor on exact
+elements (ADR-0018).
 """
 
 # ruff: noqa: E402 - the importorskip guard must run before adapter imports
@@ -48,6 +48,31 @@ class TestAgainstReference:
         ours = kquant_quantize_dequantize(x, 3).numpy()
 
         assert np.array_equal(ours, golden[f"q3_{case}"])
+
+    @pytest.mark.parametrize("case", CASES)
+    def test_q8_0_matches_the_c_reference_exactly(
+        self, golden: dict[str, np.ndarray], case: str
+    ) -> None:
+        x = torch.from_numpy(golden[f"x_{case}"])
+
+        ours = kquant_quantize_dequantize(x, 8).numpy()
+
+        assert np.array_equal(ours, golden[f"q8_{case}"])
+
+    @pytest.mark.parametrize("case", CASES)
+    def test_q4k_matches_the_c_reference_error_parity(
+        self, golden: dict[str, np.ndarray], case: str
+    ) -> None:
+        # Q4_K fits with squared error, so ties are rare — the exact
+        # floor sits far higher than Q2_K's.
+        x = golden[f"x_{case}"]
+
+        ours = kquant_quantize_dequantize(torch.from_numpy(x), 4).numpy()
+
+        c_mse = float(np.mean((x - golden[f"q4_{case}"]) ** 2))
+        our_mse = float(np.mean((x - ours) ** 2))
+        assert our_mse <= c_mse * 1.01 + 1e-12
+        assert float((ours == golden[f"q4_{case}"]).mean()) > 0.9
 
     @pytest.mark.parametrize("case", CASES)
     def test_q2k_matches_the_c_reference_error_parity(
@@ -122,9 +147,20 @@ class TestRoundTripProperties:
         assert torch.equal(w, before)
 
     def test_uncovered_bits_raise(self) -> None:
-        for bits in (4, 5, 6, 8):
+        for bits in (5, 6):
             with pytest.raises(ValueError, match="kquant"):
                 kquant_quantize_dequantize(torch.randn(1, 256), bits)
+
+    def test_damage_shrinks_as_bits_rise(self) -> None:
+        torch.manual_seed(0)
+        w = torch.randn(16, 512)
+
+        mse = {
+            bits: (w - kquant_quantize_dequantize(w, bits)).pow(2).mean().item()
+            for bits in (8, 4, 3, 2)
+        }
+
+        assert mse[8] < mse[4] < mse[3] < mse[2]
 
     def test_kquant_and_rtn_produce_different_round_trips(self) -> None:
         # The two methods must not collapse to the same grid — the

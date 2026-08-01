@@ -3,9 +3,10 @@
 The scan loop itself lives in the inbound adapter (it drives ports).
 This module holds the pure parts: which (group x precision) cells still
 need measurement, how a finished pile of measurements becomes a
-`SensitivityMap`, the within-group method tokens (ADR-0006, ADR-0018),
-and the escaped, method-carrying fingerprint that guards resume
-against mixing two different scans' checkpoints.
+`SensitivityMap`, the within-group method tokens and the kquant
+coverage set (ADR-0006, ADR-0018), and the escaped, method-carrying
+fingerprint that guards resume against mixing two different scans'
+checkpoints.
 
 Examples:
     Plan the remaining work after a partial scan:
@@ -114,11 +115,11 @@ class Measurement:
 # is a new scan, so the token lives in the fingerprint.
 SCAN_METHOD = "rtn-block32"
 # The K-quant-faithful method (ADR-0018): llama.cpp reference
-# quantizers ported to torch, Q2_K and Q3_K in v1.
+# quantizers ported to torch — Q2_K, Q3_K, Q4_K, Q8_0.
 KQUANT_METHOD = "kquant-ref"
 # The precisions the kquant port covers. The scan validates candidate
 # precisions against this before it loads a model.
-KQUANT_PRECISIONS = (3, 2)
+KQUANT_PRECISIONS = (8, 4, 3, 2)
 
 
 def scan_fingerprint(model_id: str, meta: ScanMeta) -> str:
