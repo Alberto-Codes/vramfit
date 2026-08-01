@@ -16,10 +16,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import numpy as np
 import pytest
 
 torch = pytest.importorskip("torch", reason="scan extra not installed")
+np = pytest.importorskip("numpy", reason="scan extra not installed")
 
 from quantfit.adapters.outbound.scan.kquant import (
     kquant_quantize_dequantize,
