@@ -3,8 +3,11 @@
 The scan loop itself lives in the inbound adapter (it drives ports).
 This module holds the pure parts: which (group x precision) cells still
 need measurement, how a finished pile of measurements becomes a
-`SensitivityMap`, and the escaped, method-carrying fingerprint that
-guards resume against mixing two different scans' checkpoints.
+`SensitivityMap`, the within-group method tokens and the kquant
+coverage set (ADR-0006, ADR-0018 — `SCAN_METHOD` re-exported from
+[quantfit.domain.model][], where it is the `ScanMeta` default), and
+the escaped, method-carrying fingerprint that guards resume against
+mixing two different scans' checkpoints.
 
 Examples:
     Plan the remaining work after a partial scan:
@@ -28,6 +31,9 @@ import math
 from collections.abc import Collection, Iterable
 from dataclasses import dataclass
 
+from quantfit.domain.model import (
+    SCAN_METHOD as SCAN_METHOD,  # noqa: PLC0414 - re-export: method tokens read from this module
+)
 from quantfit.domain.model import LayerGroup, ScanMeta, SensitivityMap
 
 
@@ -108,13 +114,18 @@ class Measurement:
             raise ValueError("damage must be a finite non-negative number")
 
 
-# The v1 within-group method (ADR-0006): round-to-nearest, 32-element
-# scale blocks. Must track the scan adapter's defaults — a method change
-# is a new scan, so the token lives in the fingerprint.
-SCAN_METHOD = "rtn-block32"
+# The v1 method token SCAN_METHOD (ADR-0006) is defined beside
+# `ScanMeta` and re-exported above — a method change is a new scan,
+# so the token lives in the fingerprint.
+# The K-quant-faithful method (ADR-0018): llama.cpp reference
+# quantizers ported to torch — Q2_K, Q3_K, Q4_K, Q8_0.
+KQUANT_METHOD = "kquant-ref"
+# The precisions the kquant port covers. The scan validates candidate
+# precisions against this before it loads a model.
+KQUANT_PRECISIONS = (8, 4, 3, 2)
 
 
-def scan_fingerprint(model_id: str, meta: ScanMeta, method: str = SCAN_METHOD) -> str:
+def scan_fingerprint(model_id: str, meta: ScanMeta) -> str:
     """Derive the identity string that guards checkpoint resume.
 
     Two scans share a fingerprint when their recorded provenance
@@ -127,8 +138,8 @@ def scan_fingerprint(model_id: str, meta: ScanMeta, method: str = SCAN_METHOD) -
 
     Args:
         model_id: The scanned model's identifier.
-        meta: The scan's provenance.
-        method: The within-group quantization method token.
+        meta: The scan's provenance, including the within-group
+            method token (ADR-0018).
 
     Returns:
         A stable, human-readable identity string. Field separators
@@ -151,7 +162,7 @@ def scan_fingerprint(model_id: str, meta: ScanMeta, method: str = SCAN_METHOD) -
         str(meta.calibration_tokens),
         meta.group_by,
         precisions,
-        method,
+        meta.within_group,
     )
     escaped = (f.replace("\\", "\\\\").replace("|", "\\|") for f in fields)
     return "|".join(escaped)

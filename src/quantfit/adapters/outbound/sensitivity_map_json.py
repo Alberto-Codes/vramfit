@@ -7,7 +7,10 @@ advance per artifact, ADR-0013). One file class serves both directions:
 through the source face. Validation is strict: artifacts are rejected,
 never normalized — ``scan.precisions`` must arrive strictly descending,
 ``group_by`` must be a known granularity, and every group's sensitivity
-keys must equal it exactly.
+keys must equal it exactly. One field is additive rather than strict:
+``scan.within_group`` (ADR-0018) defaults to ``rtn-block32`` when
+absent, because every map written before the field existed measured
+with that method.
 
 Examples:
     Round-trip a map through a file:
@@ -48,6 +51,7 @@ from quantfit.adapters.outbound.json_common import (
     _save_json,
 )
 from quantfit.domain.model import LayerGroup, ScanMeta, SensitivityMap
+from quantfit.domain.scan import SCAN_METHOD
 
 # The sensitivity-map schema version. Versions advance per artifact
 # (ADR-0013) — the recipe sits at 2 while the map stays at 1.
@@ -108,7 +112,8 @@ def map_to_dict(map_: SensitivityMap) -> dict[str, Any]:
     Returns:
         A dict that `map_from_dict` accepts and round-trips to an equal
         map, under the `MAP_SCHEMA_VERSION` envelope. Sensitivity keys
-        are stringified in descending-bit order.
+        are stringified in descending-bit order. The within-group
+        method token is always written, even when it is the default.
     """
     return {
         "quantfit_schema": MAP_SCHEMA_VERSION,
@@ -120,6 +125,7 @@ def map_to_dict(map_: SensitivityMap) -> dict[str, Any]:
             "precisions": list(map_.scan.precisions),
             "group_by": map_.scan.group_by,
             "started_at": map_.scan.started_at,
+            "within_group": map_.scan.within_group,
         },
         "groups": [
             {
@@ -213,7 +219,9 @@ def _parse_scan_meta(obj: dict[str, Any]) -> ScanMeta:
     Raises:
         ArtifactError: If a field is missing or invalid, precisions are
             empty, duplicated, not integers, or not strictly descending,
-            or ``group_by`` is not ``layer`` or ``tensor``.
+            ``group_by`` is not ``layer`` or ``tensor``, or a present
+            ``within_group`` is not a non-empty string (absent
+            defaults to ``rtn-block32``, ADR-0018).
     """
     path = "$.scan"
     tokens = _get_int(obj, "calibration_tokens", path)
@@ -242,6 +250,12 @@ def _parse_scan_meta(obj: dict[str, Any]) -> ScanMeta:
         f"{path}.group_by",
         'must be "layer" or "tensor"',
     )
+    # Optional and additive (ADR-0018): maps written before the field
+    # existed are rtn-block32 scans by definition. A present field
+    # validates through _get_str, which rejects empty strings.
+    within_group = (
+        _get_str(obj, "within_group", path) if "within_group" in obj else SCAN_METHOD
+    )
     return ScanMeta(
         metric=_get_str(obj, "metric", path),
         calibration=_get_str(obj, "calibration", path),
@@ -249,6 +263,7 @@ def _parse_scan_meta(obj: dict[str, Any]) -> ScanMeta:
         precisions=tuple(precisions),
         group_by=cast('Literal["layer", "tensor"]', group_by),
         started_at=_get_str(obj, "started_at", path),
+        within_group=within_group,
     )
 
 

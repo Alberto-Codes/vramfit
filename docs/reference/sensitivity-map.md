@@ -22,7 +22,8 @@ The sensitivity map is the output of `quantfit scan` and the input to
     "calibration_tokens": 131072,
     "precisions": [8, 4, 3, 2],
     "group_by": "layer",
-    "started_at": "2026-07-27T00:00:00Z"
+    "started_at": "2026-07-27T00:00:00Z",
+    "within_group": "rtn-block32"
   },
   "groups": [
     {
@@ -51,6 +52,14 @@ The sensitivity map is the output of `quantfit scan` and the input to
   per-precision sizes from this — at the runtime's per-type effective
   bits when it has a table ([ADR-0014](../adr/0014-per-type-effective-bits.md)),
   at nominal bits plus the overhead fraction otherwise.
+- **`scan.within_group`** — the within-group method token
+  ([ADR-0018](../adr/0018-kquant-within-group-method.md)):
+  `rtn-block32` (round-to-nearest, the v1 default) or `kquant-ref`
+  (the ported llama.cpp reference quantizers). The writer always
+  records it. The loader accepts an absent field as `rtn-block32` —
+  every map written before the field existed measured with that
+  method. Damage values are only comparable between maps with the
+  same token.
 - **`groups`** — granularity is set by `--group-by`. Marginal (one group at a
   time) measurement is assumed — interaction effects between groups are a
   known blind spot recorded in ADR-0006. Group names must be unique, and

@@ -28,10 +28,15 @@ Examples:
     damage = meter.measure(meter.groups()[0].name, bits=4)
     ```
 
+The within-group method is selected at construction (ADR-0018):
+round-to-nearest by default, or the K-quant-faithful port.
+
 See Also:
     - [quantfit.ports.outbound][]: `DamageMeter`, the port this
       satisfies.
     - [quantfit.adapters.outbound.scan.quantize][]: The v1 within-group
+      method.
+    - [quantfit.adapters.outbound.scan.kquant][]: The K-quant-faithful
       method.
 """
 
@@ -48,6 +53,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from quantfit.adapters.outbound.scan.calibration import load_calibration
 from quantfit.adapters.outbound.scan.kl import mean_kl, reference_log_probs
+from quantfit.adapters.outbound.scan.kquant import kquant_quantize_dequantize
 from quantfit.adapters.outbound.scan.offload import (
     ShardReader,
     dedupe_aliased_groups,
@@ -73,8 +79,9 @@ class TorchDamageMeter:
     cached reference distributions, and a poisoned flag set when a
     failed measurement leaves the weights unrestored. `measure` and
     `measure_recipe` share one perturb-measure-restore path — a
-    single-group recipe measures exactly like the scan's cell. A
-    single group's originals stay on their device. A multi-group
+    single-group recipe measures exactly like the scan's cell. Both
+    quantize through the configured within-group method (ADR-0018).
+    A single group's originals stay on their device. A multi-group
     perturbation stages GPU-resident originals on the CPU and
     restores offloaded originals from the safetensors shards
     (ADR-0015).
@@ -105,6 +112,7 @@ class TorchDamageMeter:
         trust_remote_code: bool = False,
         block_size: int = DEFAULT_BLOCK_SIZE,
         max_gpu_memory: int | None = None,
+        within_group: Literal["rtn", "kquant"] = "rtn",
     ) -> None:
         """Load the model, tokenize the calibration set, discover groups.
 
@@ -126,14 +134,28 @@ class TorchDamageMeter:
             max_gpu_memory: Byte cap on GPU 0 model shards for ``auto``
                 sharding. Without a cap, sharding packs the card full
                 and leaves no workspace for activations and logits.
+            within_group: Within-group method (ADR-0018). ``rtn`` is
+                the v1 round-to-nearest. ``kquant`` round-trips cells
+                through the ported K-quant reference quantizers and
+                refuses precisions outside their coverage.
 
         Raises:
-            ValueError: If the calibration file yields too few tokens,
-                or a quantizable group was offloaded beyond host RAM —
-                an unperturbable weight would record zero damage.
+            ValueError: If ``within_group`` is not a known method —
+                an unknown value must not fall back to RTN and record
+                damages under the wrong token — the calibration file
+                yields too few tokens, or a quantizable group was
+                offloaded beyond host RAM (an unperturbable weight
+                would record zero damage).
             OSError: If the model or calibration file cannot be read.
         """
+        # Checked before the model load: a silent RTN fallback under
+        # a mistyped method corrupts every damage the meter measures.
+        if within_group not in ("rtn", "kquant"):
+            raise ValueError(
+                f'within_group must be "rtn" or "kquant", got "{within_group}"'
+            )
         self.model_id = model_id
+        self._within_group = within_group
         self._model = AutoModelForCausalLM.from_pretrained(
             model_id,
             dtype=torch.bfloat16,
@@ -265,6 +287,8 @@ class TorchDamageMeter:
     def _measure_perturbed(self, assignments: dict[str, int]) -> float:
         """Quantize the assigned groups in place, measure, restore.
 
+        The perturbation runs through the configured within-group
+        method (ADR-0018).
         A single group's originals stay on their own device — the card
         already keeps workspace for one group, and a host round-trip
         per scan cell would cost hours over a full scan. A multi-group
@@ -311,13 +335,29 @@ class TorchDamageMeter:
                                 if stage_on_cpu
                                 else saved.clone()
                             )
-                        param.copy_(
-                            rtn_quantize_dequantize(param, bits, self._block_size)
-                        )
+                        param.copy_(self._quantize_dequantize(param, bits))
             damage = self._mean_damage(reference)
         finally:
             self._restore(originals, shard_plan, in_flight=sys.exception() is not None)
         return damage
+
+    def _quantize_dequantize(self, param: torch.Tensor, bits: int) -> torch.Tensor:
+        """Round-trip one tensor through the configured within-group method.
+
+        Args:
+            param: The tensor to perturb.
+            bits: Candidate precision.
+
+        Returns:
+            The dequantized tensor, same shape, dtype, and device.
+
+        Raises:
+            ValueError: If the ``kquant`` method has no port for
+                ``bits`` (ADR-0018 covers 8, 4, 3, and 2).
+        """
+        if self._within_group == "kquant":
+            return kquant_quantize_dequantize(param, bits)
+        return rtn_quantize_dequantize(param, bits, self._block_size)
 
     def _param(self, name: str) -> torch.Tensor:
         """Look up a parameter tensor by its dotted name.

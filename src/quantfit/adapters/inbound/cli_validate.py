@@ -1,7 +1,8 @@
 """The ``quantfit validate`` command: the whole-recipe validation pass.
 
 The composition root for the validation pass (ADR-0006). It loads the
-recipe, builds the same torch-backed meter the scan uses, perturbs
+recipe, builds the same torch-backed meter the scan uses (including
+the scan's within-group method selection, ADR-0018), perturbs
 every group to its assigned precision in one pass, and compares the
 measured whole-recipe damage against the recipe's summed marginal
 damages — the direct test of the additivity assumption behind
@@ -27,7 +28,7 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 import typer
 
@@ -39,8 +40,40 @@ from quantfit.adapters.outbound.recipe_json import load_recipe
 from quantfit.adapters.outbound.run_log_jsonl import JsonlRunLogFile
 from quantfit.domain.budget import parse_size
 from quantfit.domain.model import Recipe
+from quantfit.domain.scan import KQUANT_METHOD, KQUANT_PRECISIONS, SCAN_METHOD
 from quantfit.domain.validation import validation_result
 from quantfit.ports.outbound import DamageMeter
+
+
+def _resolve_within_group(text: str, recipe: Recipe) -> Literal["rtn", "kquant"]:
+    """Validate the ``--within-group`` choice against the recipe.
+
+    Args:
+        text: The flag value.
+        recipe: The loaded recipe whose assignments the pass measures.
+
+    Returns:
+        The validated method name.
+
+    Raises:
+        typer.BadParameter: If the method is unknown, or ``kquant``
+            meets assignments outside its port coverage (ADR-0018).
+    """
+    if text not in ("rtn", "kquant"):
+        raise typer.BadParameter(
+            f'--within-group: expected "rtn" or "kquant", got "{text}"'
+        )
+    if text == "kquant":
+        uncovered = sorted(
+            {a.bits for a in recipe.assignments if a.bits not in KQUANT_PRECISIONS}
+        )
+        if uncovered:
+            raise typer.BadParameter(
+                f"--within-group kquant covers precisions "
+                f"{sorted(KQUANT_PRECISIONS, reverse=True)} (ADR-0018) — "
+                f"the recipe assigns {uncovered}"
+            )
+    return text
 
 
 def _load_recipe(path: Path) -> Recipe:
@@ -134,6 +167,14 @@ def validate(
             "quantization."
         ),
     ] = None,
+    within_group: Annotated[
+        str,
+        typer.Option(
+            help="Within-group method: rtn, or kquant for the "
+            "K-quant-faithful port (ADR-0018). Match the map that "
+            "priced the recipe."
+        ),
+    ] = "rtn",
     runlog: Annotated[
         Path | None,
         typer.Option(
@@ -145,8 +186,10 @@ def validate(
 
     The validation pass (ADR-0006). The command quantizes every group
     to its assigned precision in one pass. The pass uses the scan's
-    own quantization. The command then reports the measured damage
-    next to the recipe's summed marginal damages. The gap is the
+    own quantization, selected with ``--within-group`` — the pass
+    only checks additivity when its method matches the map that
+    priced the recipe (ADR-0019). The command then reports the
+    measured damage next to the recipe's summed marginal damages. The gap is the
     additivity assumption leaking. Use the scan's calibration file
     and ``--max-tokens`` — damage values are only comparable within
     one calibration set. The command reports the numbers and does not
@@ -156,9 +199,11 @@ def validate(
     the model must be a local safetensors directory (ADR-0015).
 
     Raises:
-        typer.BadParameter: If ``--group-by`` or ``--gpu-memory`` is
-            malformed, ``--gpu-memory`` is given without ``--device
-            auto``, or the ``--runlog`` directory does not exist.
+        typer.BadParameter: If ``--group-by``, ``--within-group``, or
+            ``--gpu-memory`` is malformed, ``--gpu-memory`` is given
+            without ``--device auto``, ``--within-group kquant``
+            meets recipe assignments the port does not cover, or the
+            ``--runlog`` directory does not exist.
         typer.Exit: With code 1 when the recipe is invalid, the scan
             extra is missing, the model or calibration cannot load,
             the recipe's groups do not match the model's, or the
@@ -187,6 +232,7 @@ def validate(
             raise typer.BadParameter(f"--gpu-memory: {exc}") from exc
 
     recipe = _load_recipe(recipe_path)
+    parsed_within_group = _resolve_within_group(within_group, recipe)
     model_id = model if model is not None else recipe.model_id
     if model is not None and model != recipe.model_id:
         typer.echo(
@@ -216,6 +262,9 @@ def validate(
             "max_tokens": max_tokens,
             "device": device,
             "gpu_memory_bytes": gpu_memory_bytes,
+            "within_group": SCAN_METHOD
+            if parsed_within_group == "rtn"
+            else KQUANT_METHOD,
         },
         lambda: _build_meter(
             model_id,
@@ -225,6 +274,7 @@ def validate(
             device=device,
             trust_remote_code=trust_remote_code,
             gpu_memory=gpu_memory_bytes,
+            within_group=parsed_within_group,
         ),
         prefix="validation",
     )
