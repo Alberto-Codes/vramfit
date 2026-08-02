@@ -165,6 +165,21 @@ class TestRoundTripProperties:
         assert set(KQUANT_PRECISIONS) == set(_ROUND_TRIPS)
         assert set(KQUANT_BITS) == set(_ROUND_TRIPS)
 
+    def test_slicing_is_bit_invisible(self, monkeypatch) -> None:
+        # Every fit is local to one block, so slice boundaries must
+        # not change a single value — slicing only caps workspace.
+        import quantfit.adapters.outbound.scan.kquant as kquant_module
+
+        torch.manual_seed(0)
+        w = torch.randn(64, 256)
+
+        whole = {b: kquant_quantize_dequantize(w, b) for b in KQUANT_BITS}
+        monkeypatch.setattr(kquant_module, "_CHUNK_ROWS", 7)
+        sliced = {b: kquant_quantize_dequantize(w, b) for b in KQUANT_BITS}
+
+        for bits in KQUANT_BITS:
+            assert torch.equal(whole[bits], sliced[bits]), bits
+
     def test_subnormal_scale_blocks_stay_finite(self) -> None:
         # 0 < amax < 127/FLT_MAX overflows a reciprocal to inf — the
         # C path dequantizes such blocks to zero, never NaN.
