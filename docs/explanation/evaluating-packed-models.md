@@ -600,9 +600,10 @@ suspect list again.
 **The re-plan went the other way.** Honest prices made 2-bit
 *relatively* cheaper (median cell ratio 0.74 against RTN, while
 8/4/3-bit run 1.28–1.43x), so the solver moved 52 of 82 groups to
-2-bit — not toward the baseline's flat-3-bit shape. The
-attention-bearing mid-stack layers left 2-bit, consistent with the
-granularity probe's fragility finding.
+2-bit — not toward the baseline's flat-3-bit shape. The growth came
+mostly from attention-bearing mid-stack layers (15 of the 20
+entrants); only the three front-most attention layers (9, 14, 15)
+left the 2-bit set.
 
 **The validation gate held at record breadth.** 52 groups at 2-bit
 — ten more than the recipe that went super-additive 11.9x on RTN
