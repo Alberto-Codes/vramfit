@@ -98,6 +98,14 @@ Points fixed at acceptance (2026-07-28):
   invalidation threshold question stands, but the operational rule
   is now clear: a super-additive validation is a solve-again
   signal, not a pack input.
+  **Fifth measurement (2026-08-02, the kquant-priced recipe,
+  ADR-0019):** the honest map's re-plan moves 52 of 82 groups to
+  2-bit — more than the super-additive recipe's 42 — and still
+  validates **sub-additive by 2.0x** (measured 0.0610 against
+  predicted 0.1221, kquant perturbation, 32,768-token frame
+  against a 65,536-token map). Membership quality, not membership
+  count, drives additivity: honest per-cell prices select
+  compatible 2-bit members even at wider breadth.
 
 ## Consequences
 

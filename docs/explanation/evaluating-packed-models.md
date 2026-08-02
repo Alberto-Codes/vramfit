@@ -26,6 +26,10 @@ status: draft
 > the gap, and the scan frame turned out to *over*-price low bits,
 > not under-price them
 > ([the seventh data point](#the-seventh-data-point-the-frontier-duel)).
+> On 2026-08-02 the full loop ran on the honest map and **lost
+> again** — eliminating the within-group method as the frame leak
+> and promoting the imatrix to prime suspect
+> ([the eighth data point](#the-eighth-data-point-honest-prices-worse-artifact)).
 > Tier 3 has not run. The publication gates that consume
 > these evaluations live in [the artifact ecosystem](artifact-ecosystem.md)
 > and issue #11.
@@ -584,6 +588,63 @@ flight, and the re-planned recipe walks the full loop against the
 same baselines. The falsifiable prediction on record: honest
 prices pull the recipe toward the baseline's flat-3-bit region,
 and the packed result closes most of what granularity could not.
+
+## The eighth data point: honest prices, worse artifact
+
+The seventh data point's build ran end to end on 2026-08-02: a full
+328-cell kquant-priced re-scan at 65,536 tokens (ADR-0019), re-plan,
+frame-matched validation, imatrix pack, smoke, and both tiers. Two
+predictions on record went down, and the second one reorders the
+suspect list again.
+
+**The re-plan went the other way.** Honest prices made 2-bit
+*relatively* cheaper (median cell ratio 0.74 against RTN, while
+8/4/3-bit run 1.28–1.43x), so the solver moved 52 of 82 groups to
+2-bit — not toward the baseline's flat-3-bit shape. The
+attention-bearing mid-stack layers left 2-bit, consistent with the
+granularity probe's fragility finding.
+
+**The validation gate held at record breadth.** 52 groups at 2-bit
+— ten more than the recipe that went super-additive 11.9x on RTN
+prices — measured sub-additive by 2.0x (0.0610 against predicted
+0.1221, kquant perturbation, ADR-0006 fifth measurement).
+Membership quality, not membership count, drives additivity.
+
+**The packed artifact lost anyway.** Another first-try fit
+(20.21 GiB, 269 MiB under) and a passed smoke, then:
+
+| Model | Size | PPL ↓ | Mean KLD ↓ | Same top ↑ |
+|-------|------|-------|------------|------------|
+| quantfit kquant map + imatrix | 20.21 GiB | 9.251 ± 0.069 | 0.3056 | 77.8 % |
+| quantfit RTN 64k map + imatrix | 20.32 GiB | 9.156 ± 0.068 | 0.2653 | 80.1 % |
+| Q3_K_S heuristic (bartowski) | 20.45 GiB | **8.532 ± 0.064** | **0.1584** | **83.8 %** |
+
+Reading it honestly: structurally honest within-group pricing made
+the packed result *worse*, not better. The scan frame and the
+packed artifact now quantize with the same super-block structure,
+the recipe is internally consistent in its own frame, and the
+transfer to the packed artifact still inverts the ranking. The
+within-group method is therefore eliminated as the frame leak —
+the week's second eliminated suspect, after granularity.
+
+**What remains between the frames.** Three differences survive:
+the importance matrix (the pack fits with activation weights, the
+meter prices unassisted — ADR-0018's first open question), the
+measurement set (calibration text against held-out WikiText-2),
+and llama.cpp's runtime numerics. The imatrix is the prime
+suspect, with prior evidence: assistance was worth 0.86 PPL on
+one allocation and 0.07 on another (the fifth data point), so it
+is violently allocation-dependent, and a solver pricing without
+it optimizes an objective the packed artifact does not ship. The
+mechanism also fits this loss's direction: assistance recovers
+more of the damage in cells with more levels to re-weight, so an
+unassisted map overvalues exactly the 2-bit breadth this recipe
+bought. An imatrix-aware meter is the named next step, priced for
+the rented measurement lane (issue #40) if the reference box
+cannot carry it.
+
+ADR-0019 stays Proposed: its first full measurement contradicts
+its decision as stated, and the record says so.
 
 ## Provenance is not evidence
 

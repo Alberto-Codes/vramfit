@@ -2,6 +2,14 @@
 
 - **Status:** Proposed
 - **Date:** 2026-07-31
+- **Note (2026-08-02):** the first full measurement contradicts
+  the decision as stated. The kquant-priced recipe validated
+  sub-additive by 2.0x and packed *worse* than the RTN recipe
+  (9.251 against 9.156 PPL, the eighth data point). Honest
+  within-group structure is not the frame leak. The likely
+  amendment is imatrix-aware pricing (ADR-0018's first open
+  question) — this record stays Proposed until a kquant-priced
+  recipe beats an RTN-priced one packed.
 
 ## Context
 
@@ -46,15 +54,22 @@ model's failure mode (ADR-0006, fourth measurement).
 
 ## Open questions
 
-- Does honest 2-bit pricing move the recipe toward the baseline's
-  flat-3-bit region, and does the packed result close the 0.62 PPL
-  gap? The re-scan and re-plan answer this.
-- Does the validation pass with kquant perturbation stay
-  sub-additive on the re-planned recipe? The pass must run with the
-  same within-group method as the map that priced it —
-  `quantfit validate --within-group kquant`. The recipe does not
-  record its map's method, so the pairing is the caller's duty
-  today.
+- ~~Does honest 2-bit pricing move the recipe toward the baseline's
+  flat-3-bit region?~~ **No — the prediction was wrong in
+  direction (2026-08-02).** The full kquant map re-prices 2-bit
+  *relatively* cheaper (median cell ratio 0.74 against RTN, while
+  8/4/3-bit run 1.28–1.43), so the re-plan moves 52 of 82 groups
+  to 2-bit (was 35) and buys four 8-bit groups up front. Whether
+  the packed result closes the PPL gap is measured in the eighth
+  data point.
+- ~~Does the validation pass with kquant perturbation stay
+  sub-additive on the re-planned recipe?~~ **Yes — sub-additive by
+  2.0x** (measured 0.0610 against predicted 0.1221, ADR-0006 fifth
+  measurement), at wider 2-bit breadth than the recipe that went
+  super-additive 11.9x on RTN prices. The pass must run with the
+  map's method — `quantfit validate --within-group kquant`. The
+  recipe does not record its map's method, so the pairing is the
+  caller's duty today.
 - Whether RTN should ever price a 3-bit cell again (1.05–1.7x
   distortion straddles the harmless-to-material range).
 
