@@ -6,7 +6,8 @@ e9fa078). The ports reproduce the full round trip: sub-block
 scale/min fitting, super-block scale re-quantization, fp16 storage
 rounding, and the final level recomputation. Like the RTN module,
 the functions return dequantized values — the scan measures
-round-trip damage, never keeps integers.
+round-trip damage, never keeps integers. Large tensors fit in
+bounded slices of whole blocks, which caps the fp32 workspace.
 
 The C reference rounds with ``nearest_int``, a round-half-to-even
 magic-number trick. ``torch.round`` rounds half to even, so the
@@ -27,6 +28,8 @@ See Also:
 """
 
 from __future__ import annotations
+
+from collections.abc import Callable
 
 import torch
 
@@ -357,6 +360,40 @@ _ROUND_TRIPS = {
 # the CLI validates against the domain copy before a model loads.
 KQUANT_BITS = tuple(sorted(_ROUND_TRIPS))
 
+# Rows per fitting slice: 134M elements at super-block width, so
+# the candidate loops peak near 4 GiB of temporaries however large
+# the tensor. The 49B head fits 1.05B parameters in one call.
+# A slice holds whole blocks, so it cannot change a fitted value.
+_CHUNK_ROWS = 1 << 19
+
+
+def _sliced(
+    round_trip: Callable[[torch.Tensor], torch.Tensor], blocks: torch.Tensor
+) -> torch.Tensor:
+    """Run the round trip over bounded slices of whole blocks.
+
+    Every fit is local to one block, so a slice boundary is
+    bit-invisible — this only caps the workspace. Slices write into
+    one preallocated output, so no second full-size copy exists.
+
+    Args:
+        round_trip: The per-block round-trip function.
+        blocks: Shape ``(n, block)``, float32.
+
+    Returns:
+        Dequantized values, same shape.
+    """
+    if blocks.shape[0] <= _CHUNK_ROWS:
+        return round_trip(blocks)
+    # Preallocate the output: collecting slices for a cat would hold
+    # a second full-size copy (~4.2 GiB on the 49B head).
+    out = torch.empty_like(blocks)
+    for start in range(0, blocks.shape[0], _CHUNK_ROWS):
+        out[start : start + _CHUNK_ROWS] = round_trip(
+            blocks[start : start + _CHUNK_ROWS]
+        )
+    return out
+
 
 def kquant_quantize_dequantize(weight: torch.Tensor, bits: int) -> torch.Tensor:
     """Quantize a tensor through the K-quant format for ``bits``.
@@ -370,7 +407,9 @@ def kquant_quantize_dequantize(weight: torch.Tensor, bits: int) -> torch.Tensor:
     The input is never modified. Like the RTN
     round trip, the computation runs on the input's device first and
     retries on the CPU when the float32 workspace does not fit the
-    card.
+    card. Large tensors fit in bounded slices of whole blocks. The
+    49B output head would otherwise need ~38 GiB of fp32
+    temporaries.
 
     Args:
         weight: The tensor to perturb. Any shape, any float dtype.
@@ -418,8 +457,8 @@ def kquant_quantize_dequantize(weight: torch.Tensor, bits: int) -> torch.Tensor:
         return flat.reshape(-1, block)
 
     try:
-        result = round_trip(prepare(weight.device))
+        result = _sliced(round_trip, prepare(weight.device))
     except torch.cuda.OutOfMemoryError:
-        result = round_trip(prepare("cpu"))
+        result = _sliced(round_trip, prepare("cpu"))
     result = result.reshape(-1)[: weight.numel()]
     return result.reshape(weight.shape).to(device=weight.device, dtype=weight.dtype)
