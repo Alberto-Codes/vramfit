@@ -23,6 +23,7 @@ import pytest
 torch = pytest.importorskip("torch", reason="scan extra not installed")
 np = pytest.importorskip("numpy", reason="scan extra not installed")
 
+from quantfit.adapters.outbound.scan import kquant
 from quantfit.adapters.outbound.scan.kquant import (
     _ROUND_TRIPS,
     KQUANT_BITS,
@@ -165,16 +166,16 @@ class TestRoundTripProperties:
         assert set(KQUANT_PRECISIONS) == set(_ROUND_TRIPS)
         assert set(KQUANT_BITS) == set(_ROUND_TRIPS)
 
-    def test_slicing_is_bit_invisible(self, monkeypatch) -> None:
+    @pytest.mark.parametrize("chunk_rows", [7, 8], ids=["remainder", "exact"])
+    def test_slicing_is_bit_invisible(self, monkeypatch, chunk_rows: int) -> None:
         # Every fit is local to one block, so slice boundaries must
         # not change a single value — slicing only caps workspace.
-        import quantfit.adapters.outbound.scan.kquant as kquant_module
-
+        # Chunk 7 leaves a short final slice, chunk 8 divides evenly.
         torch.manual_seed(0)
         w = torch.randn(64, 256)
 
         whole = {b: kquant_quantize_dequantize(w, b) for b in KQUANT_BITS}
-        monkeypatch.setattr(kquant_module, "_CHUNK_ROWS", 7)
+        monkeypatch.setattr(kquant, "_CHUNK_ROWS", chunk_rows)
         sliced = {b: kquant_quantize_dequantize(w, b) for b in KQUANT_BITS}
 
         for bits in KQUANT_BITS:
