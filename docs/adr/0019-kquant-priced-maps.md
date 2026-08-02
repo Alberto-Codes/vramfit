@@ -58,7 +58,7 @@ model's failure mode (ADR-0006, fourth measurement).
   flat-3-bit region?~~ **No — the prediction was wrong in
   direction (2026-08-02).** The full kquant map re-prices 2-bit
   *relatively* cheaper (median cell ratio 0.74 against RTN, while
-  8/4/3-bit run 1.28–1.43), so the re-plan moves 52 of 82 groups
+  8/4/3-bit run 1.28–1.43x), so the re-plan moves 52 of 82 groups
   to 2-bit (was 35) and buys four 8-bit groups up front. Whether
   the packed result closes the PPL gap is measured in the eighth
   data point.

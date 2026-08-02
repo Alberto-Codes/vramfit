@@ -593,7 +593,8 @@ and the packed result closes most of what granularity could not.
 
 The seventh data point's build ran end to end on 2026-08-02: a full
 328-cell kquant-priced re-scan at 65,536 tokens (ADR-0019), re-plan,
-frame-matched validation, imatrix pack, smoke, and both tiers. Two
+method-matched validation (kquant perturbation, 32,768 tokens),
+imatrix pack, smoke, and both tiers. Two
 predictions on record went down, and the second one reorders the
 suspect list again.
 
