@@ -2,6 +2,11 @@
 
 - **Status:** Proposed
 - **Date:** 2026-08-03
+- **Note (2026-08-03):** the 16-cell probe reported — the
+  re-pricing clears the 2x gate, per-cell and structure-dependent
+  (decision item 5). The full assisted re-scan is justified. The
+  record stays Proposed until an assisted-priced recipe beats an
+  unassisted one packed, the same bar ADR-0019 waits under.
 
 ## Context
 
@@ -53,8 +58,20 @@ recovers more damage exactly where the unassisted fit is worst.
 
 ## Open questions
 
-- Does imatrix assistance change *relative* prices across cells, and
-  by how much at 2 against 3 bits? The 16-cell probe answers this.
+- ~~Does imatrix assistance change *relative* prices across cells,
+  and by how much at 2 against 3 bits?~~ **Measured (2026-08-03,
+  16 in-process pairs on the 65,536-token frame).** Assistance
+  cuts in-frame damage to 0.47–0.67 of unassisted on
+  attention-bearing 2-bit cells (median 0.55) and 0.83–0.99 on
+  FFN-only 2-bit cells (median 0.90) — a 1.65x relative tilt the
+  unassisted map bakes into every 2-bit membership decision. At
+  3 and 4 bits the factor spans 0.40–0.95 per cell. No scalar
+  rescale reproduces assisted prices. The two RTN sanity cells
+  read 2.7x and 4.1x their stored map values (previous bound
+  ~20 %) — cross-process absolute damages do not transfer, and
+  only in-process comparisons are load-bearing. Full numbers in
+  the ninth data point
+  (../explanation/evaluating-packed-models.md).
 - ~~The eval-set control: the meter scores damage on calibration
   text, the tiers score wiki.test. If the kquant recipe wins in-set
   and loses on wiki, the meter's objective needs held-out text and
