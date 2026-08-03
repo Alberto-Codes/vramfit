@@ -15,6 +15,13 @@ and knife-edge fitting ties may diverge from the C where vectorized
 float sums order differently. The assisted golden fixtures bound
 that drift.
 
+The C's ``make_qkx3_quants`` reuses the ADR-0018 port of
+``make_qkx2_quants``: the two C functions are identical when
+``weights`` is non-NULL. They differ only in the NULL-weights
+fallback (never taken here) and the degenerate guard —
+``max <= min`` against ``max == min`` — which cannot diverge
+because the ``min > 0 -> 0`` clamp keeps ``max >= min``.
+
 Examples:
     Simulate assisted Q2_K damage on one weight matrix:
 

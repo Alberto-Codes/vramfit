@@ -88,7 +88,11 @@ def load_imatrix(path: Path) -> dict[str, torch.Tensor]:
             carries neither known suffix, a sums tensor arrives
             without its counts twin (or the reverse), or the file
             holds no data at all — every malformation here would
-            otherwise shrink coverage silently.
+            otherwise shrink coverage silently. The unknown-suffix
+            refusal is deliberately stricter than the C loader,
+            which skips unrecognized tensors: a suffix rename in a
+            future imatrix format must fail loudly here, not price
+            a 30-hour scan unassisted.
         OSError: If the file cannot be read.
     """
     reader = GGUFReader(str(path))

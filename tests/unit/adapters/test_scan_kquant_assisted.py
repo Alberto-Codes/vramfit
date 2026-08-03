@@ -67,7 +67,10 @@ def _parity(
     """Assert error parity and an exact-element floor against the C.
 
     Two-sided: a systematically better fit is also a mis-port — the
-    pack ships the C behavior, not an improvement on it.
+    pack ships the C behavior, not an improvement on it. Only the
+    2-bit outlier fixture needs the wide band (measured 1.078 — one
+    sub-block tie amplified by the super-block scale coding); every
+    other tie case sits within 1.01.
     """
     x = golden[f"x_{case}"]
     qw = torch.from_numpy(golden[f"qw_{case}"])
@@ -78,9 +81,10 @@ def _parity(
     if case not in TIE_CASES[bits]:
         assert np.array_equal(ours, reference), case
         return
+    factor = 1.10 if (case, bits) == ("outliers_act", 2) else 1.01
     c_mse = float(np.mean((x - reference) ** 2))
     our_mse = float(np.mean((x - ours) ** 2))
-    assert c_mse / 1.10 - 1e-12 <= our_mse <= c_mse * 1.10 + 1e-12
+    assert c_mse / factor - 1e-12 <= our_mse <= c_mse * factor + 1e-12
     assert float((ours == reference).mean()) > exact_floor
 
 
