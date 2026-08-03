@@ -398,6 +398,29 @@ class TestTorchDamageMeter:
                 imatrix_weights={"model.layers.0.self_attn.q_proj.weight": weights},
             )
 
+    def test_non_1d_imatrix_weights_are_refused_at_construction(
+        self, aligned_model_dir, tmp_path
+    ) -> None:
+        # A (1, rows) tensor has the right numel — only a dim check
+        # stops it passing construction and dying at the first
+        # assisted cell.
+        from quantfit.adapters.outbound.scan.meter import TorchDamageMeter
+
+        calibration = tmp_path / "calib.txt"
+        calibration.write_text(CALIBRATION_TEXT)
+
+        with pytest.raises(ValueError, match="1-D"):
+            TorchDamageMeter(
+                str(aligned_model_dir),
+                calibration,
+                max_tokens=128,
+                device="cpu",
+                within_group="kquant",
+                imatrix_weights={
+                    "model.layers.0.self_attn.q_proj.weight": torch.ones(1, 256)
+                },
+            )
+
     def test_misaligned_covered_parameter_is_refused_at_construction(
         self, tiny_model_dir, tmp_path
     ) -> None:

@@ -233,14 +233,20 @@ class TorchDamageMeter:
 
         Raises:
             ValueError: If a weighted name is not a discovered
-                parameter, its weight length does not match the
-                parameter's row length, the rows do not divide into
-                super-blocks, or a weight is negative or non-finite.
+                parameter, its weights are not 1-D, its weight
+                length does not match the parameter's row length,
+                the rows do not divide into super-blocks, or a
+                weight is negative or non-finite.
         """
         known = {name for members in self._groups.values() for name in members}
         for name, weights in self._imatrix_weights.items():
             if name not in known:
                 raise ValueError(f'imatrix weights name unknown parameter "{name}"')
+            if weights.dim() != 1:
+                raise ValueError(
+                    f"imatrix weights for {name} must be 1-D, got shape "
+                    f"{tuple(weights.shape)}"
+                )
             rows = int(self._param(name).shape[-1])
             if weights.numel() != rows:
                 raise ValueError(
