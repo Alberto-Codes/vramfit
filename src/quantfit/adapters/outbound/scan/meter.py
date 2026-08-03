@@ -29,7 +29,9 @@ Examples:
     ```
 
 The within-group method is selected at construction (ADR-0018):
-round-to-nearest by default, or the K-quant-faithful port.
+round-to-nearest by default, or the K-quant-faithful port. The
+kquant method can price covered tensors with imatrix column weights
+(assisted pricing, ADR-0020).
 
 See Also:
     - [quantfit.ports.outbound][]: `DamageMeter`, the port this
@@ -54,6 +56,9 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from quantfit.adapters.outbound.scan.calibration import load_calibration
 from quantfit.adapters.outbound.scan.kl import mean_kl, reference_log_probs
 from quantfit.adapters.outbound.scan.kquant import kquant_quantize_dequantize
+from quantfit.adapters.outbound.scan.kquant_assisted import (
+    kquant_assisted_quantize_dequantize,
+)
 from quantfit.adapters.outbound.scan.offload import (
     ShardReader,
     dedupe_aliased_groups,
@@ -80,7 +85,9 @@ class TorchDamageMeter:
     failed measurement leaves the weights unrestored. `measure` and
     `measure_recipe` share one perturb-measure-restore path — a
     single-group recipe measures exactly like the scan's cell. Both
-    quantize through the configured within-group method (ADR-0018).
+    quantize through the configured within-group method (ADR-0018) —
+    with per-parameter imatrix column weights when assisted pricing
+    is on (ADR-0020).
     A single group's originals stay on their device. A multi-group
     perturbation stages GPU-resident originals on the CPU and
     restores offloaded originals from the safetensors shards
@@ -113,6 +120,7 @@ class TorchDamageMeter:
         block_size: int = DEFAULT_BLOCK_SIZE,
         max_gpu_memory: int | None = None,
         within_group: Literal["rtn", "kquant"] = "rtn",
+        imatrix_weights: Mapping[str, torch.Tensor] | None = None,
     ) -> None:
         """Load the model, tokenize the calibration set, discover groups.
 
@@ -138,14 +146,22 @@ class TorchDamageMeter:
                 the v1 round-to-nearest. ``kquant`` round-trips cells
                 through the ported K-quant reference quantizers and
                 refuses precisions outside their coverage.
+            imatrix_weights: Imatrix column weights per parameter
+                name for assisted pricing (ADR-0020). Requires the
+                ``kquant`` method. A parameter absent from the
+                mapping prices unassisted — the ``llama-quantize``
+                fallback for a NULL imatrix row.
 
         Raises:
             ValueError: If ``within_group`` is not a known method —
                 an unknown value must not fall back to RTN and record
-                damages under the wrong token — the calibration file
-                yields too few tokens, or a quantizable group was
-                offloaded beyond host RAM (an unperturbable weight
-                would record zero damage).
+                damages under the wrong token — ``imatrix_weights``
+                arrives with the ``rtn`` method (RTN has no weighted
+                C counterpart), a weighted name is unknown or its
+                length does not match the parameter's rows, the
+                calibration file yields too few tokens, or a
+                quantizable group was offloaded beyond host RAM (an
+                unperturbable weight would record zero damage).
             OSError: If the model or calibration file cannot be read.
         """
         # Checked before the model load: a silent RTN fallback under
@@ -154,8 +170,14 @@ class TorchDamageMeter:
             raise ValueError(
                 f'within_group must be "rtn" or "kquant", got "{within_group}"'
             )
+        if imatrix_weights and within_group != "kquant":
+            raise ValueError(
+                "imatrix_weights requires the kquant within-group method "
+                "(ADR-0020) — RTN has no weighted C counterpart"
+            )
         self.model_id = model_id
         self._within_group = within_group
+        self._imatrix_weights = dict(imatrix_weights or {})
         self._model = AutoModelForCausalLM.from_pretrained(
             model_id,
             dtype=torch.bfloat16,
@@ -184,6 +206,30 @@ class TorchDamageMeter:
         self._reference: list[torch.Tensor] | None = None
         self._poisoned = False
         self._poisoned_reason = ""
+        self._validate_imatrix_weights()
+
+    def _validate_imatrix_weights(self) -> None:
+        """Refuse imatrix weights that cannot match the model.
+
+        Runs at construction: a typoed name or a wrong-length vector
+        would otherwise price cells against the wrong columns —
+        silently.
+
+        Raises:
+            ValueError: If a weighted name is not a discovered
+                parameter, or its weight length does not match the
+                parameter's row length.
+        """
+        known = {name for members in self._groups.values() for name in members}
+        for name, weights in self._imatrix_weights.items():
+            if name not in known:
+                raise ValueError(f'imatrix weights name unknown parameter "{name}"')
+            rows = int(self._param(name).shape[-1])
+            if weights.numel() != rows:
+                raise ValueError(
+                    f"imatrix weights for {name} have {weights.numel()} "
+                    f"entries, the parameter rows have {rows}"
+                )
 
     def groups(self) -> tuple[GroupSpec, ...]:
         """Discover the model's layer groups.
@@ -288,7 +334,8 @@ class TorchDamageMeter:
         """Quantize the assigned groups in place, measure, restore.
 
         The perturbation runs through the configured within-group
-        method (ADR-0018).
+        method (ADR-0018), keyed by parameter name so assisted
+        pricing can select each tensor's column weights (ADR-0020).
         A single group's originals stay on their own device — the card
         already keeps workspace for one group, and a host round-trip
         per scan cell would cost hours over a full scan. A multi-group
@@ -335,18 +382,23 @@ class TorchDamageMeter:
                                 if stage_on_cpu
                                 else saved.clone()
                             )
-                        param.copy_(self._quantize_dequantize(param, bits))
+                        param.copy_(self._quantize_dequantize(param, bits, name))
             damage = self._mean_damage(reference)
         finally:
             self._restore(originals, shard_plan, in_flight=sys.exception() is not None)
         return damage
 
-    def _quantize_dequantize(self, param: torch.Tensor, bits: int) -> torch.Tensor:
+    def _quantize_dequantize(
+        self, param: torch.Tensor, bits: int, name: str
+    ) -> torch.Tensor:
         """Round-trip one tensor through the configured within-group method.
 
         Args:
             param: The tensor to perturb.
             bits: Candidate precision.
+            name: The parameter's dotted name — selects its imatrix
+                column weights when assisted pricing is on
+                (ADR-0020).
 
         Returns:
             The dequantized tensor, same shape, dtype, and device.
@@ -356,6 +408,9 @@ class TorchDamageMeter:
                 ``bits`` (ADR-0018 covers 8, 4, 3, and 2).
         """
         if self._within_group == "kquant":
+            column_weights = self._imatrix_weights.get(name)
+            if column_weights is not None:
+                return kquant_assisted_quantize_dequantize(param, bits, column_weights)
             return kquant_quantize_dequantize(param, bits)
         return rtn_quantize_dequantize(param, bits, self._block_size)
 
