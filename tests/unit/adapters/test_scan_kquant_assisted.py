@@ -46,10 +46,12 @@ CASES = (
 # Fixtures whose representation ties survive amplification — the C's
 # own compiler-ordered float sums pick a different tie winner there.
 # Q2_K's 4-level grid ties most often, Q4_K's 16-level grid least.
+# Measured exact fractions (2026-08-03): worst 0.641 (q3 outliers) —
+# the floors sit below with margin for reduction-order drift.
 TIE_CASES = {
     2: frozenset({"outliers_act", "gauss_spike", "positive_act"}),
     3: frozenset({"outliers_act", "gauss_spike"}),
-    4: frozenset({"outliers_act", "gauss_spike"}),
+    4: frozenset({"outliers_act"}),
 }
 
 
@@ -87,19 +89,19 @@ class TestAgainstReference:
     def test_assisted_q2k_matches_the_c_within_ties(
         self, golden: dict[str, np.ndarray], case: str
     ) -> None:
-        _parity(golden, case, 2, "q2", exact_floor=0.5)
+        _parity(golden, case, 2, "q2", exact_floor=0.7)
 
     @pytest.mark.parametrize("case", CASES)
     def test_assisted_q3k_matches_the_c_within_ties(
         self, golden: dict[str, np.ndarray], case: str
     ) -> None:
-        _parity(golden, case, 3, "q3", exact_floor=0.5)
+        _parity(golden, case, 3, "q3", exact_floor=0.55)
 
     @pytest.mark.parametrize("case", CASES)
     def test_assisted_q4k_matches_the_c_within_ties(
         self, golden: dict[str, np.ndarray], case: str
     ) -> None:
-        _parity(golden, case, 4, "q4", exact_floor=0.8)
+        _parity(golden, case, 4, "q4", exact_floor=0.85)
 
     def test_8bit_routes_to_the_unassisted_q8_0_port(self) -> None:
         # quantize_q8_0 discards the imatrix — assisted 8-bit must
@@ -147,6 +149,27 @@ class TestRoundTripProperties:
 
         assert torch.equal(w, original)
 
+    @pytest.mark.parametrize("chunk_rows", [7, 8])
+    def test_slicing_keeps_weight_tiling_aligned(
+        self, monkeypatch, chunk_rows: int
+    ) -> None:
+        # Slice starts index the tiled weights globally — a slice
+        # that restarted the tiling period would fit every later
+        # block against the wrong columns. Chunk 7 puts slice
+        # boundaries mid-row (period 2), chunk 8 divides evenly.
+        from quantfit.adapters.outbound.scan import kquant_assisted
+
+        torch.manual_seed(0)
+        w = torch.randn(8, 512)
+        qw = torch.rand(512) + 0.1
+
+        whole = {b: kquant_assisted_quantize_dequantize(w, b, qw) for b in (2, 3, 4)}
+        monkeypatch.setattr(kquant_assisted, "_CHUNK_ROWS", chunk_rows)
+        sliced = {b: kquant_assisted_quantize_dequantize(w, b, qw) for b in (2, 3, 4)}
+
+        for bits in (2, 3, 4):
+            assert torch.equal(whole[bits], sliced[bits]), bits
+
 
 class TestRefusals:
     def test_uncovered_bits_are_refused(self) -> None:
@@ -177,3 +200,13 @@ class TestRefusals:
 
         with pytest.raises(ValueError, match="finite"):
             kquant_assisted_quantize_dequantize(torch.randn(2, 256), 2, qw)
+
+    def test_8bit_still_validates_the_weights_it_discards(self) -> None:
+        # Validity must not depend on which branch consumes the
+        # argument — a caller smoke-testing 8-bit cells would gain
+        # false confidence in garbage weights otherwise.
+        qw = torch.ones(256)
+        qw[7] = float("nan")
+
+        with pytest.raises(ValueError, match="finite"):
+            kquant_assisted_quantize_dequantize(torch.randn(2, 256), 8, qw)

@@ -364,14 +364,10 @@ def kquant_assisted_quantize_dequantize(
             ``n_per_row % QK_K == 0``), ``quant_weights`` does not
             match the row length, or a weight is negative or
             non-finite — garbage weights would corrupt every damage
-            downstream.
+            downstream. Every check runs for 8-bit too, before the
+            Q8_0 route discards the weights — validity must not
+            depend on which branch consumes the argument.
     """
-    if bits == 8:  # noqa: PLR2004 - the Q8_0 nominal precision
-        return kquant_quantize_dequantize(weight, 8)
-    if bits not in _ASSISTED_ROUND_TRIPS:
-        raise ValueError(
-            f"assisted kquant supports bits in {ASSISTED_BITS}, got {bits} (ADR-0020)"
-        )
     row = int(weight.shape[-1])
     if row % SUPER_BLOCK:
         raise ValueError(
@@ -385,6 +381,12 @@ def kquant_assisted_quantize_dequantize(
         )
     if not bool(torch.isfinite(quant_weights).all()) or bool((quant_weights < 0).any()):
         raise ValueError("quant_weights must be finite and non-negative")
+    if bits == 8:  # noqa: PLR2004 - the Q8_0 nominal precision
+        return kquant_quantize_dequantize(weight, 8)
+    if bits not in _ASSISTED_ROUND_TRIPS:
+        raise ValueError(
+            f"assisted kquant supports bits in {ASSISTED_BITS}, got {bits} (ADR-0020)"
+        )
     round_trip = _ASSISTED_ROUND_TRIPS[bits]
 
     def prepare(device: torch.device | str) -> tuple[torch.Tensor, torch.Tensor]:

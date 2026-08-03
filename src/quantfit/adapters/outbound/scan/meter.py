@@ -31,7 +31,9 @@ Examples:
 The within-group method is selected at construction (ADR-0018):
 round-to-nearest by default, or the K-quant-faithful port. The
 kquant method can price covered tensors with imatrix column weights
-(assisted pricing, ADR-0020).
+(assisted pricing, ADR-0020). Construction refuses weights the
+model cannot consume — wrong names, wrong lengths, misaligned rows,
+non-finite values — before the scan spends an hour.
 
 See Also:
     - [quantfit.ports.outbound][]: `DamageMeter`, the port this
@@ -55,6 +57,9 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from quantfit.adapters.outbound.scan.calibration import load_calibration
 from quantfit.adapters.outbound.scan.kl import mean_kl, reference_log_probs
+from quantfit.adapters.outbound.scan.kquant import (
+    SUPER_BLOCK as KQUANT_SUPER_BLOCK,
+)
 from quantfit.adapters.outbound.scan.kquant import kquant_quantize_dequantize
 from quantfit.adapters.outbound.scan.kquant_assisted import (
     kquant_assisted_quantize_dequantize,
@@ -148,7 +153,9 @@ class TorchDamageMeter:
                 refuses precisions outside their coverage.
             imatrix_weights: Imatrix column weights per parameter
                 name for assisted pricing (ADR-0020). Requires the
-                ``kquant`` method. A parameter absent from the
+                ``kquant`` method and must not be empty — an empty
+                mapping would price every cell unassisted under the
+                assisted label. A parameter absent from a non-empty
                 mapping prices unassisted — the ``llama-quantize``
                 fallback for a NULL imatrix row.
 
@@ -170,11 +177,18 @@ class TorchDamageMeter:
             raise ValueError(
                 f'within_group must be "rtn" or "kquant", got "{within_group}"'
             )
-        if imatrix_weights and within_group != "kquant":
-            raise ValueError(
-                "imatrix_weights requires the kquant within-group method "
-                "(ADR-0020) — RTN has no weighted C counterpart"
-            )
+        if imatrix_weights is not None:
+            if within_group != "kquant":
+                raise ValueError(
+                    "imatrix_weights requires the kquant within-group method "
+                    "(ADR-0020) — RTN has no weighted C counterpart"
+                )
+            if not imatrix_weights:
+                raise ValueError(
+                    "imatrix_weights is empty — every cell would price "
+                    "unassisted under the assisted label (ADR-0020); pass "
+                    "None to price unassisted deliberately"
+                )
         self.model_id = model_id
         self._within_group = within_group
         self._imatrix_weights = dict(imatrix_weights or {})
@@ -211,14 +225,17 @@ class TorchDamageMeter:
     def _validate_imatrix_weights(self) -> None:
         """Refuse imatrix weights that cannot match the model.
 
-        Runs at construction: a typoed name or a wrong-length vector
-        would otherwise price cells against the wrong columns —
-        silently.
+        Runs at construction. A typoed name or a wrong-length vector
+        would price cells against the wrong columns — silently. A
+        misaligned or non-finite weight would abort the scan at its
+        first assisted cell, hours in, when milliseconds here refuse
+        it up front.
 
         Raises:
             ValueError: If a weighted name is not a discovered
-                parameter, or its weight length does not match the
-                parameter's row length.
+                parameter, its weight length does not match the
+                parameter's row length, the rows do not divide into
+                super-blocks, or a weight is negative or non-finite.
         """
         known = {name for members in self._groups.values() for name in members}
         for name, weights in self._imatrix_weights.items():
@@ -229,6 +246,16 @@ class TorchDamageMeter:
                 raise ValueError(
                     f"imatrix weights for {name} have {weights.numel()} "
                     f"entries, the parameter rows have {rows}"
+                )
+            if rows % KQUANT_SUPER_BLOCK:
+                raise ValueError(
+                    f"{name} has rows of {rows}, not divisible into "
+                    f"{KQUANT_SUPER_BLOCK}-element super-blocks — it "
+                    "cannot price assisted (ADR-0020)"
+                )
+            if not bool(torch.isfinite(weights).all()) or bool((weights < 0).any()):
+                raise ValueError(
+                    f"imatrix weights for {name} must be finite and non-negative"
                 )
 
     def groups(self) -> tuple[GroupSpec, ...]:

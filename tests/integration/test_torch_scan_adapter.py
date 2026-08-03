@@ -356,6 +356,71 @@ class TestTorchDamageMeter:
                 imatrix_weights={"any.weight": torch.ones(8)},
             )
 
+    def test_empty_imatrix_weights_are_refused_before_the_model_loads(
+        self, tmp_path
+    ) -> None:
+        # An empty mapping prices every cell unassisted under the
+        # assisted label — the caller must pass None deliberately.
+        from quantfit.adapters.outbound.scan.meter import TorchDamageMeter
+
+        calibration = tmp_path / "calib.txt"
+        calibration.write_text(CALIBRATION_TEXT)
+
+        with pytest.raises(ValueError, match="empty"):
+            TorchDamageMeter(
+                "/nonexistent-model",
+                calibration,
+                max_tokens=128,
+                device="cpu",
+                within_group="kquant",
+                imatrix_weights={},
+            )
+
+    def test_non_finite_imatrix_weights_are_refused_at_construction(
+        self, aligned_model_dir, tmp_path
+    ) -> None:
+        # A NaN weight would abort the scan at its first assisted
+        # cell, hours in — construction must refuse it up front.
+        from quantfit.adapters.outbound.scan.meter import TorchDamageMeter
+
+        calibration = tmp_path / "calib.txt"
+        calibration.write_text(CALIBRATION_TEXT)
+        weights = torch.ones(256)
+        weights[3] = float("nan")
+
+        with pytest.raises(ValueError, match="finite"):
+            TorchDamageMeter(
+                str(aligned_model_dir),
+                calibration,
+                max_tokens=128,
+                device="cpu",
+                within_group="kquant",
+                imatrix_weights={"model.layers.0.self_attn.q_proj.weight": weights},
+            )
+
+    def test_misaligned_covered_parameter_is_refused_at_construction(
+        self, tiny_model_dir, tmp_path
+    ) -> None:
+        # tiny_model_dir rows are 32-wide — a covered parameter that
+        # cannot split into 256-element super-blocks can never price
+        # assisted, and the first assisted cell would abort mid-scan.
+        from quantfit.adapters.outbound.scan.meter import TorchDamageMeter
+
+        calibration = tmp_path / "calib.txt"
+        calibration.write_text(CALIBRATION_TEXT)
+
+        with pytest.raises(ValueError, match="super-block"):
+            TorchDamageMeter(
+                str(tiny_model_dir),
+                calibration,
+                max_tokens=128,
+                device="cpu",
+                within_group="kquant",
+                imatrix_weights={
+                    "model.layers.0.self_attn.q_proj.weight": torch.ones(32)
+                },
+            )
+
     def test_imatrix_weights_for_an_unknown_parameter_are_refused(
         self, tiny_model_dir, tmp_path
     ) -> None:

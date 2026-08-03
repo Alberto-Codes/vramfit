@@ -128,6 +128,54 @@ class TestLoadImatrix:
         with pytest.raises(ValueError, match="counts twin"):
             load_imatrix(path)
 
+    def test_counts_without_sums_twin_raises(self, tmp_path) -> None:
+        # An orphan counts tensor means a sums tensor was misnamed or
+        # lost — its columns would vanish from coverage silently.
+        path = _write_imatrix(
+            tmp_path / "im.gguf",
+            {
+                "t.weight.in_sum2": np.array([1.0]),
+                "t.weight.counts": np.array([1.0]),
+                "u.weight.counts": np.array([1.0]),
+            },
+        )
+
+        with pytest.raises(ValueError, match="in_sum2 twin"):
+            load_imatrix(path)
+
+    def test_unrecognized_tensor_name_raises(self, tmp_path) -> None:
+        # Suffix drift in a future imatrix format must fail loudly,
+        # not shrink coverage silently.
+        path = _write_imatrix(
+            tmp_path / "im.gguf",
+            {
+                "t.weight.in_sum2": np.array([1.0]),
+                "t.weight.counts": np.array([1.0]),
+                "t.weight.sums": np.array([1.0]),
+            },
+        )
+
+        with pytest.raises(ValueError, match="unexpected tensor"):
+            load_imatrix(path)
+
+    def test_imatrix_without_data_raises(self, tmp_path) -> None:
+        path = _write_imatrix(tmp_path / "im.gguf", {"dummy.counts": np.array([1.0])})
+
+        with pytest.raises(ValueError, match=r"no \.in_sum2 tensors|in_sum2 twin"):
+            load_imatrix(path)
+
+    def test_sums_not_divisible_by_counts_raises(self, tmp_path) -> None:
+        path = _write_imatrix(
+            tmp_path / "im.gguf",
+            {
+                "t.weight.in_sum2": np.array([1.0, 2.0, 3.0]),
+                "t.weight.counts": np.array([1.0, 2.0]),
+            },
+        )
+
+        with pytest.raises(ValueError, match="not divisible"):
+            load_imatrix(path)
+
     def test_non_imatrix_file_is_refused(self, tmp_path) -> None:
         path = _write_imatrix(
             tmp_path / "not-im.gguf",
@@ -161,6 +209,23 @@ class TestAssistedWeightsForParams:
             "model.layers.1.self_attn.q_proj.weight",
             "model.embed_tokens.weight",
         )
+
+    def test_zero_coverage_raises(self, tmp_path) -> None:
+        # An imatrix that covers nothing is the wrong file — a scan
+        # run on it would price every cell unassisted under the
+        # assisted label.
+        path = _write_imatrix(
+            tmp_path / "im.gguf",
+            {
+                "blk.0.attn_q.weight.in_sum2": np.ones(8),
+                "blk.0.attn_q.weight.counts": np.array([1.0]),
+            },
+        )
+
+        with pytest.raises(ValueError, match="covers none"):
+            assisted_weights_for_params(
+                path, {"model.layers.9.mlp.up_proj.weight": (8, 8)}
+            )
 
     def test_row_length_mismatch_raises(self, tmp_path) -> None:
         path = _write_imatrix(

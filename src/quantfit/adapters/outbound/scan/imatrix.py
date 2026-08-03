@@ -84,8 +84,11 @@ def load_imatrix(path: Path) -> dict[str, torch.Tensor]:
         whose chunk count is zero weighs 1, per ``load_imatrix``.
 
     Raises:
-        ValueError: If the file is not an imatrix, or a sums tensor
-            arrives without its counts twin.
+        ValueError: If the file is not an imatrix, a tensor name
+            carries neither known suffix, a sums tensor arrives
+            without its counts twin (or the reverse), or the file
+            holds no data at all — every malformation here would
+            otherwise shrink coverage silently.
         OSError: If the file cannot be read.
     """
     reader = GGUFReader(str(path))
@@ -101,12 +104,27 @@ def load_imatrix(path: Path) -> dict[str, torch.Tensor]:
             sums[tensor.name.removesuffix(".in_sum2")] = data
         elif tensor.name.endswith(".counts"):
             counts[tensor.name.removesuffix(".counts")] = data
+        else:
+            raise ValueError(
+                f"{path}: unexpected tensor {tensor.name} — an imatrix "
+                "holds only .in_sum2/.counts pairs"
+            )
+    if not sums:
+        raise ValueError(f"{path}: the imatrix holds no .in_sum2 tensors")
+    orphans = sorted(set(counts) - set(sums))
+    if orphans:
+        raise ValueError(f"{path}: {orphans[0]}.counts has no in_sum2 twin")
 
     weights: dict[str, torch.Tensor] = {}
     for name, sum2 in sums.items():
         count = counts.get(name)
         if count is None:
             raise ValueError(f"{path}: {name}.in_sum2 has no counts twin")
+        if sum2.numel() % count.numel():
+            raise ValueError(
+                f"{path}: {name}.in_sum2 has {sum2.numel()} entries, "
+                f"not divisible by its {count.numel()} counts"
+            )
         per_expert = sum2.reshape(count.numel(), -1)
         expert_counts = count.reshape(-1, 1)
         weights[name] = torch.where(
@@ -130,10 +148,13 @@ def assisted_weights_for_params(
         input order.
 
     Raises:
-        ValueError: If the file is not an imatrix, or a covered
-            tensor's weight length does not match the parameter's row
-            length — a silent mismatch would price against the wrong
-            columns.
+        ValueError: If the file is not an imatrix, a covered
+            tensor's weight length does not match the parameter's
+            row length — a silent mismatch would price against the
+            wrong columns — or no parameter is covered at all. Zero
+            coverage means the wrong file, and a scan run on it
+            would price every cell unassisted under the assisted
+            label.
         OSError: If the file cannot be read.
     """
     by_gguf_name = load_imatrix(path)
@@ -151,4 +172,9 @@ def assisted_weights_for_params(
                 f"{weight.numel()} entries, the parameter rows have {shape[-1]}"
             )
         covered[name] = weight
+    if shapes and not covered:
+        raise ValueError(
+            f"{path} covers none of the {len(shapes)} parameters — "
+            "wrong imatrix file for this model?"
+        )
     return covered, tuple(uncovered)

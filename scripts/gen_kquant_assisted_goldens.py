@@ -157,6 +157,20 @@ def _check_library(lib: ctypes.CDLL) -> None:
     replay = _round_trip(lib, TYPES["q3"], x.reshape(ROWS, -1), None)
     if not np.array_equal(replay.reshape(x.shape), expected):
         sys.exit("library replay diverges from golden.npz — wrong llama.cpp build?")
+    # The assisted kernels changed across llama.cpp history while the
+    # unassisted ones stayed put — replay one assisted case too.
+    assisted_path = OUT / "golden-assisted.npz"
+    if assisted_path.exists():
+        with np.load(assisted_path) as committed:
+            xa = committed["x_gauss_act"]
+            qw = committed["qw_gauss_act"]
+            expected_a = committed["q2_gauss_act"]
+        replay_a = _round_trip(lib, TYPES["q2"], xa, qw)
+        if not np.array_equal(replay_a, expected_a):
+            sys.exit(
+                "assisted replay diverges from golden-assisted.npz — "
+                "wrong llama.cpp build?"
+            )
 
 
 def main() -> None:
@@ -170,6 +184,11 @@ def main() -> None:
         arrays[f"qw_{case}"] = qw
         for name, type_id in TYPES.items():
             arrays[f"{name}_{case}"] = _round_trip(lib, type_id, x, qw)
+    # A NULL-pointer marshaling bug would record unassisted outputs
+    # under the assisted keys — prove the weights reached the C.
+    unassisted = _round_trip(lib, TYPES["q2"], arrays["x_gauss_act"], None)
+    if np.array_equal(arrays["q2_gauss_act"], unassisted):
+        sys.exit("assisted output equals unassisted — imatrix pointer not marshaled?")
     np.savez_compressed(OUT / "golden-assisted.npz", **arrays)
     print(f"wrote {OUT / 'golden-assisted.npz'} ({len(arrays)} arrays)")
 
