@@ -26,6 +26,10 @@ status: draft
 > the gap, and the scan frame turned out to *over*-price low bits,
 > not under-price them
 > ([the seventh data point](#the-seventh-data-point-the-frontier-duel)).
+> On 2026-08-02 the full loop ran on the honest map and **lost
+> again** — eliminating super-block structure as the frame leak
+> and promoting the imatrix weighting to prime suspect
+> ([the eighth data point](#the-eighth-data-point-honest-prices-worse-artifact)).
 > Tier 3 has not run. The publication gates that consume
 > these evaluations live in [the artifact ecosystem](artifact-ecosystem.md)
 > and issue #11.
@@ -584,6 +588,80 @@ flight, and the re-planned recipe walks the full loop against the
 same baselines. The falsifiable prediction on record: honest
 prices pull the recipe toward the baseline's flat-3-bit region,
 and the packed result closes most of what granularity could not.
+
+## The eighth data point: honest prices, worse artifact
+
+The seventh data point's build ran end to end on 2026-08-02: a full
+328-cell kquant-priced re-scan at 65,536 tokens (ADR-0019), re-plan,
+method-matched validation (kquant perturbation, 32,768 tokens),
+imatrix pack, smoke, and both tiers. Two
+predictions on record went down, and the second one reorders the
+suspect list again.
+
+**The re-plan went the other way.** Against the RTN map, the kquant
+map's median cell ratio is 0.74 at 2-bit and 1.28–1.43x at 8/4/3-bit
+— raw cross-process ratios, uncorrected for the ~20 % frame offset
+between scan runs (the seventh data point's bound). The offset
+multiplies every cell in a map roughly equally, so it cancels in the
+*relative* prices the solver actually consumes: 2-bit is ~40 %
+cheaper relative to 3-bit than RTN claimed, whatever the absolute
+offset. (That relative shift also reconciles the full scan with the
+16-cell probe — the probe's corrected ratios and the full map agree
+on the 2-versus-3 discount, and its per-precision magnitudes were
+sampled on 16 selected cells, not 328.) So the solver moved 52 of 82
+groups to 2-bit — not toward the baseline's flat-3-bit shape. The
+growth came mostly from attention-bearing mid-stack layers (15 of
+the 20 entrants); only the three front-most attention layers
+(9, 14, 15) left the 2-bit set.
+
+**The validation gate held at record breadth.** 52 groups at 2-bit
+— ten more than the recipe that went super-additive 11.9x on RTN
+prices — measured sub-additive by 2.0x (0.0610 against predicted
+0.1221, kquant perturbation, a 32,768-token pass against the
+65,536-token map, ADR-0006 fifth measurement). Membership quality,
+not membership count, drives additivity.
+
+**The packed artifact lost anyway.** Another first-try fit
+(20.21 GiB, 269 MiB under) and a passed smoke, then:
+
+| Model | Size | PPL ↓ | Mean KLD ↓ | Same top ↑ |
+|-------|------|-------|------------|------------|
+| quantfit kquant map + imatrix | 20.21 GiB | 9.251 ± 0.069 | 0.3056 | 77.8 % |
+| quantfit RTN 64k map + imatrix | 20.32 GiB | 9.156 ± 0.068 | 0.2653 | 80.1 % |
+| Q3_K_S heuristic (bartowski) | 20.45 GiB | **8.532 ± 0.064** | **0.1584** | **83.8 %** |
+
+Reading it honestly: matching the pack's super-block structure made
+the packed result *worse*, not better — and the gap to the baseline
+widens from 0.62 to 0.72 PPL. The scan frame and the packed
+artifact now quantize with the same block layout, the recipe is
+internally consistent in its own frame, and the transfer still
+inverts the ranking. Super-block structure is therefore eliminated
+as the frame leak. The within-group method is *not* yet matched:
+the pack fits with the importance matrix and the meter prices
+unassisted, so the method's remaining unmatched half is exactly
+where the suspicion moves. Granularity stays bounded at its
+measured ~14 % ceiling from the seventh data point — struck from
+the frontier, not erased from the ledger.
+
+**What remains between the frames.** Three differences survive:
+the imatrix weighting inside the within-group method (ADR-0018's
+first open question), the measurement set (calibration text
+against held-out WikiText-2), and llama.cpp's runtime numerics —
+all read through a ~20 % cross-process noise floor that any future
+elimination argument must clear. The imatrix is the prime
+suspect, with prior evidence: assistance was worth 0.86 PPL on
+one allocation and 0.07 on another (the fifth data point), so it
+is violently allocation-dependent, and a solver pricing without
+it optimizes an objective the packed artifact does not ship. The
+mechanism also fits this loss's direction: assistance recovers
+more of the damage in cells with more levels to re-weight, so an
+unassisted map overvalues exactly the 2-bit breadth this recipe
+bought. An imatrix-aware meter is the named next step, priced for
+the rented measurement lane (issue #40) if the reference box
+cannot carry it.
+
+ADR-0019 stays Proposed: its first full measurement contradicts
+its decision as stated, and the record says so.
 
 ## Provenance is not evidence
 
