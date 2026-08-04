@@ -54,6 +54,7 @@ def make_recipe(*assignments: tuple[str, int]) -> Recipe:
             for group, bits in assignments
         ),
         runtime=None,
+        within_group=None,
     )
 
 

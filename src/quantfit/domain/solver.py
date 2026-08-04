@@ -391,8 +391,10 @@ def solve(
             constraint.
 
     Returns:
-        The recipe, with assignments in sensitivity-map group order and
-        the downgrade trace in ``plan.trace``.
+        The recipe, with assignments in sensitivity-map group order,
+        the downgrade trace in ``plan.trace``, and the map's
+        within-group method token in ``within_group`` — the
+        validation pass matches its frame against it (ADR-0019).
 
     Raises:
         ValueError: If ``format_overhead`` is negative, NaN, or
@@ -517,4 +519,7 @@ def solve(
         ),
         assignments=assignments,
         runtime=runtime,
+        # The map's method token rides into the recipe (ADR-0019):
+        # the validation pass refuses a frame that does not match it.
+        within_group=sensitivity_map.scan.within_group,
     )

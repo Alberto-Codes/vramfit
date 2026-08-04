@@ -134,6 +134,18 @@ class TestSolve:
         with pytest.raises(PinError, match="not in the candidate set"):
             solve_simple(map_, budget=10_000, pins={"g0": 6})
 
+    def test_recipe_records_the_maps_within_group_method(self) -> None:
+        # The pass that validates this recipe must match the map's
+        # frame — the token rides along (ADR-0019).
+        raw = make_map([("g0", 1000, CONVEX_CURVE)])
+        raw["scan"]["within_group"] = "kquant-imx"
+        raw["scan"]["imatrix"] = "/runs/model.imatrix.gguf"
+        map_ = load(raw)
+
+        recipe = solve_simple(map_, budget=10_000)
+
+        assert recipe.within_group == "kquant-imx"
+
     def test_runtime_filters_candidates_and_is_recorded(self) -> None:
         map_ = load(make_map([("g0", 1000, CONVEX_CURVE)]))
 

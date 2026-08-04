@@ -2,11 +2,14 @@
 
 The composition root for the validation pass (ADR-0006). It loads the
 recipe, builds the same torch-backed meter the scan uses (including
-the scan's within-group method selection, ADR-0018), perturbs
+the scan's within-group method and imatrix selection, ADR-0018 and
+ADR-0020), perturbs
 every group to its assigned precision in one pass, and compares the
 measured whole-recipe damage against the recipe's summed marginal
 damages — the direct test of the additivity assumption behind
-marginal scanning. The comparison logic is pure and lives in
+marginal scanning. The frame resolves from the recipe's recorded
+method token, and a contradicting flag is refused (ADR-0019). The
+comparison logic is pure and lives in
 [quantfit.domain.validation][]. Every failure halts with a clean
 ``error:`` line. Failures after the run log opens also emit a
 ``validation_halted`` event (ADR-0011).
@@ -32,38 +35,78 @@ from typing import Annotated, Literal
 
 import typer
 
+from quantfit.adapters.inbound.cli_options import check_imatrix, parse_gpu_memory
 from quantfit.adapters.inbound.cli_scan import _build_meter
 from quantfit.adapters.inbound.run_log import SafeRunLog, rss_hwm_gb
 from quantfit.adapters.inbound.scan_events import start_run
 from quantfit.adapters.outbound.json_common import ArtifactError
 from quantfit.adapters.outbound.recipe_json import load_recipe
 from quantfit.adapters.outbound.run_log_jsonl import JsonlRunLogFile
-from quantfit.domain.budget import parse_size
 from quantfit.domain.model import Recipe
-from quantfit.domain.scan import KQUANT_METHOD, KQUANT_PRECISIONS, SCAN_METHOD
+from quantfit.domain.scan import (
+    KQUANT_IMX_METHOD,
+    KQUANT_METHOD,
+    KQUANT_PRECISIONS,
+    SCAN_METHOD,
+)
 from quantfit.domain.validation import validation_result
 from quantfit.ports.outbound import DamageMeter
 
+# Method token -> the meter method that measures it. The assisted
+# token measures through kquant with the imatrix (ADR-0020).
+_TOKEN_TO_METHOD: dict[str, Literal["rtn", "kquant"]] = {
+    SCAN_METHOD: "rtn",
+    KQUANT_METHOD: "kquant",
+    KQUANT_IMX_METHOD: "kquant",
+}
 
-def _resolve_within_group(text: str, recipe: Recipe) -> Literal["rtn", "kquant"]:
-    """Validate the ``--within-group`` choice against the recipe.
+
+def _resolve_within_group(
+    text: str | None, imatrix: Path | None, recipe: Recipe
+) -> tuple[Literal["rtn", "kquant"], str]:
+    """Resolve the pass's method against the recipe's provenance.
+
+    The pass only checks additivity when its frame matches the map
+    that priced the recipe (ADR-0019). A recipe that records its
+    map's method is the source of truth: the command refuses a
+    mismatched flag instead of measuring numbers that compare
+    nothing. A recipe without the record leaves the pairing to the
+    caller, with a warning.
 
     Args:
-        text: The flag value.
+        text: The ``--within-group`` value, or None to follow the
+            recipe's recorded method (falling back to ``rtn``).
+        imatrix: The ``--imatrix`` path, or None for unassisted.
         recipe: The loaded recipe whose assignments the pass measures.
 
     Returns:
-        The validated method name.
+        The validated method name and the token the pass measures
+        under.
 
     Raises:
-        typer.BadParameter: If the method is unknown, or ``kquant``
-            meets assignments outside its port coverage (ADR-0018).
+        typer.BadParameter: If the method is unknown, ``kquant``
+            meets assignments outside its port coverage (ADR-0018),
+            ``--imatrix`` arrives without the kquant method or is
+            not a file, the recipe records a token this version
+            does not know, or the resolved frame contradicts the
+            recipe's recorded method (ADR-0019).
     """
-    if text not in ("rtn", "kquant"):
+    recorded = recipe.within_group
+    if recorded is not None and recorded not in _TOKEN_TO_METHOD:
+        raise typer.BadParameter(
+            f'--within-group: the recipe records method "{recorded}", which '
+            "this version does not know — upgrade quantfit"
+        )
+    if text is None:
+        method = _TOKEN_TO_METHOD[recorded] if recorded is not None else "rtn"
+    elif text in ("rtn", "kquant"):
+        method = text
+    else:
         raise typer.BadParameter(
             f'--within-group: expected "rtn" or "kquant", got "{text}"'
         )
-    if text == "kquant":
+    check_imatrix(imatrix, method)
+    if method == "kquant":
         uncovered = sorted(
             {a.bits for a in recipe.assignments if a.bits not in KQUANT_PRECISIONS}
         )
@@ -73,7 +116,44 @@ def _resolve_within_group(text: str, recipe: Recipe) -> Literal["rtn", "kquant"]
                 f"{sorted(KQUANT_PRECISIONS, reverse=True)} (ADR-0018) — "
                 f"the recipe assigns {uncovered}"
             )
-    return text
+    if method == "rtn":
+        token = SCAN_METHOD
+    else:
+        token = KQUANT_METHOD if imatrix is None else KQUANT_IMX_METHOD
+    _check_provenance(recorded, token, imatrix)
+    return method, token
+
+
+def _check_provenance(recorded: str | None, token: str, imatrix: Path | None) -> None:
+    """Refuse a measurement frame that contradicts the recipe's record.
+
+    Args:
+        recorded: The recipe's recorded method token, or None.
+        token: The token the resolved frame would measure under.
+        imatrix: The ``--imatrix`` path, or None for unassisted.
+
+    Raises:
+        typer.BadParameter: If the recipe records an assisted map
+            and no imatrix was given, or the resolved token differs
+            from the record (ADR-0019).
+    """
+    if recorded == KQUANT_IMX_METHOD and imatrix is None:
+        raise typer.BadParameter(
+            "--imatrix: the recipe was priced on an assisted map — pass "
+            "the map's imatrix file (ADR-0020)"
+        )
+    if recorded is not None and token != recorded:
+        raise typer.BadParameter(
+            f'--within-group: the recipe was priced on a "{recorded}" map '
+            f'and this pass would measure "{token}" — the pass must match '
+            "the map's method (ADR-0019)"
+        )
+    if recorded is None:
+        typer.echo(
+            "warning: the recipe does not record its map's method — "
+            "match --within-group and --imatrix to the map that priced it",
+            err=True,
+        )
 
 
 def _load_recipe(path: Path) -> Recipe:
@@ -168,13 +248,22 @@ def validate(
         ),
     ] = None,
     within_group: Annotated[
-        str,
+        str | None,
         typer.Option(
             help="Within-group method: rtn, or kquant for the "
-            "K-quant-faithful port (ADR-0018). Match the map that "
-            "priced the recipe."
+            "K-quant-faithful port (ADR-0018). Default: the method "
+            "the recipe records, or rtn for recipes without the "
+            "record."
         ),
-    ] = "rtn",
+    ] = None,
+    imatrix: Annotated[
+        Path | None,
+        typer.Option(
+            help="GGUF imatrix for assisted K-quant measurement "
+            "(ADR-0020). Required when the recipe was priced on an "
+            "assisted map — use the map's imatrix file."
+        ),
+    ] = None,
     runlog: Annotated[
         Path | None,
         typer.Option(
@@ -186,9 +275,12 @@ def validate(
 
     The validation pass (ADR-0006). The command quantizes every group
     to its assigned precision in one pass. The pass uses the scan's
-    own quantization, selected with ``--within-group`` — the pass
-    only checks additivity when its method matches the map that
-    priced the recipe (ADR-0019). The command then reports the
+    own quantization, selected with ``--within-group`` and
+    ``--imatrix`` — the pass only checks additivity when its frame
+    matches the map that priced the recipe (ADR-0019). A recipe
+    that records its map's method resolves the frame by itself, and
+    the command refuses flags that contradict the record. The
+    command then reports the
     measured damage next to the recipe's summed marginal damages. The gap is the
     additivity assumption leaking. Use the scan's calibration file
     and ``--max-tokens`` — damage values are only comparable within
@@ -202,8 +294,11 @@ def validate(
         typer.BadParameter: If ``--group-by``, ``--within-group``, or
             ``--gpu-memory`` is malformed, ``--gpu-memory`` is given
             without ``--device auto``, ``--within-group kquant``
-            meets recipe assignments the port does not cover, or the
-            ``--runlog`` directory does not exist.
+            meets recipe assignments the port does not cover,
+            ``--imatrix`` arrives without the kquant method or is
+            not a file, the resolved frame contradicts the recipe's
+            recorded method (ADR-0019), or the ``--runlog``
+            directory does not exist.
         typer.Exit: With code 1 when the recipe is invalid, the scan
             extra is missing, the model or calibration cannot load,
             the recipe's groups do not match the model's, or the
@@ -220,19 +315,12 @@ def validate(
         raise typer.BadParameter(
             f'--group-by: expected "layer" or "tensor", got "{group_by}"'
         )
-    gpu_memory_bytes: int | None = None
-    if gpu_memory is not None:
-        if device != "auto":
-            raise typer.BadParameter(
-                f'--gpu-memory requires --device auto, got --device "{device}"'
-            )
-        try:
-            gpu_memory_bytes = parse_size(gpu_memory)
-        except ValueError as exc:
-            raise typer.BadParameter(f"--gpu-memory: {exc}") from exc
+    gpu_memory_bytes = parse_gpu_memory(gpu_memory, device)
 
     recipe = _load_recipe(recipe_path)
-    parsed_within_group = _resolve_within_group(within_group, recipe)
+    parsed_within_group, method_token = _resolve_within_group(
+        within_group, imatrix, recipe
+    )
     model_id = model if model is not None else recipe.model_id
     if model is not None and model != recipe.model_id:
         typer.echo(
@@ -262,9 +350,8 @@ def validate(
             "max_tokens": max_tokens,
             "device": device,
             "gpu_memory_bytes": gpu_memory_bytes,
-            "within_group": SCAN_METHOD
-            if parsed_within_group == "rtn"
-            else KQUANT_METHOD,
+            "within_group": method_token,
+            "imatrix": None if imatrix is None else str(imatrix),
         },
         lambda: _build_meter(
             model_id,
@@ -275,6 +362,7 @@ def validate(
             trust_remote_code=trust_remote_code,
             gpu_memory=gpu_memory_bytes,
             within_group=parsed_within_group,
+            imatrix=imatrix,
         ),
         prefix="validation",
     )

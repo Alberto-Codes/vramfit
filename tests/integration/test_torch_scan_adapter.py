@@ -482,6 +482,112 @@ class TestTorchDamageMeter:
                 },
             )
 
+    def test_imatrix_path_resolves_weights_and_reports_coverage(
+        self, aligned_model_dir, tmp_path
+    ) -> None:
+        # The full file-to-meter chain (ADR-0020): a real imatrix GGUF
+        # covering one parameter must land as that parameter's column
+        # weights, with the split reported for the run log.
+        from quantfit.adapters.outbound.scan.meter import TorchDamageMeter
+
+        gguf = pytest.importorskip("gguf", reason="scan extra not installed")
+        np = pytest.importorskip("numpy", reason="scan extra not installed")
+        calibration = tmp_path / "calib.txt"
+        calibration.write_text(CALIBRATION_TEXT)
+        imatrix = tmp_path / "im.gguf"
+        writer = gguf.GGUFWriter(str(imatrix), "imatrix")
+        writer.add_type("imatrix")
+        writer.add_tensor(
+            "blk.0.attn_q.weight.in_sum2", np.full(256, 8.0, dtype=np.float32)
+        )
+        writer.add_tensor(
+            "blk.0.attn_q.weight.counts", np.array([4.0], dtype=np.float32)
+        )
+        writer.write_header_to_file()
+        writer.write_kv_data_to_file()
+        writer.write_tensors_to_file()
+        writer.close()
+
+        meter = TorchDamageMeter(
+            str(aligned_model_dir),
+            calibration,
+            max_tokens=128,
+            device="cpu",
+            within_group="kquant",
+            imatrix_path=imatrix,
+        )
+
+        assert meter.imatrix_covered_count == 1
+        covered = meter._imatrix_weights["model.layers.0.self_attn.q_proj.weight"]
+        assert torch.equal(covered, torch.full((256,), 2.0))
+        assert meter.imatrix_uncovered is not None
+        assert "model.layers.0.self_attn.q_proj.weight" not in meter.imatrix_uncovered
+        assert "model.embed_tokens.weight" in meter.imatrix_uncovered
+
+    def test_imatrix_path_with_weights_is_refused_before_the_model_loads(
+        self, tmp_path
+    ) -> None:
+        from quantfit.adapters.outbound.scan.meter import TorchDamageMeter
+
+        calibration = tmp_path / "calib.txt"
+        calibration.write_text(CALIBRATION_TEXT)
+
+        with pytest.raises(ValueError, match="not both"):
+            TorchDamageMeter(
+                "/nonexistent-model",
+                calibration,
+                max_tokens=128,
+                device="cpu",
+                within_group="kquant",
+                imatrix_weights={"any.weight": torch.ones(256)},
+                imatrix_path=tmp_path / "im.gguf",
+            )
+
+    def test_imatrix_path_with_rtn_is_refused_before_the_model_loads(
+        self, tmp_path
+    ) -> None:
+        from quantfit.adapters.outbound.scan.meter import TorchDamageMeter
+
+        calibration = tmp_path / "calib.txt"
+        calibration.write_text(CALIBRATION_TEXT)
+
+        with pytest.raises(ValueError, match="kquant within-group method"):
+            TorchDamageMeter(
+                "/nonexistent-model",
+                calibration,
+                max_tokens=128,
+                device="cpu",
+                imatrix_path=tmp_path / "im.gguf",
+            )
+
+    def test_malformed_imatrix_file_is_refused_before_the_model_loads(
+        self, tmp_path
+    ) -> None:
+        # The imatrix loads first — a bad file must refuse in
+        # milliseconds, not after minutes of shard loading. The
+        # nonexistent model proves the ordering.
+        from quantfit.adapters.outbound.scan.meter import TorchDamageMeter
+
+        gguf = pytest.importorskip("gguf", reason="scan extra not installed")
+        calibration = tmp_path / "calib.txt"
+        calibration.write_text(CALIBRATION_TEXT)
+        imatrix = tmp_path / "not-an-imatrix.gguf"
+        writer = gguf.GGUFWriter(str(imatrix), "llama")
+        writer.write_header_to_file()
+        writer.write_kv_data_to_file()
+        writer.write_tensors_to_file()
+        writer.close()
+
+        with pytest.raises(ValueError, match="not an imatrix"):
+            TorchDamageMeter(
+                "/nonexistent-model",
+                calibration,
+                max_tokens=128,
+                device="cpu",
+                within_group="kquant",
+                imatrix_path=imatrix,
+            )
+
     def test_kquant_meter_refuses_uncovered_bits(
         self, tiny_model_dir, tmp_path
     ) -> None:

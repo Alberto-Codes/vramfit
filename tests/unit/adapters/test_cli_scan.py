@@ -234,6 +234,149 @@ def test_kquant_scan_records_the_method_in_the_map(tmp_path, monkeypatch) -> Non
     assert captured["within_group"] == "kquant"
 
 
+def test_imatrix_without_kquant_exits_with_usage_error(tmp_path, monkeypatch) -> None:
+    install_meter(
+        monkeypatch, MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES), tokens=64)
+    )
+    imatrix = tmp_path / "im.gguf"
+    imatrix.write_bytes(b"GGUF")
+
+    result, _ = invoke_scan(tmp_path, "--imatrix", str(imatrix))
+
+    assert result.exit_code == 2
+    assert "--imatrix requires --within-group kquant" in result.output
+
+
+def test_missing_imatrix_file_exits_before_loading_the_model(
+    tmp_path, monkeypatch
+) -> None:
+    def explode(*args, **kwargs):
+        raise AssertionError("the meter must not be built")
+
+    monkeypatch.setattr(cli_scan, "_build_meter", explode)
+
+    result, _ = invoke_scan(
+        tmp_path,
+        "--within-group",
+        "kquant",
+        "--imatrix",
+        str(tmp_path / "no-such.gguf"),
+    )
+
+    assert result.exit_code == 2
+    assert "is not a file" in result.output
+
+
+def test_assisted_scan_records_token_and_imatrix_in_the_map(
+    tmp_path, monkeypatch
+) -> None:
+    damages = {(spec.name, bits): 0.1 for spec in SPECS for bits in (3, 2)}
+    captured = install_meter(
+        monkeypatch, MemoryDamageMeter(specs=SPECS, damages=damages, tokens=64)
+    )
+    imatrix = tmp_path / "im.gguf"
+    imatrix.write_bytes(b"GGUF")
+
+    result, out = invoke_scan(
+        tmp_path,
+        "--precisions",
+        "3,2",
+        "--within-group",
+        "kquant",
+        "--imatrix",
+        str(imatrix),
+    )
+
+    assert result.exit_code == 0, result.output
+    map_ = load_sensitivity_map(out)
+    assert map_.scan.within_group == "kquant-imx"
+    assert map_.scan.imatrix == str(imatrix)
+    # The builder must receive the path — a map that claims assisted
+    # pricing over unassisted damages is corrupted provenance.
+    assert captured["imatrix"] == imatrix
+
+
+def test_assisted_checkpoint_refuses_an_unassisted_rerun(tmp_path, monkeypatch) -> None:
+    damages = {(spec.name, bits): 0.1 for spec in SPECS for bits in (3, 2)}
+    install_meter(
+        monkeypatch, MemoryDamageMeter(specs=SPECS, damages=damages, tokens=64)
+    )
+    imatrix = tmp_path / "im.gguf"
+    imatrix.write_bytes(b"GGUF")
+    first, _ = invoke_scan(
+        tmp_path,
+        "--precisions",
+        "3,2",
+        "--within-group",
+        "kquant",
+        "--imatrix",
+        str(imatrix),
+    )
+    assert first.exit_code == 0, first.output
+
+    second, _ = invoke_scan(tmp_path, "--precisions", "3,2", "--within-group", "kquant")
+
+    assert second.exit_code == 1
+    assert "different scan" in second.output
+
+
+def test_assisted_scan_echoes_and_logs_the_coverage_split(
+    tmp_path, monkeypatch
+) -> None:
+    from quantfit.adapters.outbound.run_log_jsonl import read_run_log
+
+    class ImatrixAwareFake(MemoryDamageMeter):
+        imatrix_covered_count = 1
+        imatrix_uncovered = ("model.layers.1.w",)
+
+    damages = {(spec.name, bits): 0.1 for spec in SPECS for bits in (3, 2)}
+    install_meter(
+        monkeypatch, ImatrixAwareFake(specs=SPECS, damages=damages, tokens=64)
+    )
+    imatrix = tmp_path / "im.gguf"
+    imatrix.write_bytes(b"GGUF")
+
+    result, _ = invoke_scan(
+        tmp_path,
+        "--precisions",
+        "3,2",
+        "--within-group",
+        "kquant",
+        "--imatrix",
+        str(imatrix),
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "imatrix covers 1 of 2 parameters" in result.output
+    assert "model.layers.1.w" in result.output
+    events = read_run_log(tmp_path / "sensitivity.runlog.jsonl")
+    built = next(e for e in events if e["event"] == "meter_built")
+    assert built["imatrix_covered"] == 1
+    assert built["imatrix_uncovered"] == ["model.layers.1.w"]
+    started = events[0]
+    assert started["within_group"] == "kquant-imx"
+    assert started["imatrix"] == str(imatrix)
+
+
+def test_meter_built_reports_null_imatrix_for_meters_without_the_notion(
+    tmp_path, monkeypatch
+) -> None:
+    from quantfit.adapters.outbound.run_log_jsonl import read_run_log
+
+    install_meter(
+        monkeypatch, MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES), tokens=64)
+    )
+
+    result, _ = invoke_scan(tmp_path)
+
+    assert result.exit_code == 0, result.output
+    events = read_run_log(tmp_path / "sensitivity.runlog.jsonl")
+    built = next(e for e in events if e["event"] == "meter_built")
+    assert built["imatrix_covered"] is None
+    assert built["imatrix_uncovered"] is None
+    assert events[0]["imatrix"] is None
+
+
 def test_rtn_checkpoint_refuses_a_kquant_rerun(tmp_path, monkeypatch) -> None:
     install_meter(
         monkeypatch, MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES), tokens=64)

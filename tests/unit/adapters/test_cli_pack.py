@@ -39,6 +39,7 @@ def make_recipe(model_id: str) -> Recipe:
             Assignment(group="model.layers.0", bits=4, bytes=500, damage=0.01),
         ),
         runtime=None,
+        within_group=None,
     )
 
 
@@ -371,6 +372,7 @@ class TestPackCommand:
                 Assignment(group="model.layers.0", bits=7, bytes=500, damage=0.01),
             ),
             runtime=None,
+            within_group=None,
         )
         path = tmp_path / "recipe5.json"
         save_recipe(recipe, path)

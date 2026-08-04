@@ -19,6 +19,7 @@ that produced it.
   "quantfit_schema": 2,
   "model_id": "nvidia/Llama-3_3-Nemotron-Super-49B-v1_5",
   "runtime": "llama.cpp",
+  "within_group": "kquant-imx",
   "plan": {
     "vram_budget_bytes": 25769803776,
     "kv_headroom_bytes": 4294967296,
@@ -60,6 +61,13 @@ that produced it.
   an unconstrained plan. `quantfit plan` always sets it. The solver
   filtered its candidates to this runtime's capability, and pack
   backends refuse a recipe recorded for a runtime they do not serve.
+- **`within_group`** — the within-group method token of the map that
+  priced the recipe ([ADR-0019](../adr/0019-kquant-priced-maps.md)),
+  or null when the provenance is unknown. `quantfit plan` copies it
+  from the map. `quantfit validate` resolves its frame from this
+  field and refuses flags that contradict it. The loader accepts an
+  absent field as null — recipes written before the field existed do
+  not record their map's method.
 - **`assignments`** — every group from the sensitivity map appears exactly
   once, in map order. `bytes` is the predicted size at the runtime's
   effective bits when the runtime has a table

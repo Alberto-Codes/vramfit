@@ -29,7 +29,10 @@ DAMAGES = {
 }
 
 
-def make_recipe(groups_bits_damage: tuple[tuple[str, int, float], ...]) -> Recipe:
+def make_recipe(
+    groups_bits_damage: tuple[tuple[str, int, float], ...],
+    within_group: str | None = "rtn-block32",
+) -> Recipe:
     return Recipe(
         model_id="test/model",
         plan=PlanMeta(
@@ -48,6 +51,7 @@ def make_recipe(groups_bits_damage: tuple[tuple[str, int, float], ...]) -> Recip
             for group, bits, damage in groups_bits_damage
         ),
         runtime=None,
+        within_group=within_group,
     )
 
 
@@ -149,6 +153,7 @@ class TestValidateCommand:
                 "trust_remote_code": False,
                 "gpu_memory": None,
                 "within_group": "rtn",
+                "imatrix": None,
             }
         ]
         assert "warning" not in result.output
@@ -288,18 +293,161 @@ class TestValidateCommand:
         assert result.exit_code == 2
         assert "--group-by" in result.output
 
-    def test_kquant_within_group_reaches_the_builder(
-        self, tmp_path, monkeypatch, recipe_path
+    def test_kquant_recipe_resolves_the_builder_method_by_itself(
+        self, tmp_path, monkeypatch
     ) -> None:
         # DEFAULT_RECIPE assigns 4- and 8-bit — inside kquant coverage.
+        # No flag: the recipe's recorded method decides (ADR-0019).
         builds = install_meter(
             monkeypatch, MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES))
         )
+        recipe_path = tmp_path / "recipe.json"
+        save_recipe(make_recipe(DEFAULT_RECIPE, within_group="kquant-ref"), recipe_path)
+
+        result = invoke_validate(tmp_path, recipe_path)
+
+        assert result.exit_code == 0, result.output
+        assert builds[0]["within_group"] == "kquant"
+        assert "warning" not in result.output
+
+    def test_matching_explicit_method_flag_is_accepted(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        builds = install_meter(
+            monkeypatch, MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES))
+        )
+        recipe_path = tmp_path / "recipe.json"
+        save_recipe(make_recipe(DEFAULT_RECIPE, within_group="kquant-ref"), recipe_path)
 
         result = invoke_validate(tmp_path, recipe_path, "--within-group", "kquant")
 
         assert result.exit_code == 0, result.output
         assert builds[0]["within_group"] == "kquant"
+
+    def test_method_flag_contradicting_the_recipe_is_a_usage_error(
+        self, tmp_path, monkeypatch, recipe_path
+    ) -> None:
+        # The recipe records rtn-block32 — a kquant pass would measure
+        # a frame the map never priced (ADR-0019).
+        install_meter(
+            monkeypatch, MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES))
+        )
+
+        result = invoke_validate(tmp_path, recipe_path, "--within-group", "kquant")
+
+        assert result.exit_code == 2
+        assert "must match" in result.output
+
+    def test_assisted_recipe_without_imatrix_is_a_usage_error(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        install_meter(
+            monkeypatch, MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES))
+        )
+        recipe_path = tmp_path / "recipe.json"
+        save_recipe(make_recipe(DEFAULT_RECIPE, within_group="kquant-imx"), recipe_path)
+
+        result = invoke_validate(tmp_path, recipe_path)
+
+        assert result.exit_code == 2
+        assert "--imatrix" in result.output
+        assert "assisted" in result.output
+
+    def test_assisted_recipe_with_imatrix_builds_an_assisted_meter(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        builds = install_meter(
+            monkeypatch, MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES))
+        )
+        recipe_path = tmp_path / "recipe.json"
+        save_recipe(make_recipe(DEFAULT_RECIPE, within_group="kquant-imx"), recipe_path)
+        imatrix = tmp_path / "im.gguf"
+        imatrix.write_bytes(b"GGUF")
+
+        result = invoke_validate(tmp_path, recipe_path, "--imatrix", str(imatrix))
+
+        assert result.exit_code == 0, result.output
+        assert builds[0]["within_group"] == "kquant"
+        assert builds[0]["imatrix"] == imatrix
+        events = events_of(recipe_path.with_name("recipe.validation.runlog.jsonl"))
+        started = events[0]
+        assert started["within_group"] == "kquant-imx"
+        assert started["imatrix"] == str(imatrix)
+
+    def test_imatrix_against_an_unassisted_recipe_is_a_usage_error(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        install_meter(
+            monkeypatch, MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES))
+        )
+        recipe_path = tmp_path / "recipe.json"
+        save_recipe(make_recipe(DEFAULT_RECIPE, within_group="kquant-ref"), recipe_path)
+        imatrix = tmp_path / "im.gguf"
+        imatrix.write_bytes(b"GGUF")
+
+        result = invoke_validate(tmp_path, recipe_path, "--imatrix", str(imatrix))
+
+        assert result.exit_code == 2
+        assert "must match" in result.output
+
+    def test_imatrix_with_the_rtn_method_is_a_usage_error(
+        self, tmp_path, monkeypatch, recipe_path
+    ) -> None:
+        install_meter(
+            monkeypatch, MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES))
+        )
+        imatrix = tmp_path / "im.gguf"
+        imatrix.write_bytes(b"GGUF")
+
+        result = invoke_validate(tmp_path, recipe_path, "--imatrix", str(imatrix))
+
+        assert result.exit_code == 2
+        assert "kquant" in result.output
+
+    def test_missing_imatrix_file_is_a_usage_error(self, tmp_path, monkeypatch) -> None:
+        install_meter(
+            monkeypatch, MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES))
+        )
+        recipe_path = tmp_path / "recipe.json"
+        save_recipe(make_recipe(DEFAULT_RECIPE, within_group="kquant-imx"), recipe_path)
+
+        result = invoke_validate(
+            tmp_path, recipe_path, "--imatrix", str(tmp_path / "no-such.gguf")
+        )
+
+        assert result.exit_code == 2
+        assert "is not a file" in result.output
+
+    def test_unknown_recorded_method_is_a_usage_error(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        install_meter(
+            monkeypatch, MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES))
+        )
+        recipe_path = tmp_path / "recipe.json"
+        save_recipe(
+            make_recipe(DEFAULT_RECIPE, within_group="future-method"), recipe_path
+        )
+
+        result = invoke_validate(tmp_path, recipe_path)
+
+        assert result.exit_code == 2
+        assert "future-method" in result.output
+
+    def test_recipe_without_provenance_warns_and_defaults_to_rtn(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        builds = install_meter(
+            monkeypatch, MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES))
+        )
+        recipe_path = tmp_path / "recipe.json"
+        save_recipe(make_recipe(DEFAULT_RECIPE, within_group=None), recipe_path)
+
+        result = invoke_validate(tmp_path, recipe_path)
+
+        assert result.exit_code == 0, result.output
+        assert builds[0]["within_group"] == "rtn"
+        assert "warning: the recipe does not record" in result.output
 
     def test_unknown_within_group_is_a_usage_error(
         self, tmp_path, monkeypatch, recipe_path

@@ -4,8 +4,9 @@ Holds the scan command's event machinery so `quantfit.adapters.inbound.cli_scan`
 stays under the size cap. The shared run-log policy wrapper lives in
 [quantfit.adapters.inbound.run_log][] — this module drives it through
 the scan grid, stamping each cell with its timing and memory
-high-water mark (ADR-0011). The validate command reuses `start_run`
-with its own event prefix.
+high-water mark (ADR-0011). ``meter_built`` also records the
+imatrix coverage split for assisted meters (ADR-0020). The
+validate command reuses `start_run` with its own event prefix.
 
 Examples:
     Measure the remaining cells of a scan:
@@ -41,9 +42,12 @@ def start_run(
     """Emit the opening events and build the meter.
 
     ``meter_built`` records build seconds, calibration tokens, the
-    group count, and ``offloaded_groups`` — how many groups measure
+    group count, ``offloaded_groups`` — how many groups measure
     through the weights map (ADR-0015), null for meters without the
-    notion.
+    notion — and the imatrix coverage split (ADR-0020):
+    ``imatrix_covered`` counts the parameters that price assisted,
+    ``imatrix_uncovered`` names the ones that fall back, and both
+    are null for unassisted meters.
 
     Args:
         run_log: Sink for the started, ``meter_built``, and halt
@@ -95,10 +99,28 @@ def start_run(
             # (ADR-0015). Meters without the notion report null —
             # distinct from a real zero.
             "offloaded_groups": getattr(meter, "offloaded_group_count", None),
+            # The assisted-pricing coverage split (ADR-0020) — null
+            # for unassisted meters and meters without the notion.
+            "imatrix_covered": getattr(meter, "imatrix_covered_count", None),
+            "imatrix_uncovered": _imatrix_uncovered(meter),
             "rss_hwm_gb": rss_hwm_gb(),
         },
     )
     return meter
+
+
+def _imatrix_uncovered(meter: DamageMeter) -> list[str] | None:
+    """Read the meter's uncovered-parameter names for the run log.
+
+    Args:
+        meter: The built meter.
+
+    Returns:
+        The names as a JSON-ready list, or None for unassisted
+        meters and meters without the notion.
+    """
+    uncovered = getattr(meter, "imatrix_uncovered", None)
+    return None if uncovered is None else list(uncovered)
 
 
 def measure_cells(

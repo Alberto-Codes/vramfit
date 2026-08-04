@@ -23,7 +23,8 @@ The sensitivity map is the output of `quantfit scan` and the input to
     "precisions": [8, 4, 3, 2],
     "group_by": "layer",
     "started_at": "2026-07-27T00:00:00Z",
-    "within_group": "rtn-block32"
+    "within_group": "rtn-block32",
+    "imatrix": null
   },
   "groups": [
     {
@@ -54,12 +55,21 @@ The sensitivity map is the output of `quantfit scan` and the input to
   at nominal bits plus the overhead fraction otherwise.
 - **`scan.within_group`** — the within-group method token
   ([ADR-0018](../adr/0018-kquant-within-group-method.md)):
-  `rtn-block32` (round-to-nearest, the v1 default) or `kquant-ref`
-  (the ported llama.cpp reference quantizers). The writer always
-  records it. The loader accepts an absent field as `rtn-block32` —
-  every map written before the field existed measured with that
-  method. Damage values are only comparable between maps with the
-  same token.
+  `rtn-block32` (round-to-nearest, the v1 default), `kquant-ref`
+  (the ported llama.cpp reference quantizers), or `kquant-imx`
+  (the same port with assisted pricing,
+  [ADR-0020](../adr/0020-imatrix-assisted-pricing.md)). The writer
+  always records it. The loader accepts an absent field as
+  `rtn-block32` — every map written before the field existed
+  measured with that method. Damage values are only comparable
+  between maps with the same token.
+- **`scan.imatrix`** — the path of the imatrix that assisted the
+  scan, or null for an unassisted scan
+  ([ADR-0020](../adr/0020-imatrix-assisted-pricing.md)). The field
+  pairs with the `kquant-imx` token: the loader rejects a map that
+  claims assistance without naming its imatrix, or the reverse. An
+  assisted map is only comparable to a pack that consumed the same
+  imatrix file. The loader accepts an absent field as null.
 - **`groups`** — granularity is set by `--group-by`. Marginal (one group at a
   time) measurement is assumed — interaction effects between groups are a
   known blind spot recorded in ADR-0006. Group names must be unique, and

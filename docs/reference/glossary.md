@@ -63,9 +63,13 @@ change.
     ([ADR-0006](../adr/0006-sensitivity-metric.md), token
     `rtn-block32`). `kquant-ref` round-trips through the ported
     llama.cpp reference quantizers
-    ([ADR-0018](../adr/0018-kquant-within-group-method.md)). A method
+    ([ADR-0018](../adr/0018-kquant-within-group-method.md)).
+    `kquant-imx` is the same port with assisted pricing — the map
+    then also records the imatrix path in `scan.imatrix`
+    ([ADR-0020](../adr/0020-imatrix-assisted-pricing.md)). A method
     change is a new scan — the token lives in the fingerprint and in
-    the map's `scan.within_group`. Not "quantization mode" or
+    the map's `scan.within_group`, and the recipe carries its map's
+    token for the validation pass. Not "quantization mode" or
     "simulation method".
 
 **Assisted pricing**

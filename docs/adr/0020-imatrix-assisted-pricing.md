@@ -7,6 +7,11 @@
   (decision item 5). The full assisted re-scan is justified. The
   record stays Proposed until an assisted-priced recipe beats an
   unassisted one packed, the same bar ADR-0019 waits under.
+- **Note (2026-08-04):** the CLI wiring landed — `scan --imatrix`
+  and `validate --imatrix`, the `kquant-imx` token, the map's
+  `scan.imatrix` field, and the run-log coverage split. The
+  fingerprint gained a trailing imatrix field, so checkpoints
+  written before this change do not resume — none were in flight.
 
 ## Context
 
@@ -84,10 +89,17 @@ recovers more damage exactly where the unassisted fit is worst.
   against 0.561 in-set) and the baseline wins on both (0.454
   in-set, with an imatrix from a different dataset). The frame leak
   survives text matching, so this probe is unconfounded.
-- The method token and map field for assisted scans (`kquant-imx`
+- ~~The method token and map field for assisted scans (`kquant-imx`
   in the fingerprint, an imatrix provenance field beside
   `scan.within_group`), and the `scan --imatrix` flag. Deferred to
-  the full-loop change — a probe does not need a CLI.
+  the full-loop change — a probe does not need a CLI.~~
+  **Resolved (2026-08-04).** `scan --imatrix` selects assisted
+  pricing (kquant only), the map and the fingerprint record the
+  `kquant-imx` token with the imatrix path, and the checkpoint
+  cannot mix with an unassisted scan's (ADR-0006's rule). The
+  recipe records its map's method token, and
+  `validate --imatrix` refuses a frame that contradicts it —
+  the pairing ADR-0019 left to the caller is now enforced.
 - Whether the solver should ever consume an unassisted kquant map
   again once assisted maps exist.
 

@@ -31,6 +31,7 @@ def make_recipe(weight_budget_bytes: int) -> Recipe:
             Assignment(group="model.layers.0", bits=4, bytes=500, damage=0.01),
         ),
         runtime=None,
+        within_group=None,
     )
 
 

@@ -4,9 +4,11 @@ The scan loop itself lives in the inbound adapter (it drives ports).
 This module holds the pure parts: which (group x precision) cells still
 need measurement, how a finished pile of measurements becomes a
 `SensitivityMap`, the within-group method tokens and the kquant
-coverage set (ADR-0006, ADR-0018 — `SCAN_METHOD` re-exported from
-[quantfit.domain.model][], where it is the `ScanMeta` default), and
-the escaped, method-carrying fingerprint that guards resume against
+coverage set (ADR-0006, ADR-0018, ADR-0020 — every token
+re-exported from [quantfit.domain.model][], where `ScanMeta`
+anchors them), and
+the escaped fingerprint — carrying the method and the imatrix
+path — that guards resume against
 mixing two different scans' checkpoints.
 
 Examples:
@@ -31,6 +33,12 @@ import math
 from collections.abc import Collection, Iterable
 from dataclasses import dataclass
 
+from quantfit.domain.model import (
+    KQUANT_IMX_METHOD as KQUANT_IMX_METHOD,  # noqa: PLC0414 - re-export: method tokens read from this module
+)
+from quantfit.domain.model import (
+    KQUANT_METHOD as KQUANT_METHOD,  # noqa: PLC0414 - re-export: method tokens read from this module
+)
 from quantfit.domain.model import (
     SCAN_METHOD as SCAN_METHOD,  # noqa: PLC0414 - re-export: method tokens read from this module
 )
@@ -114,12 +122,9 @@ class Measurement:
             raise ValueError("damage must be a finite non-negative number")
 
 
-# The v1 method token SCAN_METHOD (ADR-0006) is defined beside
+# The method tokens (ADR-0006/0018/0020) are defined beside
 # `ScanMeta` and re-exported above — a method change is a new scan,
-# so the token lives in the fingerprint.
-# The K-quant-faithful method (ADR-0018): llama.cpp reference
-# quantizers ported to torch — Q2_K, Q3_K, Q4_K, Q8_0.
-KQUANT_METHOD = "kquant-ref"
+# so every token lives in the fingerprint.
 # The precisions the kquant port covers. The scan validates candidate
 # precisions against this before it loads a model.
 KQUANT_PRECISIONS = (8, 4, 3, 2)
@@ -130,11 +135,14 @@ def scan_fingerprint(model_id: str, meta: ScanMeta) -> str:
 
     Two scans share a fingerprint when their recorded provenance
     matches: model identifier, metric, calibration path and size,
-    grouping, candidate precisions, and within-group method. The
-    fingerprint identifies provenance, not content — it cannot detect
-    weights or calibration text changing under an unchanged path.
-    ``started_at`` is excluded — a resumed scan is a new invocation of
-    the same scan.
+    grouping, candidate precisions, within-group method, and the
+    imatrix path for assisted scans (empty when unassisted) — two
+    assisted scans with different imatrix files must never share a
+    checkpoint (ADR-0020). The fingerprint identifies provenance,
+    not content — it cannot detect weights, calibration text, or
+    imatrix content changing under an unchanged path. ``started_at``
+    is excluded — a resumed scan is a new invocation of the same
+    scan.
 
     Args:
         model_id: The scanned model's identifier.
@@ -163,6 +171,7 @@ def scan_fingerprint(model_id: str, meta: ScanMeta) -> str:
         meta.group_by,
         precisions,
         meta.within_group,
+        meta.imatrix or "",
     )
     escaped = (f.replace("\\", "\\\\").replace("|", "\\|") for f in fields)
     return "|".join(escaped)
