@@ -49,7 +49,7 @@ Every finished (group x precision) cell lands in
 a crash and the scan continues at the first unmeasured cell. The
 checkpoint carries the scan's fingerprint — change the model id,
 calibration path, token count, grouping, precisions, method, or
-imatrix path and the
+imatrix path, and the
 scan refuses the old checkpoint. Pass `--no-resume` to discard it.
 
 The fingerprint records provenance, not content. It cannot detect new
@@ -106,7 +106,7 @@ stack (torch 2.13.0+cu130),
 `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` silently
 corrupted tensor memory under near-OOM pressure and surfaced as a
 NaN damage at the first cell. Upstream tracks several
-expandable-segments defects. Do not set it — if the cap OOMs,
+`expandable_segments` defects. Do not set it — if the cap OOMs,
 lower `--gpu-memory` instead.
 
 ## Reading the run log

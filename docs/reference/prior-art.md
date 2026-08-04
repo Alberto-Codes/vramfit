@@ -34,7 +34,7 @@ status: draft
     support for quantfit's selective-assignment premise (ADR-0001)
     from the opposite direction. Added 2026-08-04, with a caveat
     from the seventh data point: at sub-4-bit, RTN *over-prices*
-    in-frame damage 2.0–3.9x against the K-quant fit the pack
+    in-frame damage 2.0–3.9× against the K-quant fit the pack
     ships ([ADR-0018](../adr/0018-kquant-within-group-method.md)).
     RTN as a serving format and RTN as a pricing frame are
     different claims.
@@ -128,10 +128,10 @@ super-additive joint damage (×11.9) on a 2-bit-heavy recipe.
     and they are not. CLADO measures *pairwise* cross-layer error
     terms on a small calibration subset and solves the allocation as
     an Integer Quadratic Program. It is demonstrated on
-    ImageNet-scale vision models — at survey time (2026-07-31) the
-    only interaction-aware allocator found, and in no shipped
-    quantization tool. CoopQ (below) has since reached LLM scale in
-    research. CLADO remains
+    ImageNet-scale vision models. At survey time (2026-07-31) it
+    was the only interaction-aware allocator found, and it ships
+    in no quantization tool. CoopQ (below) has since reached LLM
+    scale in research. CLADO remains
     the candidate algorithm shape for an interaction-aware `plan`,
     at O(groups²) extra measurement the existing meter can price.
     ADR-0006's fourth measurement lowers its urgency: converged
