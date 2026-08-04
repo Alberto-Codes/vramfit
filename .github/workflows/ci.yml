@@ -27,7 +27,19 @@ jobs:
       - run: uv sync --locked --dev
       - run: uv run ruff check .
       - run: uv run ruff format --check .
-      - run: uv run uv-secure
+      # Retry once on exit 3 only — the scanner's advisory-fetch
+      # crash class (issue #46). Real findings exit 1 and still
+      # fail immediately.
+      - name: uv-secure
+        run: |
+          code=0
+          uv run uv-secure || code=$?
+          if [ "$code" -eq 3 ]; then
+            echo "uv-secure crashed (exit 3) — one retry, issue #46"
+            uv run uv-secure
+          else
+            exit "$code"
+          fi
       - run: uvx yamllint==1.38.0 -c .yamllint.yaml .
       - uses: raven-actions/actionlint@3d39aea434753780c3b3d4a1a31c854b4dbf49d7  # v2
       - run: uv cache prune --ci

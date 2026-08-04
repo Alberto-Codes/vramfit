@@ -68,6 +68,15 @@ change.
     the map's `scan.within_group`. Not "quantization mode" or
     "simulation method".
 
+**Assisted pricing**
+:   Measuring a kquant cell with the pack's imatrix weighting the
+    within-group fit, through the ported `_impl` quantizers
+    ([ADR-0020](../adr/0020-imatrix-assisted-pricing.md)).
+    **Unassisted** names the reference-path fit without weights.
+    A tensor the imatrix does not cover always prices unassisted —
+    the same fallback `llama-quantize` applies. Not "imatrix mode"
+    or "weighted scanning".
+
 **Validation pass**
 :   The whole-recipe check of the additivity assumption (`quantfit
     validate`): quantize every group to its recipe-assigned precision in
