@@ -5,10 +5,12 @@ the ``quantfit_schema`` envelope (version 2 since recipes record
 their target runtime, ADR-0013). A known runtime must serve every
 assigned precision — an unknown runtime name loads untouched.
 Mirrors the strict reject-don't-normalize stance of the
-sensitivity-map adapter. One field is additive rather than strict:
-``within_group`` (ADR-0019) defaults to None when absent, because
-recipes written before the field existed do not record which map
-method priced them.
+sensitivity-map adapter. Two fields are additive rather than
+strict: ``within_group`` (ADR-0019) and ``imatrix`` (ADR-0020)
+default to None when absent, because recipes written before the
+fields existed do not record which map priced them. A present
+``imatrix`` must pair with the assisted method token — the loader
+rejects a recipe whose provenance contradicts itself.
 
 Examples:
     Round-trip a recipe through a file:
@@ -48,6 +50,7 @@ from quantfit.adapters.outbound.json_common import (
 )
 from quantfit.domain.model import Assignment, PlanMeta, Recipe, TraceStep
 from quantfit.domain.runtime import RUNTIME_CAPABILITIES
+from quantfit.domain.scan import KQUANT_IMX_METHOD
 
 # The recipe schema version. Bumped to 2 when recipes gained the
 # required (nullable) ``runtime`` field (ADR-0013) — a version-1
@@ -69,9 +72,10 @@ def recipe_from_dict(data: object) -> Recipe:
     knows, every assignment's precision must be servable by it. An
     unknown runtime name loads untouched — a newer quantfit's recipe
     stays readable, and pack backends judge it at use (ADR-0013).
-    ``within_group`` loads as None when absent or null — recipes
-    written before the field existed do not record their map's
-    method (ADR-0019).
+    ``within_group`` and ``imatrix`` load as None when absent or
+    null — recipes written before the fields existed do not record
+    their map's method (ADR-0019) or imatrix (ADR-0020). A present
+    ``imatrix`` must pair with the assisted method token.
 
     Raises:
         ArtifactError: If any field is missing, mistyped, or violates a
@@ -91,12 +95,28 @@ def recipe_from_dict(data: object) -> Recipe:
     model_id = _get_str(root, "model_id", "$")
     _require("runtime" in root, "$", 'missing required field "runtime"')
     runtime = None if root["runtime"] is None else _get_str(root, "runtime", "$")
-    # Optional and additive (ADR-0019): recipes written before the
-    # field existed do not record their map's method.
+    # Optional and additive (ADR-0019, ADR-0020): recipes written
+    # before the fields existed do not record their map's method or
+    # imatrix. The pairing rules mirror Recipe's own invariant,
+    # re-stated here for JSON-path errors.
     within_group = (
         _get_str(root, "within_group", "$")
         if root.get("within_group") is not None
         else None
+    )
+    imatrix = (
+        _get_str(root, "imatrix", "$") if root.get("imatrix") is not None else None
+    )
+    _require(
+        not (within_group == KQUANT_IMX_METHOD and imatrix is None),
+        "$.imatrix",
+        f'within_group "{KQUANT_IMX_METHOD}" requires the imatrix field (ADR-0020)',
+    )
+    _require(
+        not (imatrix is not None and within_group != KQUANT_IMX_METHOD),
+        "$.imatrix",
+        f'imatrix provenance requires within_group "{KQUANT_IMX_METHOD}", '
+        f'got "{within_group}" (ADR-0020)',
     )
     _require("plan" in root, "$", 'missing required field "plan"')
     plan = _parse_plan_meta(_get_dict(root["plan"], "$.plan"))
@@ -138,6 +158,7 @@ def recipe_from_dict(data: object) -> Recipe:
         assignments=tuple(assignments),
         runtime=runtime,
         within_group=within_group,
+        imatrix=imatrix,
     )
 
 
@@ -145,7 +166,8 @@ def recipe_to_dict(recipe: Recipe) -> dict[str, Any]:
     """Serialize a recipe to a JSON dict with the schema envelope.
 
     An unconstrained recipe serializes its runtime as JSON null, and
-    unknown method provenance serializes ``within_group`` as null.
+    unknown provenance serializes ``within_group`` and ``imatrix``
+    as null.
 
     Args:
         recipe: The recipe to serialize.
@@ -160,6 +182,7 @@ def recipe_to_dict(recipe: Recipe) -> dict[str, Any]:
         "model_id": recipe.model_id,
         "runtime": recipe.runtime,
         "within_group": recipe.within_group,
+        "imatrix": recipe.imatrix,
         "plan": {
             "vram_budget_bytes": plan.vram_budget_bytes,
             "kv_headroom_bytes": plan.kv_headroom_bytes,

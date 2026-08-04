@@ -91,6 +91,7 @@ def sample_pack_recipe() -> Recipe:
         ),
         runtime=None,
         within_group=None,
+        imatrix=None,
     )
 
 

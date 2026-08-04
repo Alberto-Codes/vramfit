@@ -158,7 +158,11 @@ def resolve_assisted_weights(
     Returns:
         ``(covered, uncovered)`` — float32 column weights keyed by
         parameter name, and the names the imatrix does not cover, in
-        input order.
+        input order. A parameter whose rows do not divide into
+        super-blocks joins the uncovered set: it cannot price
+        assisted (ADR-0020), and the fallback beats refusing a
+        multi-day scan over one tensor. The run log and the console
+        echo report it with the rest of the uncovered names.
 
     Raises:
         ValueError: If a covered tensor's weight length does not
@@ -173,7 +177,7 @@ def resolve_assisted_weights(
     for name, rows in rows_by_param.items():
         gguf_name = gguf_tensor_name(name)
         weight = by_gguf_name.get(gguf_name) if gguf_name is not None else None
-        if weight is None:
+        if weight is None or rows % SUPER_BLOCK:
             uncovered.append(name)
             continue
         if weight.numel() != rows:

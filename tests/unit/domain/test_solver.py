@@ -145,6 +145,7 @@ class TestSolve:
         recipe = solve_simple(map_, budget=10_000)
 
         assert recipe.within_group == "kquant-imx"
+        assert recipe.imatrix == "/runs/model.imatrix.gguf"
 
     def test_runtime_filters_candidates_and_is_recorded(self) -> None:
         map_ = load(make_map([("g0", 1000, CONVEX_CURVE)]))

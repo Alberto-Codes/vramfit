@@ -116,6 +116,7 @@ def test_validate_without_the_extra_reports_the_install_hint(tmp_path) -> None:
             ),
             runtime=None,
             within_group=None,
+            imatrix=None,
         ),
         recipe_path,
     )
@@ -168,6 +169,7 @@ def test_pack_flow_with_stub_toolchain_produces_the_packed_file(tmp_path) -> Non
         ),
         runtime="llama.cpp",
         within_group=None,
+        imatrix=None,
     )
     recipe_path = tmp_path / "recipe.json"
     save_recipe(recipe, recipe_path)

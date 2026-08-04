@@ -178,7 +178,10 @@ def pack(
     untied head (ADR-0012). The ``--python-bin`` interpreter
     runs the convert script — the ``pack`` extra provisions its
     dependencies. ``--imatrix`` hands the quantizer an importance
-    matrix (ADR-0016). The command re-checks the packed file's real
+    matrix (ADR-0016). A recipe priced on an assisted map records
+    its imatrix — the command warns when ``--imatrix`` is absent or
+    names a different file, because the pack would not match the
+    map's frame (ADR-0020). The command re-checks the packed file's real
     bytes against the recipe's weight budget — nominal-bit
     predictions undershoot GGUF's effective bits. With
     ``--smoke-text`` it then proves the packed model emits language:
@@ -207,6 +210,24 @@ def pack(
     _check_inputs(llama_cpp, out, imatrix, smoke_text, smoke_threshold)
 
     recipe = _load_recipe(recipe_path)
+    # An assisted-priced recipe is only comparable to a pack that
+    # consumes the same imatrix file (ADR-0020). A warning, not a
+    # refusal — packing itself works either way.
+    if recipe.imatrix is not None:
+        if imatrix is None:
+            typer.echo(
+                "warning: the recipe was priced with imatrix "
+                f'"{recipe.imatrix}" but --imatrix is absent — the pack '
+                "will not match the map's frame (ADR-0020)",
+                err=True,
+            )
+        elif imatrix.resolve() != Path(recipe.imatrix).resolve():
+            typer.echo(
+                f'warning: --imatrix "{imatrix}" differs from the recipe\'s '
+                f'recorded imatrix "{recipe.imatrix}" — the pack will not '
+                "match the map's frame (ADR-0020)",
+                err=True,
+            )
     model_dir = model if model is not None else Path(recipe.model_id)
     if not model_dir.is_dir():
         typer.echo(

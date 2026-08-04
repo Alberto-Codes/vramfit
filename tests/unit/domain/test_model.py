@@ -32,6 +32,7 @@ class TestRecipeInvariants:
             ),
             runtime=None,
             within_group=None,
+            imatrix=None,
         )
 
         assert len(recipe.assignments) == 2
@@ -53,6 +54,7 @@ class TestRecipeInvariants:
                 ),
                 runtime=None,
                 within_group=None,
+                imatrix=None,
             )
 
     def test_empty_within_group_raises_value_error(self) -> None:
@@ -65,6 +67,7 @@ class TestRecipeInvariants:
                 ),
                 runtime=None,
                 within_group="",
+                imatrix=None,
             )
 
     def test_empty_assignments_raise_value_error(self) -> None:
@@ -75,4 +78,5 @@ class TestRecipeInvariants:
                 assignments=(),
                 runtime=None,
                 within_group=None,
+                imatrix=None,
             )

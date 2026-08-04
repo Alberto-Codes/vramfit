@@ -55,6 +55,7 @@ def make_recipe(*assignments: tuple[str, int]) -> Recipe:
         ),
         runtime=None,
         within_group=None,
+        imatrix=None,
     )
 
 

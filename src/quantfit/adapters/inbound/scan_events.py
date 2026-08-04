@@ -47,7 +47,10 @@ def start_run(
     notion — and the imatrix coverage split (ADR-0020):
     ``imatrix_covered`` counts the parameters that price assisted,
     ``imatrix_uncovered`` names the ones that fall back, and both
-    are null for unassisted meters.
+    are null for unassisted meters. An imatrix in the payload with
+    no split on the meter draws a console warning — the coverage
+    contract rides on attribute names, and a silent mismatch would
+    read as "unassisted".
 
     Args:
         run_log: Sink for the started, ``meter_built``, and halt
@@ -106,6 +109,19 @@ def start_run(
             "rss_hwm_gb": rss_hwm_gb(),
         },
     )
+    # Cross-check the coverage contract: an imatrix in the payload
+    # with no split on the meter means the meter is not reporting
+    # assisted pricing — a renamed attribute or a stand-in meter
+    # would otherwise pass silently as "unassisted".
+    if (
+        payload.get("imatrix") is not None
+        and getattr(meter, "imatrix_covered_count", None) is None
+    ):
+        typer.echo(
+            "warning: an imatrix was given but the meter reports no "
+            "coverage split — verify assisted pricing is active",
+            err=True,
+        )
     return meter
 
 

@@ -358,6 +358,32 @@ def test_assisted_scan_echoes_and_logs_the_coverage_split(
     assert started["imatrix"] == str(imatrix)
 
 
+def test_assisted_scan_without_a_coverage_split_warns(tmp_path, monkeypatch) -> None:
+    # The coverage contract rides on attribute names — a meter that
+    # stops reporting the split while an imatrix was given must not
+    # pass silently as "unassisted" (ADR-0020).
+    damages = {(spec.name, bits): 0.1 for spec in SPECS for bits in (3, 2)}
+    install_meter(
+        monkeypatch, MemoryDamageMeter(specs=SPECS, damages=damages, tokens=64)
+    )
+    imatrix = tmp_path / "im.gguf"
+    imatrix.write_bytes(b"GGUF")
+
+    result, _ = invoke_scan(
+        tmp_path,
+        "--precisions",
+        "3,2",
+        "--within-group",
+        "kquant",
+        "--imatrix",
+        str(imatrix),
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "warning" in result.output
+    assert "no coverage split" in result.output
+
+
 def test_meter_built_reports_null_imatrix_for_meters_without_the_notion(
     tmp_path, monkeypatch
 ) -> None:

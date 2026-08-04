@@ -4,7 +4,9 @@ The two commands build the same meter, so their overlapping options
 follow one rule each: the ``--gpu-memory`` cap parses with the
 project size grammar and requires ``--device auto``, and
 ``--imatrix`` pairs only with the kquant within-group method
-(ADR-0020). Both reject before any model load burns an hour.
+(ADR-0020). Both reject before any model load burns an hour. The
+imatrix coverage echo lives here too — the scan and the validation
+pass report the split identically.
 
 Examples:
     Parse a cap the way both commands do:
@@ -27,6 +29,7 @@ from pathlib import Path
 import typer
 
 from quantfit.domain.budget import parse_size
+from quantfit.ports.outbound import DamageMeter
 
 
 def check_imatrix(imatrix: Path | None, method: str) -> None:
@@ -49,6 +52,28 @@ def check_imatrix(imatrix: Path | None, method: str) -> None:
         )
     if not imatrix.is_file():
         raise typer.BadParameter(f"--imatrix: {imatrix} is not a file")
+
+
+def echo_imatrix_coverage(meter: DamageMeter) -> None:
+    """Report the assisted-pricing coverage split on the console.
+
+    Uncovered parameters price unassisted under the assisted label
+    (ADR-0020) — the operator must see the split, in the scan and
+    in the validation pass alike. Silent for unassisted meters and
+    meters without the notion — the run log's ``meter_built`` event
+    carries the same split.
+
+    Args:
+        meter: The built meter.
+    """
+    covered = getattr(meter, "imatrix_covered_count", None)
+    if covered is None:
+        return
+    uncovered: tuple[str, ...] = getattr(meter, "imatrix_uncovered", None) or ()
+    detail = f" (uncovered: {', '.join(uncovered)})" if uncovered else ""
+    typer.echo(
+        f"imatrix covers {covered} of {covered + len(uncovered)} parameters{detail}"
+    )
 
 
 def parse_gpu_memory(gpu_memory: str | None, device: str) -> int | None:

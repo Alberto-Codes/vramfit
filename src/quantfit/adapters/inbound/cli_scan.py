@@ -10,8 +10,9 @@ meter (lazily, so the base install never imports torch), drives the
 `DamageMeter` and `ScanCheckpointStore` ports cell by cell, and hands
 the finished measurements to the pure assembly logic in
 [quantfit.domain.scan][]. An assisted scan records the
-``kquant-imx`` token and the imatrix path in the map, the
-fingerprint, and the run log.
+``kquant-imx`` token and the resolved imatrix path in the map, the
+fingerprint, and the run log — relative spellings must not split
+or mix checkpoint identities.
 Every failure — a missing extra, a bad destination, an unstable
 measurement, a checkpoint write — halts with a clean ``error:`` line.
 The checkpoint keeps every finished cell. The run log records the
@@ -38,7 +39,11 @@ from typing import Annotated, Literal
 
 import typer
 
-from quantfit.adapters.inbound.cli_options import check_imatrix, parse_gpu_memory
+from quantfit.adapters.inbound.cli_options import (
+    check_imatrix,
+    echo_imatrix_coverage,
+    parse_gpu_memory,
+)
 from quantfit.adapters.inbound.scan_events import (
     SafeRunLog,
     measure_cells,
@@ -251,25 +256,6 @@ def _parse_within_group(
     return text, KQUANT_METHOD if imatrix is None else KQUANT_IMX_METHOD
 
 
-def _echo_imatrix_coverage(meter: DamageMeter) -> None:
-    """Report the assisted-pricing coverage split on the console.
-
-    Silent for unassisted meters and meters without the notion —
-    the run log's ``meter_built`` event carries the same split.
-
-    Args:
-        meter: The built meter.
-    """
-    covered = getattr(meter, "imatrix_covered_count", None)
-    if covered is None:
-        return
-    uncovered: tuple[str, ...] = getattr(meter, "imatrix_uncovered", None) or ()
-    detail = f" (uncovered: {', '.join(uncovered)})" if uncovered else ""
-    typer.echo(
-        f"imatrix covers {covered} of {covered + len(uncovered)} parameters{detail}"
-    )
-
-
 def scan(
     model: Annotated[
         str, typer.Argument(help="Hugging Face model id or local checkpoint path.")
@@ -344,9 +330,9 @@ def scan(
     quantizers, pairing only with precisions the port covers.
     ``--imatrix`` adds the pack's importance matrix to the kquant
     fit (assisted pricing, ADR-0020) — the map then records the
-    imatrix path beside the method, and the run log records how
-    many parameters the imatrix covers. The map, the fingerprint,
-    and the run log all record the method as its token
+    resolved imatrix path beside the method, and the run log
+    records how many parameters the imatrix covers. The map, the
+    fingerprint, and the run log all record the method as its token
     (``rtn-block32``, ``kquant-ref``, or ``kquant-imx``).
 
     Raises:
@@ -377,6 +363,11 @@ def scan(
     parsed_within_group, method_token = _parse_within_group(
         within_group, parsed_precisions, imatrix
     )
+    if imatrix is not None:
+        # The fingerprint and the map key on the path string —
+        # resolve so relative spellings cannot split or mix
+        # checkpoint identities (ADR-0020).
+        imatrix = imatrix.resolve()
     # Reject an unwritable destination now — not after the model loads
     # and the first calibration pass has burned an hour.
     if not out.parent.is_dir():
@@ -408,7 +399,7 @@ def scan(
             imatrix=imatrix,
         ),
     )
-    _echo_imatrix_coverage(meter)
+    echo_imatrix_coverage(meter)
 
     meta = ScanMeta(
         metric="kl_divergence",

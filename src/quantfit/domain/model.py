@@ -391,6 +391,12 @@ class Recipe:
             field existed. No default — every constructor states
             its intent. The validation pass only checks additivity
             when its method matches this token.
+        imatrix (str | None): The imatrix path of the map that
+            priced the recipe (ADR-0020), or None for an unassisted
+            or unknown-provenance map. Pairs with the
+            `KQUANT_IMX_METHOD` token, like `ScanMeta.imatrix` — a
+            wrong imatrix file in the validation pass contaminates
+            the additivity gap silently.
 
     Examples:
         Inspect a recipe's predicted size:
@@ -405,17 +411,32 @@ class Recipe:
     assignments: tuple[Assignment, ...]
     runtime: str | None
     within_group: str | None
+    imatrix: str | None
 
     def __post_init__(self) -> None:
         """Enforce the recipe invariants the pack step relies on.
 
         Raises:
             ValueError: If ``assignments`` is empty, two assignments
-                name the same group, or ``within_group`` is an empty
-                string — unknown provenance is None, never "".
+                name the same group, ``within_group`` or ``imatrix``
+                is an empty string — unknown provenance is None,
+                never "" — or ``imatrix`` does not pair with the
+                assisted method token (ADR-0020).
         """
         if self.within_group is not None and not self.within_group:
             raise ValueError("within_group must not be empty — use None for unknown")
+        if self.imatrix is not None and not self.imatrix:
+            raise ValueError("imatrix must not be empty — use None for unknown")
+        if self.within_group == KQUANT_IMX_METHOD and self.imatrix is None:
+            raise ValueError(
+                f'within_group "{KQUANT_IMX_METHOD}" requires the imatrix '
+                "field (ADR-0020)"
+            )
+        if self.imatrix is not None and self.within_group != KQUANT_IMX_METHOD:
+            raise ValueError(
+                f'imatrix provenance requires within_group "{KQUANT_IMX_METHOD}", '
+                f'got "{self.within_group}" (ADR-0020)'
+            )
         if not self.assignments:
             raise ValueError("assignments must not be empty")
         names = [a.group for a in self.assignments]

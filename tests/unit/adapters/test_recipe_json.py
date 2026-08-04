@@ -89,13 +89,42 @@ class TestRecipe:
 
     def test_within_group_round_trips(self) -> None:
         raw = make_recipe_dict()
+        raw["within_group"] = "kquant-ref"
+
+        recipe = recipe_from_dict(raw)
+        again = recipe_from_dict(recipe_to_dict(recipe))
+
+        assert recipe.within_group == "kquant-ref"
+        assert again == recipe
+
+    def test_assisted_provenance_round_trips(self) -> None:
+        raw = make_recipe_dict()
         raw["within_group"] = "kquant-imx"
+        raw["imatrix"] = "/runs/model.imatrix.gguf"
 
         recipe = recipe_from_dict(raw)
         again = recipe_from_dict(recipe_to_dict(recipe))
 
         assert recipe.within_group == "kquant-imx"
+        assert recipe.imatrix == "/runs/model.imatrix.gguf"
         assert again == recipe
+
+    def test_assisted_token_without_imatrix_rejected(self) -> None:
+        # A recipe claiming assisted pricing without naming its
+        # imatrix is corrupted provenance (ADR-0020).
+        raw = make_recipe_dict()
+        raw["within_group"] = "kquant-imx"
+
+        with pytest.raises(ArtifactError, match="imatrix"):
+            recipe_from_dict(raw)
+
+    def test_imatrix_without_the_assisted_token_rejected(self) -> None:
+        raw = make_recipe_dict()
+        raw["within_group"] = "kquant-ref"
+        raw["imatrix"] = "/runs/model.imatrix.gguf"
+
+        with pytest.raises(ArtifactError, match="kquant-imx"):
+            recipe_from_dict(raw)
 
     def test_empty_within_group_rejected(self) -> None:
         raw = make_recipe_dict()

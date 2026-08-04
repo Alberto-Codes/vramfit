@@ -8,8 +8,10 @@ every group to its assigned precision in one pass, and compares the
 measured whole-recipe damage against the recipe's summed marginal
 damages — the direct test of the additivity assumption behind
 marginal scanning. The frame resolves from the recipe's recorded
-method token, and a contradicting flag is refused (ADR-0019). The
-comparison logic is pure and lives in
+method token, a contradicting flag is refused (ADR-0019), and an
+``--imatrix`` that differs from the recipe's recorded file draws a
+warning — a different file contaminates the comparison (ADR-0020).
+The comparison logic is pure and lives in
 [quantfit.domain.validation][]. Every failure halts with a clean
 ``error:`` line. Failures after the run log opens also emit a
 ``validation_halted`` event (ADR-0011).
@@ -35,7 +37,11 @@ from typing import Annotated, Literal
 
 import typer
 
-from quantfit.adapters.inbound.cli_options import check_imatrix, parse_gpu_memory
+from quantfit.adapters.inbound.cli_options import (
+    check_imatrix,
+    echo_imatrix_coverage,
+    parse_gpu_memory,
+)
 from quantfit.adapters.inbound.cli_scan import _build_meter
 from quantfit.adapters.inbound.run_log import SafeRunLog, rss_hwm_gb
 from quantfit.adapters.inbound.scan_events import start_run
@@ -70,8 +76,10 @@ def _resolve_within_group(
     that priced the recipe (ADR-0019). A recipe that records its
     map's method is the source of truth: the command refuses a
     mismatched flag instead of measuring numbers that compare
-    nothing. A recipe without the record leaves the pairing to the
-    caller, with a warning.
+    nothing, and the record conflict refuses before any flag-level
+    pairing rule — its message names the real cause. A recipe
+    without the record leaves the pairing to the caller, with a
+    warning.
 
     Args:
         text: The ``--within-group`` value, or None to follow the
@@ -105,6 +113,10 @@ def _resolve_within_group(
         raise typer.BadParameter(
             f'--within-group: expected "rtn" or "kquant", got "{text}"'
         )
+    # Record conflicts refuse first — their messages name the real
+    # cause. A flag-level message here ("--imatrix requires kquant")
+    # would send the user into a second failure.
+    _check_provenance(recorded, text, method, imatrix)
     check_imatrix(imatrix, method)
     if method == "kquant":
         uncovered = sorted(
@@ -120,39 +132,55 @@ def _resolve_within_group(
         token = SCAN_METHOD
     else:
         token = KQUANT_METHOD if imatrix is None else KQUANT_IMX_METHOD
-    _check_provenance(recorded, token, imatrix)
     return method, token
 
 
-def _check_provenance(recorded: str | None, token: str, imatrix: Path | None) -> None:
+def _check_provenance(
+    recorded: str | None,
+    text: str | None,
+    method: str,
+    imatrix: Path | None,
+) -> None:
     """Refuse a measurement frame that contradicts the recipe's record.
+
+    Each refusal names the recorded provenance — the actual
+    conflict — never a flag the user did not pass.
 
     Args:
         recorded: The recipe's recorded method token, or None.
-        token: The token the resolved frame would measure under.
+        text: The explicit ``--within-group`` value, or None.
+        method: The resolved method name.
         imatrix: The ``--imatrix`` path, or None for unassisted.
 
     Raises:
-        typer.BadParameter: If the recipe records an assisted map
-            and no imatrix was given, or the resolved token differs
-            from the record (ADR-0019).
+        typer.BadParameter: If an explicit method flag contradicts
+            the record, ``--imatrix`` meets a recipe priced on an
+            unassisted map, or the recipe records an assisted map
+            and no imatrix was given (ADR-0019, ADR-0020).
     """
-    if recorded == KQUANT_IMX_METHOD and imatrix is None:
-        raise typer.BadParameter(
-            "--imatrix: the recipe was priced on an assisted map — pass "
-            "the map's imatrix file (ADR-0020)"
-        )
-    if recorded is not None and token != recorded:
-        raise typer.BadParameter(
-            f'--within-group: the recipe was priced on a "{recorded}" map '
-            f'and this pass would measure "{token}" — the pass must match '
-            "the map's method (ADR-0019)"
-        )
     if recorded is None:
         typer.echo(
             "warning: the recipe does not record its map's method — "
             "match --within-group and --imatrix to the map that priced it",
             err=True,
+        )
+        return
+    if text is not None and _TOKEN_TO_METHOD[recorded] != method:
+        raise typer.BadParameter(
+            f"--within-group {text}: the recipe was priced on a "
+            f'"{recorded}" map — the pass must match the map\'s method '
+            "(ADR-0019)"
+        )
+    if imatrix is not None and recorded != KQUANT_IMX_METHOD:
+        raise typer.BadParameter(
+            f'--imatrix: the recipe was priced on a "{recorded}" map, not '
+            "an assisted one — the pass must match the map's method "
+            "(ADR-0019)"
+        )
+    if recorded == KQUANT_IMX_METHOD and imatrix is None:
+        raise typer.BadParameter(
+            "--imatrix: the recipe was priced on an assisted map — pass "
+            "the map's imatrix file (ADR-0020)"
         )
 
 
@@ -279,7 +307,10 @@ def validate(
     ``--imatrix`` — the pass only checks additivity when its frame
     matches the map that priced the recipe (ADR-0019). A recipe
     that records its map's method resolves the frame by itself, and
-    the command refuses flags that contradict the record. The
+    the command refuses flags that contradict the record. An
+    ``--imatrix`` that differs from the recipe's recorded file
+    draws a warning, and the command echoes the imatrix coverage
+    split like the scan does. The
     command then reports the
     measured damage next to the recipe's summed marginal damages. The gap is the
     additivity assumption leaking. Use the scan's calibration file
@@ -321,6 +352,17 @@ def validate(
     parsed_within_group, method_token = _resolve_within_group(
         within_group, imatrix, recipe
     )
+    if imatrix is not None:
+        # Provenance compares by path string — resolve so relative
+        # spellings cannot split or mix identities.
+        imatrix = imatrix.resolve()
+        if recipe.imatrix is not None and imatrix != Path(recipe.imatrix).resolve():
+            typer.echo(
+                f'warning: --imatrix "{imatrix}" differs from the map\'s '
+                f'recorded imatrix "{recipe.imatrix}" — a different file '
+                "contaminates the additivity comparison (ADR-0020)",
+                err=True,
+            )
     model_id = model if model is not None else recipe.model_id
     if model is not None and model != recipe.model_id:
         typer.echo(
@@ -352,6 +394,9 @@ def validate(
             "gpu_memory_bytes": gpu_memory_bytes,
             "within_group": method_token,
             "imatrix": None if imatrix is None else str(imatrix),
+            # Null means the frame was the caller's guess, not a
+            # provenance-verified one — the gap reads differently.
+            "recipe_within_group": recipe.within_group,
         },
         lambda: _build_meter(
             model_id,
@@ -366,6 +411,7 @@ def validate(
         ),
         prefix="validation",
     )
+    echo_imatrix_coverage(meter)
     _check_groups(meter, recipe, run_log)
 
     assignments = {a.group: a.bits for a in recipe.assignments}

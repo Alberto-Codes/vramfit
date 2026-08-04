@@ -9,9 +9,14 @@
   unassisted one packed, the same bar ADR-0019 waits under.
 - **Note (2026-08-04):** the CLI wiring landed — `scan --imatrix`
   and `validate --imatrix`, the `kquant-imx` token, the map's
-  `scan.imatrix` field, and the run-log coverage split. The
-  fingerprint gained a trailing imatrix field, so checkpoints
-  written before this change do not resume — none were in flight.
+  `scan.imatrix` field, and the run-log coverage split. The recipe
+  carries its map's token and imatrix path, `validate` refuses a
+  contradicting frame and warns on a different imatrix file, and
+  `pack` warns when an assisted recipe packs without the map's
+  file. File identity compares by resolved path — evidence, not
+  proof of content. The fingerprint gained a trailing imatrix
+  field, so checkpoints written before this change do not resume —
+  none were in flight.
 
 ## Context
 
@@ -97,9 +102,12 @@ recovers more damage exactly where the unassisted fit is worst.
   pricing (kquant only), the map and the fingerprint record the
   `kquant-imx` token with the imatrix path, and the checkpoint
   cannot mix with an unassisted scan's (ADR-0006's rule). The
-  recipe records its map's method token, and
-  `validate --imatrix` refuses a frame that contradicts it —
-  the pairing ADR-0019 left to the caller is now enforced.
+  recipe records its map's method token and imatrix path, and
+  `validate --imatrix` refuses a frame that contradicts the token —
+  the pairing ADR-0019 left to the caller is now enforced. Imatrix
+  file identity compares by resolved path and surfaces as a
+  warning in `validate` and `pack`: path equality is evidence, not
+  proof of content.
 - Whether the solver should ever consume an unassisted kquant map
   again once assisted maps exist.
 

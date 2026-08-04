@@ -151,8 +151,11 @@ the token `kquant-imx` and the imatrix path in `scan.imatrix`. The
 command echoes the coverage split, and `meter_built` records it as
 `imatrix_covered` and `imatrix_uncovered` — uncovered tensors price
 unassisted, the `llama-quantize` fallback (`token_embd` is the
-expected miss). A scan is only comparable to a pack that consumes the
-same imatrix file.
+expected miss). A covered tensor whose rows do not divide into
+256-element super-blocks joins the uncovered set instead of refusing
+the scan. A scan is only comparable to a pack that consumes the
+same imatrix file — the CLI resolves the path, and the map records
+the resolved spelling.
 
 Exit codes: 1 when the scan extra is missing, the model or calibration
 cannot load, sharding offloaded a quantizable group beyond host RAM,
@@ -214,9 +217,12 @@ only comparable within one calibration set. The command refuses a
 recipe whose groups do not match the model's discovered groups (wrong
 model or wrong `--group-by`). A `--model` that differs from the
 recipe's `model_id` prints a warning — the comparison assumes the
-scanned model. The command reports the gap and does not gate on it:
-the invalidation threshold is an open question in ADR-0006 until
-measured gaps exist.
+scanned model. An `--imatrix` that differs from the recipe's recorded
+imatrix path also prints a warning — a different file contaminates
+the additivity comparison. The command echoes the imatrix coverage
+split like the scan does. The command reports the gap and does not
+gate on it: the invalidation threshold is an open question in
+ADR-0006 until measured gaps exist.
 
 Every run appends events to a run log: validation_started,
 meter_built, then validation_finished with predicted_damage,
@@ -275,6 +281,11 @@ quantfit pack RECIPE
   --runlog PATH          Run-log path (JSONL)
                          [default: <stem>.runlog.jsonl]
 ```
+
+A recipe priced on an assisted map records its imatrix — the command
+warns when `--imatrix` is absent or names a different file, because
+the pack would not match the map's frame (ADR-0020). A warning, not
+a refusal: packing itself works either way.
 
 After quantizing, the command re-checks the packed file's real bytes
 against `plan.weight_budget_bytes` — nominal-bit predictions

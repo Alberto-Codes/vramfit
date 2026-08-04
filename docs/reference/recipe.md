@@ -20,6 +20,7 @@ that produced it.
   "model_id": "nvidia/Llama-3_3-Nemotron-Super-49B-v1_5",
   "runtime": "llama.cpp",
   "within_group": "kquant-imx",
+  "imatrix": "/runs/nemotron-49b-f16.imatrix.gguf",
   "plan": {
     "vram_budget_bytes": 25769803776,
     "kv_headroom_bytes": 4294967296,
@@ -68,6 +69,12 @@ that produced it.
   field and refuses flags that contradict it. The loader accepts an
   absent field as null — recipes written before the field existed do
   not record their map's method.
+- **`imatrix`** — the imatrix path of the map that priced the recipe
+  ([ADR-0020](../adr/0020-imatrix-assisted-pricing.md)), or null.
+  Pairs with the `kquant-imx` token, like the map's `scan.imatrix`.
+  `quantfit validate` and `quantfit pack` warn when their
+  `--imatrix` names a different file — a different file breaks the
+  frame the map priced. The loader accepts an absent field as null.
 - **`assignments`** — every group from the sensitivity map appears exactly
   once, in map order. `bytes` is the predicted size at the runtime's
   effective bits when the runtime has a table

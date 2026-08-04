@@ -20,7 +20,11 @@ pytestmark = pytest.mark.unit
 WEIGHT_BUDGET = 3_000
 
 
-def make_recipe(model_id: str) -> Recipe:
+def make_recipe(
+    model_id: str,
+    within_group: str | None = None,
+    imatrix: str | None = None,
+) -> Recipe:
     return Recipe(
         model_id=model_id,
         plan=PlanMeta(
@@ -39,7 +43,8 @@ def make_recipe(model_id: str) -> Recipe:
             Assignment(group="model.layers.0", bits=4, bytes=500, damage=0.01),
         ),
         runtime=None,
-        within_group=None,
+        within_group=within_group,
+        imatrix=imatrix,
     )
 
 
@@ -107,6 +112,112 @@ class TestPackCommand:
             "size_checked",
             "pack_finished",
         ]
+
+    def test_assisted_recipe_without_imatrix_warns(
+        self, tmp_path, monkeypatch, llama_cpp_dir
+    ) -> None:
+        # An assisted-priced recipe packed without its imatrix ships
+        # a frame the map never priced (ADR-0020) — say so.
+        patch_packer(monkeypatch, MemoryRecipePacker(packed_bytes=WEIGHT_BUDGET - 100))
+        model_dir = tmp_path / "model"
+        model_dir.mkdir()
+        recipe_path = tmp_path / "recipe.json"
+        save_recipe(
+            make_recipe(
+                str(model_dir),
+                within_group="kquant-imx",
+                imatrix="/runs/map.imatrix.gguf",
+            ),
+            recipe_path,
+        )
+        out = tmp_path / "packed.gguf"
+
+        result = runner.invoke(
+            app,
+            [
+                "pack",
+                str(recipe_path),
+                "--llama-cpp",
+                str(llama_cpp_dir),
+                "--out",
+                str(out),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "warning" in result.output
+        assert "will not match the map's frame" in result.output
+
+    def test_assisted_recipe_with_a_different_imatrix_warns(
+        self, tmp_path, monkeypatch, llama_cpp_dir
+    ) -> None:
+        patch_packer(monkeypatch, MemoryRecipePacker(packed_bytes=WEIGHT_BUDGET - 100))
+        model_dir = tmp_path / "model"
+        model_dir.mkdir()
+        recorded = tmp_path / "map.imatrix.gguf"
+        recorded.write_bytes(b"GGUF")
+        other = tmp_path / "other.imatrix.gguf"
+        other.write_bytes(b"GGUF")
+        recipe_path = tmp_path / "recipe.json"
+        save_recipe(
+            make_recipe(
+                str(model_dir), within_group="kquant-imx", imatrix=str(recorded)
+            ),
+            recipe_path,
+        )
+        out = tmp_path / "packed.gguf"
+
+        result = runner.invoke(
+            app,
+            [
+                "pack",
+                str(recipe_path),
+                "--llama-cpp",
+                str(llama_cpp_dir),
+                "--out",
+                str(out),
+                "--imatrix",
+                str(other),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "differs from the recipe" in result.output
+
+    def test_assisted_recipe_with_its_own_imatrix_does_not_warn(
+        self, tmp_path, monkeypatch, llama_cpp_dir
+    ) -> None:
+        patch_packer(monkeypatch, MemoryRecipePacker(packed_bytes=WEIGHT_BUDGET - 100))
+        model_dir = tmp_path / "model"
+        model_dir.mkdir()
+        recorded = tmp_path / "map.imatrix.gguf"
+        recorded.write_bytes(b"GGUF")
+        recipe_path = tmp_path / "recipe.json"
+        save_recipe(
+            make_recipe(
+                str(model_dir), within_group="kquant-imx", imatrix=str(recorded)
+            ),
+            recipe_path,
+        )
+        out = tmp_path / "packed.gguf"
+
+        result = runner.invoke(
+            app,
+            [
+                "pack",
+                str(recipe_path),
+                "--llama-cpp",
+                str(llama_cpp_dir),
+                "--out",
+                str(out),
+                "--imatrix",
+                str(recorded),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "will not match" not in result.output
+        assert "differs from the recipe" not in result.output
 
     def test_size_check_records_the_margin(
         self, tmp_path, monkeypatch, llama_cpp_dir, recipe_path
@@ -373,6 +484,7 @@ class TestPackCommand:
             ),
             runtime=None,
             within_group=None,
+            imatrix=None,
         )
         path = tmp_path / "recipe5.json"
         save_recipe(recipe, path)

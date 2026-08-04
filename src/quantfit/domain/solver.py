@@ -393,8 +393,9 @@ def solve(
     Returns:
         The recipe, with assignments in sensitivity-map group order,
         the downgrade trace in ``plan.trace``, and the map's
-        within-group method token in ``within_group`` — the
-        validation pass matches its frame against it (ADR-0019).
+        within-group method token and imatrix path in
+        ``within_group`` and ``imatrix`` — the validation pass
+        matches its frame against them (ADR-0019, ADR-0020).
 
     Raises:
         ValueError: If ``format_overhead`` is negative, NaN, or
@@ -519,7 +520,9 @@ def solve(
         ),
         assignments=assignments,
         runtime=runtime,
-        # The map's method token rides into the recipe (ADR-0019):
-        # the validation pass refuses a frame that does not match it.
+        # The map's method token and imatrix path ride into the
+        # recipe (ADR-0019, ADR-0020): the validation pass refuses a
+        # frame that does not match them.
         within_group=sensitivity_map.scan.within_group,
+        imatrix=sensitivity_map.scan.imatrix,
     )
