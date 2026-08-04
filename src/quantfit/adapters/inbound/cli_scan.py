@@ -2,12 +2,17 @@
 
 The scan loop lives here because the inbound adapter is the
 composition root: it validates every option up front (sizes parse
-with the project grammar, and ``--within-group kquant`` must pair
-with precisions the port covers, ADR-0018), builds the torch-backed
+with the project grammar, ``--within-group kquant`` must pair
+with precisions the port covers, ADR-0018, and ``--imatrix``
+pairs only with the kquant method, ADR-0020), builds the
+torch-backed
 meter (lazily, so the base install never imports torch), drives the
 `DamageMeter` and `ScanCheckpointStore` ports cell by cell, and hands
 the finished measurements to the pure assembly logic in
-[quantfit.domain.scan][].
+[quantfit.domain.scan][]. An assisted scan records the
+``kquant-imx`` token and the resolved imatrix path in the map, the
+fingerprint, and the run log — relative spellings must not split
+or mix checkpoint identities.
 Every failure — a missing extra, a bad destination, an unstable
 measurement, a checkpoint write — halts with a clean ``error:`` line.
 The checkpoint keeps every finished cell. The run log records the
@@ -34,6 +39,11 @@ from typing import Annotated, Literal
 
 import typer
 
+from quantfit.adapters.inbound.cli_options import (
+    check_imatrix,
+    echo_imatrix_coverage,
+    parse_gpu_memory,
+)
 from quantfit.adapters.inbound.scan_events import (
     SafeRunLog,
     measure_cells,
@@ -44,10 +54,10 @@ from quantfit.adapters.outbound.json_common import ArtifactError
 from quantfit.adapters.outbound.run_log_jsonl import JsonlRunLogFile
 from quantfit.adapters.outbound.scan_checkpoint_json import JsonScanCheckpointFile
 from quantfit.adapters.outbound.sensitivity_map_json import JsonSensitivityMapFile
-from quantfit.domain.budget import parse_size
 from quantfit.domain.errors import QuantfitError
 from quantfit.domain.model import ScanMeta
 from quantfit.domain.scan import (
+    KQUANT_IMX_METHOD,
     KQUANT_METHOD,
     KQUANT_PRECISIONS,
     SCAN_METHOD,
@@ -92,6 +102,7 @@ def _build_meter(
     trust_remote_code: bool,
     gpu_memory: int | None,
     within_group: Literal["rtn", "kquant"] = "rtn",
+    imatrix: Path | None = None,
 ) -> DamageMeter:
     """Build the torch-backed meter, importing torch only now.
 
@@ -110,14 +121,18 @@ def _build_meter(
         gpu_memory: Byte cap on GPU 0 model shards under ``auto``
             sharding.
         within_group: Within-group method (ADR-0018).
+        imatrix: GGUF imatrix file for assisted pricing (ADR-0020),
+            or None for an unassisted meter.
 
     Returns:
         The loaded meter.
 
     Raises:
         ScanExtraMissingError: If the scan extra is not installed.
-        ValueError: If the calibration file yields too few tokens.
-        OSError: If the model or calibration file cannot be read.
+        ValueError: If the calibration file yields too few tokens, or
+            the imatrix is malformed or covers no parameter.
+        OSError: If the model, calibration, or imatrix file cannot
+            be read.
     """
     try:
         from quantfit.adapters.outbound.scan.meter import (  # noqa: PLC0415 - lazy: keeps the base CLI torch-free (ADR-0005)
@@ -138,6 +153,7 @@ def _build_meter(
         trust_remote_code=trust_remote_code,
         max_gpu_memory=gpu_memory,
         within_group=within_group,
+        imatrix_path=imatrix,
     )
 
 
@@ -200,27 +216,33 @@ def _parse_precisions(text: str) -> tuple[int, ...]:
 
 
 def _parse_within_group(
-    text: str, precisions: tuple[int, ...]
+    text: str, precisions: tuple[int, ...], imatrix: Path | None
 ) -> tuple[Literal["rtn", "kquant"], str]:
     """Validate the ``--within-group`` choice against the precisions.
 
     Args:
         text: The flag value.
         precisions: The parsed candidate precisions.
+        imatrix: The ``--imatrix`` path, or None for unassisted.
 
     Returns:
         The validated method name and its fingerprint token — the
         token is the vocabulary run logs and maps share (ADR-0018).
+        An imatrix turns the kquant token into the assisted one
+        (ADR-0020).
 
     Raises:
-        typer.BadParameter: If the method is unknown, or ``kquant``
+        typer.BadParameter: If the method is unknown, ``kquant``
             is combined with precisions outside its port coverage
-            (ADR-0018) — rejected before the model load burns an hour.
+            (ADR-0018), ``--imatrix`` arrives without the kquant
+            method, or the imatrix file does not exist — each
+            rejected before the model load burns an hour.
     """
     if text not in ("rtn", "kquant"):
         raise typer.BadParameter(
             f'--within-group: expected "rtn" or "kquant", got "{text}"'
         )
+    check_imatrix(imatrix, text)
     if text == "kquant":
         uncovered = [p for p in precisions if p not in KQUANT_PRECISIONS]
         if uncovered:
@@ -229,7 +251,9 @@ def _parse_within_group(
                 f"{sorted(KQUANT_PRECISIONS, reverse=True)} (ADR-0018) — "
                 f"remove {uncovered} from --precisions"
             )
-    return text, SCAN_METHOD if text == "rtn" else KQUANT_METHOD
+    if text == "rtn":
+        return text, SCAN_METHOD
+    return text, KQUANT_METHOD if imatrix is None else KQUANT_IMX_METHOD
 
 
 def scan(
@@ -273,6 +297,14 @@ def scan(
             "K-quant-faithful port (ADR-0018, precisions 8/4/3/2)."
         ),
     ] = "rtn",
+    imatrix: Annotated[
+        Path | None,
+        typer.Option(
+            help="GGUF imatrix for assisted K-quant pricing "
+            "(ADR-0020). Requires --within-group kquant. Use the "
+            "file the pack step will consume."
+        ),
+    ] = None,
     runlog: Annotated[
         Path | None,
         typer.Option(help="Run-log path (JSONL). Default: <stem>.runlog.jsonl."),
@@ -295,17 +327,22 @@ def scan(
     ``--within-group`` selects the quantization the meter applies
     inside a perturbed group (ADR-0018): ``rtn`` is the v1 default,
     and ``kquant`` prices cells with the ported K-quant reference
-    quantizers, pairing only with precisions the port covers. The
-    map, the fingerprint, and the run log all record the method as
-    its token (``rtn-block32`` or ``kquant-ref``).
+    quantizers, pairing only with precisions the port covers.
+    ``--imatrix`` adds the pack's importance matrix to the kquant
+    fit (assisted pricing, ADR-0020) — the map then records the
+    resolved imatrix path beside the method, and the run log
+    records how many parameters the imatrix covers. The map, the
+    fingerprint, and the run log all record the method as its token
+    (``rtn-block32``, ``kquant-ref``, or ``kquant-imx``).
 
     Raises:
         typer.BadParameter: If ``--precisions``, ``--group-by``,
             ``--within-group``, or ``--gpu-memory`` is malformed,
             ``--gpu-memory`` is given without ``--device auto``,
             ``--within-group kquant`` is combined with precisions the
-            port does not cover, or the ``--out`` or ``--runlog``
-            directory does not exist.
+            port does not cover, ``--imatrix`` is given without
+            ``--within-group kquant`` or is not a file, or the
+            ``--out`` or ``--runlog`` directory does not exist.
         typer.Exit: With code 1 when the scan extra is missing, the
             model or calibration cannot load, the checkpoint belongs to
             a different scan, a measurement fails, a checkpoint write
@@ -324,24 +361,18 @@ def scan(
             f'--group-by: expected "layer" or "tensor", got "{group_by}"'
         )
     parsed_within_group, method_token = _parse_within_group(
-        within_group, parsed_precisions
+        within_group, parsed_precisions, imatrix
     )
+    if imatrix is not None:
+        # The fingerprint and the map key on the path string —
+        # resolve so relative spellings cannot split or mix
+        # checkpoint identities (ADR-0020).
+        imatrix = imatrix.resolve()
     # Reject an unwritable destination now — not after the model loads
     # and the first calibration pass has burned an hour.
     if not out.parent.is_dir():
         raise typer.BadParameter(f"--out: directory {out.parent} does not exist")
-    # Parse the cap with the project grammar — accelerate reads "17gb"
-    # as gigabits, an 8x smaller cap than this CLI means by it.
-    gpu_memory_bytes: int | None = None
-    if gpu_memory is not None:
-        if device != "auto":
-            raise typer.BadParameter(
-                f'--gpu-memory requires --device auto, got --device "{device}"'
-            )
-        try:
-            gpu_memory_bytes = parse_size(gpu_memory)
-        except ValueError as exc:
-            raise typer.BadParameter(f"--gpu-memory: {exc}") from exc
+    gpu_memory_bytes = parse_gpu_memory(gpu_memory, device)
 
     run_log = _open_run_log(out, runlog)
     meter = start_run(
@@ -354,6 +385,7 @@ def scan(
             "device": device,
             "gpu_memory_bytes": gpu_memory_bytes,
             "within_group": method_token,
+            "imatrix": None if imatrix is None else str(imatrix),
         },
         lambda: _build_meter(
             model,
@@ -364,8 +396,10 @@ def scan(
             trust_remote_code=trust_remote_code,
             gpu_memory=gpu_memory_bytes,
             within_group=parsed_within_group,
+            imatrix=imatrix,
         ),
     )
+    echo_imatrix_coverage(meter)
 
     meta = ScanMeta(
         metric="kl_divergence",
@@ -375,6 +409,7 @@ def scan(
         group_by=group_by,
         started_at=datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         within_group=method_token,
+        imatrix=None if imatrix is None else str(imatrix),
     )
     fingerprint = scan_fingerprint(model, meta)
     checkpoint_path = out.with_name(out.stem + ".checkpoint.json")

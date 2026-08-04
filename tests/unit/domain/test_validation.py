@@ -33,6 +33,8 @@ def make_recipe(damages: tuple[float, ...]) -> Recipe:
             for i, damage in enumerate(damages)
         ),
         runtime=None,
+        within_group=None,
+        imatrix=None,
     )
 
 

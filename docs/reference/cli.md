@@ -111,6 +111,10 @@ quantfit scan MODEL
                          reference quantizers and pairs only with
                          precisions the port covers (8, 4, 3, 2)
                          [default: rtn]
+  --imatrix PATH         GGUF imatrix for assisted K-quant pricing
+                         (ADR-0020). Requires --within-group kquant.
+                         Use the file the pack step will consume
+                         [default: none]
   --runlog PATH          Run-log path (JSONL)
                          [default: <stem>.runlog.jsonl]
   --gpu-memory SIZE      Byte cap on GPU 0 model shards (e.g. 17GiB),
@@ -127,7 +131,8 @@ the RSS high-water mark, then scan_finished or scan_halted. Every
 finished (group x precision) cell lands in a checkpoint file next
 to `--out` (`<stem>.checkpoint.json`). A rerun of the same scan resumes
 from it. The checkpoint carries the scan's fingerprint (model, metric,
-calibration, token count, grouping, precisions, method) — a rerun with
+calibration, token count, grouping, precisions, method, imatrix
+path) — a rerun with
 any of those changed refuses the checkpoint instead of mixing numbers.
 The fingerprint identifies provenance, not content: do not swap weights
 or calibration text under an unchanged path between resumes.
@@ -140,6 +145,18 @@ beyond host RAM (disk spill) — an unperturbable weight would record
 zero damage. Raise `--gpu-memory`, free host RAM, or use a smaller
 model.
 
+With `--imatrix` the kquant fit weighs every covered tensor with the
+pack's importance matrix (assisted pricing, ADR-0020). The map records
+the token `kquant-imx` and the imatrix path in `scan.imatrix`. The
+command echoes the coverage split, and `meter_built` records it as
+`imatrix_covered` and `imatrix_uncovered` — uncovered tensors price
+unassisted, the `llama-quantize` fallback (`token_embd` is the
+expected miss). A covered tensor whose rows do not divide into
+256-element super-blocks joins the uncovered set instead of refusing
+the scan. A scan is only comparable to a pack that consumes the
+same imatrix file — the CLI resolves the path, and the map records
+the resolved spelling.
+
 Exit codes: 1 when the scan extra is missing, the model or calibration
 cannot load, sharding offloaded a quantizable group beyond host RAM,
 the checkpoint
@@ -148,7 +165,8 @@ completed cells), a checkpoint write fails, or the map cannot be
 written. Exit 2 on malformed `--precisions`, `--group-by`,
 `--within-group`, or `--gpu-memory`, a `--gpu-memory` without
 `--device auto`, a `--within-group kquant` combined with precisions
-the port does not cover, or a missing `--out` or `--runlog`
+the port does not cover, an `--imatrix` without `--within-group
+kquant` or naming a missing file, or a missing `--out` or `--runlog`
 directory.
 
 ## `quantfit validate`
@@ -156,8 +174,12 @@ directory.
 Implemented. Runs the whole-recipe validation pass (ADR-0006). The
 command quantizes every group to its assigned precision in one
 calibration pass. The pass uses the scan's own quantization,
-selected with `--within-group`. Match the map that priced the
-recipe (ADR-0019). The
+selected with `--within-group` and `--imatrix`. The pass only checks
+additivity when its frame matches the map that priced the recipe
+(ADR-0019) — a recipe that records its map's method resolves the
+frame by itself, and the command refuses flags that contradict the
+record. Recipes without the record leave the pairing to the caller,
+with a warning. The
 command reports the measured damage next to the recipe's summed
 marginal damages. The gap is the additivity assumption leaking.
 Requires the scan extra — without it the command exits 1 with the
@@ -174,9 +196,13 @@ quantfit validate RECIPE
   --trust-remote-code    Allow model repos with custom code
   --gpu-memory SIZE      Byte cap on GPU 0 model shards (e.g. 17GiB).
                          Requires --device auto  [default: none]
-  --within-group TEXT    Within-group method: rtn | kquant (ADR-0018).
-                         Match the map that priced the recipe
-                         [default: rtn]
+  --within-group TEXT    Within-group method: rtn | kquant (ADR-0018)
+                         [default: the recipe's recorded method, or
+                         rtn without a record]
+  --imatrix PATH         GGUF imatrix for assisted K-quant measurement
+                         (ADR-0020). Required when the recipe was
+                         priced on an assisted map — use the map's
+                         imatrix file  [default: none]
   --runlog PATH          Run-log path (JSONL)
                          [default: <recipe stem>.validation.runlog.jsonl]
 ```
@@ -191,9 +217,12 @@ only comparable within one calibration set. The command refuses a
 recipe whose groups do not match the model's discovered groups (wrong
 model or wrong `--group-by`). A `--model` that differs from the
 recipe's `model_id` prints a warning — the comparison assumes the
-scanned model. The command reports the gap and does not gate on it:
-the invalidation threshold is an open question in ADR-0006 until
-measured gaps exist.
+scanned model. An `--imatrix` that differs from the recipe's recorded
+imatrix path also prints a warning — a different file contaminates
+the additivity comparison. The command echoes the imatrix coverage
+split like the scan does. The command reports the gap and does not
+gate on it: the invalidation threshold is an open question in
+ADR-0006 until measured gaps exist.
 
 Every run appends events to a run log: validation_started,
 meter_built, then validation_finished with predicted_damage,
@@ -211,8 +240,10 @@ gap -0.033867 (-51.2 % of predicted)
 Exit codes: 1 when the recipe is invalid, the scan extra is missing,
 the model or calibration cannot load, the recipe's groups do not match
 the model's, or the measurement fails. Exit 2 on a malformed
-`--group-by` or `--gpu-memory`, a `--gpu-memory` without `--device
-auto`, or a missing `--runlog` directory.
+`--group-by`, `--within-group`, or `--gpu-memory`, a `--gpu-memory`
+without `--device auto`, an `--imatrix` without the kquant method or
+naming a missing file, a frame that contradicts the recipe's
+recorded method, or a missing `--runlog` directory.
 
 ## `quantfit pack`
 
@@ -250,6 +281,11 @@ quantfit pack RECIPE
   --runlog PATH          Run-log path (JSONL)
                          [default: <stem>.runlog.jsonl]
 ```
+
+A recipe priced on an assisted map records its imatrix — the command
+warns when `--imatrix` is absent or names a different file, because
+the pack would not match the map's frame (ADR-0020). A warning, not
+a refusal: packing itself works either way.
 
 After quantizing, the command re-checks the packed file's real bytes
 against `plan.weight_budget_bytes` — nominal-bit predictions
