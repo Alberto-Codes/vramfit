@@ -28,6 +28,17 @@ status: draft
     outlier channels that carry outsized importance. Same role as GPTQ here,
     and evidence for non-uniform fragility.
 
+**[Is (Selective) Round-To-Nearest Quantization All You Need?](https://arxiv.org/abs/2505.15909)** (2025)
+:   Argues plain RTN with selective precision upgrades is a viable,
+    cheaper alternative to calibration-based methods — external
+    support for quantfit's selective-assignment premise (ADR-0001)
+    from the opposite direction. Added 2026-08-04, with a caveat
+    from the seventh data point: at sub-4-bit, RTN *over-prices*
+    in-frame damage 2.0–3.9x against the K-quant fit the pack
+    ships ([ADR-0018](../adr/0018-kquant-within-group-method.md)).
+    RTN as a serving format and RTN as a pricing frame are
+    different claims.
+
 **[llama.cpp k-quants + imatrix](https://github.com/ggml-org/llama.cpp/tree/master/tools/imatrix)**
 :   k-quants ship non-uniform per-layer recipes chosen by fixed heuristic.
     The imatrix tool adds measured activation statistics that bias
@@ -57,6 +68,13 @@ status: draft
     this recipe class. The bet is now specifically about evidence,
     not about whether selective assignment works. See
     [the artifact ecosystem](../explanation/artifact-ecosystem.md).
+    Found 2026-08-04: Unsloth ships
+    [UD GGUFs of the north-star target](https://huggingface.co/unsloth/Llama-3_3-Nemotron-Super-49B-v1_5-GGUF)
+    inside the 20.47 GiB weight budget — UD-Q2_K_XL (19.3 GB) and
+    UD-IQ3_XXS (19.7 GB). They are candidate additional baselines
+    for the evaluation tiers: a head-to-head against a shipped
+    selective recipe for the exact model and budget, not only
+    against the flat-with-protections Q3_K_S.
 
 **[EXL3 / exllamav3](https://github.com/turboderp-org/exllamav3)**
 :   The closest prior art by method, superseding EXL2 here
@@ -110,13 +128,40 @@ super-additive joint damage (×11.9) on a 2-bit-heavy recipe.
     and they are not. CLADO measures *pairwise* cross-layer error
     terms on a small calibration subset and solves the allocation as
     an Integer Quadratic Program. It is demonstrated on
-    ImageNet-scale vision models — not on serving-scale LLMs, and
-    not in any shipped quantization tool found in this survey. It is
+    ImageNet-scale vision models — at survey time (2026-07-31) the
+    only interaction-aware allocator found, and in no shipped
+    quantization tool. CoopQ (below) has since reached LLM scale in
+    research. CLADO remains
     the candidate algorithm shape for an interaction-aware `plan`,
     at O(groups²) extra measurement the existing meter can price.
     ADR-0006's fourth measurement lowers its urgency: converged
     marginals steered the solver sub-additive without interaction
     terms.
+
+**[CoopQ](https://arxiv.org/abs/2509.15455)**
+:   Interaction-aware mixed precision at LLM scale (added
+    2026-08-04). Estimates layer sensitivities *and* inter-layer
+    dependencies with Shapley values (SPQE), then assigns 2 or 4
+    bits per layer as a binary quadratic optimization under a
+    memory constraint. Evaluated on Llama-3, Gemma-2, and Qwen-3
+    across three quantization backends. This is quantfit's 2-bit
+    membership problem (ADR-0006, fourth measurement) treated as
+    the objective, on serving-class models. No shipped tool or
+    artifact pipeline found. If the additive solve stays the
+    gating item after imatrix-assisted pricing, this and CLADO are
+    the two published algorithm shapes to price.
+
+**[GAMMA](https://arxiv.org/abs/2605.18475)** (2026)
+:   Learns module-wise precision preferences post-training and
+    converts them to exact budget-feasible assignments with an
+    integer program — one training serves arbitrary budgets by
+    re-solving only the IP (added 2026-08-04). Evaluated on Llama
+    and Qwen at 8B–32B. The first surveyed method that solves to
+    an explicit budget rather than an average bits-per-weight —
+    that narrows one line of quantfit's differentiation. What no
+    surveyed method ships remains the same: provenance-carrying
+    artifacts for a specific card, a validation pass, and packed
+    evidence.
 
 **[Mixed-precision quantization for language models: techniques and prospects](https://arxiv.org/abs/2510.16805)** (survey, 2025)
 :   The field map. It confirms two things about the landscape.
@@ -133,8 +178,11 @@ super-additive joint damage (×11.9) on a 2-bit-heavy recipe.
 :   Planned ≥4-bit pack target and its mixed-precision checkpoint
     format ([ADR-0004](../adr/0004-vllm-first-runtime.md) as amended). The
     runtime-capability table (which precisions have kernels) comes from
-    here. Verified 2026-07: the Marlin and Machete kernels cover 4-bit and
-    8-bit only. Upstream closed the EXL3 integration request
+    here. Verified 2026-07, re-verified 2026-08-04: the Marlin and
+    Machete kernels cover 4-bit and
+    8-bit only — 2026 upstream work widened *hardware* coverage
+    (Marlin on Turing+), not bit widths, so the ADR-0013 table
+    stands. Upstream closed the EXL3 integration request
     ([vllm#19896](https://github.com/vllm-project/vllm/issues/19896)) as
     not planned. Upstream also moved in-tree GGUF support out to
     [vllm-gguf-plugin](https://github.com/vllm-project/vllm-gguf-plugin),
