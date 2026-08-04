@@ -114,3 +114,42 @@ def tiny_model_dir(tmp_path_factory) -> Path:
     torch.manual_seed(0)
     LlamaForCausalLM(config).save_pretrained(directory)
     return directory
+
+
+@pytest.fixture(scope="session")
+def aligned_model_dir(tmp_path_factory) -> Path:
+    """A tiny Llama checkpoint whose rows divide the K-quant super-block.
+
+    Assisted pricing refuses rows that straddle 256-element
+    super-blocks (ADR-0020), so its meter tests need aligned
+    dimensions — ``tiny_model_dir`` is deliberately misaligned.
+    Skips when the scan extra is not installed.
+    """
+    torch = pytest.importorskip("torch", reason="scan extra not installed")
+    pytest.importorskip("transformers", reason="scan extra not installed")
+    from tokenizers import Tokenizer, models, pre_tokenizers, trainers
+    from transformers import (
+        LlamaConfig,
+        LlamaForCausalLM,
+        PreTrainedTokenizerFast,
+    )
+
+    directory = tmp_path_factory.mktemp("aligned-model")
+    tokenizer = Tokenizer(models.BPE(unk_token="<unk>"))
+    tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel()
+    trainer = trainers.BpeTrainer(vocab_size=384, special_tokens=["<unk>"])
+    tokenizer.train_from_iterator([CALIBRATION_TEXT], trainer)
+    fast = PreTrainedTokenizerFast(tokenizer_object=tokenizer, unk_token="<unk>")
+    fast.save_pretrained(directory)
+    config = LlamaConfig(
+        vocab_size=512,
+        hidden_size=256,
+        intermediate_size=512,
+        num_hidden_layers=2,
+        num_attention_heads=4,
+        num_key_value_heads=2,
+        max_position_embeddings=4096,
+    )
+    torch.manual_seed(0)
+    LlamaForCausalLM(config).save_pretrained(directory)
+    return directory

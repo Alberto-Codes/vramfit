@@ -40,6 +40,7 @@ ADR that supersedes the old one.
 | [0017](0017-post-pack-smoke-test.md) | A packed model proves it emits language before anything trusts it | Accepted |
 | [0018](0018-kquant-within-group-method.md) | A K-quant-faithful within-group method behind a scan flag | Accepted |
 | [0019](0019-kquant-priced-maps.md) | Sub-4-bit recipes solve on kquant-priced maps | Proposed |
+| [0020](0020-imatrix-assisted-pricing.md) | The meter prices K-quant cells with the pack's imatrix | Proposed |
 
 ## Template
 

@@ -663,6 +663,91 @@ cannot carry it.
 ADR-0019 stays Proposed: its first full measurement contradicts
 its decision as stated, and the record says so.
 
+## The ninth data point: the imatrix duel
+
+The eighth data point left one prime suspect and one cheap control.
+Both probes ran on 2026-08-03, before any full re-scan
+(ADR-0020) — and both moved the story.
+
+**Probe A: the eval-set control — mismatch distorts PPL, not the
+ranking.** Tier-2 KLD re-ran on the scan's own calibration text
+(first 100 chunks, fresh f16 base) for both live artifacts and the
+baseline. If the kquant recipe won in-set and lost on wiki, the
+meter's objective would need held-out text before any pricing fix
+could show up in the tiers.
+
+| Model (calibration text) | PPL ↓ | Mean KLD ↓ |
+|--------------------------|-------|------------|
+| f16 base | 8.170 | — |
+| quantfit RTN 64k map + imatrix | 8.829 | 0.5611 |
+| quantfit kquant map + imatrix | 8.673 | 0.6114 |
+| Q3_K_S heuristic (bartowski) | 7.758 | **0.4538** |
+
+By PPL the ordering *does* flip: the kquant recipe wins in-set and
+loses on wiki, and the baseline lands below the f16 base itself —
+a quantized model "beating" its reference is the tell that PPL on
+near-calibration text measures affinity, not fidelity. By mean KLD
+— the meter's own damage metric, which cannot go below zero against
+its own base — nothing flips: the kquant recipe loses on both texts
+and the baseline wins on both, with an imatrix built from a
+*different* dataset. The frame leak survives text matching. The
+eval-set mismatch is struck from the suspect list, with a standing
+caution: cross-text PPL comparisons do not transfer.
+
+**Probe B: assistance re-prices per cell, by structure, at every
+precision.** Sixteen cells spanning the kquant recipe's 52-group
+2-bit set, re-measured on the 65,536-token frame with the ported
+`_impl` quantizers (ADR-0020) — assisted and unassisted in one
+process, paired per cell. The pair ratio is the honest number; the
+sanity cells below say why.
+
+| Cells (in-process, assisted / unassisted) | median | range |
+|--------------------------------------------|--------|-------|
+| 2-bit, attention-bearing (10, 17, 22, 31, 41) | **0.55** | 0.47–0.67 |
+| 2-bit, FFN-only (46, 50, 55, 61, 68) | 0.90 | 0.83–0.99 |
+| 3-bit (9, 14, 70, 75) | 0.82 | 0.40–0.95 |
+| 4-bit (76, 79) | 0.60 | 0.41–0.79 |
+
+Three readings:
+
+1. **The re-pricing clears the gate.** Attention-bearing cells
+   re-price 1.8–2.1x at 2-bit, up to 2.5x at 3-bit (layer 9) and
+   2.5x at 4-bit (layer 79). Per-cell, not scalar — no rescale of
+   the unassisted map reproduces these prices.
+2. **The distortion is structural.** Assistance concentrates where
+   attention tensors are — the FFN-only mid-stack (the NAS
+   architecture's layers 42–70) gets almost none (0.83–0.99). The
+   unassisted map therefore overprices attention-layer low-bit
+   cells ~1.65x *relative* to FFN-only cells. The solver bought 52
+   groups of 2-bit on those tilted relative prices.
+3. **Assistance is not a 2-bit story.** Layer 9 at 3-bit (0.40)
+   and layer 79 at 4-bit (0.41) re-price hardest of all. An
+   assisted map changes prices everywhere the imatrix covers.
+
+**The sanity pair widened the noise floor.** Two RTN re-measurements
+of stored RTN-map cells — the seventh data point's trick — read
+2.7x and 4.1x their map values, against 0.79–0.81 last time. The
+environment is unchanged (the lockfile diff since the maps is one
+reading-only dependency), so cross-process frame offsets on this
+box are larger and less stable than the ~20 % previously bounded,
+and they compound between maps scanned in different processes.
+Consequences: absolute damages do not transfer across processes,
+every cross-map ratio in earlier data points carries wider error
+bars than stated, and the in-process pairing this probe used is
+the only comparison that survives. The rented-lane instrument
+check (issue #40) stops being a formality and becomes the first
+task of any off-box scan.
+
+**Verdict.** The re-pricing is material, per-cell, and
+structure-dependent: the full imatrix-assisted re-scan is
+justified (ADR-0020's gate). Probe timing prices it at ~40–50 h
+on the reference box (assisted cells averaged ~9 min against ~6.5
+unassisted), which strengthens the #40 case. The follow-up loop
+carries the usual burden: re-plan, frame-matched validation —
+method-matched *and* imatrix-matched — pack, smoke, both tiers.
+Until an assisted-priced recipe beats an unassisted one packed,
+ADR-0020 stays Proposed, exactly as ADR-0019 waits beside it.
+
 ## Provenance is not evidence
 
 Hashes answer a different question and must not be confused with
@@ -696,8 +781,12 @@ compute.
 
 - Which lm-evaluation-harness tasks form the fixed slice, and at what
   few-shot settings.
-- Whether tier 2 uses the scan's calibration set, WikiText-2, or
+- ~~Whether tier 2 uses the scan's calibration set, WikiText-2, or
   both — same-set confirms the additivity story, held-out text guards
-  against calibration overfit.
+  against calibration overfit.~~ **Measured (the ninth data point):
+  held-out wiki.test stays the scoreboard.** In-set PPL rewards
+  calibration affinity (the baseline scored below f16), and in-set
+  KLD ranked the artifacts the same as wiki — same-set adds noise,
+  not signal.
 - Whether evaluation results become a versioned artifact of their own
   (an "evals" sidecar) or stay embedded in the model card.

@@ -303,6 +303,185 @@ class TestTorchDamageMeter:
                 within_group=bad_method,
             )
 
+    def test_assisted_meter_measures_different_damage_than_unassisted(
+        self, aligned_model_dir, tmp_path
+    ) -> None:
+        # The imatrix_weights -> name -> assisted quantizer chain,
+        # end to end. A meter that drops the lookup would price
+        # unassisted under the assisted label — corrupted provenance
+        # the golden fixtures cannot catch.
+        from quantfit.adapters.outbound.scan.meter import TorchDamageMeter
+
+        calibration = tmp_path / "calib.txt"
+        calibration.write_text(CALIBRATION_TEXT)
+
+        def build(weights) -> TorchDamageMeter:
+            return TorchDamageMeter(
+                str(aligned_model_dir),
+                calibration,
+                max_tokens=128,
+                device="cpu",
+                within_group="kquant",
+                imatrix_weights=weights,
+            )
+
+        plain = build(None)
+        group = next(spec.name for spec in plain.groups() if "layers" in spec.name)
+        name = plain._groups[group][0]
+        rows = int(plain._param(name).shape[-1])
+        spiked = torch.ones(rows)
+        spiked[::3] = 100.0
+        assisted = build({name: spiked})
+
+        unassisted_damage = plain.measure(group, 2)
+        assisted_damage = assisted.measure(group, 2)
+
+        assert assisted_damage != unassisted_damage
+        assert assisted_damage >= 0.0
+
+    def test_imatrix_weights_with_rtn_are_refused_before_the_model_loads(
+        self, tmp_path
+    ) -> None:
+        from quantfit.adapters.outbound.scan.meter import TorchDamageMeter
+
+        calibration = tmp_path / "calib.txt"
+        calibration.write_text(CALIBRATION_TEXT)
+
+        with pytest.raises(ValueError, match="kquant within-group method"):
+            TorchDamageMeter(
+                "/nonexistent-model",
+                calibration,
+                max_tokens=128,
+                device="cpu",
+                imatrix_weights={"any.weight": torch.ones(8)},
+            )
+
+    def test_empty_imatrix_weights_are_refused_before_the_model_loads(
+        self, tmp_path
+    ) -> None:
+        # An empty mapping prices every cell unassisted under the
+        # assisted label — the caller must pass None deliberately.
+        from quantfit.adapters.outbound.scan.meter import TorchDamageMeter
+
+        calibration = tmp_path / "calib.txt"
+        calibration.write_text(CALIBRATION_TEXT)
+
+        with pytest.raises(ValueError, match="empty"):
+            TorchDamageMeter(
+                "/nonexistent-model",
+                calibration,
+                max_tokens=128,
+                device="cpu",
+                within_group="kquant",
+                imatrix_weights={},
+            )
+
+    def test_non_finite_imatrix_weights_are_refused_at_construction(
+        self, aligned_model_dir, tmp_path
+    ) -> None:
+        # A NaN weight would abort the scan at its first assisted
+        # cell, hours in — construction must refuse it up front.
+        from quantfit.adapters.outbound.scan.meter import TorchDamageMeter
+
+        calibration = tmp_path / "calib.txt"
+        calibration.write_text(CALIBRATION_TEXT)
+        weights = torch.ones(256)
+        weights[3] = float("nan")
+
+        with pytest.raises(ValueError, match="finite"):
+            TorchDamageMeter(
+                str(aligned_model_dir),
+                calibration,
+                max_tokens=128,
+                device="cpu",
+                within_group="kquant",
+                imatrix_weights={"model.layers.0.self_attn.q_proj.weight": weights},
+            )
+
+    def test_non_1d_imatrix_weights_are_refused_at_construction(
+        self, aligned_model_dir, tmp_path
+    ) -> None:
+        # A (1, rows) tensor has the right numel — only a dim check
+        # stops it passing construction and dying at the first
+        # assisted cell.
+        from quantfit.adapters.outbound.scan.meter import TorchDamageMeter
+
+        calibration = tmp_path / "calib.txt"
+        calibration.write_text(CALIBRATION_TEXT)
+
+        with pytest.raises(ValueError, match="1-D"):
+            TorchDamageMeter(
+                str(aligned_model_dir),
+                calibration,
+                max_tokens=128,
+                device="cpu",
+                within_group="kquant",
+                imatrix_weights={
+                    "model.layers.0.self_attn.q_proj.weight": torch.ones(1, 256)
+                },
+            )
+
+    def test_misaligned_covered_parameter_is_refused_at_construction(
+        self, tiny_model_dir, tmp_path
+    ) -> None:
+        # tiny_model_dir rows are 32-wide — a covered parameter that
+        # cannot split into 256-element super-blocks can never price
+        # assisted, and the first assisted cell would abort mid-scan.
+        from quantfit.adapters.outbound.scan.meter import TorchDamageMeter
+
+        calibration = tmp_path / "calib.txt"
+        calibration.write_text(CALIBRATION_TEXT)
+
+        with pytest.raises(ValueError, match="super-block"):
+            TorchDamageMeter(
+                str(tiny_model_dir),
+                calibration,
+                max_tokens=128,
+                device="cpu",
+                within_group="kquant",
+                imatrix_weights={
+                    "model.layers.0.self_attn.q_proj.weight": torch.ones(32)
+                },
+            )
+
+    def test_imatrix_weights_for_an_unknown_parameter_are_refused(
+        self, tiny_model_dir, tmp_path
+    ) -> None:
+        from quantfit.adapters.outbound.scan.meter import TorchDamageMeter
+
+        calibration = tmp_path / "calib.txt"
+        calibration.write_text(CALIBRATION_TEXT)
+
+        with pytest.raises(ValueError, match="unknown parameter"):
+            TorchDamageMeter(
+                str(tiny_model_dir),
+                calibration,
+                max_tokens=128,
+                device="cpu",
+                within_group="kquant",
+                imatrix_weights={"model.layers.0.typo.weight": torch.ones(8)},
+            )
+
+    def test_imatrix_weights_with_wrong_length_are_refused(
+        self, tiny_model_dir, tmp_path
+    ) -> None:
+        from quantfit.adapters.outbound.scan.meter import TorchDamageMeter
+
+        calibration = tmp_path / "calib.txt"
+        calibration.write_text(CALIBRATION_TEXT)
+
+        with pytest.raises(ValueError, match="rows have"):
+            TorchDamageMeter(
+                str(tiny_model_dir),
+                calibration,
+                max_tokens=128,
+                device="cpu",
+                within_group="kquant",
+                imatrix_weights={
+                    "model.layers.0.self_attn.q_proj.weight": torch.ones(8)
+                },
+            )
+
     def test_kquant_meter_refuses_uncovered_bits(
         self, tiny_model_dir, tmp_path
     ) -> None:
