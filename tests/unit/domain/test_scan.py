@@ -138,13 +138,42 @@ class TestScanFingerprint:
     def test_fingerprint_format_is_pinned(self) -> None:
         # On-disk checkpoints key on this exact string — a format
         # drift silently invalidates every resumable scan in flight.
-        expected = "m|kl_divergence|calib.txt|1024|layer|8,4|rtn-block32"
+        # The trailing field is the imatrix path, empty when
+        # unassisted (ADR-0020).
+        expected = "m|kl_divergence|calib.txt|1024|layer|8,4|rtn-block32|"
 
         assert scan_fingerprint("m", make_meta()) == expected
+
+    def test_assisted_fingerprint_carries_the_imatrix_path(self) -> None:
+        meta = make_meta(within_group="kquant-imx", imatrix="im.gguf")
+
+        fingerprint = scan_fingerprint("m", meta)
+
+        assert fingerprint.endswith("|kquant-imx|im.gguf")
+
+    def test_imatrix_path_changes_the_fingerprint(self) -> None:
+        # Two assisted scans with different imatrix files must never
+        # share a checkpoint (ADR-0020).
+        left = make_meta(within_group="kquant-imx", imatrix="a.gguf")
+        right = make_meta(within_group="kquant-imx", imatrix="b.gguf")
+
+        assert scan_fingerprint("m", left) != scan_fingerprint("m", right)
 
     def test_empty_within_group_raises(self) -> None:
         with pytest.raises(ValueError, match="within_group"):
             make_meta(within_group="")
+
+    def test_assisted_token_without_imatrix_raises(self) -> None:
+        with pytest.raises(ValueError, match="imatrix"):
+            make_meta(within_group="kquant-imx")
+
+    def test_imatrix_without_the_assisted_token_raises(self) -> None:
+        with pytest.raises(ValueError, match="kquant-imx"):
+            make_meta(within_group="kquant-ref", imatrix="im.gguf")
+
+    def test_empty_imatrix_raises(self) -> None:
+        with pytest.raises(ValueError, match="imatrix"):
+            make_meta(within_group="kquant-imx", imatrix="")
 
     def test_separator_in_field_values_cannot_collide(self) -> None:
         injected = scan_fingerprint("m|kl_divergence", make_meta(metric="x"))

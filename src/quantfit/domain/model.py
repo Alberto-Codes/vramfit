@@ -2,10 +2,12 @@
 
 The dataclasses enforce their own structural invariants in
 ``__post_init__`` (positive sizes, strictly descending precisions,
-unique group names, sensitivity keys matching the scan) so an instance
+unique group names, sensitivity keys matching the scan, imatrix
+provenance pairing with the assisted method token) so an instance
 that exists is safe for the solver — however it was constructed. The
-v1 within-group method token lives here as `SCAN_METHOD`, beside the
-`ScanMeta` field it is the default for (ADR-0018).
+within-group method tokens live here — `SCAN_METHOD` beside the
+`ScanMeta` field it is the default for (ADR-0018), and the kquant
+tokens beside the `imatrix` invariant they anchor (ADR-0020).
 Serialization and the JSON schema envelope (including the
 ``quantfit_schema`` version field) live in
 [quantfit.adapters.outbound.sensitivity_map_json][] and
@@ -53,9 +55,16 @@ from typing import Literal
 
 # The v1 within-group method token (ADR-0006): round-to-nearest,
 # 32-element scale blocks. Defined beside `ScanMeta`, whose default
-# it is. [quantfit.domain.scan][] re-exports it beside the kquant
-# token so method tokens read from one module.
+# it is. [quantfit.domain.scan][] re-exports every method token so
+# they read from one module.
 SCAN_METHOD = "rtn-block32"
+# The K-quant-faithful method (ADR-0018): llama.cpp reference
+# quantizers ported to torch — Q2_K, Q3_K, Q4_K, Q8_0.
+KQUANT_METHOD = "kquant-ref"
+# The imatrix-assisted K-quant method (ADR-0020): the same port,
+# with the pack's imatrix weighting every covered fit. Defined here
+# because `ScanMeta` pairs the token with its `imatrix` field.
+KQUANT_IMX_METHOD = "kquant-imx"
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,6 +86,10 @@ class ScanMeta:
         within_group (str): Within-group method token (ADR-0018) —
             `SCAN_METHOD` (``rtn-block32``) unless the scan selected
             another method.
+        imatrix (str | None): Path of the imatrix that assisted the
+            scan (ADR-0020), or None for an unassisted scan. Pairs
+            with the `KQUANT_IMX_METHOD` token — a map cannot claim
+            assistance without naming its imatrix, or the reverse.
 
     Examples:
         The scan section of a map:
@@ -102,19 +115,36 @@ class ScanMeta:
     group_by: Literal["layer", "tensor"]
     started_at: str
     within_group: str = SCAN_METHOD
+    imatrix: str | None = None
 
     def __post_init__(self) -> None:
         """Enforce the scan invariants the solver relies on.
 
         Raises:
             ValueError: If ``calibration_tokens`` is not positive,
-                ``within_group`` is empty, or ``precisions`` is empty,
-                non-positive, or not strictly descending.
+                ``within_group`` is empty, ``precisions`` is empty,
+                non-positive, or not strictly descending, or
+                ``imatrix`` does not pair with the assisted method
+                token — assisted damages without their imatrix
+                provenance are not comparable to anything
+                (ADR-0020).
         """
         if self.calibration_tokens <= 0:
             raise ValueError("calibration_tokens must be positive")
         if not self.within_group:
             raise ValueError("within_group must not be empty")
+        if self.imatrix is not None and not self.imatrix:
+            raise ValueError("imatrix must not be empty — use None when unassisted")
+        if self.within_group == KQUANT_IMX_METHOD and self.imatrix is None:
+            raise ValueError(
+                f'within_group "{KQUANT_IMX_METHOD}" requires the imatrix '
+                "field (ADR-0020)"
+            )
+        if self.imatrix is not None and self.within_group != KQUANT_IMX_METHOD:
+            raise ValueError(
+                f'imatrix provenance requires within_group "{KQUANT_IMX_METHOD}", '
+                f'got "{self.within_group}" (ADR-0020)'
+            )
         if not self.precisions:
             raise ValueError("precisions must not be empty")
         if any(p <= 0 for p in self.precisions):
@@ -355,6 +385,18 @@ class Recipe:
             for (ADR-0013), or None for an unconstrained plan. No
             default — every constructor states its intent. The
             capability table lives in [quantfit.domain.runtime][].
+        within_group (str | None): The within-group method token of
+            the map that priced the recipe (ADR-0019), or None when
+            the provenance is unknown — recipes written before the
+            field existed. No default — every constructor states
+            its intent. The validation pass only checks additivity
+            when its method matches this token.
+        imatrix (str | None): The imatrix path of the map that
+            priced the recipe (ADR-0020), or None for an unassisted
+            or unknown-provenance map. Pairs with the
+            `KQUANT_IMX_METHOD` token, like `ScanMeta.imatrix` — a
+            wrong imatrix file in the validation pass contaminates
+            the additivity gap silently.
 
     Examples:
         Inspect a recipe's predicted size:
@@ -368,14 +410,33 @@ class Recipe:
     plan: PlanMeta
     assignments: tuple[Assignment, ...]
     runtime: str | None
+    within_group: str | None
+    imatrix: str | None
 
     def __post_init__(self) -> None:
         """Enforce the recipe invariants the pack step relies on.
 
         Raises:
-            ValueError: If ``assignments`` is empty or two assignments
-                name the same group.
+            ValueError: If ``assignments`` is empty, two assignments
+                name the same group, ``within_group`` or ``imatrix``
+                is an empty string — unknown provenance is None,
+                never "" — or ``imatrix`` does not pair with the
+                assisted method token (ADR-0020).
         """
+        if self.within_group is not None and not self.within_group:
+            raise ValueError("within_group must not be empty — use None for unknown")
+        if self.imatrix is not None and not self.imatrix:
+            raise ValueError("imatrix must not be empty — use None for unknown")
+        if self.within_group == KQUANT_IMX_METHOD and self.imatrix is None:
+            raise ValueError(
+                f'within_group "{KQUANT_IMX_METHOD}" requires the imatrix '
+                "field (ADR-0020)"
+            )
+        if self.imatrix is not None and self.within_group != KQUANT_IMX_METHOD:
+            raise ValueError(
+                f'imatrix provenance requires within_group "{KQUANT_IMX_METHOD}", '
+                f'got "{self.within_group}" (ADR-0020)'
+            )
         if not self.assignments:
             raise ValueError("assignments must not be empty")
         names = [a.group for a in self.assignments]

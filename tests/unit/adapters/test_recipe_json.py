@@ -77,6 +77,62 @@ class TestRecipe:
 
         assert load_recipe(path) == recipe
 
+    def test_absent_within_group_defaults_to_none(self) -> None:
+        raw = make_recipe_dict()
+        assert "within_group" not in raw
+
+        recipe = recipe_from_dict(raw)
+
+        assert recipe.within_group is None
+        # The writer still records the absence explicitly.
+        assert recipe_to_dict(recipe)["within_group"] is None
+
+    def test_within_group_round_trips(self) -> None:
+        raw = make_recipe_dict()
+        raw["within_group"] = "kquant-ref"
+
+        recipe = recipe_from_dict(raw)
+        again = recipe_from_dict(recipe_to_dict(recipe))
+
+        assert recipe.within_group == "kquant-ref"
+        assert again == recipe
+
+    def test_assisted_provenance_round_trips(self) -> None:
+        raw = make_recipe_dict()
+        raw["within_group"] = "kquant-imx"
+        raw["imatrix"] = "/runs/model.imatrix.gguf"
+
+        recipe = recipe_from_dict(raw)
+        again = recipe_from_dict(recipe_to_dict(recipe))
+
+        assert recipe.within_group == "kquant-imx"
+        assert recipe.imatrix == "/runs/model.imatrix.gguf"
+        assert again == recipe
+
+    def test_assisted_token_without_imatrix_rejected(self) -> None:
+        # A recipe claiming assisted pricing without naming its
+        # imatrix is corrupted provenance (ADR-0020).
+        raw = make_recipe_dict()
+        raw["within_group"] = "kquant-imx"
+
+        with pytest.raises(ArtifactError, match="imatrix"):
+            recipe_from_dict(raw)
+
+    def test_imatrix_without_the_assisted_token_rejected(self) -> None:
+        raw = make_recipe_dict()
+        raw["within_group"] = "kquant-ref"
+        raw["imatrix"] = "/runs/model.imatrix.gguf"
+
+        with pytest.raises(ArtifactError, match="kquant-imx"):
+            recipe_from_dict(raw)
+
+    def test_empty_within_group_rejected(self) -> None:
+        raw = make_recipe_dict()
+        raw["within_group"] = ""
+
+        with pytest.raises(ArtifactError, match="within_group"):
+            recipe_from_dict(raw)
+
     def test_runtime_round_trips(self) -> None:
         recipe = recipe_from_dict(make_recipe_dict())
 

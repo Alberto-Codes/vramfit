@@ -192,14 +192,14 @@ class TestAssistedWeightsForParams:
         path = _write_imatrix(
             tmp_path / "im.gguf",
             {
-                "blk.0.attn_q.weight.in_sum2": np.ones(8),
+                "blk.0.attn_q.weight.in_sum2": np.ones(256),
                 "blk.0.attn_q.weight.counts": np.array([1.0]),
             },
         )
         shapes = {
-            "model.layers.0.self_attn.q_proj.weight": (8, 8),
-            "model.layers.1.self_attn.q_proj.weight": (8, 8),
-            "model.embed_tokens.weight": (16, 8),
+            "model.layers.0.self_attn.q_proj.weight": (8, 256),
+            "model.layers.1.self_attn.q_proj.weight": (8, 256),
+            "model.embed_tokens.weight": (16, 256),
         }
 
         covered, uncovered = assisted_weights_for_params(path, shapes)
@@ -231,12 +231,35 @@ class TestAssistedWeightsForParams:
         path = _write_imatrix(
             tmp_path / "im.gguf",
             {
-                "blk.0.attn_q.weight.in_sum2": np.ones(8),
+                "blk.0.attn_q.weight.in_sum2": np.ones(256),
                 "blk.0.attn_q.weight.counts": np.array([1.0]),
             },
         )
 
-        with pytest.raises(ValueError, match="rows have 16"):
+        with pytest.raises(ValueError, match="rows have 512"):
             assisted_weights_for_params(
-                path, {"model.layers.0.self_attn.q_proj.weight": (8, 16)}
+                path, {"model.layers.0.self_attn.q_proj.weight": (8, 512)}
             )
+
+    def test_misaligned_covered_rows_fall_back_to_uncovered(self, tmp_path) -> None:
+        # A covered parameter whose rows do not divide into
+        # super-blocks cannot price assisted (ADR-0020) — it joins
+        # the uncovered set instead of refusing the whole scan.
+        path = _write_imatrix(
+            tmp_path / "im.gguf",
+            {
+                "blk.0.attn_q.weight.in_sum2": np.ones(96),
+                "blk.0.attn_q.weight.counts": np.array([1.0]),
+                "blk.0.attn_k.weight.in_sum2": np.ones(256),
+                "blk.0.attn_k.weight.counts": np.array([1.0]),
+            },
+        )
+        shapes = {
+            "model.layers.0.self_attn.q_proj.weight": (8, 96),
+            "model.layers.0.self_attn.k_proj.weight": (8, 256),
+        }
+
+        covered, uncovered = assisted_weights_for_params(path, shapes)
+
+        assert set(covered) == {"model.layers.0.self_attn.k_proj.weight"}
+        assert uncovered == ("model.layers.0.self_attn.q_proj.weight",)

@@ -31,6 +31,8 @@ class TestRecipeInvariants:
                 Assignment(group="model.layers.1", bits=4, bytes=1_000, damage=0.02),
             ),
             runtime=None,
+            within_group=None,
+            imatrix=None,
         )
 
         assert len(recipe.assignments) == 2
@@ -51,10 +53,30 @@ class TestRecipeInvariants:
                     duplicated,
                 ),
                 runtime=None,
+                within_group=None,
+                imatrix=None,
+            )
+
+    def test_empty_within_group_raises_value_error(self) -> None:
+        with pytest.raises(ValueError, match="within_group"):
+            Recipe(
+                model_id="test/model",
+                plan=make_plan(),
+                assignments=(
+                    Assignment(group="model.layers.0", bits=8, bytes=1, damage=0.0),
+                ),
+                runtime=None,
+                within_group="",
+                imatrix=None,
             )
 
     def test_empty_assignments_raise_value_error(self) -> None:
         with pytest.raises(ValueError, match="must not be empty"):
             Recipe(
-                model_id="test/model", plan=make_plan(), assignments=(), runtime=None
+                model_id="test/model",
+                plan=make_plan(),
+                assignments=(),
+                runtime=None,
+                within_group=None,
+                imatrix=None,
             )

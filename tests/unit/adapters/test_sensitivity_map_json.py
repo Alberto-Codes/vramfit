@@ -61,6 +61,59 @@ class TestSensitivityMap:
         with pytest.raises(ArtifactError, match="within_group"):
             map_from_dict(raw)
 
+    def test_absent_imatrix_defaults_to_none(self) -> None:
+        raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
+        assert "imatrix" not in raw["scan"]
+
+        map_ = map_from_dict(raw)
+
+        assert map_.scan.imatrix is None
+
+    def test_null_imatrix_loads_as_none(self) -> None:
+        raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
+        raw["scan"]["imatrix"] = None
+
+        map_ = map_from_dict(raw)
+
+        assert map_.scan.imatrix is None
+
+    def test_assisted_map_round_trips_the_imatrix(self) -> None:
+        raw = make_map([("g0", 1000, {3: 0.2, 2: 0.3})], precisions=(3, 2))
+        raw["scan"]["within_group"] = "kquant-imx"
+        raw["scan"]["imatrix"] = "/runs/model.imatrix.gguf"
+
+        map_ = map_from_dict(raw)
+        again = map_from_dict(map_to_dict(map_))
+
+        assert map_.scan.within_group == "kquant-imx"
+        assert map_.scan.imatrix == "/runs/model.imatrix.gguf"
+        assert again == map_
+
+    def test_assisted_token_without_imatrix_rejected(self) -> None:
+        # A map claiming assistance without naming its imatrix is
+        # corrupted provenance (ADR-0020).
+        raw = make_map([("g0", 1000, {3: 0.2, 2: 0.3})], precisions=(3, 2))
+        raw["scan"]["within_group"] = "kquant-imx"
+
+        with pytest.raises(ArtifactError, match="imatrix"):
+            map_from_dict(raw)
+
+    def test_imatrix_without_the_assisted_token_rejected(self) -> None:
+        raw = make_map([("g0", 1000, {3: 0.2, 2: 0.3})], precisions=(3, 2))
+        raw["scan"]["within_group"] = "kquant-ref"
+        raw["scan"]["imatrix"] = "/runs/model.imatrix.gguf"
+
+        with pytest.raises(ArtifactError, match="kquant-imx"):
+            map_from_dict(raw)
+
+    def test_empty_imatrix_rejected(self) -> None:
+        raw = make_map([("g0", 1000, {3: 0.2, 2: 0.3})], precisions=(3, 2))
+        raw["scan"]["within_group"] = "kquant-imx"
+        raw["scan"]["imatrix"] = ""
+
+        with pytest.raises(ArtifactError, match="imatrix"):
+            map_from_dict(raw)
+
     def test_missing_field_raises_error_with_json_path(self) -> None:
         raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
         del raw["scan"]["metric"]

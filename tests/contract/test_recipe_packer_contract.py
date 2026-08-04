@@ -90,6 +90,8 @@ def sample_pack_recipe() -> Recipe:
             Assignment(group="model.layers.1", bits=4, bytes=500, damage=0.01),
         ),
         runtime=None,
+        within_group=None,
+        imatrix=None,
     )
 
 

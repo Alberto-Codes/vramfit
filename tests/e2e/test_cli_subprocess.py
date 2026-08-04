@@ -115,6 +115,8 @@ def test_validate_without_the_extra_reports_the_install_hint(tmp_path) -> None:
                 Assignment(group="model.layers.0", bits=4, bytes=500, damage=0.01),
             ),
             runtime=None,
+            within_group=None,
+            imatrix=None,
         ),
         recipe_path,
     )
@@ -166,6 +168,8 @@ def test_pack_flow_with_stub_toolchain_produces_the_packed_file(tmp_path) -> Non
             Assignment(group="model.layers.0", bits=4, bytes=500, damage=0.01),
         ),
         runtime="llama.cpp",
+        within_group=None,
+        imatrix=None,
     )
     recipe_path = tmp_path / "recipe.json"
     save_recipe(recipe, recipe_path)

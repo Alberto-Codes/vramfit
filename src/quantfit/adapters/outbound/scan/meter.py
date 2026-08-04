@@ -31,9 +31,12 @@ Examples:
 The within-group method is selected at construction (ADR-0018):
 round-to-nearest by default, or the K-quant-faithful port. The
 kquant method can price covered tensors with imatrix column weights
-(assisted pricing, ADR-0020). Construction refuses weights the
+(assisted pricing, ADR-0020) — passed directly, or resolved from a
+GGUF imatrix file that loads before the model. Construction refuses
+weights the
 model cannot consume — wrong names, wrong lengths, misaligned rows,
-non-finite values — before the scan spends an hour.
+non-finite values — before the scan spends an hour, and reports the
+coverage split for the run log.
 
 See Also:
     - [quantfit.ports.outbound][]: `DamageMeter`, the port this
@@ -56,10 +59,12 @@ import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from quantfit.adapters.outbound.scan.calibration import load_calibration
-from quantfit.adapters.outbound.scan.kl import mean_kl, reference_log_probs
-from quantfit.adapters.outbound.scan.kquant import (
-    SUPER_BLOCK as KQUANT_SUPER_BLOCK,
+from quantfit.adapters.outbound.scan.imatrix import (
+    check_imatrix_weights,
+    load_imatrix,
+    resolve_assisted_weights,
 )
+from quantfit.adapters.outbound.scan.kl import mean_kl, reference_log_probs
 from quantfit.adapters.outbound.scan.kquant import kquant_quantize_dequantize
 from quantfit.adapters.outbound.scan.kquant_assisted import (
     kquant_assisted_quantize_dequantize,
@@ -104,6 +109,14 @@ class TorchDamageMeter:
         offloaded_group_count (int): How many groups hold at least one
             offloaded parameter (ADR-0015). Zero when the model fits
             the card.
+        imatrix_covered_count (int | None): How many discovered
+            parameters price assisted (ADR-0020). None when the
+            meter is unassisted — distinct from a real zero, which
+            construction refuses.
+        imatrix_uncovered (tuple[str, ...] | None): Discovered
+            parameters the imatrix does not cover, in discovery
+            order — they price unassisted, the ``llama-quantize``
+            fallback. None when the meter is unassisted.
 
     Examples:
         Discover groups on a tiny local model:
@@ -126,6 +139,7 @@ class TorchDamageMeter:
         max_gpu_memory: int | None = None,
         within_group: Literal["rtn", "kquant"] = "rtn",
         imatrix_weights: Mapping[str, torch.Tensor] | None = None,
+        imatrix_path: Path | None = None,
     ) -> None:
         """Load the model, tokenize the calibration set, discover groups.
 
@@ -158,18 +172,28 @@ class TorchDamageMeter:
                 assisted label. A parameter absent from a non-empty
                 mapping prices unassisted — the ``llama-quantize``
                 fallback for a NULL imatrix row.
+            imatrix_path: GGUF imatrix file to resolve column
+                weights from instead of ``imatrix_weights`` — the
+                two exclude each other. The file loads before the
+                model, so a malformed imatrix refuses in
+                milliseconds. Name resolution runs after group
+                discovery, when the parameter shapes exist.
 
         Raises:
             ValueError: If ``within_group`` is not a known method —
                 an unknown value must not fall back to RTN and record
-                damages under the wrong token — ``imatrix_weights``
+                damages under the wrong token — imatrix input
                 arrives with the ``rtn`` method (RTN has no weighted
-                C counterpart), a weighted name is unknown or its
-                length does not match the parameter's rows, the
-                calibration file yields too few tokens, or a
-                quantizable group was offloaded beyond host RAM (an
-                unperturbable weight would record zero damage).
-            OSError: If the model or calibration file cannot be read.
+                C counterpart), ``imatrix_weights`` and
+                ``imatrix_path`` arrive together, the imatrix file
+                is malformed or covers no parameter, a weighted name
+                is unknown or its length does not match the
+                parameter's rows, the calibration file yields too
+                few tokens, or a quantizable group was offloaded
+                beyond host RAM (an unperturbable weight would
+                record zero damage).
+            OSError: If the model, calibration, or imatrix file
+                cannot be read.
         """
         # Checked before the model load: a silent RTN fallback under
         # a mistyped method corrupts every damage the meter measures.
@@ -177,18 +201,29 @@ class TorchDamageMeter:
             raise ValueError(
                 f'within_group must be "rtn" or "kquant", got "{within_group}"'
             )
-        if imatrix_weights is not None:
+        if imatrix_weights is not None and imatrix_path is not None:
+            raise ValueError(
+                "give imatrix_weights or imatrix_path, not both — two "
+                "weight sources cannot both be the provenance"
+            )
+        if imatrix_weights is not None or imatrix_path is not None:
             if within_group != "kquant":
                 raise ValueError(
-                    "imatrix_weights requires the kquant within-group method "
+                    "imatrix weights require the kquant within-group method "
                     "(ADR-0020) — RTN has no weighted C counterpart"
                 )
-            if not imatrix_weights:
+            if imatrix_weights is not None and not imatrix_weights:
                 raise ValueError(
                     "imatrix_weights is empty — every cell would price "
                     "unassisted under the assisted label (ADR-0020); pass "
                     "None to price unassisted deliberately"
                 )
+        # The imatrix file loads before the model: a malformed file
+        # refuses in milliseconds, not after minutes of shard loading.
+        # Name resolution waits for group discovery below.
+        pending_imatrix = (
+            load_imatrix(imatrix_path) if imatrix_path is not None else None
+        )
         self.model_id = model_id
         self._within_group = within_group
         self._imatrix_weights = dict(imatrix_weights or {})
@@ -216,53 +251,29 @@ class TorchDamageMeter:
             for members in self._groups.values()
             if any(name in self._offloaded for name in members)
         )
+        rows_by_param = {
+            name: int(self._param(name).shape[-1])
+            for members in self._groups.values()
+            for name in members
+        }
+        if pending_imatrix is not None:
+            self._imatrix_weights, _ = resolve_assisted_weights(
+                pending_imatrix, rows_by_param
+            )
+        # None when unassisted — distinct from zero coverage, which
+        # the resolvers refuse (ADR-0020).
+        self.imatrix_covered_count: int | None = None
+        self.imatrix_uncovered: tuple[str, ...] | None = None
+        if self._imatrix_weights:
+            self.imatrix_covered_count = len(self._imatrix_weights)
+            self.imatrix_uncovered = tuple(
+                name for name in rows_by_param if name not in self._imatrix_weights
+            )
         self._shards: ShardReader | None = None
         self._reference: list[torch.Tensor] | None = None
         self._poisoned = False
         self._poisoned_reason = ""
-        self._validate_imatrix_weights()
-
-    def _validate_imatrix_weights(self) -> None:
-        """Refuse imatrix weights that cannot match the model.
-
-        Runs at construction. A typoed name or a wrong-length vector
-        would price cells against the wrong columns — silently. A
-        misaligned or non-finite weight would abort the scan at its
-        first assisted cell, hours in, when milliseconds here refuse
-        it up front.
-
-        Raises:
-            ValueError: If a weighted name is not a discovered
-                parameter, its weights are not 1-D, its weight
-                length does not match the parameter's row length,
-                the rows do not divide into super-blocks, or a
-                weight is negative or non-finite.
-        """
-        known = {name for members in self._groups.values() for name in members}
-        for name, weights in self._imatrix_weights.items():
-            if name not in known:
-                raise ValueError(f'imatrix weights name unknown parameter "{name}"')
-            if weights.dim() != 1:
-                raise ValueError(
-                    f"imatrix weights for {name} must be 1-D, got shape "
-                    f"{tuple(weights.shape)}"
-                )
-            rows = int(self._param(name).shape[-1])
-            if weights.numel() != rows:
-                raise ValueError(
-                    f"imatrix weights for {name} have {weights.numel()} "
-                    f"entries, the parameter rows have {rows}"
-                )
-            if rows % KQUANT_SUPER_BLOCK:
-                raise ValueError(
-                    f"{name} has rows of {rows}, not divisible into "
-                    f"{KQUANT_SUPER_BLOCK}-element super-blocks — it "
-                    "cannot price assisted (ADR-0020)"
-                )
-            if not bool(torch.isfinite(weights).all()) or bool((weights < 0).any()):
-                raise ValueError(
-                    f"imatrix weights for {name} must be finite and non-negative"
-                )
+        check_imatrix_weights(self._imatrix_weights, rows_by_param)
 
     def groups(self) -> tuple[GroupSpec, ...]:
         """Discover the model's layer groups.

@@ -71,7 +71,11 @@ model's failure mode (ADR-0006, fourth measurement).
   super-additive 11.9x on RTN prices. The pass must run with the
   map's method — `quantfit validate --within-group kquant`. The
   recipe does not record its map's method, so the pairing is the
-  caller's duty today.
+  caller's duty today. **Closed (2026-08-04):** the recipe now
+  records its map's `within_group` token, `validate` resolves the
+  frame from it, and a contradicting flag is refused. Recipes
+  written before the field carry no record — the pass warns and
+  the pairing stays the caller's duty for those only.
 - Whether RTN should ever price a 3-bit cell again. The probe's
   in-frame 3-bit distortion (1.05–1.7x) and the full map's raw
   cross-process ratio (1.28x median, opposite side of 1) bracket

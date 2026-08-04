@@ -7,10 +7,13 @@ advance per artifact, ADR-0013). One file class serves both directions:
 through the source face. Validation is strict: artifacts are rejected,
 never normalized — ``scan.precisions`` must arrive strictly descending,
 ``group_by`` must be a known granularity, and every group's sensitivity
-keys must equal it exactly. One field is additive rather than strict:
+keys must equal it exactly. Two fields are additive rather than strict:
 ``scan.within_group`` (ADR-0018) defaults to ``rtn-block32`` when
 absent, because every map written before the field existed measured
-with that method.
+with that method, and ``scan.imatrix`` (ADR-0020) defaults to None,
+because every map written before the field existed was unassisted.
+A present ``imatrix`` must pair with the assisted method token —
+the loader rejects a map whose provenance contradicts itself.
 
 Examples:
     Round-trip a map through a file:
@@ -51,7 +54,7 @@ from quantfit.adapters.outbound.json_common import (
     _save_json,
 )
 from quantfit.domain.model import LayerGroup, ScanMeta, SensitivityMap
-from quantfit.domain.scan import SCAN_METHOD
+from quantfit.domain.scan import KQUANT_IMX_METHOD, SCAN_METHOD
 
 # The sensitivity-map schema version. Versions advance per artifact
 # (ADR-0013) — the recipe sits at 2 while the map stays at 1.
@@ -113,7 +116,9 @@ def map_to_dict(map_: SensitivityMap) -> dict[str, Any]:
         A dict that `map_from_dict` accepts and round-trips to an equal
         map, under the `MAP_SCHEMA_VERSION` envelope. Sensitivity keys
         are stringified in descending-bit order. The within-group
-        method token is always written, even when it is the default.
+        method token is always written, even when it is the default,
+        and the imatrix path is always written — null when
+        unassisted (ADR-0020).
     """
     return {
         "quantfit_schema": MAP_SCHEMA_VERSION,
@@ -126,6 +131,7 @@ def map_to_dict(map_: SensitivityMap) -> dict[str, Any]:
             "group_by": map_.scan.group_by,
             "started_at": map_.scan.started_at,
             "within_group": map_.scan.within_group,
+            "imatrix": map_.scan.imatrix,
         },
         "groups": [
             {
@@ -219,9 +225,13 @@ def _parse_scan_meta(obj: dict[str, Any]) -> ScanMeta:
     Raises:
         ArtifactError: If a field is missing or invalid, precisions are
             empty, duplicated, not integers, or not strictly descending,
-            ``group_by`` is not ``layer`` or ``tensor``, or a present
+            ``group_by`` is not ``layer`` or ``tensor``, a present
             ``within_group`` is not a non-empty string (absent
-            defaults to ``rtn-block32``, ADR-0018).
+            defaults to ``rtn-block32``, ADR-0018), or ``imatrix``
+            does not pair with the assisted method token — assisted
+            damages without their imatrix provenance are not
+            comparable to anything (ADR-0020, absent defaults to
+            None).
     """
     path = "$.scan"
     tokens = _get_int(obj, "calibration_tokens", path)
@@ -256,6 +266,21 @@ def _parse_scan_meta(obj: dict[str, Any]) -> ScanMeta:
     within_group = (
         _get_str(obj, "within_group", path) if "within_group" in obj else SCAN_METHOD
     )
+    # Optional and additive (ADR-0020): maps written before the field
+    # existed were unassisted by definition. The pairing rules mirror
+    # ScanMeta's own invariant, re-stated here for JSON-path errors.
+    imatrix = _get_str(obj, "imatrix", path) if obj.get("imatrix") is not None else None
+    _require(
+        not (within_group == KQUANT_IMX_METHOD and imatrix is None),
+        f"{path}.imatrix",
+        f'within_group "{KQUANT_IMX_METHOD}" requires the imatrix field (ADR-0020)',
+    )
+    _require(
+        not (imatrix is not None and within_group != KQUANT_IMX_METHOD),
+        f"{path}.imatrix",
+        f'imatrix provenance requires within_group "{KQUANT_IMX_METHOD}", '
+        f'got "{within_group}" (ADR-0020)',
+    )
     return ScanMeta(
         metric=_get_str(obj, "metric", path),
         calibration=_get_str(obj, "calibration", path),
@@ -264,6 +289,7 @@ def _parse_scan_meta(obj: dict[str, Any]) -> ScanMeta:
         group_by=cast('Literal["layer", "tensor"]', group_by),
         started_at=_get_str(obj, "started_at", path),
         within_group=within_group,
+        imatrix=imatrix,
     )
 
 
