@@ -49,8 +49,8 @@ Every finished (group x precision) cell lands in
 a crash and the scan continues at the first unmeasured cell. The
 checkpoint carries the scan's fingerprint — change the model id,
 calibration path, token count, grouping, precisions, method, or
-imatrix path, and the
-scan refuses the old checkpoint. Pass `--no-resume` to discard it.
+imatrix path, and the scan refuses the old checkpoint. Pass
+`--no-resume` to discard it.
 
 The fingerprint records provenance, not content. It cannot detect new
 weights or edited calibration text behind an unchanged path — do not
@@ -58,10 +58,12 @@ change either between a crash and its resume.
 
 ## Pricing cells the way the pack quantizes
 
-The default within-group method is round-to-nearest — cheap, and
+The default within-group method is round-to-nearest — fast, and
 honest at 4 bits and above. A scan that will feed sub-4-bit
-assignments should price with the ported K-quant quantizers instead
-([ADR-0018](../adr/0018-kquant-within-group-method.md)):
+assignments prices with the ported K-quant quantizers instead, per
+[ADR-0019](../adr/0019-kquant-priced-maps.md) (Proposed — the rule
+holds until packed evidence settles it). The method itself is
+[ADR-0018](../adr/0018-kquant-within-group-method.md):
 
 ```bash
 uv run quantfit scan ./model --calibration calibration.txt \
@@ -71,13 +73,15 @@ uv run quantfit scan ./model --calibration calibration.txt \
 ```
 
 `--imatrix` adds the pack's importance matrix to the fit (assisted
-pricing, [ADR-0020](../adr/0020-imatrix-assisted-pricing.md)).
+pricing, [ADR-0020](../adr/0020-imatrix-assisted-pricing.md), also
+Proposed).
 Use the same file the pack step will consume — the map records the
 imatrix path, and the recipe carries it forward so the validation
 pass and the pack can hold the frame. The command echoes the
-coverage split ("imatrix covers N of M parameters"); `token_embd`
-is the expected miss. Expect assisted cells to cost more than
-unassisted kquant cells, and both to cost more than RTN.
+coverage split ("imatrix covers N of M parameters"). `token_embd`
+is the expected miss. Expect assisted cells to run longer than
+unassisted kquant cells, and both to run longer than RTN — the
+weighted fit searches more candidate scales.
 
 ## Scanning a model that doesn't fit in VRAM
 

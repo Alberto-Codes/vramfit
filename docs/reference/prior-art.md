@@ -33,9 +33,10 @@ status: draft
     cheaper alternative to calibration-based methods — external
     support for quantfit's selective-assignment premise (ADR-0001)
     from the opposite direction. Added 2026-08-04, with a caveat
-    from the seventh data point: at sub-4-bit, RTN *over-prices*
-    in-frame damage 2.0–3.9× against the K-quant fit the pack
-    ships ([ADR-0018](../adr/0018-kquant-within-group-method.md)).
+    from the seventh data point: at 2-bit, RTN *over-prices*
+    in-frame damage 2.0–3.9× (1.05–1.7× at 3-bit) against the
+    K-quant fit the pack
+    ships ([ADR-0019](../adr/0019-kquant-priced-maps.md)).
     RTN as a serving format and RTN as a pricing frame are
     different claims.
 
@@ -70,8 +71,8 @@ status: draft
     [the artifact ecosystem](../explanation/artifact-ecosystem.md).
     Found 2026-08-04: Unsloth ships
     [UD GGUFs of the north-star target](https://huggingface.co/unsloth/Llama-3_3-Nemotron-Super-49B-v1_5-GGUF)
-    inside the 20.47 GiB weight budget — UD-Q2_K_XL (19.3 GB) and
-    UD-IQ3_XXS (19.7 GB). They are candidate additional baselines
+    inside the 20.47 GiB weight budget: UD-Q2_K_XL (18.0 GiB) and
+    UD-IQ3_XXS (18.3 GiB). They are candidate additional baselines
     for the evaluation tiers: a head-to-head against a shipped
     selective recipe for the exact model and budget, not only
     against the flat-with-protections Q3_K_S.
@@ -141,8 +142,8 @@ super-additive joint damage (×11.9) on a 2-bit-heavy recipe.
 **[CoopQ](https://arxiv.org/abs/2509.15455)**
 :   Interaction-aware mixed precision at LLM scale (added
     2026-08-04). Estimates layer sensitivities *and* inter-layer
-    dependencies with Shapley values (SPQE), then assigns 2 or 4
-    bits per layer as a binary quadratic optimization under a
+    dependencies with Shapley values (SPQE). It then assigns 2 or
+    4 bits per layer as a binary quadratic optimization under a
     memory constraint. Evaluated on Llama-3, Gemma-2, and Qwen-3
     across three quantization backends. This is quantfit's 2-bit
     membership problem (ADR-0006, fourth measurement) treated as
@@ -154,11 +155,12 @@ super-additive joint damage (×11.9) on a 2-bit-heavy recipe.
 **[GAMMA](https://arxiv.org/abs/2605.18475)** (2026)
 :   Learns module-wise precision preferences post-training and
     converts them to exact budget-feasible assignments with an
-    integer program — one training serves arbitrary budgets by
-    re-solving only the IP (added 2026-08-04). Evaluated on Llama
-    and Qwen at 8B–32B. The first surveyed method that solves to
-    an explicit budget rather than an average bits-per-weight —
-    that narrows one line of quantfit's differentiation. What no
+    integer program (added 2026-08-04). One training serves
+    arbitrary budgets: only the integer program re-solves per
+    target. Evaluated on Llama
+    and Qwen at 8B–32B. Like CoopQ it solves under an explicit
+    memory budget rather than an average bits-per-weight — that
+    narrows one line of quantfit's differentiation. What no
     surveyed method ships remains the same: provenance-carrying
     artifacts for a specific card, a validation pass, and packed
     evidence.
@@ -180,8 +182,9 @@ super-additive joint damage (×11.9) on a 2-bit-heavy recipe.
     runtime-capability table (which precisions have kernels) comes from
     here. Verified 2026-07, re-verified 2026-08-04: the Marlin and
     Machete kernels cover 4-bit and
-    8-bit only — 2026 upstream work widened *hardware* coverage
-    (Marlin on Turing+), not bit widths, so the ADR-0013 table
+    8-bit only — 2026 work in the vLLM quantization stack widened
+    *hardware* coverage (Marlin on Turing+, via the GPTQModel
+    toolkit), not bit widths, so the ADR-0013 table
     stands. Upstream closed the EXL3 integration request
     ([vllm#19896](https://github.com/vllm-project/vllm/issues/19896)) as
     not planned. Upstream also moved in-tree GGUF support out to
