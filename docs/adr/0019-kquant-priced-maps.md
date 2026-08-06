@@ -13,14 +13,14 @@
   recipe beats an RTN-priced one packed.
 - **Note (2026-08-06):** the likely amendment ran and failed too.
   The imatrix-assisted map's recipe packed worse still (9.607 PPL,
-  the tenth data point), and the elimination ledger now covers
+  the tenth data point). The elimination ledger now covers
   granularity, super-block structure, the evaluation set, and
   imatrix assistance. K-quant-faithful pricing improved the frame's
   arithmetic and worsened the packed artifact — the leak is the
-  frame's transfer to the runtime. This record's bar (a
-  kquant-priced recipe beating an RTN-priced one packed) has not
-  been met by any measurement. Status disposition belongs with
-  ADR-0020's, in the same decision.
+  frame's transfer to the runtime. No measurement has met this
+  record's bar (a kquant-priced recipe beating an RTN-priced one
+  packed). Status disposition belongs with ADR-0020's, in the
+  same decision.
 
 ## Context
 

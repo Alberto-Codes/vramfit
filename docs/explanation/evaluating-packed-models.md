@@ -752,7 +752,7 @@ ADR-0020 stays Proposed, exactly as ADR-0019 waits beside it.
 
 The ninth data point's build ran end to end on 2026-08-06: the full
 328-cell imatrix-assisted re-scan (ADR-0020 — 37 h at ~7 min per
-cell, 437 of 438 parameters covered, `token_embd` the expected
+cell, 437 of 438 tensors covered, `token_embd` the expected
 miss), re-plan, the first fully frame-matched validation pass —
 method-matched *and* imatrix-matched, with the pairing enforced by
 the recipe's own provenance record rather than the operator's
@@ -762,15 +762,17 @@ most honest map yet produced the worst artifact yet.
 
 **The re-plan bought more 2-bit, not less.** The hoped-for rotation
 toward the baseline's flat-3-bit region did not happen. Assistance
-cheapened low-bit cells nearly everywhere (per-cell ratios against
-the unassisted map span 0.23–8.5x in both directions — cross-process,
-so indicative only), and the *relative* prices the solver consumes
-still favored 2-bit breadth: 56 of 82 groups landed at 2-bit
-(52 on unassisted kquant prices), mix 5×8 / 8×4 / 13×3 / 56×2,
-predicted damage 0.1215 against the kquant recipe's 0.1221.
-Twenty-one assignments flipped — six groups left the 2-bit set,
-eight joined, and the interior reshuffled — so membership quality
-changed even as breadth grew.
+cheapened most low-bit cells — 65 % of 2- and 3-bit cells, median
+ratio 0.91, with per-cell ratios against the unassisted map
+spanning 0.23–8.6x in both directions (cross-process, so
+indicative only). The *relative* prices the solver consumes
+tilted further toward breadth: the median per-group 2-bit/3-bit
+price ratio dropped from 2.83 to 2.19, and 56 of 82 groups landed
+at 2-bit (52 on unassisted kquant prices), mix
+5×8 / 8×4 / 13×3 / 56×2, predicted damage 0.1215 against the
+kquant recipe's 0.1221. Twenty-one assignments flipped — six
+groups left the 2-bit set, ten joined, and the interior
+reshuffled — so membership quality changed even as breadth grew.
 
 **The validation gate held again, for the third time before a
 packed loss.** Sub-additive by 1.87x — 0.0651 measured against
