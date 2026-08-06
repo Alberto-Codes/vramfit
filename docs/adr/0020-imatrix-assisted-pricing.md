@@ -34,7 +34,7 @@
   or supersede toward the runtime-frame lane, issue #40) is the
   next decision. **Decided (2026-08-06):** ADR-0021 supersedes
   this record. The assisted port stays in the codebase as a
-  validation-frame instrument.
+  scan-frame instrument for the validation pass.
 
 ## Context
 

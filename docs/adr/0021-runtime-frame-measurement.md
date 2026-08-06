@@ -1,7 +1,7 @@
 # ADR-0021: Sub-4-bit damage is measured in the runtime frame
 
 - **Status:** Accepted
-- **Date:** 2026-08-06
+- **Date:** 2026-08-06 (accepted 2026-08-06)
 - **Supersedes:** [ADR-0019](0019-kquant-priced-maps.md),
   [ADR-0020](0020-imatrix-assisted-pricing.md)
 
@@ -22,7 +22,7 @@ packed artifact lost worse: 9.156, then 9.251, then 9.607 PPL
 against the 8.532 baseline.
 
 The instruments stayed self-consistent throughout. The validation
-pass measured sub-additive on all three losing recipes (2.9x, 2.0x,
+pass measured sub-additive on all three losing recipes (1.6x, 2.0x,
 1.87x). A gate that clears three consecutive packed losers does not
 measure what the runtime punishes.
 
@@ -35,20 +35,21 @@ arithmetic.
 
 1. **ADR-0019 and ADR-0020 are superseded.** The scan-frame
    refinement lane is closed. The `kquant-ref` and `kquant-imx`
-   methods remain valid scan options — ADR-0018 stands. Withdrawn
-   is the claim that in-frame refinement licenses sub-4-bit
-   assignments.
+   methods remain valid scan options — ADR-0018 stands. This
+   record withdraws the claim that in-frame refinement licenses
+   sub-4-bit assignments.
 2. **Sub-4-bit damage is measured in the runtime frame.** Quantize
    the candidate group to its real packed type inside a real GGUF.
    Measure damage under the runtime's own numerics (issue #40).
 3. **An instrument check precedes any runtime-frame campaign.**
    Cross-process re-measurement moved identical cells 2.7–4.1x
    (the ninth data point). The lane must measure its own noise
-   floor first. Only same-frame comparisons carry weight.
+   floor first. Only frame-matched comparisons carry weight.
 4. **The solver does not buy 2-bit until a runtime-frame price
    exists.** Recipes solve on maps without a 2-bit column. The
-   mechanism today is a derived map variant — the eleventh data
-   point measures what the constraint costs.
+   mechanism today is a copy of the sensitivity map with the 2-bit
+   column removed — the eleventh data point measures what the
+   constraint costs.
 
 ## Open questions
 
@@ -59,11 +60,12 @@ arithmetic.
   Caution: the 8k-era no-2-bit diagnostic packed destroyed, and
   the cause was never isolated — the smoke gate (ADR-0017) guards
   the rerun.
-- Runtime-frame tooling shape. A per-group override pack through
-  `llama-quantize` costs ~12 minutes — 328 cells price at ~2.7
-  days of packing alone. Candidates: a targeted subset (the 2- and
-  3-bit frontier cells only), or a repack tool that holds the f16
-  weights resident.
+- Runtime-frame tooling shape. Per-group override packs through
+  `llama-quantize` measured 4.6–17 minutes on the reference box
+  (probe and control quantize logs) — 328 cells price at roughly
+  2–4 days of packing alone. Candidates: a targeted subset (the 2-
+  and 3-bit frontier cells only), or a repack tool that holds the
+  f16 weights resident.
 - Where the lane runs: the reference box, or a rented H100 NVL /
   H200 (~$10–30 per loop, issue #40). The instrument check decides
   whether rented numbers compare with box numbers at all.
