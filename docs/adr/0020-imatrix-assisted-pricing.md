@@ -1,7 +1,6 @@
 # ADR-0020: The meter prices K-quant cells with the pack's imatrix
 
-- **Status:** Superseded by
-  [ADR-0021](0021-runtime-frame-measurement.md)
+- **Status:** Superseded by [ADR-0021](0021-runtime-frame-measurement.md)
 - **Date:** 2026-08-03
 - **Note (2026-08-03):** the 16-cell probe reported — the
   re-pricing clears the 2x gate, per-cell and structure-dependent

@@ -1,7 +1,6 @@
 # ADR-0019: Sub-4-bit recipes solve on kquant-priced maps
 
-- **Status:** Superseded by
-  [ADR-0021](0021-runtime-frame-measurement.md)
+- **Status:** Superseded by [ADR-0021](0021-runtime-frame-measurement.md)
 - **Date:** 2026-07-31
 - **Note (2026-08-02):** the first full measurement contradicts
   the decision as stated. The kquant-priced recipe validated

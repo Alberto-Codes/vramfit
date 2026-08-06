@@ -57,9 +57,9 @@ arithmetic.
   (in flight) answers this. A packed result under 9.156 PPL marks
   the transfer failure as 2-bit-specific. A loss to flat `Q3_K`
   extends the failure above 2 bits and strengthens decision 2.
-  Caution: the 8k-era no-2-bit diagnostic packed destroyed, and
-  the cause was never isolated — the smoke gate (ADR-0017) guards
-  the rerun.
+  Caution: the 8k-era no-2-bit diagnostic packed cleanly and then
+  scored PPL ~10⁶, and the cause was never isolated — the smoke
+  gate (ADR-0017) guards the rerun.
 - Runtime-frame tooling shape. Per-group override packs through
   `llama-quantize` measured 4.6–17 minutes on the reference box
   (probe and control quantize logs) — 328 cells price at roughly
