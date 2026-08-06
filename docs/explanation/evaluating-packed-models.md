@@ -827,7 +827,9 @@ baseline's flat-3-with-protections shape sits inside the recipe
 space and remains unbeaten by anything the maps have bought.
 ADR-0019's and ADR-0020's acceptance bars were both measured and
 both failed. The records say so. What their status becomes is the
-next decision, not a footnote here.
+next decision, not a footnote here. *(That decision is now made:
+[ADR-0021](../adr/0021-runtime-frame-measurement.md) supersedes
+both records toward runtime-frame measurement, 2026-08-06.)*
 
 ## Provenance is not evidence
 
