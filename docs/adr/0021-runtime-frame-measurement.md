@@ -53,13 +53,21 @@ arithmetic.
 
 ## Open questions
 
-- Does the 3-bit-floored recipe transfer? The eleventh data point
-  (in flight) answers this. A packed result under 9.156 PPL marks
-  the transfer failure as 2-bit-specific. A loss to flat `Q3_K`
-  extends the failure above 2 bits and strengthens decision 2.
-  Caution: the 8k-era no-2-bit diagnostic packed cleanly and then
-  scored PPL ~10⁶, and the cause was never isolated — the smoke
-  gate (ADR-0017) guards the rerun.
+- ~~Does the 3-bit-floored recipe transfer? The eleventh data
+  point (in flight) answers this. A packed result under 9.156 PPL
+  marks the transfer failure as 2-bit-specific. A loss to flat
+  `Q3_K` extends the failure above 2 bits and strengthens
+  decision 2. Caution: the 8k-era no-2-bit diagnostic packed
+  cleanly and then scored PPL ~10⁶, and the cause was never
+  isolated — the smoke gate (ADR-0017) guards the rerun.~~
+  **Measured (2026-08-06, the eleventh data point): it
+  transfers.** The recipe packed to 8.597 ± 0.064 PPL /
+  0.1703 mean KLD — a statistical tie with the baseline's 8.532
+  on PPL, 7.5 % behind on KLD, and at least 0.55 PPL ahead of
+  every 2-bit recipe. The frame's own prediction (flat-3 at 2.3x
+  the 2-bit mix's damage) was falsified packed. The transfer
+  failure is 2-bit-specific. The smoke gate read 15.35 — the
+  8k-era destruction did not recur.
 - Runtime-frame tooling shape. Per-group override packs through
   `llama-quantize` measured 4.6–17 minutes on the reference box
   (probe and control quantize logs) — 328 cells price at roughly
@@ -74,8 +82,8 @@ arithmetic.
 
 ## Consequences
 
-- The sensitivity map keeps its pricing role at 3 bits and above,
-  pending the eleventh data point. 2-bit assignment waits for
+- The sensitivity map keeps its pricing role at 3 bits and above —
+  the eleventh data point confirmed it. 2-bit assignment waits for
   runtime-frame prices.
 - The measurement bottleneck moves from GPU forward passes to CPU
   quantize passes — a different resource, and one that rents
