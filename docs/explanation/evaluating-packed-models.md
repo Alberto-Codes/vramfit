@@ -750,7 +750,8 @@ ADR-0020 stays Proposed, exactly as ADR-0019 waits beside it.
 
 ## The tenth data point: assisted prices, deepest loss
 
-The ninth data point's build ran end to end on 2026-08-06: the full
+The build the ninth data point justified ran end to end on
+2026-08-06: the full
 328-cell imatrix-assisted re-scan (ADR-0020 — 37 h at ~7 min per
 cell, 437 of 438 tensors covered, `token_embd` the expected
 miss), re-plan, the first fully frame-matched validation pass —
