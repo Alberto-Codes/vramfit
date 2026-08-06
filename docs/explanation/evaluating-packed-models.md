@@ -748,6 +748,84 @@ method-matched *and* imatrix-matched — pack, smoke, both tiers.
 Until an assisted-priced recipe beats an unassisted one packed,
 ADR-0020 stays Proposed, exactly as ADR-0019 waits beside it.
 
+## The tenth data point: assisted prices, deepest loss
+
+The ninth data point's build ran end to end on 2026-08-06: the full
+328-cell imatrix-assisted re-scan (ADR-0020 — 37 h at ~7 min per
+cell, 437 of 438 parameters covered, `token_embd` the expected
+miss), re-plan, the first fully frame-matched validation pass —
+method-matched *and* imatrix-matched, with the pairing enforced by
+the recipe's own provenance record rather than the operator's
+memory — then an imatrix pack with the same file, smoke, and both
+tiers. The result is the program's clearest negative to date: the
+most honest map yet produced the worst artifact yet.
+
+**The re-plan bought more 2-bit, not less.** The hoped-for rotation
+toward the baseline's flat-3-bit region did not happen. Assistance
+cheapened low-bit cells nearly everywhere (per-cell ratios against
+the unassisted map span 0.23–8.5x in both directions — cross-process,
+so indicative only), and the *relative* prices the solver consumes
+still favored 2-bit breadth: 56 of 82 groups landed at 2-bit
+(52 on unassisted kquant prices), mix 5×8 / 8×4 / 13×3 / 56×2,
+predicted damage 0.1215 against the kquant recipe's 0.1221.
+Twenty-one assignments flipped — six groups left the 2-bit set,
+eight joined, and the interior reshuffled — so membership quality
+changed even as breadth grew.
+
+**The validation gate held again, for the third time before a
+packed loss.** Sub-additive by 1.87x — 0.0651 measured against
+0.1215 predicted (32,768-token pass against the 65,536-token map,
+ADR-0006 sixth measurement). Record 2-bit breadth, no alarm. The
+in-frame gate has now cleared three consecutive recipes that went
+on to lose packed, which is itself a finding: whatever the gate
+measures, it is not the thing the runtime punishes.
+
+**The packed artifact lost by the most yet.** Another first-try fit
+(20.37 GiB, 97 MiB under) and a passed smoke, then:
+
+| Model | Size | PPL ↓ | Mean KLD ↓ | Same top ↑ |
+|-------|------|-------|------------|------------|
+| quantfit assisted map + imatrix | 20.37 GiB | 9.607 ± 0.072 | 0.3437 | 76.3 % |
+| quantfit kquant map + imatrix | 20.21 GiB | 9.251 ± 0.069 | 0.3056 | 77.8 % |
+| quantfit RTN 64k map + imatrix | 20.32 GiB | 9.156 ± 0.068 | 0.2653 | 80.1 % |
+| Q3_K_S heuristic (bartowski) | 20.45 GiB | **8.532 ± 0.064** | **0.1584** | **83.8 %** |
+
+The baseline gap widened from 0.62 to 0.72 to 1.08 PPL across the
+three quantfit artifacts. Imatrix-blind pricing is eliminated as
+the frame leak: pricing *with* the pack's imatrix made the packed
+result worse. The elimination ledger now reads granularity (~14 %
+ceiling, the seventh data point), super-block structure (the
+eighth), the evaluation set (the ninth), and imatrix assistance
+(the tenth) — and the trend across them is monotone. Every
+refinement that made in-frame prices more faithful moved low-bit
+prices *down*, every re-plan converted that into more 2-bit
+breadth, and every packed artifact got worse. The mechanism is
+hard to miss at this point: the scan frame — perturbing weights
+inside the bf16 model and measuring calibration KL — under-prices
+what 2-bit costs in the packed runtime, and no refinement of the
+frame's arithmetic fixes a leak in the frame's *transfer*.
+
+**A smoke caution for the record.** The smoke gate read 7.47 over
+its two chunks — less than half the previous artifacts' smoke
+readings (16.22, 17.14) — on the worst full-set artifact of the
+three. The smoke is a liveness gate (ADR-0017). Two chunks carry
+no ranking information, and this data point is the proof.
+
+**Where this leaves the program.** The instruments are
+self-consistent and the bookkeeping held: provenance enforced end
+to end, first-try fits, sub-additive validation. What the in-frame
+instruments are not is predictive of packed reality at 2-bit. Two
+directions survive, and they are the same direction at different
+depths. Measure damage *through the packed types* — issue #40's
+runtime-frame lane, where a cell is quantized into a real GGUF and
+measured under the runtime's own numerics. And constrain the
+solver away from the region the frame cannot price — the
+baseline's flat-3-with-protections shape sits inside the recipe
+space and remains unbeaten by anything the maps have bought.
+ADR-0019's and ADR-0020's acceptance bars were both measured and
+both failed. The records say so. What their status becomes is the
+next decision, not a footnote here.
+
 ## Provenance is not evidence
 
 Hashes answer a different question and must not be confused with
