@@ -77,8 +77,9 @@ arithmetic.
 - Where the lane runs: the reference box, or a rented H100 NVL /
   H200 (~$10–30 per loop, issue #40). The instrument check decides
   whether rented numbers compare with box numbers at all.
-- Whether `plan` grows a precision-exclusion flag, or derived map
-  variants stay the mechanism for decision 4.
+- Whether `plan` grows a precision-exclusion flag, or map copies
+  with the excluded column removed stay the mechanism for
+  decision 4.
 
 ## Consequences
 
