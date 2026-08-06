@@ -17,6 +17,21 @@
   proof of content. The fingerprint gained a trailing imatrix
   field, so checkpoints written before this change do not resume —
   none were in flight.
+- **Note (2026-08-06): the assisted loop ran and missed the
+  acceptance bar.** The full loop ran: 328-cell re-scan, re-plan,
+  frame-matched validation (sub-additive 1.87x), imatrix pack,
+  smoke, both tiers. The assisted-priced recipe packed to
+  9.607 PPL / 0.3437 KLD. The unassisted kquant recipe stands at
+  9.251 / 0.3056 — the assisted recipe lost, and it widened the
+  baseline gap to 1.08 PPL (the tenth data point). Assisted
+  pricing moved 2-bit membership up (56 of 82 groups), not toward
+  the baseline's flat-3 region. The tenth data point eliminates
+  imatrix-blind pricing as the frame leak. The record's decision
+  produced a working instrument and a false premise. The leak is
+  the scan frame's transfer to the runtime, not an unpriced
+  ingredient inside the frame. Status disposition (keep Proposed,
+  or supersede toward the runtime-frame lane, issue #40) is the
+  next decision.
 
 ## Context
 

@@ -108,6 +108,17 @@ Points fixed at acceptance (2026-07-28):
   above — the ratio does. Membership quality, not membership
   count, drives additivity: honest per-cell prices select
   compatible 2-bit members even at wider breadth.
+  **Sixth measurement (2026-08-06, the assisted-priced recipe,
+  ADR-0020):** the recipe puts 56 of 82 groups at 2-bit, the
+  widest breadth yet. It validates **sub-additive by 1.87x**
+  (measured 0.0651 against predicted 0.1215, assisted kquant
+  perturbation, 32,768-token frame, 65,536-token map). The
+  recipe's provenance record enforced the frame match: method and
+  imatrix. The packed artifact lost anyway (the tenth data point).
+  The gate has now cleared three consecutive recipes that lost
+  packed. The gate answers "do the marginals add in this frame",
+  not "does this frame transfer to the runtime". The two
+  questions are now known to be different.
 
 ## Consequences
 
