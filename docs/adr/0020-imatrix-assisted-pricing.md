@@ -1,6 +1,6 @@
 # ADR-0020: The meter prices K-quant cells with the pack's imatrix
 
-- **Status:** Proposed
+- **Status:** Superseded by [ADR-0021](0021-runtime-frame-measurement.md)
 - **Date:** 2026-08-03
 - **Note (2026-08-03):** the 16-cell probe reported — the
   re-pricing clears the 2x gate, per-cell and structure-dependent
@@ -31,7 +31,9 @@
   the scan frame's transfer to the runtime, not an unpriced
   ingredient inside the frame. Status disposition (keep Proposed,
   or supersede toward the runtime-frame lane, issue #40) is the
-  next decision.
+  next decision. **Decided (2026-08-06):** ADR-0021 supersedes
+  this record. The assisted port stays in the codebase as a
+  scan-frame instrument for the validation pass.
 
 ## Context
 

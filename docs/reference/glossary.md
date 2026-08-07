@@ -93,6 +93,27 @@ change.
 **Reference**
 :   The unquantized (bf16) model that perturbed models are compared against.
 
+**Measurement frame** (short: **frame**)
+:   The whole apparatus a damage number is measured inside: process,
+    quantization path, calibration text, token count, and numerics.
+    Damage values compare only within one frame — cross-process
+    re-measurement of identical cells moved values 2.7–4.1x (the
+    [ninth data point](../explanation/evaluating-packed-models.md)).
+    The **scan frame** is the meter's apparatus:
+    perturb weights inside the bf16 model, measure calibration KL.
+    The **runtime frame** is the packed artifact under the runtime's
+    own numerics ([ADR-0021](../adr/0021-runtime-frame-measurement.md)).
+    **Frame-matched** describes a comparison run entirely inside one
+    frame. Not "environment", "setup", or "context".
+
+**Frame transfer**
+:   The leap from an in-frame price to packed behavior. The
+    [tenth data point](../explanation/evaluating-packed-models.md)
+    isolated frame transfer as the leak behind the
+    sub-4-bit losses: every scan-frame refinement improved in-frame
+    prices and worsened the packed artifact
+    ([ADR-0021](../adr/0021-runtime-frame-measurement.md)).
+
 **Group spec**
 :   A discovered layer group before measurement: name, member tensors,
     and size at reference precision. Code type

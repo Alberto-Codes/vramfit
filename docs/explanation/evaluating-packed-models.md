@@ -827,7 +827,74 @@ baseline's flat-3-with-protections shape sits inside the recipe
 space and remains unbeaten by anything the maps have bought.
 ADR-0019's and ADR-0020's acceptance bars were both measured and
 both failed. The records say so. What their status becomes is the
-next decision, not a footnote here.
+next decision, not a footnote here. *(That decision is now made:
+[ADR-0021](../adr/0021-runtime-frame-measurement.md) supersedes
+both records toward runtime-frame measurement, 2026-08-06.)*
+
+## The eleventh data point: ban 2-bit, tie the baseline
+
+The constrained diagnostic
+[ADR-0021](../adr/0021-runtime-frame-measurement.md) committed to
+ran the same day, and it is the cheapest data point on the ledger:
+no scan, no new instrument. The mechanism is a copy of the assisted
+map with the 2-bit column removed
+(`sensitivity-64k-kquant-imx-no2.json`, marked derived), re-planned
+at the identical budget. Everything downstream is the standard
+loop: frame-matched validation, an imatrix pack, smoke, both tiers.
+
+**The solver rediscovered the baseline's shape.** Given {8, 4, 3},
+the plan came out 1×8 / 1×4 / 80×3 — `layers.0` at 8-bit,
+`layers.3` at 4-bit, everything else including the embedding flat
+at 3-bit. That is, to within two protected groups, the shape the
+Q3_K_S heuristic ships. Predicted damage: 0.2776, which is 2.3x
+the 2-bit mix's 0.1215 — by the frame's marginal sums, this recipe
+should be far worse than the one that packed 9.607.
+
+**Validation: the deepest sub-additivity yet, and a diagnostic
+reversal.** Sub-additive by 4.87x — 0.0570 measured against 0.2776
+predicted (32,768-token frame-matched pass, ADR-0006 seventh
+measurement). The more telling number: the measured whole-recipe
+damage, 0.0570, sits *below* the 2-bit recipe's 0.0651. In its own
+frame, whole-recipe measurement already ranks the flat-3 recipe
+ahead — it is the summed marginals that invert the order. The
+additivity failure and the transfer failure point at the same
+place: 2-bit membership.
+
+**Packed: a photo finish with the baseline.** First-try fit
+(20.37 GiB, 102 MiB under budget), smoke 15.35 — squarely in
+the healthy band, and the 8k-era no-2-bit destruction did not
+recur. Then:
+
+| Model | Size | PPL ↓ | Mean KLD ↓ | Same top ↑ |
+|-------|------|-------|------------|------------|
+| quantfit no-2 (assisted map) | 20.37 GiB | 8.597 ± 0.064 | 0.1703 | 82.7 % |
+| quantfit assisted map + imatrix | 20.37 GiB | 9.607 ± 0.072 | 0.3437 | 76.3 % |
+| quantfit kquant map + imatrix | 20.21 GiB | 9.251 ± 0.069 | 0.3056 | 77.8 % |
+| quantfit RTN 64k map + imatrix | 20.32 GiB | 9.156 ± 0.068 | 0.2653 | 80.1 % |
+| Q3_K_S heuristic (bartowski) | 20.45 GiB | **8.532 ± 0.064** | **0.1584** | **83.8 %** |
+
+The PPL gap to the baseline is 0.065 — inside one standard error
+of the difference (±0.090), a statistical tie. Mean KLD loses
+narrowly and honestly: 0.1703 against 0.1584, outside the error
+bars but 7.5 % relative, against the 67–117 % relative losses of
+the three 2-bit recipes. Every 2-bit-carrying artifact is beaten
+by at least 0.55 PPL and 0.095 KLD.
+
+**What it settles.** The frame-transfer failure is 2-bit-specific.
+The same scan frame that turned three progressively refined 2-bit
+recipes into progressively worse artifacts priced an {8, 4, 3}
+recipe well enough to land within noise of the unbeaten baseline.
+ADR-0021's interim constraint — no 2-bit assignments until a
+runtime-frame price exists — now carries its own supporting
+measurement, and the in-frame prediction it overrode (flat-3 is
+2.3x worse) is falsified in the packed runtime. The remaining
+edge — 0.065 PPL, 0.012 KLD — is the same order as the
+within-layer granularity lever the seventh data point measured
+(`attn_v`/`attn_output` protections, ~0.09 PPL for 87 MiB), which
+suggests the baseline's residual advantage is granularity, not
+allocation. One operational note: the full post-plan loop —
+validation, pack, smoke, both tiers — completed in 104 minutes on
+the reference box.
 
 ## Provenance is not evidence
 
