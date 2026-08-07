@@ -904,7 +904,7 @@ partly right, and the residual splits in a way nobody predicted.)*
 
 The eleventh data point left a 0.065 PPL / 0.012 KLD residual and
 one named suspect: within-layer granularity, the baseline's
-`attn_v`@`Q5_K` + output@`Q6_K` toolkit. On 2026-08-07 the suspicion
+`attn_v`@`Q5_K` + `output`@`Q6_K` toolkit. On 2026-08-07 the suspicion
 met the seventh data point's probe pattern, applied to the no-2
 recipe: hand-driven `llama-quantize` tensor overrides on the
 recipe's exact pack layout, each candidate sized to the byte before
@@ -958,7 +958,7 @@ The final G1 leaves layers 1, 2, and 5 at `q3_k` and promotes the
 other 44.
 
 **The results, and the first metric the baseline loses.** Tier 1 is
-the full WikiText-2 set, tier 2 the standard 100-chunk KL against
+the full WikiText-2 set, and tier 2 is the standard 100-chunk KL against
 the f16 base:
 
 | Model | Size | Fits 20.47 GiB budget | PPL ↓ | Mean KLD ↓ | Same top ↑ |
