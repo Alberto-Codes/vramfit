@@ -1,6 +1,6 @@
 # ADR-0019: Sub-4-bit recipes solve on kquant-priced maps
 
-- **Status:** Proposed
+- **Status:** Superseded by [ADR-0021](0021-runtime-frame-measurement.md)
 - **Date:** 2026-07-31
 - **Note (2026-08-02):** the first full measurement contradicts
   the decision as stated. The kquant-priced recipe validated
@@ -20,7 +20,9 @@
   frame's transfer to the runtime. No measurement has met this
   record's bar (a kquant-priced recipe beating an RTN-priced one
   packed). Status disposition belongs with ADR-0020's, in the
-  same decision.
+  same decision. **Decided (2026-08-06):** ADR-0021 supersedes
+  this record. Sub-4-bit damage moves to runtime-frame
+  measurement. The kquant method itself stands (ADR-0018).
 
 ## Context
 
