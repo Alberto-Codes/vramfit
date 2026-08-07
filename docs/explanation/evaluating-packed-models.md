@@ -273,7 +273,9 @@ The baselines are bartowski's community GGUFs, both **imatrix**
 quants: Q3_K_S (20.45 GiB, fits the budget 21.7 MiB under — the
 size match) and IQ3_M (21.10 GiB, 648 MiB over budget — the
 over-budget quality reference). Tier 1 is the full WikiText-2 test
-set (584 chunks). Tier 2 is whole-model KL against the f16
+set (564 chunks — corrected from "584", a transcription error the
+twelfth data point's log audit caught). Tier 2 is whole-model KL
+against the f16
 reference over the first 100 chunks (51,200 tokens), the f16 pass
 GPU-assisted on the reference box (llama.cpp b10172, Vulkan). The
 f16 reference measures PPL 8.228 ± 0.141 on those 100 chunks.
@@ -287,7 +289,7 @@ f16 reference measures PPL 8.228 ± 0.141 on those 100 chunks.
 | control Q3_K_S (ours, same f16 base) | 20.45 GiB | yes | no | 9.655 ± 0.073 | 0.3451 | 76.9 % |
 
 \* The f16 PPL covers the tier-2 100 chunks only — the 93 GiB
-reference is too slow for the full 584-chunk set on this box. All
+reference is too slow for the full 564-chunk set on this box. All
 other PPLs are full-set.
 
 **The recipe lost, and not narrowly**: 1.39 PPL and 2.4× mean KLD
@@ -539,7 +541,11 @@ tensors: bartowski's Q3_K_S is flat `Q3_K` everywhere except
 anywhere — and it fits the same weight budget with 21.8 MiB to
 spare. Second, the NAS architecture shrinks the lever's reach:
 only 10 of our 35 2-bit layers have attention tensors at all
-(layers 42–70 are FFN-only blocks). Hand-driven packs of
+(layers 6, 7, 11, 42–51, and 53–70 are FFN-only blocks — corrected
+from "42–70" by the twelfth data point's tensor census: layer 52
+keeps its attention, and 6, 7, and 11 lack it. The 10-layer count
+stands: 6, 7, and 11 sat in the 2-bit set without attention
+tensors, and layer 52 sat at 3-bit). Hand-driven packs of
 recipe-64k with baseline-mirroring holds inside those 10 layers:
 
 | Model | Size | PPL ↓ | Mean KLD ↓ | Same top ↑ |
@@ -894,7 +900,134 @@ within-layer granularity lever the seventh data point measured
 suggests the baseline's residual advantage is granularity, not
 allocation. One operational note: the full post-plan loop —
 validation, pack, smoke, both tiers — completed in 104 minutes on
-the reference box.
+the reference box. *(The granularity suspicion is measured in
+[the twelfth data point](#the-twelfth-data-point-the-granularity-probes-and-a-split-decision):
+partly right, and the residual splits in a way nobody predicted.)*
+
+## The twelfth data point: the granularity probes, and a split decision
+
+The eleventh data point left a 0.065 PPL / 0.012 KLD residual and
+one named suspect: within-layer granularity, the baseline's
+`attn_v`@`Q5_K` + `output`@`Q6_K` toolkit. On 2026-08-07 the suspicion
+met the seventh data point's probe pattern, applied to the no-2
+recipe: hand-driven `llama-quantize` tensor overrides on the
+recipe's exact pack layout, each candidate sized to the byte before
+packing.
+
+**The budget arithmetic gutted the ladder first.** The no-2 pack
+sits 102.1 MiB under the 21,978,152,960-byte weight budget, and 49
+of the 80 layers carry attention tensors (the NAS gap is layers 6,
+7, 11, 42–51, and 53–70 — layer 52 keeps its attention, a small
+correction to the seventh data point's 42–70). Against that
+headroom:
+
+| Candidate | Cost | Verdict |
+|-----------|------|---------|
+| `attn_v`→`q5_k`, 3-bit attention layers | +96.9 MiB | fits |
+| output→`q6_k` | +391.4 MiB | 3.8× the headroom |
+| output→`q4_k` (the cheapest head promotion) | +133.1 MiB | does not fit |
+| `attn_output`→`q4_k`, same layers | +399.5 MiB | does not fit |
+
+The baseline can afford its head because it protects nothing else:
+no 8-bit layer 0, no 4-bit layer 3. Inside the no-2 allocation, the
+head promotion is unreachable without a demotion trade — an
+allocation change, out of probe scope. So one probe ran in budget
+(G1, the `attn_v` hold) and the head promotion ran as an explicitly
+**out-of-budget diagnostic** (G2 = G1 + output@`q6_k`, 20.84 GiB) to
+measure the lever it cannot ship.
+
+**The detour: a quantizer fit collapse, caught by a reconstruction
+check.** The first G1 build promoted all 47 in-budget attention
+layers and scored 9.594 PPL — a full point *worse* than the artifact
+it modified. Per-tensor reconstruction against the f16 base located
+it: with our importance matrix, `Q5_K` quantization *collapses* on
+the outlier-heavy front-stack `attn_v` tensors. Layer 1 reconstructs
+5.1× worse at `q5_k` than at `q3_k` (RMSE 0.0241 against 0.0048,
+max element error 8.9 on a tensor whose values reach 12.1); layers
+2 and 5 degrade 1.9× and 1.3×. The other 44 promotions all improve
+4×, as 5-bit should. Three cross-checks pinned the cause. A newer
+llama.cpp build (b10172) reproduces the collapse bit-for-bit, so it
+is not a toolchain bug. The baseline's own `Q5_K` layer-1 `attn_v` —
+same tensor, same type, bartowski's importance matrix — reconstructs
+10× better than ours, so the collapse is imatrix-dependent: the
+weighted fit sacrifices outlier channels our calibration set marks
+unimportant. And the damage signature — median KLD equal to the
+final build's 0.061, mean KLD 2.2× worse — is exactly what a
+localized tensor failure looks like.
+Two lessons for the ledger: **under a fixed importance matrix, a
+type promotion is not guaranteed to improve a tensor**, and a
+per-tensor reconstruction check — seconds of CPU — catches what the
+smoke test cannot (the collapsed build would have smoked clean).
+The final G1 leaves layers 1, 2, and 5 at `q3_k` and promotes the
+other 44.
+
+**The results, and the first metric the baseline loses.** Tier 1 is
+the full WikiText-2 set, and tier 2 is the standard 100-chunk KL against
+the f16 base:
+
+| Model | Size | Fits 20.47 GiB budget | PPL ↓ | Mean KLD ↓ | Same top ↑ |
+|-------|------|----------------------|-------|------------|------------|
+| **G1** = no-2 + `attn_v`@`q5_k` ×44 | 20.46 GiB | **yes** (11.3 MiB under) | 8.650 ± 0.064 | **0.1512** | 83.8 % |
+| quantfit no-2 (eleventh data point) | 20.37 GiB | yes | 8.597 ± 0.064 | 0.1703 | 82.7 % |
+| Q3_K_S heuristic (bartowski) | 20.45 GiB | yes | **8.532 ± 0.064** | 0.1584 | **83.8 %** |
+| G2 diagnostic = G1 + output@`q6_k` | 20.84 GiB | no (380 MiB over) | 8.620 ± 0.065 | 0.1368 | 85.5 % |
+
+Bold marks the best in-budget value — G2's better fidelity numbers
+do not compete, because G2 does not fit.
+
+G1 is the first in-budget quantfit artifact to beat the baseline on
+mean KLD — 0.1512 against 0.1584, 4.5 % lower, outside the combined
+error bars — and it matches the baseline's top-token agreement
+(83.81 % against 83.85 %). It loses full-set perplexity, 8.650
+against 8.532. By the duel's stated bar (beat both numbers), this is
+not the outright win. It is a split decision, and the split has a
+structure worth recording.
+
+**Where the PPL loss lives: two chunks.** Per-chunk decomposition of
+the 564-chunk run puts the entire full-set loss in chunks 347 and
+502, where G1's per-token NLL jumps to 7.3 and 8.4 against the
+baseline's 2.4 and 2.3. Exclude those two chunks and G1 *leads* the
+baseline across the other 562. The chunks are unremarkable
+encyclopedic prose. The no-2 artifact already ran hot there (3.3
+and 3.5) — those two chunks alone carried roughly half of the
+eleventh data point's 0.065 PPL gap — and the promotion amplified
+the weak spot rather than causing it. The amplification is not a
+weight defect: every promoted channel of every promoted tensor
+reconstructs strictly closer to f16, and the collapsed 47-layer
+build — a strictly *worse* set of weights — shows no spike at all on
+either chunk. Two passages sit near a dynamical instability of this
+recipe lineage, where small weight perturbations in either
+direction swing the trajectory. The scan frame has no concept of
+this, the validation pass has no concept of this, and 100-chunk
+tier 2 does not reach chunk 347 — the scoreboard caveat is
+recorded: the KLD window and the PPL window disagree about G1
+partly because the instability sits outside the KLD window.
+
+**The head is not the lever.** G2 spent 391 MiB promoting the
+output head to the baseline's `Q6_K` and bought 0.031 PPL and
+0.014 KLD over G1 — and the two unstable chunks barely moved
+(7.3 and 8.5, against G1's 7.3 and 8.4). The probe ladder was drawn
+up expecting the head to be the biggest single lever — it is the
+baseline's most visible extravagance. Measured, it is a modest
+fidelity lever and no stabilizer. The baseline's PPL edge does not
+live in its head.
+
+**What this changes.** The granularity suspicion was half right.
+Within-layer `attn_v` protection closes the KLD residual and
+crosses the baseline — on the metric the ninth data point
+established as the ranking-stable one, a measured in-budget recipe
+now beats the heuristic. That is the evidence tensor-level groups
+(ADR-0012's declared v1 boundary) have waited for, and lifting the
+boundary is a solver feature, scoped separately. What granularity
+does not close is the PPL residual, because that residual is not
+smooth quality — it is two unstable passages that no tensor
+promotion in either probe touched. Whole-model stability under
+weight perturbation is a phenomenon none of our instruments
+measure: not the scan frame, not the validation pass, not a
+100-chunk tier 2, not the smoke test. The runtime-frame lane
+(issue #40, ADR-0021) inherits a second job description:
+runtime-frame prices for 2-bit re-entry, and enough evaluation
+breadth to see instabilities the calibration-sized windows miss.
 
 ## Provenance is not evidence
 
@@ -938,3 +1071,7 @@ compute.
   not signal.
 - Whether evaluation results become a versioned artifact of their own
   (an "evals" sidecar) or stay embedded in the model card.
+- Which window rules when the two disagree. The twelfth data point's
+  G1 wins the 100-chunk KLD window and loses the 564-chunk PPL
+  window against the same baseline — and the unstable chunks sit
+  only in the second.
