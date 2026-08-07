@@ -539,9 +539,9 @@ tensors: bartowski's Q3_K_S is flat `Q3_K` everywhere except
 anywhere — and it fits the same weight budget with 21.8 MiB to
 spare. Second, the NAS architecture shrinks the lever's reach:
 only 10 of our 35 2-bit layers have attention tensors at all
-(layers 42–51 and 53–70 are FFN-only blocks — corrected from
-"42–70" by the twelfth data point's tensor census: layer 52 keeps
-its attention). Hand-driven packs of
+(layers 6, 7, 11, 42–51, and 53–70 are FFN-only blocks — corrected
+from "42–70" by the twelfth data point's tensor census: layer 52
+keeps its attention, and 6, 7, and 11 lack it). Hand-driven packs of
 recipe-64k with baseline-mirroring holds inside those 10 layers:
 
 | Model | Size | PPL ↓ | Mean KLD ↓ | Same top ↑ |
@@ -912,9 +912,10 @@ packing.
 
 **The budget arithmetic gutted the ladder first.** The no-2 pack
 sits 102.1 MiB under the 21,978,152,960-byte weight budget, and 49
-of the 80 layers carry attention tensors (the NAS gap is layers
-42–51 and 53–70 — layer 52 keeps its attention, a small correction
-to the seventh data point's 42–70). Against that headroom:
+of the 80 layers carry attention tensors (the NAS gap is layers 6,
+7, 11, 42–51, and 53–70 — layer 52 keeps its attention, a small
+correction to the seventh data point's 42–70). Against that
+headroom:
 
 | Candidate | Cost | Verdict |
 |-----------|------|---------|
@@ -946,8 +947,9 @@ is not a toolchain bug. The baseline's own `Q5_K` layer-1 `attn_v` —
 same tensor, same type, bartowski's importance matrix — reconstructs
 10× better than ours, so the collapse is imatrix-dependent: the
 weighted fit sacrifices outlier channels our calibration set marks
-unimportant. And the damage signature (median KLD unchanged, mean
-2.2× worse) is exactly what a localized tensor failure looks like.
+unimportant. And the damage signature — median KLD equal to the
+final build's 0.061, mean KLD 2.2× worse — is exactly what a
+localized tensor failure looks like.
 Two lessons for the ledger: **under a fixed importance matrix, a
 type promotion is not guaranteed to improve a tensor**, and a
 per-tensor reconstruction check — seconds of CPU — catches what the
@@ -996,8 +998,8 @@ partly because the instability sits outside the KLD window.
 
 **The head is not the lever.** G2 spent 391 MiB promoting the
 output head to the baseline's `Q6_K` and bought 0.031 PPL and
-0.014 KLD over G1 — and the two unstable chunks did not move at
-all (7.3 and 8.5). The eleventh data point guessed the head was
+0.014 KLD over G1 — and the two unstable chunks barely moved
+(7.3 and 8.5, against G1's 7.3 and 8.4). The eleventh data point guessed the head was
 "likely the single biggest lever"; measured, it is a modest
 fidelity lever and no stabilizer. The baseline's PPL edge does not
 live in its head.
