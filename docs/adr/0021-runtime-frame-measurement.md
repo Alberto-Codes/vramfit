@@ -80,6 +80,11 @@ arithmetic.
 - Whether `plan` grows a precision-exclusion flag, or map copies
   with the excluded column removed stay the mechanism for
   decision 4.
+- Evaluation breadth in the runtime-frame lane (added 2026-08-07).
+  Two WikiText chunks carry the twelfth data point's full-set PPL
+  loss. They sit at positions 347 and 502 of 564. The 100-chunk
+  tier-2 window does not reach them. A runtime-frame damage
+  measure needs evaluation text that reaches such instabilities.
 
 ## Consequences
 
@@ -94,3 +99,7 @@ arithmetic.
 - The sub-additive validation result loses its standing as a
   pack-quality signal. It checks additivity inside the scan frame,
   nothing more.
+- The seventh data point's ~14 % granularity ceiling is specific
+  to the 2-bit lineage (noted 2026-08-07). On the 3-bit-floored
+  recipe, `attn_v` protection crossed the baseline's mean KLD
+  (the twelfth data point).
