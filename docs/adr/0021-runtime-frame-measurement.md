@@ -80,6 +80,11 @@ arithmetic.
 - Whether `plan` grows a precision-exclusion flag, or map copies
   with the excluded column removed stay the mechanism for
   decision 4.
+- Evaluation breadth in the runtime-frame lane (added 2026-08-07).
+  Two WikiText chunks carry the twelfth data point's full-set PPL
+  loss. The 100-chunk tier-2 window does not reach them. A
+  runtime-frame damage measure needs enough text breadth to see
+  such instabilities.
 
 ## Consequences
 
