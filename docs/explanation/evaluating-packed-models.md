@@ -273,7 +273,9 @@ The baselines are bartowski's community GGUFs, both **imatrix**
 quants: Q3_K_S (20.45 GiB, fits the budget 21.7 MiB under — the
 size match) and IQ3_M (21.10 GiB, 648 MiB over budget — the
 over-budget quality reference). Tier 1 is the full WikiText-2 test
-set (584 chunks). Tier 2 is whole-model KL against the f16
+set (564 chunks — corrected from "584", a transcription error the
+twelfth data point's log audit caught). Tier 2 is whole-model KL
+against the f16
 reference over the first 100 chunks (51,200 tokens), the f16 pass
 GPU-assisted on the reference box (llama.cpp b10172, Vulkan). The
 f16 reference measures PPL 8.228 ± 0.141 on those 100 chunks.
@@ -287,7 +289,7 @@ f16 reference measures PPL 8.228 ± 0.141 on those 100 chunks.
 | control Q3_K_S (ours, same f16 base) | 20.45 GiB | yes | no | 9.655 ± 0.073 | 0.3451 | 76.9 % |
 
 \* The f16 PPL covers the tier-2 100 chunks only — the 93 GiB
-reference is too slow for the full 584-chunk set on this box. All
+reference is too slow for the full 564-chunk set on this box. All
 other PPLs are full-set.
 
 **The recipe lost, and not narrowly**: 1.39 PPL and 2.4× mean KLD
@@ -541,7 +543,9 @@ spare. Second, the NAS architecture shrinks the lever's reach:
 only 10 of our 35 2-bit layers have attention tensors at all
 (layers 6, 7, 11, 42–51, and 53–70 are FFN-only blocks — corrected
 from "42–70" by the twelfth data point's tensor census: layer 52
-keeps its attention, and 6, 7, and 11 lack it). Hand-driven packs of
+keeps its attention, and 6, 7, and 11 lack it. The 10-layer count
+stands: 6, 7, and 11 sat in the 2-bit set without attention
+tensors, and layer 52 sat at 3-bit). Hand-driven packs of
 recipe-64k with baseline-mirroring holds inside those 10 layers:
 
 | Model | Size | PPL ↓ | Mean KLD ↓ | Same top ↑ |
@@ -968,6 +972,9 @@ the f16 base:
 | Q3_K_S heuristic (bartowski) | 20.45 GiB | yes | **8.532 ± 0.064** | 0.1584 | **83.8 %** |
 | G2 diagnostic = G1 + output@`q6_k` | 20.84 GiB | no (380 MiB over) | 8.620 ± 0.065 | 0.1368 | 85.5 % |
 
+Bold marks the best in-budget value — G2's better fidelity numbers
+do not compete, because G2 does not fit.
+
 G1 is the first in-budget quantfit artifact to beat the baseline on
 mean KLD — 0.1512 against 0.1584, 4.5 % lower, outside the combined
 error bars — and it matches the baseline's top-token agreement
@@ -999,8 +1006,9 @@ partly because the instability sits outside the KLD window.
 **The head is not the lever.** G2 spent 391 MiB promoting the
 output head to the baseline's `Q6_K` and bought 0.031 PPL and
 0.014 KLD over G1 — and the two unstable chunks barely moved
-(7.3 and 8.5, against G1's 7.3 and 8.4). The eleventh data point guessed the head was
-"likely the single biggest lever"; measured, it is a modest
+(7.3 and 8.5, against G1's 7.3 and 8.4). The probe ladder was drawn
+up expecting the head to be the biggest single lever — it is the
+baseline's most visible extravagance. Measured, it is a modest
 fidelity lever and no stabilizer. The baseline's PPL edge does not
 live in its head.
 
@@ -1063,3 +1071,7 @@ compute.
   not signal.
 - Whether evaluation results become a versioned artifact of their own
   (an "evals" sidecar) or stay embedded in the model card.
+- Which window rules when the two disagree. The twelfth data point's
+  G1 wins the 100-chunk KLD window and loses the 564-chunk PPL
+  window against the same baseline — and the unstable chunks sit
+  only in the second.
