@@ -42,6 +42,7 @@ ADR that supersedes the old one.
 | [0019](0019-kquant-priced-maps.md) | Sub-4-bit recipes solve on kquant-priced maps | Superseded by 0021 |
 | [0020](0020-imatrix-assisted-pricing.md) | The meter prices K-quant cells with the pack's imatrix | Superseded by 0021 |
 | [0021](0021-runtime-frame-measurement.md) | Sub-4-bit damage is measured in the runtime frame | Accepted |
+| [0022](0022-within-layer-protections.md) | Tensor-level precision arrives as within-layer protections | Proposed |
 
 ## Template
 
