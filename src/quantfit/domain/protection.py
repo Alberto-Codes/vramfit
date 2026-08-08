@@ -18,7 +18,7 @@ Examples:
     from quantfit.domain.protection import expand_protections
 
     floors = expand_protections(
-        {"*.self_attn.v_proj.weight=5": 5}, map_, runtime="llama.cpp"
+        {"*.self_attn.v_proj.weight": 5}, map_, runtime="llama.cpp"
     )
     ```
 
@@ -186,7 +186,8 @@ def noop_protection_patterns(
 
     A pattern is a no-op in two cases: every tensor it governs sits
     in a group whose final assignment already meets the floor, or a
-    later rule overrides every tensor it matched — a dead rule. The
+    later rule overrides every tensor it matched — a dead rule, and
+    a same-floor override still kills the earlier rule. The
     CLI warns either way — a silent no-op would read as protection
     applied (ADR-0022).
 
@@ -203,13 +204,17 @@ def noop_protection_patterns(
     group_of: dict[str, str] = {
         tensor: group.name for group in map_.groups for tensor in group.tensors
     }
+    # Replay the rules in order so the *last* matching pattern governs
+    # each tensor — matching on floor value would credit an earlier
+    # rule a same-floor successor overrides.
+    governed_by: dict[str, str] = {}
+    for pattern in protections:
+        for name in floors:
+            if fnmatchcase(name, pattern):
+                governed_by[name] = pattern
     noop: list[str] = []
     for pattern, floor in protections.items():
-        governed = [
-            name
-            for name in floors
-            if fnmatchcase(name, pattern) and floors[name] == floor
-        ]
+        governed = [name for name, p in governed_by.items() if p == pattern]
         if all(state[group_of[name]] >= floor for name in governed):
             noop.append(pattern)
     return tuple(noop)

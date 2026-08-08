@@ -275,3 +275,12 @@ class TestTensorBytes:
 
         with pytest.raises(ArtifactError, match="positive"):
             map_from_dict(raw)
+
+    def test_null_tensor_bytes_rejected(self) -> None:
+        # The writer omits the field when unknown and never writes
+        # null — an explicit null is a hand-edit (ADR-0022).
+        raw = self.make_sized_dict()
+        raw["groups"][0]["tensor_bytes"] = None
+
+        with pytest.raises(ArtifactError, match="tensor_bytes"):
+            map_from_dict(raw)

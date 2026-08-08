@@ -202,3 +202,19 @@ class TestNoopProtectionPatterns:
 
         assert "model.layers.*.self_attn.v_proj.weight" in noop
         assert "model.layers.*.v_proj.weight" not in noop
+
+    def test_same_floor_shadowed_rule_is_named(self) -> None:
+        # The later rule governs every tensor the earlier one matched,
+        # at the same floor — the earlier rule is dead and must warn.
+        map_ = make_layer_map()
+        protections = {
+            "model.layers.*.self_attn.v_proj.weight": 5,
+            "model.layers.*.v_proj.weight": 5,
+        }
+        floors = expand_protections(protections, map_, runtime=None)
+        state = {"model.layers.0": 3, "model.layers.1": 3, "model.embed_tokens": 8}
+
+        noop = noop_protection_patterns(protections, map_, state, floors)
+
+        assert "model.layers.*.self_attn.v_proj.weight" in noop
+        assert "model.layers.*.v_proj.weight" not in noop

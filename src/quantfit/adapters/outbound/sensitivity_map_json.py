@@ -357,7 +357,8 @@ def _parse_layer_group(
             scan's precisions, or a present ``tensor_bytes`` does not
             cover exactly the group's tensors with positive sizes
             summing to ``bytes_fp16`` (ADR-0022 — absent means
-            unknown).
+            unknown, and an explicit null is rejected: the writer
+            never emits one).
     """
     obj = _get_dict(raw, path)
     bytes_fp16 = _get_int(obj, "bytes_fp16", path)
@@ -379,9 +380,11 @@ def _parse_layer_group(
     )
     # Optional and additive (ADR-0022): maps written before the field
     # existed carry no per-tensor sizes, and plan refuses protections
-    # against them. The domain type enforces coverage and positivity.
+    # against them. The writer omits the field when unknown and never
+    # writes null, so an explicit null is a hand-edit — rejected, not
+    # normalized. The domain type enforces coverage and positivity.
     tensor_bytes: dict[str, int] = {}
-    if obj.get("tensor_bytes") is not None:
+    if "tensor_bytes" in obj:
         sizes_obj = _get_dict(obj["tensor_bytes"], f"{path}.tensor_bytes")
         for tensor, size in sizes_obj.items():
             value = _as_int(size, f"{path}.tensor_bytes.{tensor}")
