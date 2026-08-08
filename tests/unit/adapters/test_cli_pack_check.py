@@ -8,6 +8,7 @@ under test.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -211,4 +212,68 @@ class TestReconstructionGate:
 
         assert result.exit_code == 1
         events = events_of(out)
+        assert events[-1] == "pack_halted"
+
+
+class TestProtectedPreflight:
+    def test_unmappable_protected_tensor_fails_before_any_stage(
+        self, tmp_path, monkeypatch, llama_cpp_dir
+    ) -> None:
+        model_dir = tmp_path / "model"
+        model_dir.mkdir()
+        recipe = make_protected_recipe(str(model_dir))
+        recipe = replace(
+            recipe,
+            protected_tensors=(
+                ProtectedTensor("model.layers.0.mlp.experts.0.up_proj.weight", 5),
+            ),
+        )
+        recipe_path = tmp_path / "recipe.json"
+        save_recipe(recipe, recipe_path)
+        fake = MemoryRecipePacker(packed_bytes=WEIGHT_BUDGET - 100)
+        monkeypatch.setattr(cli_pack, "_build_packer", lambda *args: fake)
+
+        result = invoke_pack(recipe_path, llama_cpp_dir, tmp_path / "p.gguf")
+
+        assert result.exit_code == 1
+        assert "no GGUF mapping" in result.output
+        # Nothing ran: the failure costs milliseconds, not a convert.
+        assert fake.packed == []
+
+    def test_unmappable_floor_fails_before_any_stage(
+        self, tmp_path, monkeypatch, llama_cpp_dir
+    ) -> None:
+        model_dir = tmp_path / "model"
+        model_dir.mkdir()
+        recipe = make_protected_recipe(str(model_dir))
+        recipe = replace(recipe, protected_tensors=(ProtectedTensor(PROTECTED_HF, 7),))
+        recipe_path = tmp_path / "recipe.json"
+        save_recipe(recipe, recipe_path)
+        fake = MemoryRecipePacker(packed_bytes=WEIGHT_BUDGET - 100)
+        monkeypatch.setattr(cli_pack, "_build_packer", lambda *args: fake)
+
+        result = invoke_pack(recipe_path, llama_cpp_dir, tmp_path / "p.gguf")
+
+        assert result.exit_code == 1
+        assert "no GGUF type maps 7-bit" in result.output
+        assert fake.packed == []
+
+    def test_nan_measurement_still_records_the_halt(
+        self, tmp_path, monkeypatch, llama_cpp_dir, imatrix_path
+    ) -> None:
+        recipe_path = save_protected_recipe(tmp_path)
+        fake = MemoryRecipePacker(packed_bytes=WEIGHT_BUDGET - 100)
+        monkeypatch.setattr(cli_pack, "_build_packer", lambda *args: fake)
+        patch_checkers(monkeypatch, protected_rmse=float("nan"), reference_rmse=0.004)
+        out = tmp_path / "packed.gguf"
+
+        result = invoke_pack(
+            recipe_path, llama_cpp_dir, out, "--imatrix", str(imatrix_path)
+        )
+
+        assert result.exit_code == 1
+        events = events_of(out)
+        # The NaN must not kill the run log (ADR-0011): the event and
+        # the halt both land.
+        assert "reconstruction_checked" in events
         assert events[-1] == "pack_halted"

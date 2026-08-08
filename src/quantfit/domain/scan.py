@@ -83,7 +83,8 @@ class GroupSpec:
             ValueError: If ``name`` is empty, ``bytes_fp16`` is not
                 positive, ``tensors`` is empty, or a non-empty
                 ``tensor_bytes`` does not cover exactly the group's
-                tensors with positive sizes (ADR-0022).
+                tensors with positive sizes summing to ``bytes_fp16``
+                (ADR-0022).
         """
         if not self.name:
             raise ValueError("name must not be empty")
@@ -101,6 +102,11 @@ class GroupSpec:
                 )
             if any(size <= 0 for size in self.tensor_bytes.values()):
                 raise ValueError("tensor_bytes values must all be positive")
+            if sum(self.tensor_bytes.values()) != self.bytes_fp16:
+                raise ValueError(
+                    "tensor_bytes must sum to bytes_fp16 — an inconsistent "
+                    "size record would misprice protections (ADR-0022)"
+                )
 
 
 @dataclass(frozen=True, slots=True)

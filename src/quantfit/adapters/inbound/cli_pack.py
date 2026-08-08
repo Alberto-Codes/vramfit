@@ -1,7 +1,9 @@
 """The ``quantfit pack`` command: apply a recipe through the GGUF backend.
 
 The composition root for the pack step (ADR-0010, ADR-0012). It
-validates the toolchain paths up front, loads the recipe, wires the
+validates the toolchain paths and the recipe's protection mapping
+up front — an unpackable protection fails in milliseconds, not
+after the convert stage — loads the recipe, wires the
 `RecipePacker` port to the llama.cpp adapter, and drives the two
 stages — convert, then quantize (imatrix-assisted when ``--imatrix``
 is given, ADR-0016) — emitting one run-log event per stage. After
@@ -36,7 +38,10 @@ from typing import Annotated
 
 import typer
 
-from quantfit.adapters.inbound.cli_pack_check import _reconstruction_stage
+from quantfit.adapters.inbound.cli_pack_check import (
+    _check_protected_mappable,
+    _reconstruction_stage,
+)
 from quantfit.adapters.inbound.cli_pack_smoke import (
     _check_inputs,
     _halt,
@@ -187,7 +192,9 @@ def pack(
     names a different file, because the pack would not match the
     map's frame (ADR-0020). The command re-checks the packed file's real
     bytes against the recipe's weight budget — nominal-bit
-    predictions undershoot GGUF's effective bits. A protected recipe
+    predictions undershoot GGUF's effective bits. A protected
+    recipe's resolved pairs are checked against the type tables
+    before any stage runs, and a protected recipe
     packed with ``--imatrix`` must then pass the reconstruction
     check — a collapsed tensor halts with its name, and the revision
     is the user's (ADR-0022). With
@@ -217,6 +224,9 @@ def pack(
     _check_inputs(llama_cpp, out, imatrix, smoke_text, smoke_threshold)
 
     recipe = _load_recipe(recipe_path)
+    # An unmappable protection must fail here, in milliseconds — not
+    # after the convert stage writes a full-size base GGUF (ADR-0022).
+    _check_protected_mappable(recipe)
     # An assisted-priced recipe is only comparable to a pack that
     # consumes the same imatrix file (ADR-0020). A warning, not a
     # refusal — packing itself works either way.

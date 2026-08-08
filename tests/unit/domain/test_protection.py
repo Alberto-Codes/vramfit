@@ -187,7 +187,9 @@ class TestNoopProtectionPatterns:
 
         assert noop_protection_patterns(protections, map_, state, floors) == ()
 
-    def test_pattern_fully_overridden_by_later_rule_is_not_named(self) -> None:
+    def test_pattern_fully_overridden_by_later_rule_is_named(self) -> None:
+        # A dead rule governs no tensor and changed nothing — silence
+        # would read as protection applied (ADR-0022).
         map_ = make_layer_map()
         protections = {
             "model.layers.*.self_attn.v_proj.weight": 4,
@@ -198,4 +200,5 @@ class TestNoopProtectionPatterns:
 
         noop = noop_protection_patterns(protections, map_, state, floors)
 
-        assert "model.layers.*.self_attn.v_proj.weight" not in noop
+        assert "model.layers.*.self_attn.v_proj.weight" in noop
+        assert "model.layers.*.v_proj.weight" not in noop

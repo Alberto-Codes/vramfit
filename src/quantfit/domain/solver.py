@@ -138,6 +138,7 @@ class InfeasibleBudgetError(QuantfitError):
         *,
         runtime: str | None = None,
         dropped_precisions: tuple[int, ...] = (),
+        protected_count: int = 0,
     ) -> None:
         """Build the error from the budget arithmetic.
 
@@ -145,7 +146,8 @@ class InfeasibleBudgetError(QuantfitError):
         can print it verbatim as its ``error:`` line. When a runtime
         filter removed scanned precisions, the message names them —
         the reported floor is higher than the scan alone allows, and
-        the user must see why.
+        the user must see why. Protections raise the floor the same
+        way (ADR-0022), so the message counts them too.
 
         Args:
             gap_bytes: Overshoot of the smallest achievable total.
@@ -155,6 +157,7 @@ class InfeasibleBudgetError(QuantfitError):
                 one was given.
             dropped_precisions: Scanned precisions the runtime cannot
                 serve.
+            protected_count: Tensors held at a protection floor.
         """
         message = (
             f"no recipe fits the {format_size(weight_budget_bytes)} weight "
@@ -167,12 +170,18 @@ class InfeasibleBudgetError(QuantfitError):
                 f"precisions {list(dropped_precisions)}, so the floor sits "
                 f"higher than the scan alone allows"
             )
+        if protected_count:
+            message += (
+                f". Protections hold {protected_count} tensors at their "
+                "floors, raising the minimum (ADR-0022)"
+            )
         super().__init__(message)
         self.gap_bytes = gap_bytes
         self.minimum_bytes = minimum_bytes
         self.weight_budget_bytes = weight_budget_bytes
         self.runtime = runtime
         self.dropped_precisions = dropped_precisions
+        self.protected_count = protected_count
 
 
 def group_bytes(bytes_fp16: int, bits: float, format_overhead: float) -> int:
@@ -422,7 +431,8 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
             pattern matches no tensor or a single-tensor group, or
             the map lacks per-tensor sizes (ADR-0022).
         InfeasibleBudgetError: If even minimum precision (pins and
-            protections respected) exceeds the budget.
+            protections respected) exceeds the budget — the message
+            counts the protected tensors that raised the floor.
 
     Examples:
         Pin the first layer high and solve:
@@ -498,6 +508,7 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
             weight_budget_bytes=weight_budget_bytes,
             runtime=runtime,
             dropped_precisions=dropped,
+            protected_count=len(floors),
         )
 
     trace: list[TraceStep] = []

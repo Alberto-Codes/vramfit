@@ -124,6 +124,10 @@ class TestLayerGroupTensorBytes:
         with pytest.raises(ValueError, match="positive"):
             self.make_group({"a": 0, "b": 1_000})
 
+    def test_tensor_bytes_not_summing_to_group_size_rejected(self) -> None:
+        with pytest.raises(ValueError, match="sum to bytes_fp16"):
+            self.make_group({"a": 400, "b": 700})
+
     def test_tensor_bytes_cannot_alias_the_callers_dict(self) -> None:
         sizes = {"a": 400, "b": 600}
         group = self.make_group(sizes)

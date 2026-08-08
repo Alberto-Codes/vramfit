@@ -107,7 +107,17 @@ def main() -> int:
                 file=sys.stderr,
             )
             return 1
-        group["tensor_bytes"] = {t: sizes[t] for t in group["tensors"]}
+        tensor_bytes = {t: sizes[t] for t in group["tensors"]}
+        if sum(tensor_bytes.values()) != group["bytes_fp16"]:
+            print(
+                f'error: group "{group["name"]}": checkpoint sizes sum to '
+                f"{sum(tensor_bytes.values())} but the map records "
+                f"bytes_fp16 {group['bytes_fp16']} — wrong checkpoint for "
+                "this map?",
+                file=sys.stderr,
+            )
+            return 1
+        group["tensor_bytes"] = tensor_bytes
         tensor_count += len(group["tensors"])
 
     args.out.write_text(json.dumps(raw, indent=2) + "\n")

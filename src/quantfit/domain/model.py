@@ -202,7 +202,8 @@ class LayerGroup:
         Raises:
             ValueError: If ``bytes_fp16`` is not positive, or a
                 non-empty ``tensor_bytes`` does not cover exactly the
-                group's tensors with positive sizes — a partial size
+                group's tensors with positive sizes summing to
+                ``bytes_fp16`` — a partial or inconsistent size
                 record would misprice protections silently
                 (ADR-0022).
         """
@@ -221,6 +222,11 @@ class LayerGroup:
                 )
             if any(size <= 0 for size in self.tensor_bytes.values()):
                 raise ValueError("tensor_bytes values must all be positive")
+            if sum(self.tensor_bytes.values()) != self.bytes_fp16:
+                raise ValueError(
+                    "tensor_bytes must sum to bytes_fp16 — an inconsistent "
+                    "size record would misprice protections (ADR-0022)"
+                )
 
 
 @dataclass(frozen=True, slots=True)

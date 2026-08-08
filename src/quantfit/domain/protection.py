@@ -184,10 +184,11 @@ def noop_protection_patterns(
 ) -> tuple[str, ...]:
     """Name the protection patterns that changed nothing.
 
-    A pattern is a no-op when every tensor it protects sits in a
-    group whose final assignment already meets the floor. The CLI
-    warns — a silent no-op would read as protection applied
-    (ADR-0022).
+    A pattern is a no-op in two cases: every tensor it governs sits
+    in a group whose final assignment already meets the floor, or a
+    later rule overrides every tensor it matched — a dead rule. The
+    CLI warns either way — a silent no-op would read as protection
+    applied (ADR-0022).
 
     Args:
         protections: The verbatim pattern-to-floor rules.
@@ -209,6 +210,6 @@ def noop_protection_patterns(
             for name in floors
             if fnmatchcase(name, pattern) and floors[name] == floor
         ]
-        if governed and all(state[group_of[name]] >= floor for name in governed):
+        if all(state[group_of[name]] >= floor for name in governed):
             noop.append(pattern)
     return tuple(noop)

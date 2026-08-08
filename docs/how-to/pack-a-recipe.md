@@ -113,7 +113,8 @@ reconstruction check automatically: it packs the same recipe once
 more with the protections stripped, dequantizes every protected
 tensor from both files, and compares each against the f16 base. The
 reference file is deleted afterward. Budget one extra quantize run
-(5–17 minutes at 49B scale, thread-count dependent). A collapsed tensor names itself in
+(5–17 minutes at 49B scale, thread-count dependent) and transient
+disk for a second full-size artifact beside `--out`. A collapsed tensor names itself in
 the output — exclude it from `--protect`, re-plan, and pack again.
 G1 needed exactly one such round (layers 1, 2, and 5).
 

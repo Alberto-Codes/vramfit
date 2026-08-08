@@ -356,7 +356,8 @@ def _parse_layer_group(
             is not positive, the sensitivity keys do not match the
             scan's precisions, or a present ``tensor_bytes`` does not
             cover exactly the group's tensors with positive sizes
-            (ADR-0022 — absent means unknown).
+            summing to ``bytes_fp16`` (ADR-0022 — absent means
+            unknown).
     """
     obj = _get_dict(raw, path)
     bytes_fp16 = _get_int(obj, "bytes_fp16", path)
@@ -390,6 +391,12 @@ def _parse_layer_group(
             set(tensor_bytes) == set(tensors),
             f"{path}.tensor_bytes",
             "keys must equal the group's tensors (ADR-0022)",
+        )
+        _require(
+            sum(tensor_bytes.values()) == bytes_fp16,
+            f"{path}.tensor_bytes",
+            f"values sum to {sum(tensor_bytes.values())} but bytes_fp16 "
+            f"is {bytes_fp16} (ADR-0022)",
         )
     return LayerGroup(
         name=_get_str(obj, "name", path),

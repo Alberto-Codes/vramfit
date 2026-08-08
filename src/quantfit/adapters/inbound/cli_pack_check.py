@@ -8,7 +8,9 @@ recipe with its protections stripped — the same assisted fit at the
 unprotected types, which a cheap unweighted re-quantize cannot
 reproduce. The stage refuses and names the collapsed tensors; it
 never repacks on its own, so the packed file stays recipe-driven
-(ADR-0012 decision 3).
+(ADR-0012 decision 3). The mapping pre-flight lives here too, and
+the run-log event guards non-finite measurements the sink would
+reject (ADR-0011).
 
 Examples:
     The pack command drives the stage like this:
@@ -27,6 +29,7 @@ See Also:
 
 from __future__ import annotations
 
+import math
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -36,10 +39,39 @@ import typer
 from quantfit.adapters.inbound.cli_pack_smoke import _halt
 from quantfit.adapters.inbound.run_log import SafeRunLog
 from quantfit.adapters.outbound.gguf.reconstruction import GgufReconstructionChecker
-from quantfit.adapters.outbound.gguf.types import gguf_tensor_name
+from quantfit.adapters.outbound.gguf.types import (
+    PackError,
+    ggml_type_for,
+    gguf_tensor_name,
+)
 from quantfit.domain.model import Recipe
 from quantfit.domain.pack import collapsed_tensors, without_protections
 from quantfit.ports.outbound import RecipePacker, ReconstructionChecker
+
+
+def _check_protected_mappable(recipe: Recipe) -> None:
+    """Reject an unpackable protection before any tool runs.
+
+    The class table and the type table judge every resolved pair
+    here, so a protection the backend cannot drive fails in
+    milliseconds — not after the convert stage writes a full-size
+    base GGUF (ADR-0022). An unconstrained plan accepts any positive
+    floor, so this is where a 7-bit floor meets the ADR-0012 table.
+
+    Args:
+        recipe: The recipe about to pack.
+
+    Raises:
+        typer.Exit: With code 1 when a protected tensor has no GGUF
+            mapping or its precision has no type-table entry.
+    """
+    for pair in recipe.protected_tensors:
+        try:
+            gguf_tensor_name(pair.tensor)
+            ggml_type_for(pair.bits)
+        except PackError as exc:
+            typer.echo(f"error: {exc}", err=True)
+            raise typer.Exit(code=1) from exc
 
 
 def _reconstruction_stage(
@@ -119,7 +151,9 @@ def _run_reconstruction(
     against the f16 base in both files, deletes the reference file,
     and halts when any tensor is collapsed — the revision is the
     user's: exclude the named tensors from the protection and
-    re-plan (ADR-0022).
+    re-plan (ADR-0022). The event guards non-finite measurements —
+    the sink rejects NaN, and the halt record must survive
+    (ADR-0011).
 
     Args:
         run_log: Sink for the ``reconstruction_checked`` event.
@@ -148,18 +182,36 @@ def _run_reconstruction(
         reference_packer.pack(without_protections(recipe))
         protected_rmse = dict(_build_checker(out, base_path).rmse(names))
         reference_rmse = dict(_build_checker(reference_path, base_path).rmse(names))
+        collapsed = collapsed_tensors(protected_rmse, reference_rmse)
     except (RuntimeError, ValueError, OSError) as exc:
         raise _halt(run_log, "reconstruction", exc) from exc
     finally:
         reference_path.unlink(missing_ok=True)
-    collapsed = collapsed_tensors(protected_rmse, reference_rmse)
+
+    def finite(value: float) -> float | None:
+        """Guard one measurement for the run-log sink.
+
+        The sink rejects NaN and infinity (ADR-0011), and a collapsed
+        measurement can be exactly that. The text copy in the event
+        keeps the real value on record.
+
+        Args:
+            value: The measured error.
+
+        Returns:
+            The value, or None when non-finite.
+        """
+        return value if math.isfinite(value) else None
+
     run_log.emit(
         "reconstruction_checked",
         {
             "tensors": {
                 name: {
-                    "protected_rmse": protected_rmse[name],
-                    "reference_rmse": reference_rmse[name],
+                    "protected_rmse": finite(protected_rmse[name]),
+                    "protected_rmse_text": str(protected_rmse[name]),
+                    "reference_rmse": finite(reference_rmse[name]),
+                    "reference_rmse_text": str(reference_rmse[name]),
                     "collapsed": name in collapsed,
                 }
                 for name in names

@@ -659,3 +659,14 @@ class TestSolveWithProtections:
 
         assert bare == explicit
         assert bare.protected_tensors == ()
+
+    def test_infeasible_budget_names_the_protection_count(self) -> None:
+        map_ = make_protected_map(layers=1)
+
+        with pytest.raises(InfeasibleBudgetError, match="hold 1 tensors"):
+            solve_simple(
+                map_,
+                budget=150,
+                protections={"*.self_attn.v_proj.weight": 8},
+                format_overhead=0.0,
+            )

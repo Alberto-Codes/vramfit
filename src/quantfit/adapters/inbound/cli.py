@@ -307,8 +307,9 @@ def plan(
     A ``--protect`` rule holds the matched tensors at a precision
     floor inside their groups (ADR-0022): each protected tensor
     packs at the higher of its group's assignment and the floor,
-    priced by size only. A rule that changes nothing draws a
-    warning, never silence.
+    priced by size only. A rule that changes nothing — the floor
+    already met, or a later rule overriding every tensor it
+    matched — draws a warning, never silence.
 
     Raises:
         typer.BadParameter: If a ``--pin`` or ``--protect`` is not of
@@ -393,8 +394,8 @@ def plan(
         for pattern in noop_protection_patterns(protections, map_, state, floors):
             typer.echo(
                 f'warning: --protect "{pattern}={protections[pattern]}" is a '
-                "no-op — every matched group's assignment already meets the "
-                "floor",
+                "no-op — every tensor it governs already meets the floor, "
+                "or a later rule overrides it",
                 err=True,
             )
 
