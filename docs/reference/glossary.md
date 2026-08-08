@@ -170,6 +170,14 @@ change.
 :   A user-forced precision for a group, overriding the solver
     (`--pin "layers.0.*=8"`). Recorded verbatim in the recipe.
 
+**Protection**
+:   A precision floor for named tensors inside their layer groups
+    (`--protect "*.self_attn.v_proj=5"`). A protected tensor packs
+    at the higher of its group's assignment and the floor. Priced
+    by size only, never by damage
+    ([ADR-0022](../adr/0022-within-layer-protections.md)). Not
+    "tensor pin" or "override" (that word belongs to pack).
+
 **Solver**
 :   The algorithm that assigns precisions under the weight budget. Strategy
     tracked in [ADR-0007](../adr/0007-recipe-solver-strategy.md).
@@ -241,6 +249,15 @@ change.
     against the base GGUF over the scan's calibration set
     ([ADR-0016](../adr/0016-imatrix-in-the-pack-path.md)). Not
     "calibration data" (that names the text) or "activation cache".
+
+**Reconstruction check**
+:   The per-tensor proof that a type promotion helped: dequantize
+    the packed tensor and compare it against the f16 base (gguf-py,
+    seconds of CPU). Guards protected packs made with an imatrix —
+    a promotion under a fixed imatrix can worsen a tensor, and the
+    smoke test cannot see it
+    ([ADR-0022](../adr/0022-within-layer-protections.md)). Not
+    "fit check" or "dequant test".
 
 **Smoke test**
 :   The post-pack proof that a packed model emits language: a few
