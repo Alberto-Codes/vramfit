@@ -8,13 +8,18 @@ dequantize path, and the collapse verdict on top of these numbers is
 domain arithmetic with its own unit suite.
 """
 
+# ruff: noqa: E402 - the importorskip guard must run before gguf imports
+
 from __future__ import annotations
 
 import math
 from pathlib import Path
 
-import numpy as np
 import pytest
+
+np = pytest.importorskip("numpy", reason="pack extra not installed")
+pytest.importorskip("gguf", reason="pack extra not installed")
+
 from gguf import GGMLQuantizationType, GGUFWriter
 from gguf.quants import dequantize, quantize
 
