@@ -1123,8 +1123,8 @@ Per-chunk NLL at the two hot chunks:
 
 Swapping the matrix in the 44-layer set made both chunks *worse*.
 Adding layers 1, 2, and 5 — the "collapsed" tensors — returned
-both chunks to baseline level (2.40 and 2.27 against the
-baseline's 2.36 and 2.28). The instability is
+both chunks to baseline level: the table's 2.4 and 2.3 are 2.40
+and 2.27 at two decimals, against the baseline's 2.36 and 2.28. The instability is
 a property of the joint weight state: the front-stack
 `attn_v` fits and the mid-stack promotions have to agree, and
 which side a build lands on is decided by interactions no
