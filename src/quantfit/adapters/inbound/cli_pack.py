@@ -6,7 +6,10 @@ validates the toolchain paths up front, loads the recipe, wires the
 stages — convert, then quantize (imatrix-assisted when ``--imatrix``
 is given, ADR-0016) — emitting one run-log event per stage. After
 packing it re-checks the real bytes against the recipe's weight
-budget, then proves the artifact emits language when ``--smoke-text``
+budget, gates a protected imatrix pack on the reconstruction check
+(ADR-0022 — the stage lives in
+[quantfit.adapters.inbound.cli_pack_check][]), then proves the
+artifact emits language when ``--smoke-text``
 is given (ADR-0017 — the smoke stage lives in
 [quantfit.adapters.inbound.cli_pack_smoke][]). A failed check exits
 1 and keeps the file for inspection.
@@ -33,6 +36,7 @@ from typing import Annotated
 
 import typer
 
+from quantfit.adapters.inbound.cli_pack_check import _reconstruction_stage
 from quantfit.adapters.inbound.cli_pack_smoke import (
     _check_inputs,
     _halt,
@@ -183,7 +187,10 @@ def pack(
     names a different file, because the pack would not match the
     map's frame (ADR-0020). The command re-checks the packed file's real
     bytes against the recipe's weight budget — nominal-bit
-    predictions undershoot GGUF's effective bits. With
+    predictions undershoot GGUF's effective bits. A protected recipe
+    packed with ``--imatrix`` must then pass the reconstruction
+    check — a collapsed tensor halts with its name, and the revision
+    is the user's (ADR-0022). With
     ``--smoke-text`` it then proves the packed model emits language:
     ``--smoke-chunks`` perplexity chunks under the
     ``--smoke-threshold`` ceiling (ADR-0017). A run-log write
@@ -342,6 +349,25 @@ def pack(
             f"— the file is kept at {out}"
         )
         raise _halt(run_log, "size_check", error)
+
+    # The mandatory guard on protected imatrix packs (ADR-0022): fit
+    # collapse is invisible to the smoke test, so the gate runs first.
+    _reconstruction_stage(
+        run_log,
+        recipe,
+        imatrix,
+        out,
+        base_path,
+        lambda reference_path: _build_packer(
+            model_dir,
+            base_path,
+            reference_path,
+            llama_cpp,
+            python_bin if python_bin is not None else Path(sys.executable),
+            threads,
+            imatrix,
+        ),
+    )
 
     if smoke_text is None:
         typer.echo(

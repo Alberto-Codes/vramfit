@@ -36,6 +36,12 @@ The sensitivity map is the output of `quantfit scan` and the input to
         "4": 0.0042,
         "3": 0.0311,
         "2": 0.4170
+      },
+      "tensor_bytes": {
+        "q_proj": 40000000,
+        "k_proj": 10000000,
+        "v_proj": 10000000,
+        "o_proj": 40000000
       }
     }
   ]
@@ -53,6 +59,16 @@ The sensitivity map is the output of `quantfit scan` and the input to
   per-precision sizes from this — at the runtime's per-type effective
   bits when it has a table ([ADR-0014](../adr/0014-per-type-effective-bits.md)),
   at nominal bits plus the overhead fraction otherwise.
+- **`tensor_bytes`** — each member tensor's bytes at reference
+  precision ([ADR-0022](../adr/0022-within-layer-protections.md)).
+  Protections price against these, and `quantfit plan` refuses a
+  `--protect` rule on a group without them. The field is additive
+  and informational, so the schema stays 1: the loader accepts an
+  absent field as unknown, and a present field must cover exactly
+  the group's tensors with positive sizes. New scans record it. For
+  older maps, `scripts/backfill_tensor_sizes.py` reads the
+  checkpoint's safetensors headers — a JSON parse, no torch — and
+  writes an annotated map copy.
 - **`scan.within_group`** — the within-group method token
   ([ADR-0018](../adr/0018-kquant-within-group-method.md)):
   `rtn-block32` (round-to-nearest, the v1 default), `kquant-ref`

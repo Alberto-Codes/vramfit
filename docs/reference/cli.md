@@ -59,6 +59,8 @@ quantfit plan SENSITIVITY_MAP
   --vram SIZE            Hard VRAM ceiling (e.g. 24GiB)  [required]
   --kv-headroom SIZE     Reserved for KV cache + runtime  [default: 4GiB]
   --pin TEXT             Pin groups to a precision, repeatable (glob=bits)
+  --protect TEXT         Hold tensors at a precision floor inside
+                         their groups, repeatable (glob=bits)
   --out PATH             Output recipe  [default: recipe.json]
   --runtime TEXT         Target runtime the recipe is planned for
                          [default: llama.cpp]
@@ -81,11 +83,26 @@ no group is an error (typo detection). Later pins override earlier ones for
 overlapping groups — repeating a pattern moves it to the last position.
 Pins are recorded in the recipe in their effective order.
 
-Exit codes: 1 when the map is invalid, the output is unwritable, or no
-recipe fits the budget (the gap is reported). Exit 2 on malformed options
-(`--pin` not of the form `pattern=bits` with positive bits, unparseable
-sizes, a negative, NaN, or infinite `--format-overhead`, or a
-`--runtime` outside the capability table).
+Protection semantics
+([ADR-0022](../adr/0022-within-layer-protections.md)): patterns are
+the same `fnmatch` language, matched against full *tensor* names
+(`--protect "*.self_attn.v_proj.weight=5"`). A protected tensor
+packs at the higher of its group's assignment and the floor, priced
+by size only — predicted damage stays the group-level sum. The
+command rejects a floor the target runtime cannot serve, a pattern
+that matches no tensor, a protection on a single-tensor group (use
+`--pin` — the embedding and output head hold one tensor each), and a
+map without per-tensor sizes. A rule whose floor every matched
+group's assignment already meets draws a no-op warning. The recipe
+records the rules verbatim and the resolved (tensor, precision)
+pairs.
+
+Exit codes: 1 when the map is invalid, the output is unwritable, no
+recipe fits the budget (the gap is reported), or a `--protect` rule is
+rejected. Exit 2 on malformed options (`--pin` or `--protect` not of
+the form `pattern=bits` with positive bits, unparseable sizes, a
+negative, NaN, or infinite `--format-overhead`, or a `--runtime`
+outside the capability table).
 
 ## `quantfit scan`
 
@@ -287,9 +304,26 @@ warns when `--imatrix` is absent or names a different file, because
 the pack would not match the map's frame (ADR-0020). A warning, not
 a refusal: packing itself works either way.
 
+A protected recipe drives its resolved (tensor, precision) pairs as
+extra overrides, placed *before* the group overrides — the quantizer
+applies the first matching pattern
+([ADR-0022](../adr/0022-within-layer-protections.md)).
+
 After quantizing, the command re-checks the packed file's real bytes
 against `plan.weight_budget_bytes` — nominal-bit predictions
-undershoot GGUF's effective bits (ADR-0012). With `--smoke-text` it
+undershoot GGUF's effective bits (ADR-0012). On a protected pack made
+with `--imatrix`, the reconstruction check then runs, mandatory
+([ADR-0022](../adr/0022-within-layer-protections.md)): the command
+packs the same recipe with its protections stripped as the
+reference, dequantizes every protected tensor from both files with
+gguf-py, and compares each against the f16 base. The reference file
+is deleted after measurement. A tensor that does not reconstruct
+strictly closer to f16 than its unprotected type is collapsed — the
+command names it, keeps the file, and exits 1. The revision is the
+user's: exclude the named tensors from `--protect` and re-plan. A
+protected pack without `--imatrix` skips the check with a note —
+every known fit collapse involved a promotion under one. With
+`--smoke-text` the command
 then runs the smoke test: `--smoke-chunks` perplexity chunks through
 `build/bin/llama-perplexity`, gated by the `--smoke-threshold`
 ceiling (ADR-0017). Without the flag the command warns that the
@@ -297,14 +331,17 @@ packed model is unproven. Every run appends the pack events to the
 run log: pack_started, gguf_converted (with `reused`), model_packed
 (real bytes, base type, embedding and output tensor types, override
 count, imatrix, uncovered tensors), size_checked (margin and
-`fits`), smoke_tested when the smoke test ran (perplexity — null
+`fits`), reconstruction_checked when the gate ran (per-tensor
+protected and reference RMSE, `collapsed`, `passed`), smoke_tested
+when the smoke test ran (perplexity — null
 when non-finite, with a text copy — threshold, chunks, `passed`),
 then pack_finished (with `smoked`) or pack_halted (stage:
-convert, quantize, size_check, or smoke).
+convert, quantize, size_check, reconstruction, or smoke).
 
 Exit codes: 1 when the recipe is invalid, the model directory does
 not exist, a toolchain stage fails, the packed model exceeds the
-weight budget, or the smoke test fails (the file is kept). Exit 2
-when the llama.cpp checkout misses a needed tool, `--imatrix` or
-`--smoke-text` is not a file, `--smoke-threshold` is not positive,
-or the `--out`/`--runlog` directory does not exist.
+weight budget, the reconstruction check finds a collapsed tensor
+(the file is kept), or the smoke test fails (the file is kept).
+Exit 2 when the llama.cpp checkout misses a needed tool,
+`--imatrix` or `--smoke-text` is not a file, `--smoke-threshold` is
+not positive, or the `--out`/`--runlog` directory does not exist.

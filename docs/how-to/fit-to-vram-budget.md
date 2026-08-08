@@ -47,6 +47,15 @@ extremes before packing:
   they match known-fragile structures (first/last blocks, attention).
 - Groups crushed to 2-bit are where quality risk concentrates — if one looks
   load-bearing for your workload, pin it: `--pin "layers.0.*=8"`.
+- When one tensor class inside otherwise-fine groups is the fragile
+  part (the twelfth data point's `attn_v`), protect it instead of
+  pinning whole groups:
+  `--protect "*.self_attn.v_proj.weight=5"` holds the matched
+  tensors at a 5-bit floor and prices the cost by size only
+  ([ADR-0022](../adr/0022-within-layer-protections.md)). The map
+  needs per-tensor sizes — new scans record them, and
+  `scripts/backfill_tensor_sizes.py` annotates older maps from the
+  checkpoint's safetensors headers.
 
 ## When the solver can't fit
 

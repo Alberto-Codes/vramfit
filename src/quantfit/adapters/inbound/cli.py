@@ -15,7 +15,9 @@ exit. Domain failures surface through one catch of the
 Malformed options — including a NaN or infinite overhead — are
 usage errors, rejected before any work starts. ``plan`` records
 its ``--runtime`` in the recipe and reports what the runtime
-filter drops (ADR-0013). ``--format-overhead`` defaults per size
+filter drops (ADR-0013), and its ``--protect`` rules resolve to
+per-tensor floors with a no-op warning when a rule changes nothing
+(ADR-0022). ``--format-overhead`` defaults per size
 model (ADR-0014): the residual when the runtime has an
 effective-bits table, the scalar otherwise.
 
@@ -57,6 +59,10 @@ from quantfit.domain.budget import (
     parse_size,
 )
 from quantfit.domain.errors import QuantfitError
+from quantfit.domain.protection import (
+    expand_protections,
+    noop_protection_patterns,
+)
 from quantfit.domain.runtime import LLAMA_CPP, RUNTIME_CAPABILITIES
 from quantfit.domain.solver import (
     DEFAULT_FORMAT_OVERHEAD,
@@ -213,6 +219,40 @@ def budget(
         raise typer.Exit(code=1)
 
 
+def _parse_rules(raw_rules: list[str] | None, option: str) -> dict[str, int]:
+    """Parse repeatable ``pattern=bits`` options into an ordered mapping.
+
+    Serves ``--pin`` and ``--protect``, which share the rule form. A
+    repeated pattern keeps its *last* position, so later rules
+    override earlier ones, as documented.
+
+    Args:
+        raw_rules: The raw option values, e.g. ``["g*=8"]``.
+        option: The option name, for the error message.
+
+    Returns:
+        Ordered mapping of pattern to bits.
+
+    Raises:
+        typer.BadParameter: If a rule is not ``pattern=bits`` with
+            positive bits.
+    """
+    rules: dict[str, int] = {}
+    for raw in raw_rules or []:
+        pattern, sep, bits_text = raw.partition("=")
+        try:
+            bits = int(bits_text)
+        except ValueError:
+            bits = 0
+        if not sep or not pattern or bits <= 0:
+            raise typer.BadParameter(
+                f'{option} {raw!r}: expected the form "pattern=bits" with positive bits'
+            )
+        rules.pop(pattern, None)
+        rules[pattern] = bits
+    return rules
+
+
 @app.command()
 def plan(
     sensitivity_map: Annotated[
@@ -225,6 +265,13 @@ def plan(
     pin: Annotated[
         list[str] | None,
         typer.Option(help='Pin groups to a precision: "glob=bits". Repeatable.'),
+    ] = None,
+    protect: Annotated[
+        list[str] | None,
+        typer.Option(
+            help="Hold tensors at a precision floor inside their groups: "
+            '"glob=bits". Repeatable (ADR-0022).'
+        ),
     ] = None,
     out: Annotated[Path, typer.Option(help="Output recipe path.")] = Path(
         "recipe.json"
@@ -257,12 +304,18 @@ def plan(
     `QuantfitError` root. The solver's own messages carry the
     details, including the infeasibility gap.
 
+    A ``--protect`` rule holds the matched tensors at a precision
+    floor inside their groups (ADR-0022): each protected tensor
+    packs at the higher of its group's assignment and the floor,
+    priced by size only. A rule that changes nothing draws a
+    warning, never silence.
+
     Raises:
-        typer.BadParameter: If a ``--pin`` is not of the form
-            ``pattern=bits`` with positive bits, a size option is
-            malformed, ``--format-overhead`` is negative, NaN, or
-            infinite, or ``--runtime`` is not in the capability
-            table.
+        typer.BadParameter: If a ``--pin`` or ``--protect`` is not of
+            the form ``pattern=bits`` with positive bits, a size
+            option is malformed, ``--format-overhead`` is negative,
+            NaN, or infinite, or ``--runtime`` is not in the
+            capability table.
         typer.Exit: With code 1 when the map is invalid, the recipe
             cannot be written, the solver rejects the plan, or nothing
             is left for weights.
@@ -286,21 +339,8 @@ def plan(
             f"--runtime: unknown runtime {runtime!r} — "
             f"choose from {sorted(RUNTIME_CAPABILITIES)}"
         )
-    pins: dict[str, int] = {}
-    for raw in pin or []:
-        pattern, sep, bits_text = raw.partition("=")
-        try:
-            bits = int(bits_text)
-        except ValueError:
-            bits = 0
-        if not sep or not pattern or bits <= 0:
-            raise typer.BadParameter(
-                f'--pin {raw!r}: expected the form "pattern=bits" with positive bits'
-            )
-        # A repeated pattern must keep its *last* position so later pins
-        # override earlier ones, as documented.
-        pins.pop(pattern, None)
-        pins[pattern] = bits
+    pins = _parse_rules(pin, "--pin")
+    protections = _parse_rules(protect, "--protect")
 
     vram_bytes = _parse_size_option(vram, "--vram")
     headroom_bytes = _parse_size_option(kv_headroom, "--kv-headroom")
@@ -334,6 +374,7 @@ def plan(
             vram_budget_bytes=vram_bytes,
             kv_headroom_bytes=headroom_bytes,
             pins=pins,
+            protections=protections,
             format_overhead=format_overhead,
             runtime=runtime,
         )
@@ -343,16 +384,35 @@ def plan(
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
+    # A protection that changed nothing must not read as protection
+    # applied (ADR-0022). The solver already validated the rules, so
+    # re-expansion here cannot fail.
+    if protections:
+        state = {a.group: a.bits for a in recipe.assignments}
+        floors = expand_protections(protections, map_, runtime)
+        for pattern in noop_protection_patterns(protections, map_, state, floors):
+            typer.echo(
+                f'warning: --protect "{pattern}={protections[pattern]}" is a '
+                "no-op — every matched group's assignment already meets the "
+                "floor",
+                err=True,
+            )
+
     sink: RecipeSink = JsonRecipeFile(out)
     try:
         sink.save(recipe)
     except OSError as exc:
         typer.echo(f"error: {out}: {exc}", err=True)
         raise typer.Exit(code=1) from exc
+    protected_note = (
+        f", {len(recipe.protected_tensors)} protected tensors"
+        if recipe.protected_tensors
+        else ""
+    )
     typer.echo(
         f"planned {len(recipe.assignments)} groups for {runtime}: "
         f"{format_size(recipe.plan.predicted_total_bytes)} of "
         f"{format_size(weight_budget)} weight budget, "
         f"predicted damage {recipe.plan.predicted_damage:.4f}, "
-        f"{len(recipe.plan.trace)} downgrades -> {out}"
+        f"{len(recipe.plan.trace)} downgrades{protected_note} -> {out}"
     )

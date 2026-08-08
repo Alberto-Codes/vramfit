@@ -561,3 +561,134 @@ class TestBudgetCommand:
         )
 
         assert result.exit_code == 1
+
+
+class TestPlanProtect:
+    def _write_protected_map(self, tmp_path):
+        raw = make_map(
+            [("model.layers.0", 160_000, CURVE), ("model.layers.1", 160_000, CURVE)]
+        )
+        for entry in raw["groups"]:
+            name = entry["name"]
+            entry["tensors"] = [
+                f"{name}.self_attn.v_proj.weight",
+                f"{name}.mlp.down_proj.weight",
+            ]
+            entry["tensor_bytes"] = {
+                f"{name}.self_attn.v_proj.weight": 32_000,
+                f"{name}.mlp.down_proj.weight": 128_000,
+            }
+        path = tmp_path / "sensitivity.json"
+        path.write_text(json.dumps(raw))
+        return path
+
+    def _plan(self, map_path, out, *extra: str):
+        return runner.invoke(
+            app,
+            [
+                "plan",
+                str(map_path),
+                "--vram",
+                "500000",
+                "--kv-headroom",
+                "1000",
+                "--out",
+                str(out),
+                *extra,
+            ],
+        )
+
+    def test_protect_flag_reaches_the_recipe(self, tmp_path) -> None:
+        map_path = self._write_protected_map(tmp_path)
+        out = tmp_path / "recipe.json"
+
+        result = self._plan(
+            map_path,
+            out,
+            "--protect",
+            "*.self_attn.v_proj.weight=5",
+            "--pin",
+            "model.layers.0=3",
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "2 protected tensors" in result.output
+        recipe = load_recipe(out)
+        assert dict(recipe.plan.protections) == {"*.self_attn.v_proj.weight": 5}
+        resolved = {p.tensor: p.bits for p in recipe.protected_tensors}
+        # Layer 0 is pinned at 3-bit, so its v_proj rises to the floor;
+        # layer 1 stays at 8-bit, above the floor.
+        assert resolved["model.layers.0.self_attn.v_proj.weight"] == 5
+        assert resolved["model.layers.1.self_attn.v_proj.weight"] == 8
+
+    def test_noop_protection_warns(self, tmp_path) -> None:
+        map_path = self._write_protected_map(tmp_path)
+        out = tmp_path / "recipe.json"
+
+        result = self._plan(map_path, out, "--protect", "*.self_attn.v_proj.weight=3")
+
+        assert result.exit_code == 0, result.output
+        assert "no-op" in result.output
+
+    def test_effective_protection_does_not_warn(self, tmp_path) -> None:
+        map_path = self._write_protected_map(tmp_path)
+        out = tmp_path / "recipe.json"
+
+        result = self._plan(
+            map_path,
+            out,
+            "--protect",
+            "*.self_attn.v_proj.weight=5",
+            "--pin",
+            "model.layers.0=3",
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "no-op" not in result.output
+
+    def test_unmatched_protection_exits_one(self, tmp_path) -> None:
+        map_path = self._write_protected_map(tmp_path)
+
+        result = self._plan(map_path, tmp_path / "r.json", "--protect", "*.nope=5")
+
+        assert result.exit_code == 1
+        assert "matches no tensor" in result.output
+
+    def test_unservable_floor_exits_one_naming_the_table(self, tmp_path) -> None:
+        map_path = self._write_protected_map(tmp_path)
+
+        result = self._plan(
+            map_path, tmp_path / "r.json", "--protect", "*.v_proj.weight=7"
+        )
+
+        assert result.exit_code == 1
+        assert "cannot serve 7-bit" in result.output
+
+    def test_map_without_tensor_sizes_exits_one_naming_the_field(
+        self, tmp_path
+    ) -> None:
+        raw = make_map(
+            [("model.layers.0", 160_000, CURVE), ("model.layers.1", 160_000, CURVE)]
+        )
+        for entry in raw["groups"]:
+            entry["tensors"] = [
+                f"{entry['name']}.self_attn.v_proj.weight",
+                f"{entry['name']}.mlp.down_proj.weight",
+            ]
+        map_path = tmp_path / "sensitivity.json"
+        map_path.write_text(json.dumps(raw))
+
+        result = self._plan(
+            map_path, tmp_path / "r.json", "--protect", "*.v_proj.weight=5"
+        )
+
+        assert result.exit_code == 1
+        assert "tensor_bytes" in result.output
+
+    def test_malformed_protect_exits_two(self, tmp_path) -> None:
+        map_path = self._write_protected_map(tmp_path)
+
+        result = self._plan(map_path, tmp_path / "r.json", "--protect", "v_proj.weight")
+
+        assert result.exit_code == 2
+        assert "pattern=bits" in result.output

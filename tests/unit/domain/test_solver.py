@@ -508,3 +508,154 @@ class TestSolve:
         assert recipe.plan.kv_headroom_bytes == 1000
         assert recipe.plan.weight_budget_bytes == 5000
         assert recipe.plan.format_overhead == 0.07
+
+
+def make_protected_map(
+    layers: int = 2,
+    curve: dict[int, float] | None = None,
+    v_bytes: int = 200,
+    rest_bytes: int = 800,
+) -> SensitivityMap:
+    from quantfit.domain.model import LayerGroup, ScanMeta
+
+    curve = curve or CONVEX_CURVE
+
+    def layer(index: int) -> LayerGroup:
+        v_proj = f"model.layers.{index}.self_attn.v_proj.weight"
+        down = f"model.layers.{index}.mlp.down_proj.weight"
+        return LayerGroup(
+            name=f"model.layers.{index}",
+            tensors=(v_proj, down),
+            bytes_fp16=v_bytes + rest_bytes,
+            sensitivity=curve,
+            tensor_bytes={v_proj: v_bytes, down: rest_bytes},
+        )
+
+    return SensitivityMap(
+        model_id="test/model",
+        scan=ScanMeta(
+            metric="kl_divergence",
+            calibration="wikitext",
+            calibration_tokens=1024,
+            precisions=tuple(sorted(curve, reverse=True)),
+            group_by="layer",
+            started_at="2026-08-08T00:00:00Z",
+        ),
+        groups=tuple(layer(i) for i in range(layers)),
+    )
+
+
+@pytest.mark.unit
+class TestSolveWithProtections:
+    def test_recipe_records_patterns_and_resolved_pairs(self) -> None:
+        map_ = make_protected_map()
+
+        recipe = solve_simple(
+            map_,
+            budget=10_000,
+            protections={"*.self_attn.v_proj.weight": 5},
+            format_overhead=0.0,
+        )
+
+        assert dict(recipe.plan.protections) == {"*.self_attn.v_proj.weight": 5}
+        assert [p.tensor for p in recipe.protected_tensors] == [
+            "model.layers.0.self_attn.v_proj.weight",
+            "model.layers.1.self_attn.v_proj.weight",
+        ]
+        # Budget fits at 8-bit, and 8 exceeds the floor of 5.
+        assert all(p.bits == 8 for p in recipe.protected_tensors)
+
+    def test_protected_tensor_holds_floor_through_a_downgrade(self) -> None:
+        map_ = make_protected_map(layers=1)
+
+        # 1000 bytes at 8-bit = 500; the budget forces a downgrade.
+        recipe = solve_simple(
+            map_,
+            budget=300,
+            protections={"*.self_attn.v_proj.weight": 5},
+            format_overhead=0.0,
+        )
+
+        assignment = recipe.assignments[0]
+        assert assignment.bits == 4
+        assert recipe.protected_tensors[0].bits == 5
+        # 800 bytes at 4-bit (200) + 200 bytes at 5-bit floor (63).
+        assert assignment.bytes == 200 + 63
+
+    def test_protection_makes_group_size_larger_than_unprotected(self) -> None:
+        map_ = make_protected_map(layers=1)
+
+        unprotected = solve_simple(map_, budget=300, format_overhead=0.0)
+        protected = solve_simple(
+            map_,
+            budget=300,
+            protections={"*.self_attn.v_proj.weight": 5},
+            format_overhead=0.0,
+        )
+
+        assert (
+            protected.plan.predicted_total_bytes
+            > unprotected.plan.predicted_total_bytes
+        )
+
+    def test_protected_group_frees_fewer_bytes_and_ranks_second(self) -> None:
+        # Two identical groups; the protection makes layer 0's
+        # downgrade free fewer bytes, so layer 1 goes first.
+        map_ = make_protected_map(layers=2)
+
+        recipe = solve_simple(
+            map_,
+            budget=700,
+            protections={"model.layers.0.self_attn.v_proj.weight": 8},
+            format_overhead=0.0,
+        )
+
+        assert recipe.plan.trace[0].group == "model.layers.1"
+
+    def test_floor_counts_against_feasibility(self) -> None:
+        map_ = make_protected_map(layers=1)
+
+        # Unprotected floor: 1000 at 2-bit = 125 bytes -> feasible.
+        # With the v_proj held at 8-bit: 100 + 100 = 200 -> infeasible.
+        with pytest.raises(InfeasibleBudgetError):
+            solve_simple(
+                map_,
+                budget=150,
+                protections={"*.self_attn.v_proj.weight": 8},
+                format_overhead=0.0,
+            )
+
+    def test_effective_bits_price_the_floor_under_a_runtime_table(self) -> None:
+        map_ = make_protected_map(layers=1)
+
+        recipe = solve_simple(
+            map_,
+            budget=10_000,
+            protections={"*.self_attn.v_proj.weight": 5},
+            format_overhead=0.0,
+            runtime="llama.cpp",
+        )
+
+        # 8-bit assignment prices at 8.5 effective bits for both
+        # pieces: ceil(800 * 8.5/16) + ceil(200 * 8.5/16).
+        assert recipe.assignments[0].bytes == 425 + 107
+
+    def test_unservable_floor_rejected(self) -> None:
+        from quantfit.domain.protection import ProtectionError
+
+        with pytest.raises(ProtectionError, match="cannot serve"):
+            solve_simple(
+                make_protected_map(),
+                budget=10_000,
+                protections={"*.self_attn.v_proj.weight": 7},
+                runtime="llama.cpp",
+            )
+
+    def test_no_protections_solves_identically_to_before(self) -> None:
+        map_ = make_protected_map()
+
+        bare = solve_simple(map_, budget=1_200, format_overhead=0.0)
+        explicit = solve_simple(map_, budget=1_200, protections={}, format_overhead=0.0)
+
+        assert bare == explicit
+        assert bare.protected_tensors == ()

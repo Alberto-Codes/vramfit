@@ -35,6 +35,7 @@ def make_recipe(
             predicted_damage=0.05,
             solver="greedy-damage-per-byte",
             pins={},
+            protections={},
             format_overhead=0.05,
             trace=(),
         ),
@@ -45,6 +46,7 @@ def make_recipe(
         runtime=None,
         within_group=within_group,
         imatrix=imatrix,
+        protected_tensors=(),
     )
 
 
@@ -485,6 +487,7 @@ class TestPackCommand:
             runtime=None,
             within_group=None,
             imatrix=None,
+            protected_tensors=(),
         )
         path = tmp_path / "recipe5.json"
         save_recipe(recipe, path)

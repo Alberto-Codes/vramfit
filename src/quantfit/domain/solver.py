@@ -14,7 +14,11 @@ Size predictions follow ADR-0014: a runtime with an effective-bits
 table prices each precision at its real per-weight cost, and the
 overhead fraction shrinks to a residual for what the table cannot
 see (unquantized tensors, file metadata). Without a table the
-nominal-bits prediction and the 0.05 scalar remain. Inputs are
+nominal-bits prediction and the 0.05 scalar remain. Protections
+(ADR-0022) enter through the size model only: a protected tensor
+prices at the higher of the candidate precision and its floor
+([quantfit.domain.protection][]), so downgrading a protected group
+frees fewer bytes and the ranking shifts. Inputs are
 validated at the API boundary: a negative ``format_overhead`` raises
 ``ValueError`` before any solving starts.
 
@@ -60,10 +64,16 @@ from quantfit.domain.budget import format_size
 from quantfit.domain.errors import QuantfitError
 from quantfit.domain.model import (
     Assignment,
+    LayerGroup,
     PlanMeta,
     Recipe,
     SensitivityMap,
     TraceStep,
+)
+from quantfit.domain.protection import (
+    expand_protections,
+    protected_group_bytes,
+    resolve_protected,
 )
 from quantfit.domain.runtime import effective_bits, servable_precisions
 
@@ -233,13 +243,15 @@ def _best_move(
     pinned: dict[str, int],
     state: dict[str, int],
     candidates: tuple[int, ...],
-    size: Callable[[int, int], int],
+    size: Callable[[LayerGroup, int], int],
 ) -> tuple[str, int, int, float] | None:
     """Pick the downgrade with the minimum greedy selection key.
 
     Considers every lower candidate precision of every unpinned group.
     Moves that free no bytes (ceil rounding on tiny groups) are skipped —
-    they never help and would divide by zero in the ratio.
+    they never help and would divide by zero in the ratio. Downgrading
+    a group with protected tensors frees fewer bytes (ADR-0022), so
+    its ratio worsens and the ranking shifts accordingly.
 
     Args:
         sensitivity_map: Damage curves for every group.
@@ -258,11 +270,11 @@ def _best_move(
         if group.name in pinned:
             continue
         current = state[group.name]
-        current_bytes = size(group.bytes_fp16, current)
+        current_bytes = size(group, current)
         for target in candidates:
             if target >= current:
                 continue
-            bytes_freed = current_bytes - size(group.bytes_fp16, target)
+            bytes_freed = current_bytes - size(group, target)
             if bytes_freed <= 0:
                 continue
             damage_delta = group.sensitivity[target] - group.sensitivity[current]
@@ -280,7 +292,7 @@ def _refine_last_step(
     total: int,
     weight_budget_bytes: int,
     candidates: tuple[int, ...],
-    size: Callable[[int, int], int],
+    size: Callable[[LayerGroup, int], int],
 ) -> int:
     """Shrink the final downgrade if a smaller step also fits the budget.
 
@@ -297,7 +309,9 @@ def _refine_last_step(
         total: Current predicted weight total.
         weight_budget_bytes: Hard ceiling for the predicted total.
         candidates: The scan's candidate precisions, descending.
-        size: Group-size predictor for the solver's overhead setting.
+        size: Group-size predictor ``(group, bits) -> bytes``, carrying
+            the solver's overhead setting and protection floors
+            (ADR-0022).
 
     Returns:
         The (possibly reduced-overshoot) predicted total in bytes.
@@ -310,16 +324,10 @@ def _refine_last_step(
     for target in candidates:
         if not last.to_bits < target < last.from_bits:
             continue
-        bytes_freed = size(group.bytes_fp16, last.from_bits) - size(
-            group.bytes_fp16, target
-        )
+        bytes_freed = size(group, last.from_bits) - size(group, target)
         if bytes_freed <= 0:
             continue
-        new_total = (
-            total
-            - size(group.bytes_fp16, last.to_bits)
-            + size(group.bytes_fp16, target)
-        )
+        new_total = total - size(group, last.to_bits) + size(group, target)
         if new_total > weight_budget_bytes:
             continue
         damage = group.sensitivity[target]
@@ -344,13 +352,14 @@ def _refine_last_step(
     return new_total
 
 
-def solve(
+def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protections, overhead, runtime
     sensitivity_map: SensitivityMap,
     weight_budget_bytes: int,
     *,
     vram_budget_bytes: int,
     kv_headroom_bytes: int,
     pins: Mapping[str, int] | None = None,
+    protections: Mapping[str, int] | None = None,
     format_overhead: float | None = None,
     runtime: str | None = None,
 ) -> Recipe:
@@ -382,6 +391,11 @@ def solve(
             provenance.
         pins: Ordered glob-pattern pins forcing precisions; later patterns
             override earlier ones.
+        protections: Ordered fnmatch protection rules, pattern to
+            floor (ADR-0022); later patterns override earlier ones
+            for overlapping tensors. A protected tensor prices at
+            the higher of the candidate precision and its floor —
+            by size only, never by damage.
         format_overhead: Overhead fraction on top of the per-weight
             bit cost. None means the default for the size model:
             `DEFAULT_RESIDUAL_OVERHEAD` when the runtime has an
@@ -404,8 +418,11 @@ def solve(
             none of the scanned precisions.
         PinError: If a pin is malformed with respect to the candidate
             set.
-        InfeasibleBudgetError: If even minimum precision (pins respected)
-            exceeds the budget.
+        ProtectionError: If a protection floor is unservable, a
+            pattern matches no tensor or a single-tensor group, or
+            the map lacks per-tensor sizes (ADR-0022).
+        InfeasibleBudgetError: If even minimum precision (pins and
+            protections respected) exceeds the budget.
 
     Examples:
         Pin the first layer high and solve:
@@ -432,17 +449,19 @@ def solve(
             f"format_overhead must be finite and non-negative, got {format_overhead}"
         )
     pins = dict(pins or {})
+    protections = dict(protections or {})
     candidates = sensitivity_map.scan.precisions
     if runtime is not None:
         candidates = servable_precisions(candidates, runtime)
     dropped = tuple(p for p in sensitivity_map.scan.precisions if p not in candidates)
     pinned = _expand_pins(pins, sensitivity_map, candidates)
+    floors = expand_protections(protections, sensitivity_map, runtime)
 
-    def size(bytes_fp16: int, bits: int) -> int:
+    def price(bytes_fp16: int, bits: int) -> int:
         """Shorthand for `group_bytes` with the solver's size model.
 
         Args:
-            bytes_fp16: Group size at reference precision.
+            bytes_fp16: Size at reference precision.
             bits: Target nominal precision.
 
         Returns:
@@ -452,14 +471,25 @@ def solve(
         spent = table[bits] if table is not None else bits
         return group_bytes(bytes_fp16, spent, format_overhead)
 
+    def size(group: LayerGroup, bits: int) -> int:
+        """Price one group, holding its protected tensors at floor.
+
+        Args:
+            group: The group to price.
+            bits: Candidate precision for the group.
+
+        Returns:
+            Predicted bytes, protections included (ADR-0022).
+        """
+        return protected_group_bytes(group, bits, floors, price)
+
     state: dict[str, int] = {}
     for group in sensitivity_map.groups:
         state[group.name] = pinned.get(group.name, candidates[0])
 
-    total = sum(size(g.bytes_fp16, state[g.name]) for g in sensitivity_map.groups)
+    total = sum(size(g, state[g.name]) for g in sensitivity_map.groups)
     floor_total = sum(
-        size(g.bytes_fp16, pinned.get(g.name, candidates[-1]))
-        for g in sensitivity_map.groups
+        size(g, pinned.get(g.name, candidates[-1])) for g in sensitivity_map.groups
     )
     if floor_total > weight_budget_bytes:
         raise InfeasibleBudgetError(
@@ -500,7 +530,7 @@ def solve(
         Assignment(
             group=g.name,
             bits=state[g.name],
-            bytes=size(g.bytes_fp16, state[g.name]),
+            bytes=size(g, state[g.name]),
             damage=g.sensitivity[state[g.name]],
         )
         for g in sensitivity_map.groups
@@ -515,6 +545,7 @@ def solve(
             predicted_damage=sum(a.damage for a in assignments),
             solver=SOLVER_NAME,
             pins=pins,
+            protections=protections,
             format_overhead=format_overhead,
             trace=tuple(trace),
         ),
@@ -525,4 +556,7 @@ def solve(
         # frame that does not match them.
         within_group=sensitivity_map.scan.within_group,
         imatrix=sensitivity_map.scan.imatrix,
+        # Resolved pairs, not raw floors — pack must never demote a
+        # tensor whose group assignment exceeds the floor (ADR-0022).
+        protected_tensors=resolve_protected(sensitivity_map, state, floors),
     )

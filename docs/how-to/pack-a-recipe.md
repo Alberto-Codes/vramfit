@@ -103,6 +103,20 @@ ones ~10⁶. A failing smoke test exits 1 and keeps the file for
 inspection. Without `--smoke-text` the command warns that the
 artifact is unproven.
 
+## The reconstruction check
+
+The smoke test cannot see fit collapse — a 47-layer protected build
+scored 9.594 PPL and would have smoked clean
+([ADR-0022](../adr/0022-within-layer-protections.md)). On a
+protected recipe packed with `--imatrix`, pack therefore runs the
+reconstruction check automatically: it packs the same recipe once
+more with the protections stripped, dequantizes every protected
+tensor from both files, and compares each against the f16 base. The
+reference file is deleted afterward. Budget one extra quantize run
+(about 7 minutes at 49B scale). A collapsed tensor names itself in
+the output — exclude it from `--protect`, re-plan, and pack again.
+G1 needed exactly one such round (layers 1, 2, and 5).
+
 ## Reading the result
 
 The human channel prints the re-check line:

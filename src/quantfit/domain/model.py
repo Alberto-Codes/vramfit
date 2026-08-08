@@ -3,7 +3,9 @@
 The dataclasses enforce their own structural invariants in
 ``__post_init__`` (positive sizes, strictly descending precisions,
 unique group names, sensitivity keys matching the scan, imatrix
-provenance pairing with the assisted method token) so an instance
+provenance pairing with the assisted method token, tensor sizes
+covering exactly the group's tensors, protection records pairing
+with their resolved pairs — ADR-0022) so an instance
 that exists is safe for the solver — however it was constructed. The
 within-group method tokens live here — `SCAN_METHOD` beside the
 `ScanMeta` field it is the default for (ADR-0018), and the kquant
@@ -164,6 +166,10 @@ class LayerGroup:
         bytes_fp16 (int): Group size in bytes at reference precision.
         sensitivity (Mapping[int, float]): Measured damage per candidate
             precision.
+        tensor_bytes (Mapping[str, int]): Each member tensor's bytes at
+            reference precision (ADR-0022), or empty when the map
+            predates the field. Protections price against these — a
+            plan refuses a protection on a group without them.
 
     Examples:
         A group whose damage doubles from 4-bit to 2-bit:
@@ -184,22 +190,37 @@ class LayerGroup:
     tensors: tuple[str, ...]
     bytes_fp16: int
     sensitivity: Mapping[int, float] = field(hash=False)
+    tensor_bytes: Mapping[str, int] = field(hash=False, default_factory=dict)
 
     def __post_init__(self) -> None:
-        """Enforce group invariants and freeze the damage curve.
+        """Enforce group invariants and freeze the mappings.
 
-        The sensitivity mapping is defensively copied and wrapped in a
-        read-only proxy, so a caller's dict cannot alias or mutate a
-        frozen group.
+        The sensitivity and tensor-size mappings are defensively
+        copied and wrapped in read-only proxies, so a caller's dict
+        cannot alias or mutate a frozen group.
 
         Raises:
-            ValueError: If ``bytes_fp16`` is not positive.
+            ValueError: If ``bytes_fp16`` is not positive, or a
+                non-empty ``tensor_bytes`` does not cover exactly the
+                group's tensors with positive sizes — a partial size
+                record would misprice protections silently
+                (ADR-0022).
         """
         if self.bytes_fp16 <= 0:
             raise ValueError("bytes_fp16 must be positive")
         object.__setattr__(
             self, "sensitivity", MappingProxyType(dict(self.sensitivity))
         )
+        object.__setattr__(
+            self, "tensor_bytes", MappingProxyType(dict(self.tensor_bytes))
+        )
+        if self.tensor_bytes:
+            if set(self.tensor_bytes) != set(self.tensors):
+                raise ValueError(
+                    "tensor_bytes keys must equal the group's tensors (ADR-0022)"
+                )
+            if any(size <= 0 for size in self.tensor_bytes.values()):
+                raise ValueError("tensor_bytes values must all be positive")
 
 
 @dataclass(frozen=True, slots=True)
@@ -242,6 +263,47 @@ class SensitivityMap:
                 raise ValueError(
                     f'group "{g.name}" sensitivity keys must equal scan.precisions'
                 )
+
+
+@dataclass(frozen=True, slots=True)
+class ProtectedTensor:
+    """One resolved protection: a tensor and the precision it packs at.
+
+    The resolved side of a ``--protect`` rule (ADR-0022): the higher
+    of the tensor's group assignment and its protection floor. Pack
+    drives these pairs, never the raw floors — emitting resolved
+    precisions keeps a protection from demoting a tensor whose group
+    assignment exceeds the floor.
+
+    Attributes:
+        tensor (str): The protected tensor's name, e.g.
+            ``model.layers.4.self_attn.v_proj.weight``.
+        bits (int): The resolved precision the tensor packs at.
+
+    Examples:
+        A v_proj held at 5-bit inside a 3-bit group:
+
+        ```python
+        from quantfit.domain.model import ProtectedTensor
+
+        pair = ProtectedTensor(tensor="model.layers.4.self_attn.v_proj.weight", bits=5)
+        ```
+    """
+
+    tensor: str
+    bits: int
+
+    def __post_init__(self) -> None:
+        """Enforce the pair invariants.
+
+        Raises:
+            ValueError: If ``tensor`` is empty or ``bits`` is not
+                positive.
+        """
+        if not self.tensor:
+            raise ValueError("tensor must not be empty")
+        if self.bits <= 0:
+            raise ValueError("bits must be positive")
 
 
 @dataclass(frozen=True, slots=True)
@@ -325,6 +387,10 @@ class PlanMeta:
         solver (str): Name of the solver that produced the recipe.
         pins (Mapping[str, int]): User pin patterns, verbatim; later
             patterns override earlier ones.
+        protections (Mapping[str, int]): User protection patterns,
+            verbatim (ADR-0022); later patterns override earlier ones
+            for overlapping tensors. The resolved pairs live in
+            `Recipe.protected_tensors`.
         format_overhead (float): Overhead fraction used for size
             predictions — a residual over the runtime's effective-bits
             table, or the full quantization-format cost without one
@@ -346,6 +412,7 @@ class PlanMeta:
             predicted_damage=0.5,
             solver="greedy-damage-per-byte",
             pins={},
+            protections={},
             format_overhead=0.05,
             trace=(),
         )
@@ -359,12 +426,16 @@ class PlanMeta:
     predicted_damage: float
     solver: str
     pins: Mapping[str, int] = field(hash=False)
+    protections: Mapping[str, int] = field(hash=False)
     format_overhead: float = field(hash=False)
     trace: tuple[TraceStep, ...] = field(hash=False)
 
     def __post_init__(self) -> None:
-        """Freeze the pin record so it cannot alias a caller's dict."""
+        """Freeze the pin and protection records against aliasing."""
         object.__setattr__(self, "pins", MappingProxyType(dict(self.pins)))
+        object.__setattr__(
+            self, "protections", MappingProxyType(dict(self.protections))
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -397,6 +468,10 @@ class Recipe:
             `KQUANT_IMX_METHOD` token, like `ScanMeta.imatrix` — a
             wrong imatrix file in the validation pass contaminates
             the additivity gap silently.
+        protected_tensors (tuple[ProtectedTensor, ...]): Resolved
+            protection pairs (ADR-0022), in map order. Empty for a
+            recipe without protections. Pack drives these, never the
+            raw patterns in ``plan.protections``.
 
     Examples:
         Inspect a recipe's predicted size:
@@ -412,6 +487,7 @@ class Recipe:
     runtime: str | None
     within_group: str | None
     imatrix: str | None
+    protected_tensors: tuple[ProtectedTensor, ...]
 
     def __post_init__(self) -> None:
         """Enforce the recipe invariants the pack step relies on.
@@ -420,8 +496,11 @@ class Recipe:
             ValueError: If ``assignments`` is empty, two assignments
                 name the same group, ``within_group`` or ``imatrix``
                 is an empty string — unknown provenance is None,
-                never "" — or ``imatrix`` does not pair with the
-                assisted method token (ADR-0020).
+                never "" — ``imatrix`` does not pair with the
+                assisted method token (ADR-0020), two protected
+                tensors share a name, or the protection record and
+                the resolved pairs disagree about whether the recipe
+                is protected (ADR-0022).
         """
         if self.within_group is not None and not self.within_group:
             raise ValueError("within_group must not be empty — use None for unknown")
@@ -442,3 +521,12 @@ class Recipe:
         names = [a.group for a in self.assignments]
         if len(set(names)) != len(names):
             raise ValueError("assignment groups must be unique")
+        protected = [p.tensor for p in self.protected_tensors]
+        if len(set(protected)) != len(protected):
+            raise ValueError("protected tensors must be unique")
+        if bool(self.plan.protections) != bool(self.protected_tensors):
+            raise ValueError(
+                "plan.protections and protected_tensors must both be empty "
+                "or both be present — a protection always resolves to at "
+                "least one tensor (ADR-0022)"
+            )

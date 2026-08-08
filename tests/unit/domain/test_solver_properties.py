@@ -14,7 +14,7 @@ from quantfit.domain.runtime import (
     RuntimeCapabilityError,
 )
 from quantfit.domain.solver import InfeasibleBudgetError, group_bytes, solve
-from tests.strategies import raw_sensitivity_maps
+from tests.strategies import raw_protected_maps, raw_sensitivity_maps
 
 overheads = st.floats(
     min_value=0.0, max_value=0.5, allow_nan=False, allow_infinity=False
@@ -235,3 +235,44 @@ class TestSolverProperties:
         assert by_group[pinned_group] == pinned_bits
         assert all(step.group != pinned_group for step in recipe.plan.trace)
         assert recipe.plan.predicted_total_bytes <= budget
+
+
+@pytest.mark.unit
+class TestProtectionProperties:
+    @given(drawn=raw_protected_maps(), overhead=overheads, data=st.data())
+    def test_protection_never_shrinks_the_predicted_total(
+        self, drawn, overhead, data
+    ) -> None:
+        raw, floor = drawn
+        map_ = map_from_dict(raw)
+        _, ceiling = bounds(raw, overhead)
+        # Split pricing rounds each piece up, so a protected group can
+        # cost one byte more than its one-piece ceiling.
+        slack = ceiling + len(map_.groups)
+        budget = data.draw(st.integers(min_value=slack, max_value=slack + 1000))
+        protections = {"model.layers.*.t0": floor}
+
+        bare = solve_simple(map_, budget, overhead)
+        protected = solve_simple(map_, budget, overhead, protections=protections)
+
+        event(f"floor={floor}")
+        assert protected.plan.predicted_total_bytes >= bare.plan.predicted_total_bytes
+
+    @given(drawn=raw_protected_maps(), overhead=overheads, data=st.data())
+    def test_resolved_pairs_are_max_of_assignment_and_floor(
+        self, drawn, overhead, data
+    ) -> None:
+        raw, floor = drawn
+        map_ = map_from_dict(raw)
+        _, ceiling = bounds(raw, overhead)
+        slack = ceiling + len(map_.groups)
+        budget = data.draw(st.integers(min_value=slack, max_value=slack + 1000))
+        protections = {"model.layers.*.t0": floor}
+
+        recipe = solve_simple(map_, budget, overhead, protections=protections)
+
+        bits_by_group = {a.group: a.bits for a in recipe.assignments}
+        assert len(recipe.protected_tensors) == len(recipe.assignments)
+        for pair in recipe.protected_tensors:
+            group = pair.tensor.rsplit(".", 1)[0]
+            assert pair.bits == max(bits_by_group[group], floor)

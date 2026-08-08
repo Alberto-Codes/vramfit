@@ -1,9 +1,10 @@
 """JSON file adapter for the recipe artifact.
 
 Owns (de)serialization and validation of the recipe schema, including
-the ``quantfit_schema`` envelope (version 2 since recipes record
-their target runtime, ADR-0013). A known runtime must serve every
-assigned precision — an unknown runtime name loads untouched.
+the ``quantfit_schema`` envelope (version 3 since recipes record
+their protections, ADR-0022). A known runtime must serve every
+assigned and protected precision — an unknown runtime name loads
+untouched.
 Mirrors the strict reject-don't-normalize stance of the
 sensitivity-map adapter. Two fields are additive rather than
 strict: ``within_group`` (ADR-0019) and ``imatrix`` (ADR-0020)
@@ -48,14 +49,22 @@ from quantfit.adapters.outbound.json_common import (
     _require,
     _save_json,
 )
-from quantfit.domain.model import Assignment, PlanMeta, Recipe, TraceStep
+from quantfit.domain.model import (
+    Assignment,
+    PlanMeta,
+    ProtectedTensor,
+    Recipe,
+    TraceStep,
+)
 from quantfit.domain.runtime import RUNTIME_CAPABILITIES
 from quantfit.domain.scan import KQUANT_IMX_METHOD
 
 # The recipe schema version. Bumped to 2 when recipes gained the
-# required (nullable) ``runtime`` field (ADR-0013) — a version-1
-# reader would silently drop the runtime constraint.
-RECIPE_SCHEMA_VERSION: Final[int] = 2
+# required (nullable) ``runtime`` field (ADR-0013), and to 3 when
+# they gained protections (ADR-0022) — a version-2 reader that
+# dropped the protections record would silently pack a different
+# artifact than the recipe intends.
+RECIPE_SCHEMA_VERSION: Final[int] = 3
 
 
 def recipe_from_dict(data: object) -> Recipe:
@@ -76,6 +85,9 @@ def recipe_from_dict(data: object) -> Recipe:
     null — recipes written before the fields existed do not record
     their map's method (ADR-0019) or imatrix (ADR-0020). A present
     ``imatrix`` must pair with the assisted method token.
+    ``protected_tensors`` and ``plan.protections`` are required and
+    must agree about whether the recipe is protected — a known
+    runtime must also serve every protected precision (ADR-0022).
 
     Raises:
         ArtifactError: If any field is missing, mistyped, or violates a
@@ -152,6 +164,34 @@ def recipe_from_dict(data: object) -> Recipe:
                 f"$.assignments[{i}].bits",
                 f'precision {assignment.bits} is not servable by runtime "{runtime}"',
             )
+    raw_protected = _get_list(root, "protected_tensors", "$")
+    protected: list[ProtectedTensor] = []
+    seen_tensors: set[str] = set()
+    for i, raw in enumerate(raw_protected):
+        path = f"$.protected_tensors[{i}]"
+        obj = _get_dict(raw, path)
+        bits = _get_int(obj, "bits", path)
+        _require(bits > 0, f"{path}.bits", "must be positive")
+        pair = ProtectedTensor(tensor=_get_str(obj, "tensor", path), bits=bits)
+        _require(
+            pair.tensor not in seen_tensors,
+            f"{path}.tensor",
+            f'duplicate protected tensor "{pair.tensor}"',
+        )
+        if runtime is not None and runtime in RUNTIME_CAPABILITIES:
+            _require(
+                pair.bits in RUNTIME_CAPABILITIES[runtime],
+                f"{path}.bits",
+                f'precision {pair.bits} is not servable by runtime "{runtime}"',
+            )
+        seen_tensors.add(pair.tensor)
+        protected.append(pair)
+    _require(
+        bool(plan.protections) == bool(protected),
+        "$.protected_tensors",
+        "plan.protections and protected_tensors must both be empty or both "
+        "be present (ADR-0022)",
+    )
     return Recipe(
         model_id=model_id,
         plan=plan,
@@ -159,6 +199,7 @@ def recipe_from_dict(data: object) -> Recipe:
         runtime=runtime,
         within_group=within_group,
         imatrix=imatrix,
+        protected_tensors=tuple(protected),
     )
 
 
@@ -167,7 +208,9 @@ def recipe_to_dict(recipe: Recipe) -> dict[str, Any]:
 
     An unconstrained recipe serializes its runtime as JSON null, and
     unknown provenance serializes ``within_group`` and ``imatrix``
-    as null.
+    as null. An unprotected recipe serializes ``plan.protections``
+    as an empty object and ``protected_tensors`` as an empty list —
+    the fields are always present (ADR-0022).
 
     Args:
         recipe: The recipe to serialize.
@@ -191,6 +234,7 @@ def recipe_to_dict(recipe: Recipe) -> dict[str, Any]:
             "predicted_damage": plan.predicted_damage,
             "solver": plan.solver,
             "pins": dict(plan.pins),
+            "protections": dict(plan.protections),
             "format_overhead": plan.format_overhead,
             "trace": [
                 {
@@ -208,6 +252,9 @@ def recipe_to_dict(recipe: Recipe) -> dict[str, Any]:
         "assignments": [
             {"group": a.group, "bits": a.bits, "bytes": a.bytes, "damage": a.damage}
             for a in recipe.assignments
+        ],
+        "protected_tensors": [
+            {"tensor": p.tensor, "bits": p.bits} for p in recipe.protected_tensors
         ],
     }
 
@@ -275,7 +322,8 @@ def _parse_plan_meta(obj: dict[str, Any]) -> PlanMeta:
 
     Raises:
         ArtifactError: If a field is missing or invalid. All plan fields
-            are required — the writer always emits them, so a missing
+            are required — including ``protections`` (ADR-0022) — the
+            writer always emits them, so a missing
             field means a truncated or hand-edited artifact.
     """
     path = "$.plan"
@@ -284,6 +332,12 @@ def _parse_plan_meta(obj: dict[str, Any]) -> PlanMeta:
     pins = {
         pattern: _as_int(bits, f"{path}.pins.{pattern}")
         for pattern, bits in pins_obj.items()
+    }
+    _require("protections" in obj, path, 'missing required field "protections"')
+    protections_obj = _get_dict(obj["protections"], f"{path}.protections")
+    protections = {
+        pattern: _as_int(floor, f"{path}.protections.{pattern}")
+        for pattern, floor in protections_obj.items()
     }
     trace_raw = _get_list(obj, "trace", path)
     trace: list[TraceStep] = []
@@ -309,6 +363,7 @@ def _parse_plan_meta(obj: dict[str, Any]) -> PlanMeta:
         predicted_damage=_get_float(obj, "predicted_damage", path),
         solver=_get_str(obj, "solver", path),
         pins=pins,
+        protections=protections,
         format_overhead=_get_float(obj, "format_overhead", path),
         trace=tuple(trace),
     )

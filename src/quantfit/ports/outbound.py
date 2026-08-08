@@ -7,8 +7,11 @@ port carries one machine event at a time (ADR-0011). The scan ports
 cell so a crashed scan can resume — the meter also measures a whole
 recipe at once for the validation pass (ADR-0006). The pack port (`RecipePacker`)
 carries its two toolchain stages separately so the composition root
-can log each (ADR-0012), and the smoke port (`SmokeTester`) carries
-the post-pack proof that the artifact emits language (ADR-0017).
+can log each (ADR-0012), the smoke port (`SmokeTester`) carries
+the post-pack proof that the artifact emits language (ADR-0017),
+and the reconstruction port (`ReconstructionChecker`) carries the
+per-tensor measurement that guards protected packs against fit
+collapse (ADR-0022).
 Concrete implementations live in [quantfit.adapters.outbound][].
 
 Examples:
@@ -301,6 +304,45 @@ class RecipePacker(Protocol):
             RuntimeError: If the base GGUF is missing, the recipe has
                 a group or precision the backend cannot map, or the
                 quantizer fails.
+        """
+        ...
+
+
+class ReconstructionChecker(Protocol):
+    """Measures per-tensor reconstruction error of a packed model.
+
+    The reconstruction check's measurement half (ADR-0022): dequantize
+    named tensors from a packed file and compare each against the f16
+    base. The verdict against the unprotected reference is domain
+    arithmetic (`quantfit.domain.pack.collapsed_tensors`) — fit
+    collapse is invisible to the smoke test, so protected imatrix
+    packs gate on this instead. The gguf-py adapter implements it in
+    seconds of CPU.
+
+    Examples:
+        The pack command drives the port like this:
+
+        ```python
+        protected = checker.rmse(tensors)
+        reference = reference_checker.rmse(tensors)
+        collapsed = collapsed_tensors(protected, reference)
+        ```
+    """
+
+    def rmse(self, tensors: tuple[str, ...]) -> Mapping[str, float]:
+        """Measure reconstruction error for the named tensors.
+
+        Args:
+            tensors: Tensor names in the packed file's own naming,
+                e.g. ``blk.4.attn_v.weight`` for GGUF.
+
+        Returns:
+            Root-mean-square error against the f16 base, per tensor.
+            Every requested tensor is present in the result.
+
+        Raises:
+            RuntimeError: If a file cannot be read, or a requested
+                tensor is missing from either file.
         """
         ...
 
