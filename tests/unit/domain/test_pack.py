@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import pytest
 
-from quantfit.domain.model import Assignment, PlanMeta, Recipe
+from quantfit.domain.model import Assignment, PlanMeta, ProtectedTensor, Recipe
 from quantfit.domain.pack import (
     PackResult,
     TypeOverride,
+    collapsed_tensors,
     smoke_passed,
     weight_budget_margin,
+    without_protections,
 )
 
 pytestmark = pytest.mark.unit
@@ -24,6 +26,7 @@ def make_recipe(weight_budget_bytes: int) -> Recipe:
             predicted_damage=0.05,
             solver="greedy-damage-per-byte",
             pins={},
+            protections={},
             format_overhead=0.05,
             trace=(),
         ),
@@ -33,6 +36,7 @@ def make_recipe(weight_budget_bytes: int) -> Recipe:
         runtime=None,
         within_group=None,
         imatrix=None,
+        protected_tensors=(),
     )
 
 
@@ -191,3 +195,71 @@ class TestSmokePassed:
         # Perplexity is mathematically at least 1 — lower values
         # signal a broken tool, not a good artifact.
         assert smoke_passed(0.0, threshold=1000.0) is False
+
+
+class TestWithoutProtections:
+    def test_strips_protections_and_resolved_pairs(self) -> None:
+
+        recipe = make_recipe(2_000)
+        protected = Recipe(
+            model_id=recipe.model_id,
+            plan=PlanMeta(
+                vram_budget_bytes=3_000,
+                kv_headroom_bytes=1_000,
+                weight_budget_bytes=2_000,
+                predicted_total_bytes=1_500,
+                predicted_damage=0.05,
+                solver="greedy-damage-per-byte",
+                pins={},
+                protections={"*.v_proj.weight": 5},
+                format_overhead=0.05,
+                trace=(),
+            ),
+            assignments=recipe.assignments,
+            runtime=None,
+            within_group=None,
+            imatrix=None,
+            protected_tensors=(
+                ProtectedTensor("model.layers.0.self_attn.v_proj.weight", 5),
+            ),
+        )
+
+        stripped = without_protections(protected)
+
+        assert stripped.protected_tensors == ()
+        assert dict(stripped.plan.protections) == {}
+        assert stripped.assignments == protected.assignments
+        assert stripped.model_id == protected.model_id
+
+    def test_unprotected_recipe_round_trips_unchanged(self) -> None:
+
+        recipe = make_recipe(2_000)
+
+        assert without_protections(recipe) == recipe
+
+
+class TestCollapsedTensors:
+    def test_protected_closer_to_f16_passes(self) -> None:
+        assert collapsed_tensors({"t": 0.001}, {"t": 0.004}) == ()
+
+    def test_g1_collapse_signature_is_named(self) -> None:
+        assert collapsed_tensors({"t": 0.0241}, {"t": 0.0048}) == ("t",)
+
+    def test_equal_error_counts_as_collapsed(self) -> None:
+        assert collapsed_tensors({"t": 0.004}, {"t": 0.004}) == ("t",)
+
+    def test_nan_measurement_counts_as_collapsed(self) -> None:
+        assert collapsed_tensors({"t": float("nan")}, {"t": 0.004}) == ("t",)
+
+    def test_collapsed_names_sort_deterministically(self) -> None:
+
+        collapsed = collapsed_tensors(
+            {"b": 0.9, "a": 0.9, "c": 0.001}, {"b": 0.1, "a": 0.1, "c": 0.1}
+        )
+
+        assert collapsed == ("a", "b")
+
+    def test_mismatched_tensor_sets_raise_value_error(self) -> None:
+
+        with pytest.raises(ValueError, match="same tensors"):
+            collapsed_tensors({"a": 0.1}, {"b": 0.1})

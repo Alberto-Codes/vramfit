@@ -1,7 +1,7 @@
 # ADR-0022: Tensor-level precision arrives as within-layer protections
 
-- **Status:** Proposed
-- **Date:** 2026-08-07
+- **Status:** Accepted
+- **Date:** 2026-08-07 (accepted 2026-08-08)
 - **Extends:** [ADR-0012](0012-gguf-type-mapping.md) decision 2. The
   amendment bullet lands there when this record is accepted.
 
@@ -136,20 +136,44 @@ gguf-py) caught it.
   recipe-driven (ADR-0012 decision 3). G1 needed exactly one such
   round (layers 1, 2, 5).
 
-## Open questions
+## Resolutions
 
-- The reconstruction check's unprotected-type reference.
-  Candidates: a second pack at base types (4.6–17 minutes), an
-  unweighted gguf-py re-quantize of the single tensor (cheap, but
-  it cannot reproduce the assisted fit), or a sibling artifact
-  when one exists. G1 used the sibling.
-- Refuse-and-name against demote-and-repack. An automatic repack
-  must emit a revised recipe, or the packed file stops being
-  recipe-driven.
-- Whether evidence-backed default protections ship (`attn_v=5` on
-  a 3-bit recipe rediscovers the baseline's toolkit) or every
-  protection stays user-directed.
-- Whether the backfill is a CLI command or a repository script.
-- Whether the reconstruction check also runs on unprotected
-  packs. It is cheap, and every fit collapse to date involved a
-  promotion under an imatrix.
+The questions this record left open closed with the implementation.
+
+- **Reference: a second pack at unprotected types.** The pack
+  command re-packs the same recipe with its protections stripped
+  and dequantizes both files. gguf-py cannot quantize K-quants, so
+  the cheap unweighted re-quantize was never available, and the
+  second pack reproduces the assisted fit exactly — it is the
+  sibling comparison G1 used, made general. The reference file is
+  deleted after measurement.
+- **Refuse and name.** The check halts, names the collapsed
+  tensors, and keeps the file. The user excludes the tensors from
+  the protection and re-plans. An automatic repack would emit an
+  artifact no recipe describes (ADR-0012 decision 3).
+- **No default protections.** Every protection is user-directed.
+  The thirteenth data point weakened the case for a default:
+  bartowski's imatrix reproduces the blk.1 collapse signature under
+  our pack layout (RMSE 0.0245 against ours at 0.0241), so
+  `attn_v=5` is not safe unconditionally.
+- **The backfill is a repository script.**
+  `scripts/backfill_tensor_sizes.py` reads safetensors headers and
+  writes the annotated map copy. It earns a CLI command when a
+  second consumer appears.
+- **The check stays off unprotected packs.** A protected pack
+  without an imatrix skips it with a printed note. The gate is
+  mandatory exactly where the failure mode lives.
+
+One thirteenth-data-point observation bounds the check's meaning: a
+collapsed RMSE signature does not always destroy the model. The
+same blk.1 signature cost +0.94 PPL under our imatrix (9.594
+against 8.650) and cost nothing under bartowski's — his 47-layer
+build scored 0.11 PPL *better* than its 44-layer sibling (8.646
+against 8.752). The damage depends on *which* channels
+the fit sacrifices, not the error magnitude alone. The check is
+therefore a conservative gate: it refuses packs a cheaper fit would
+serve better, and the one catastrophic case on record
+(9.594 PPL) is exactly what it catches. The reconstruction output
+of that catastrophic build was never saved — its RMSE figures rest
+on the evidence page. Every check this record mandates writes its
+raw measurements to the run log.

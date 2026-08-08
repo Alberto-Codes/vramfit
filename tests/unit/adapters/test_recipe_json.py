@@ -14,7 +14,7 @@ from quantfit.domain.model import Assignment, PlanMeta, TraceStep
 
 def make_recipe_dict() -> dict:
     return {
-        "quantfit_schema": 2,
+        "quantfit_schema": 3,
         "model_id": "test/model",
         "runtime": "llama.cpp",
         "plan": {
@@ -25,6 +25,7 @@ def make_recipe_dict() -> dict:
             "predicted_damage": 0.5,
             "solver": "greedy-damage-per-byte",
             "pins": {"g*": 8},
+            "protections": {},
             "format_overhead": 0.05,
             "trace": [
                 {
@@ -42,6 +43,7 @@ def make_recipe_dict() -> dict:
             {"group": "g0", "bits": 8, "bytes": 40, "damage": 0.0},
             {"group": "g1", "bits": 4, "bytes": 40, "damage": 0.5},
         ],
+        "protected_tensors": [],
     }
 
 
@@ -251,4 +253,77 @@ class TestRecipe:
                 predicted_damage=0.0,
                 solver="s",
                 pins={},
+                protections={},
             )
+
+
+@pytest.mark.unit
+class TestProtections:
+    def make_protected_dict(self) -> dict:
+        raw = make_recipe_dict()
+        raw["plan"]["protections"] = {"*.self_attn.v_proj.weight": 5}
+        raw["protected_tensors"] = [
+            {"tensor": "model.layers.0.self_attn.v_proj.weight", "bits": 5}
+        ]
+        return raw
+
+    def test_protections_round_trip(self) -> None:
+        raw = self.make_protected_dict()
+
+        recipe = recipe_from_dict(raw)
+        again = recipe_from_dict(recipe_to_dict(recipe))
+
+        assert again == recipe
+        assert dict(recipe.plan.protections) == {"*.self_attn.v_proj.weight": 5}
+        assert recipe.protected_tensors[0].bits == 5
+
+    def test_old_schema_version_rejected(self) -> None:
+        raw = make_recipe_dict()
+        raw["quantfit_schema"] = 2
+
+        with pytest.raises(ArtifactError, match="version 3"):
+            recipe_from_dict(raw)
+
+    def test_missing_protections_field_rejected(self) -> None:
+        raw = make_recipe_dict()
+        del raw["plan"]["protections"]
+
+        with pytest.raises(ArtifactError, match="protections"):
+            recipe_from_dict(raw)
+
+    def test_missing_protected_tensors_field_rejected(self) -> None:
+        raw = make_recipe_dict()
+        del raw["protected_tensors"]
+
+        with pytest.raises(ArtifactError, match="protected_tensors"):
+            recipe_from_dict(raw)
+
+    def test_patterns_without_resolved_pairs_rejected(self) -> None:
+        raw = make_recipe_dict()
+        raw["plan"]["protections"] = {"*.v_proj.weight": 5}
+
+        with pytest.raises(ArtifactError, match="both"):
+            recipe_from_dict(raw)
+
+    def test_duplicate_protected_tensor_rejected(self) -> None:
+        raw = self.make_protected_dict()
+        raw["protected_tensors"].append(
+            {"tensor": "model.layers.0.self_attn.v_proj.weight", "bits": 6}
+        )
+
+        with pytest.raises(ArtifactError, match="duplicate"):
+            recipe_from_dict(raw)
+
+    def test_unservable_protected_bits_rejected_for_known_runtime(self) -> None:
+        raw = self.make_protected_dict()
+        raw["protected_tensors"][0]["bits"] = 7
+
+        with pytest.raises(ArtifactError, match="not servable"):
+            recipe_from_dict(raw)
+
+    def test_non_positive_protected_bits_rejected(self) -> None:
+        raw = self.make_protected_dict()
+        raw["protected_tensors"][0]["bits"] = 0
+
+        with pytest.raises(ArtifactError, match="positive"):
+            recipe_from_dict(raw)

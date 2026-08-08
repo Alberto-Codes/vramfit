@@ -3,8 +3,10 @@
 The pack step hands a recipe to a runtime's quantizer and gets a file
 back. The domain owns what survives that exchange without IO: the
 record of what was driven (`PackResult`), the arithmetic that
-re-checks real bytes against the planned budget (ADR-0012), and the
-smoke-test verdict against the perplexity ceiling (ADR-0017). Type
+re-checks real bytes against the planned budget (ADR-0012), the
+smoke-test verdict against the perplexity ceiling (ADR-0017), and
+the reconstruction-check verdict on protected packs — the stripped
+reference recipe and the collapsed-tensor judgment (ADR-0022). Type
 tables and subprocess details live in
 [quantfit.adapters.outbound.gguf][].
 
@@ -26,7 +28,8 @@ See Also:
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, replace
 
 from quantfit.domain.model import Recipe
 
@@ -166,6 +169,78 @@ def weight_budget_margin(recipe: Recipe, packed_bytes: int) -> int:
     if packed_bytes <= 0:
         raise ValueError("packed_bytes must be positive")
     return recipe.plan.weight_budget_bytes - packed_bytes
+
+
+def without_protections(recipe: Recipe) -> Recipe:
+    """Strip a recipe's protections for the reconstruction reference.
+
+    The reconstruction check compares each protected tensor against
+    the same pack at its unprotected type (ADR-0022). The reference
+    pack applies this recipe: identical in every way except the
+    protections.
+
+    Args:
+        recipe: The protected recipe.
+
+    Returns:
+        The recipe with empty protections, equal otherwise.
+
+    Examples:
+        The reference recipe packs no protected tensors:
+
+        ```python
+        assert without_protections(recipe).protected_tensors == ()
+        ```
+    """
+    return replace(
+        recipe,
+        plan=replace(recipe.plan, protections={}),
+        protected_tensors=(),
+    )
+
+
+def collapsed_tensors(
+    protected_rmse: Mapping[str, float],
+    reference_rmse: Mapping[str, float],
+) -> tuple[str, ...]:
+    """Judge the reconstruction check: name the collapsed tensors.
+
+    A protected tensor must reconstruct closer to the f16 base than
+    it does at its unprotected type (ADR-0022). A tensor whose
+    protected error is not strictly smaller is collapsed — including
+    a NaN measurement, which must never pass a gate.
+
+    Args:
+        protected_rmse: Reconstruction error per tensor, measured on
+            the protected pack.
+        reference_rmse: Reconstruction error for the same tensors,
+            measured on the unprotected reference pack.
+
+    Returns:
+        The collapsed tensor names, sorted.
+
+    Raises:
+        ValueError: If the two measurements cover different tensors —
+            a missing reference would silently pass its tensor.
+
+    Examples:
+        The G1 collapse signature (5.1x worse at the higher type):
+
+        ```python
+        assert collapsed_tensors({"t": 0.0241}, {"t": 0.0048}) == ("t",)
+        ```
+    """
+    if set(protected_rmse) != set(reference_rmse):
+        raise ValueError(
+            "protected and reference measurements must cover the same tensors"
+        )
+    return tuple(
+        sorted(
+            name
+            for name, rmse in protected_rmse.items()
+            if not (math.isfinite(rmse) and rmse < reference_rmse[name])
+        )
+    )
 
 
 def smoke_passed(perplexity: float, threshold: float) -> bool:

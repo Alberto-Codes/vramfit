@@ -4,6 +4,8 @@ The decision core of the GGUF backend, kept free of IO so the mapping
 is testable and the verified fake can share it. Nominal precisions
 map to K-quant types (the full llama.cpp capability set since
 ADR-0013), layer groups map to escaped `blk.<n>.` regex patterns,
+protected tensors map through the fixed HF-to-GGUF class table to
+per-tensor patterns (ADR-0022),
 and the embedding and `lm_head` groups map to the quantizer's
 dedicated embedding and output flags. The backend's own runtime
 name is the domain's `LLAMA_CPP` constant, so the table key and
@@ -67,6 +69,22 @@ EMBEDDING_GROUP: Final[str] = "model.embed_tokens"
 OUTPUT_GROUP: Final[str] = "lm_head"
 
 _LAYER_GROUP: Final[re.Pattern[str]] = re.compile(r"^model\.layers\.(\d+)$")
+
+# The fixed class table (ADR-0022): HF tensor suffix to GGUF tensor
+# suffix, for the seven quantized projections of a llama-family layer.
+GGUF_SUFFIX_BY_HF: Final[dict[str, str]] = {
+    "self_attn.q_proj": "attn_q",
+    "self_attn.k_proj": "attn_k",
+    "self_attn.v_proj": "attn_v",
+    "self_attn.o_proj": "attn_output",
+    "mlp.gate_proj": "ffn_gate",
+    "mlp.up_proj": "ffn_up",
+    "mlp.down_proj": "ffn_down",
+}
+
+_LAYER_TENSOR: Final[re.Pattern[str]] = re.compile(
+    r"^model\.layers\.(\d+)\.([a-z_]+\.[a-z_]+)\.weight$"
+)
 
 
 class PackError(QuantfitError, RuntimeError):
@@ -240,6 +258,80 @@ def output_tensor_type(recipe: Recipe) -> str | None:
         if assignment.group == OUTPUT_GROUP:
             return ggml_type_for(assignment.bits)
     return token_embedding_type(recipe)
+
+
+def gguf_tensor_name(tensor: str) -> str:
+    r"""Map one HF layer tensor name to its GGUF tensor name.
+
+    Args:
+        tensor: HF tensor name, e.g.
+            ``model.layers.4.self_attn.v_proj.weight``.
+
+    Returns:
+        The GGUF tensor name, e.g. ``blk.4.attn_v.weight``.
+
+    Raises:
+        PackError: If the name is not a layer tensor, or its suffix
+            has no class-table entry (ADR-0022).
+
+    Examples:
+        The G1 protection target:
+
+        ```python
+        assert (
+            gguf_tensor_name("model.layers.4.self_attn.v_proj.weight")
+            == "blk.4.attn_v.weight"
+        )
+        ```
+    """
+    match = _LAYER_TENSOR.match(tensor)
+    if match is None or match.group(2) not in GGUF_SUFFIX_BY_HF:
+        raise PackError(
+            f'protected tensor "{tensor}" has no GGUF mapping — the class '
+            f"table covers layer tensors {sorted(GGUF_SUFFIX_BY_HF)} (ADR-0022)"
+        )
+    return f"blk.{match.group(1)}.{GGUF_SUFFIX_BY_HF[match.group(2)]}.weight"
+
+
+def protection_overrides(recipe: Recipe) -> tuple[TypeOverride, ...]:
+    r"""Translate resolved protection pairs into quantizer overrides.
+
+    One override per protected tensor, from the recipe's resolved
+    (tensor, precision) pairs — user glob input never reaches the
+    quantizer (ADR-0022). Callers place these *before* the group
+    overrides: the quantizer applies the first matching pattern, so
+    order encodes priority.
+
+    Args:
+        recipe: The recipe to pack.
+
+    Returns:
+        Overrides in recipe order, empty for an unprotected recipe.
+
+    Raises:
+        PackError: If a protected tensor has no class-table mapping,
+            or its precision has no type-table entry.
+
+    Examples:
+        A protected v_proj becomes an escaped tensor pattern:
+
+        ```python
+        assert protection_overrides(recipe) == (
+            TypeOverride(r"blk\.4\.attn_v\.", "q5_k"),
+        )
+        ```
+    """
+    overrides: list[TypeOverride] = []
+    for pair in recipe.protected_tensors:
+        gguf_name = gguf_tensor_name(pair.tensor)
+        prefix = gguf_name.removesuffix("weight")
+        overrides.append(
+            TypeOverride(
+                pattern=re.escape(prefix),
+                quant_type=ggml_type_for(pair.bits),
+            )
+        )
+    return tuple(overrides)
 
 
 def tensor_overrides(recipe: Recipe) -> tuple[TypeOverride, ...]:

@@ -16,7 +16,7 @@ that produced it.
 
 ```json
 {
-  "quantfit_schema": 2,
+  "quantfit_schema": 3,
   "model_id": "nvidia/Llama-3_3-Nemotron-Super-49B-v1_5",
   "runtime": "llama.cpp",
   "within_group": "kquant-imx",
@@ -29,6 +29,7 @@ that produced it.
     "predicted_damage": 0.0871,
     "solver": "greedy-damage-per-byte",
     "pins": {"model.layers.0.*": 8},
+    "protections": {"*.self_attn.v_proj.weight": 5},
     "format_overhead": 0.005,
     "trace": [
       {
@@ -49,15 +50,24 @@ that produced it.
       "bytes": 50000000,
       "damage": 0.0001
     }
+  ],
+  "protected_tensors": [
+    {
+      "tensor": "model.layers.4.self_attn.v_proj.weight",
+      "bits": 5
+    }
   ]
 }
 ```
 
 ## Field notes
 
-- **`quantfit_schema`** — 2 since recipes gained the `runtime` field
-  ([ADR-0013](../adr/0013-runtime-capability-in-recipes.md)). Schema
-  versions advance per artifact — the sensitivity map stays at 1.
+- **`quantfit_schema`** — 3 since recipes gained protections
+  ([ADR-0022](../adr/0022-within-layer-protections.md)). A schema-2
+  reader would silently drop the protections record and pack a
+  different artifact than the recipe intends — ADR-0013 ruled that
+  case breaking. Schema versions advance per artifact — the
+  sensitivity map stays at 1.
 - **`runtime`** — the target runtime the plan was made for, or null for
   an unconstrained plan. `quantfit plan` always sets it. The solver
   filtered its candidates to this runtime's capability, and pack
@@ -92,6 +102,17 @@ that produced it.
 - **`pins`** — user-forced precision overrides, kept verbatim for
   provenance. Patterns are case-sensitive `fnmatch` globs against the full
   group name, and later pins override earlier ones.
+- **`protections`** — the `--protect` rules, kept verbatim
+  ([ADR-0022](../adr/0022-within-layer-protections.md)). Patterns are
+  case-sensitive `fnmatch` globs against full tensor names, and later
+  rules override earlier ones for overlapping tensors. Empty for an
+  unprotected recipe.
+- **`protected_tensors`** — the resolved (tensor, precision) pairs, in
+  map order. Each precision is the higher of the tensor's group
+  assignment and its protection floor. `quantfit pack` drives these
+  pairs, never the raw patterns — a resolved pair cannot demote a
+  tensor whose group assignment exceeds the floor. Present exactly
+  when `protections` is.
 - **`format_overhead`** — the overhead fraction used for every size
   prediction, resolved from the size model's default when `--format-overhead`
   is not given (0.005 with an effective-bits table, 0.05 without). Together

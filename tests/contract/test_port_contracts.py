@@ -65,6 +65,7 @@ def sample_recipe() -> Recipe:
         vram_budget_bytes=6000,
         kv_headroom_bytes=1000,
         pins={"g0": 8},
+        protections={},
     )
 
 

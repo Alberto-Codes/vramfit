@@ -80,6 +80,7 @@ def sample_pack_recipe() -> Recipe:
             predicted_damage=0.05,
             solver="greedy-damage-per-byte",
             pins={},
+            protections={},
             format_overhead=0.05,
             trace=(),
         ),
@@ -92,6 +93,7 @@ def sample_pack_recipe() -> Recipe:
         runtime=None,
         within_group=None,
         imatrix=None,
+        protected_tensors=(),
     )
 
 

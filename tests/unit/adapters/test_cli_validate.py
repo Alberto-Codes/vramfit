@@ -44,6 +44,7 @@ def make_recipe(
             predicted_damage=sum(damage for _, _, damage in groups_bits_damage),
             solver="greedy-damage-per-byte",
             pins={},
+            protections={},
             format_overhead=0.05,
             trace=(),
         ),
@@ -54,6 +55,7 @@ def make_recipe(
         runtime=None,
         within_group=within_group,
         imatrix=imatrix,
+        protected_tensors=(),
     )
 
 

@@ -9,6 +9,7 @@ from quantfit.adapters.outbound.gguf.types import (
     base_type,
     check_runtime,
     output_tensor_type,
+    protection_overrides,
     tensor_overrides,
     token_embedding_type,
 )
@@ -189,12 +190,32 @@ class MemoryRecipePacker:
             base_type=base_type(recipe),
             token_embedding_type=token_embedding_type(recipe),
             output_tensor_type=output_tensor_type(recipe),
-            overrides=tensor_overrides(recipe),
+            overrides=protection_overrides(recipe) + tensor_overrides(recipe),
             imatrix_path=self.imatrix,
             imatrix_uncovered=self.imatrix_uncovered if self.imatrix else (),
         )
         self.packed.append(recipe)
         return result
+
+
+@dataclass
+class MemoryReconstructionChecker:
+    """In-memory `ReconstructionChecker`. Errors are configured per tensor.
+
+    Like the real adapter, a tensor without a configured measurement
+    raises `PackError` — a missing tensor must never read as a
+    passing one.
+    """
+
+    errors: dict[str, float] = field(default_factory=dict)
+    calls: list[tuple[str, ...]] = field(default_factory=list)
+
+    def rmse(self, tensors: tuple[str, ...]) -> Mapping[str, float]:
+        self.calls.append(tensors)
+        missing = [name for name in tensors if name not in self.errors]
+        if missing:
+            raise PackError(f'tensor "{missing[0]}" is not in the packed file')
+        return {name: self.errors[name] for name in tensors}
 
 
 @dataclass

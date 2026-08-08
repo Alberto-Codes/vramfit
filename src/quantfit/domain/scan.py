@@ -3,7 +3,8 @@
 The scan loop itself lives in the inbound adapter (it drives ports).
 This module holds the pure parts: which (group x precision) cells still
 need measurement, how a finished pile of measurements becomes a
-`SensitivityMap`, the within-group method tokens and the kquant
+`SensitivityMap` — per-tensor sizes riding through from `GroupSpec`
+(ADR-0022) — the within-group method tokens and the kquant
 coverage set (ADR-0006, ADR-0018, ADR-0020 — every token
 re-exported from [quantfit.domain.model][], where `ScanMeta`
 anchors them), and
@@ -30,8 +31,9 @@ See Also:
 from __future__ import annotations
 
 import math
-from collections.abc import Collection, Iterable
-from dataclasses import dataclass
+from collections.abc import Collection, Iterable, Mapping
+from dataclasses import dataclass, field
+from types import MappingProxyType
 
 from quantfit.domain.model import (
     KQUANT_IMX_METHOD as KQUANT_IMX_METHOD,  # noqa: PLC0414 - re-export: method tokens read from this module
@@ -54,6 +56,10 @@ class GroupSpec:
         tensors (tuple[str, ...]): Tensor names quantized together in
             this group.
         bytes_fp16 (int): Group size in bytes at reference precision.
+        tensor_bytes (Mapping[str, int]): Each member tensor's bytes
+            at reference precision (ADR-0022), or empty when the
+            meter predates the field. Rides into the map's groups so
+            protections can price against it.
 
     Examples:
         A one-tensor group:
@@ -68,13 +74,17 @@ class GroupSpec:
     name: str
     tensors: tuple[str, ...]
     bytes_fp16: int
+    tensor_bytes: Mapping[str, int] = field(hash=False, default_factory=dict)
 
     def __post_init__(self) -> None:
-        """Enforce the spec invariants.
+        """Enforce the spec invariants and freeze the size record.
 
         Raises:
             ValueError: If ``name`` is empty, ``bytes_fp16`` is not
-                positive, or ``tensors`` is empty.
+                positive, ``tensors`` is empty, or a non-empty
+                ``tensor_bytes`` does not cover exactly the group's
+                tensors with positive sizes summing to ``bytes_fp16``
+                (ADR-0022).
         """
         if not self.name:
             raise ValueError("name must not be empty")
@@ -82,6 +92,21 @@ class GroupSpec:
             raise ValueError("bytes_fp16 must be positive")
         if not self.tensors:
             raise ValueError("tensors must not be empty")
+        object.__setattr__(
+            self, "tensor_bytes", MappingProxyType(dict(self.tensor_bytes))
+        )
+        if self.tensor_bytes:
+            if set(self.tensor_bytes) != set(self.tensors):
+                raise ValueError(
+                    "tensor_bytes keys must equal the group's tensors (ADR-0022)"
+                )
+            if any(size <= 0 for size in self.tensor_bytes.values()):
+                raise ValueError("tensor_bytes values must all be positive")
+            if sum(self.tensor_bytes.values()) != self.bytes_fp16:
+                raise ValueError(
+                    "tensor_bytes must sum to bytes_fp16 — an inconsistent "
+                    "size record would misprice protections (ADR-0022)"
+                )
 
 
 @dataclass(frozen=True, slots=True)
@@ -246,6 +271,10 @@ def assemble_map(
 ) -> SensitivityMap:
     """Assemble finished measurements into a validated sensitivity map.
 
+    Each spec's per-tensor sizes ride into its map group unchanged
+    (ADR-0022) — a meter that reports them makes the map
+    protection-ready.
+
     Args:
         model_id: The scanned model's identifier.
         meta: The scan's provenance.
@@ -301,6 +330,7 @@ def assemble_map(
                 tensors=spec.tensors,
                 bytes_fp16=spec.bytes_fp16,
                 sensitivity=curves[spec.name],
+                tensor_bytes=spec.tensor_bytes,
             )
             for spec in spec_list
         ),

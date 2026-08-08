@@ -23,6 +23,37 @@ def precision_sets(draw: st.DrawFn) -> tuple[int, ...]:
 
 
 @st.composite
+def raw_protected_maps(draw: st.DrawFn) -> tuple[dict[str, Any], int]:
+    """Draw a map of two-tensor groups with sizes, plus a protection floor.
+
+    Every group carries ``tensor_bytes`` so protections can price
+    against it (ADR-0022). The floor comes from the map's own
+    candidate set, so a plan at the highest precision is never below
+    it.
+    """
+    precisions = draw(precision_sets())
+    floor = draw(st.sampled_from(list(precisions)))
+    damage = st.floats(
+        min_value=0.0, max_value=100.0, allow_nan=False, allow_infinity=False
+    )
+    n_groups = draw(st.integers(min_value=1, max_value=6))
+    groups = []
+    for i in range(n_groups):
+        first = draw(st.integers(min_value=1, max_value=1_000_000))
+        second = draw(st.integers(min_value=1, max_value=1_000_000))
+        curve = {bits: draw(damage) for bits in precisions}
+        groups.append((f"model.layers.{i}", first, second, curve))
+    raw = make_map(
+        [(name, a + b, curve) for name, a, b, curve in groups],
+        precisions=precisions,
+    )
+    for entry, (name, a, b, _) in zip(raw["groups"], groups, strict=True):
+        entry["tensors"] = [f"{name}.t0", f"{name}.t1"]
+        entry["tensor_bytes"] = {f"{name}.t0": a, f"{name}.t1": b}
+    return raw, floor
+
+
+@st.composite
 def raw_sensitivity_maps(draw: st.DrawFn) -> dict[str, Any]:
     """Draw a valid raw sensitivity-map dict of 1-8 heterogeneous groups."""
     precisions = draw(precision_sets())
