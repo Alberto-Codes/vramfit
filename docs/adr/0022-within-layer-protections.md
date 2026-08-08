@@ -166,9 +166,14 @@ The questions this record left open closed with the implementation.
 
 One thirteenth-data-point observation bounds the check's meaning: a
 collapsed RMSE signature does not always destroy the model. The
-same blk.1 signature cost +0.95 PPL under our imatrix and only
-+0.11 under bartowski's — the damage depends on *which* channels
+same blk.1 signature cost +0.94 PPL under our imatrix (9.594
+against 8.650) and cost nothing under bartowski's — his 47-layer
+build scored 0.11 PPL *better* than its 44-layer sibling (8.646
+against 8.752). The damage depends on *which* channels
 the fit sacrifices, not the error magnitude alone. The check is
 therefore a conservative gate: it refuses packs a cheaper fit would
 serve better, and the one catastrophic case on record
-(9.594 PPL) is exactly what it catches.
+(9.594 PPL) is exactly what it catches. The reconstruction output
+of that catastrophic build was never saved — its RMSE figures rest
+on the evidence page. Every check this record mandates writes its
+raw measurements to the run log.
