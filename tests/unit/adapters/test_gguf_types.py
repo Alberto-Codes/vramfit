@@ -12,12 +12,15 @@ from quantfit.adapters.outbound.gguf.types import (
     base_type,
     check_runtime,
     ggml_type_for,
+    gguf_tensor_name,
     output_tensor_type,
+    protection_overrides,
     tensor_overrides,
     token_embedding_type,
 )
 from quantfit.domain.errors import QuantfitError
-from quantfit.domain.model import Assignment, PlanMeta, Recipe
+from quantfit.domain.model import Assignment, PlanMeta, ProtectedTensor, Recipe
+from quantfit.domain.pack import TypeOverride
 from quantfit.domain.runtime import EFFECTIVE_BITS, LLAMA_CPP, RUNTIME_CAPABILITIES
 
 pytestmark = pytest.mark.unit
@@ -46,6 +49,7 @@ def make_recipe(*assignments: tuple[str, int]) -> Recipe:
             predicted_damage=0.01,
             solver="greedy-damage-per-byte",
             pins={},
+            protections={},
             format_overhead=0.05,
             trace=(),
         ),
@@ -56,6 +60,7 @@ def make_recipe(*assignments: tuple[str, int]) -> Recipe:
         runtime=None,
         within_group=None,
         imatrix=None,
+        protected_tensors=(),
     )
 
 
@@ -196,3 +201,87 @@ def test_tensor_overrides_reject_tensor_level_groups() -> None:
 
     with pytest.raises(PackError, match="no GGUF tensor mapping"):
         tensor_overrides(recipe)
+
+
+def make_protected_recipe(
+    pairs: tuple[tuple[str, int], ...],
+    *assignments: tuple[str, int],
+) -> Recipe:
+    base = make_recipe(*assignments)
+    return replace(
+        base,
+        plan=replace(base.plan, protections={"user-pattern": min(b for _, b in pairs)}),
+        protected_tensors=tuple(
+            ProtectedTensor(tensor=tensor, bits=bits) for tensor, bits in pairs
+        ),
+    )
+
+
+class TestGgufTensorName:
+    @pytest.mark.parametrize(
+        ("tensor", "expected"),
+        [
+            ("model.layers.4.self_attn.v_proj.weight", "blk.4.attn_v.weight"),
+            ("model.layers.0.self_attn.q_proj.weight", "blk.0.attn_q.weight"),
+            ("model.layers.11.self_attn.k_proj.weight", "blk.11.attn_k.weight"),
+            ("model.layers.7.self_attn.o_proj.weight", "blk.7.attn_output.weight"),
+            ("model.layers.3.mlp.gate_proj.weight", "blk.3.ffn_gate.weight"),
+            ("model.layers.3.mlp.up_proj.weight", "blk.3.ffn_up.weight"),
+            ("model.layers.79.mlp.down_proj.weight", "blk.79.ffn_down.weight"),
+        ],
+        ids=["v", "q", "k", "o", "gate", "up", "down"],
+    )
+    def test_class_table_maps_the_seven_projections(
+        self, tensor: str, expected: str
+    ) -> None:
+        assert gguf_tensor_name(tensor) == expected
+
+    @pytest.mark.parametrize(
+        "tensor",
+        [
+            "model.embed_tokens.weight",
+            "lm_head.weight",
+            "model.layers.4.input_layernorm.weight",
+            "model.layers.4.self_attn.v_proj.bias",
+            "transformer.h.4.attn.c_attn.weight",
+        ],
+        ids=["embedding", "head", "norm", "bias", "foreign-arch"],
+    )
+    def test_unmappable_tensor_raises_pack_error(self, tensor: str) -> None:
+        with pytest.raises(PackError, match="no GGUF mapping"):
+            gguf_tensor_name(tensor)
+
+
+class TestProtectionOverrides:
+    def test_resolved_pair_becomes_escaped_override(self) -> None:
+        recipe = make_protected_recipe(
+            (("model.layers.4.self_attn.v_proj.weight", 5),),
+            ("model.layers.4", 3),
+        )
+
+        assert protection_overrides(recipe) == (
+            TypeOverride(pattern=r"blk\.4\.attn_v\.", quant_type="q5_k"),
+        )
+
+    def test_escaping_keeps_layer_four_from_matching_layer_forty(self) -> None:
+        recipe = make_protected_recipe(
+            (("model.layers.4.self_attn.v_proj.weight", 5),),
+            ("model.layers.4", 3),
+        )
+
+        pattern = protection_overrides(recipe)[0].pattern
+        assert re.search(pattern, "blk.4.attn_v.weight")
+        assert not re.search(pattern, "blk.40.attn_v.weight")
+        assert not re.search(pattern, "blk.14.attn_v.weight")
+
+    def test_unprotected_recipe_yields_no_overrides(self) -> None:
+        assert protection_overrides(make_recipe(("model.layers.0", 4))) == ()
+
+    def test_unmapped_precision_raises_pack_error(self) -> None:
+        recipe = make_protected_recipe(
+            (("model.layers.4.self_attn.v_proj.weight", 7),),
+            ("model.layers.4", 3),
+        )
+
+        with pytest.raises(PackError, match="no GGUF type maps 7-bit"):
+            protection_overrides(recipe)

@@ -230,3 +230,57 @@ class TestSensitivityMap:
     def test_non_object_top_level_rejected(self) -> None:
         with pytest.raises(ArtifactError, match="expected a JSON object"):
             map_from_dict([1, 2, 3])
+
+
+@pytest.mark.unit
+class TestTensorBytes:
+    def make_sized_dict(self) -> dict:
+        raw = make_map([("model.layers.0", 1_000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.4})])
+        raw["groups"][0]["tensors"] = ["a.weight", "b.weight"]
+        raw["groups"][0]["tensor_bytes"] = {"a.weight": 400, "b.weight": 600}
+        return raw
+
+    def test_tensor_bytes_round_trip(self) -> None:
+        raw = self.make_sized_dict()
+
+        map_ = map_from_dict(raw)
+        again = map_from_dict(map_to_dict(map_))
+
+        assert again == map_
+        assert dict(map_.groups[0].tensor_bytes) == {
+            "a.weight": 400,
+            "b.weight": 600,
+        }
+
+    def test_absent_tensor_bytes_loads_empty(self) -> None:
+        raw = self.make_sized_dict()
+        del raw["groups"][0]["tensor_bytes"]
+
+        map_ = map_from_dict(raw)
+
+        assert dict(map_.groups[0].tensor_bytes) == {}
+        # The writer omits the unknown field instead of writing null.
+        assert "tensor_bytes" not in map_to_dict(map_)["groups"][0]
+
+    def test_partial_tensor_bytes_rejected(self) -> None:
+        raw = self.make_sized_dict()
+        del raw["groups"][0]["tensor_bytes"]["b.weight"]
+
+        with pytest.raises(ArtifactError, match="tensor_bytes"):
+            map_from_dict(raw)
+
+    def test_non_positive_tensor_bytes_rejected(self) -> None:
+        raw = self.make_sized_dict()
+        raw["groups"][0]["tensor_bytes"]["a.weight"] = 0
+
+        with pytest.raises(ArtifactError, match="positive"):
+            map_from_dict(raw)
+
+    def test_null_tensor_bytes_rejected(self) -> None:
+        # The writer omits the field when unknown and never writes
+        # null — an explicit null is a hand-edit (ADR-0022).
+        raw = self.make_sized_dict()
+        raw["groups"][0]["tensor_bytes"] = None
+
+        with pytest.raises(ArtifactError, match="tensor_bytes"):
+            map_from_dict(raw)

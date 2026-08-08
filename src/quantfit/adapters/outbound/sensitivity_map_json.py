@@ -118,7 +118,9 @@ def map_to_dict(map_: SensitivityMap) -> dict[str, Any]:
         are stringified in descending-bit order. The within-group
         method token is always written, even when it is the default,
         and the imatrix path is always written — null when
-        unassisted (ADR-0020).
+        unassisted (ADR-0020). Per-tensor sizes are written only
+        when known — an absent field means unknown, never zero
+        (ADR-0022).
     """
     return {
         "quantfit_schema": MAP_SCHEMA_VERSION,
@@ -142,6 +144,13 @@ def map_to_dict(map_: SensitivityMap) -> dict[str, Any]:
                     str(bits): g.sensitivity[bits]
                     for bits in sorted(g.sensitivity, reverse=True)
                 },
+                # Written only when known (ADR-0022) — the field is
+                # additive and informational, so the schema stays 1.
+                **(
+                    {"tensor_bytes": {t: g.tensor_bytes[t] for t in g.tensors}}
+                    if g.tensor_bytes
+                    else {}
+                ),
             }
             for g in map_.groups
         ],
@@ -344,8 +353,12 @@ def _parse_layer_group(
 
     Raises:
         ArtifactError: If a field is missing or invalid, ``bytes_fp16``
-            is not positive, or the sensitivity keys do not match the
-            scan's precisions.
+            is not positive, the sensitivity keys do not match the
+            scan's precisions, or a present ``tensor_bytes`` does not
+            cover exactly the group's tensors with positive sizes
+            summing to ``bytes_fp16`` (ADR-0022 — absent means
+            unknown, and an explicit null is rejected: the writer
+            never emits one).
     """
     obj = _get_dict(raw, path)
     bytes_fp16 = _get_int(obj, "bytes_fp16", path)
@@ -365,9 +378,33 @@ def _parse_layer_group(
         f"keys {sorted(sensitivity, reverse=True)} must equal scan.precisions "
         f"{sorted(expected_precisions, reverse=True)}",
     )
+    # Optional and additive (ADR-0022): maps written before the field
+    # existed carry no per-tensor sizes, and plan refuses protections
+    # against them. The writer omits the field when unknown and never
+    # writes null, so an explicit null is a hand-edit — rejected, not
+    # normalized. The domain type enforces coverage and positivity.
+    tensor_bytes: dict[str, int] = {}
+    if "tensor_bytes" in obj:
+        sizes_obj = _get_dict(obj["tensor_bytes"], f"{path}.tensor_bytes")
+        for tensor, size in sizes_obj.items():
+            value = _as_int(size, f"{path}.tensor_bytes.{tensor}")
+            _require(value > 0, f"{path}.tensor_bytes.{tensor}", "must be positive")
+            tensor_bytes[tensor] = value
+        _require(
+            set(tensor_bytes) == set(tensors),
+            f"{path}.tensor_bytes",
+            "keys must equal the group's tensors (ADR-0022)",
+        )
+        _require(
+            sum(tensor_bytes.values()) == bytes_fp16,
+            f"{path}.tensor_bytes",
+            f"values sum to {sum(tensor_bytes.values())} but bytes_fp16 "
+            f"is {bytes_fp16} (ADR-0022)",
+        )
     return LayerGroup(
         name=_get_str(obj, "name", path),
         tensors=tuple(tensors),
         bytes_fp16=bytes_fp16,
         sensitivity=sensitivity,
+        tensor_bytes=tensor_bytes,
     )

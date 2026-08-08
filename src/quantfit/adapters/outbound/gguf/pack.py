@@ -6,8 +6,10 @@ a caller-supplied interpreter — that interpreter carries torch, this
 package never imports it (ADR-0005). `pack` first rejects a recipe
 recorded for a foreign runtime (ADR-0013), then runs
 ``llama-quantize`` with the recipe's type mapping from
-[quantfit.adapters.outbound.gguf.types][]: pattern overrides per
-layer group plus dedicated embedding and output-head flags. With an
+[quantfit.adapters.outbound.gguf.types][]: protection overrides
+first (ADR-0022 — the quantizer applies the first matching
+pattern), then pattern overrides per
+layer group, plus dedicated embedding and output-head flags. With an
 importance matrix (ADR-0016) the adapter also scans the quantizer's
 zero-exit output for tensors the matrix did not cover — the
 quantizer only warns, and a silently unassisted tensor must not
@@ -50,6 +52,7 @@ from quantfit.adapters.outbound.gguf.types import (
     base_type,
     check_runtime,
     output_tensor_type,
+    protection_overrides,
     tensor_overrides,
     token_embedding_type,
 )
@@ -137,7 +140,8 @@ class LlamaCppPacker:
         The embedding and output-head flags resolve independently: an
         ``lm_head`` group drives the output flag with its own
         assignment, and the embedding assignment stands in when the
-        scan measured no head (ADR-0012). A configured importance
+        scan measured no head (ADR-0012). A protected recipe's
+        resolved pairs become the leading overrides (ADR-0022). A configured importance
         matrix reaches the quantizer as ``--imatrix``, lands in the
         result's provenance, and the quantizer's output is scanned
         for tensors the matrix did not cover (ADR-0016).
@@ -163,7 +167,10 @@ class LlamaCppPacker:
         base = base_type(recipe)
         embedding = token_embedding_type(recipe)
         output = output_tensor_type(recipe)
-        overrides = tensor_overrides(recipe)
+        # Protection overrides first (ADR-0022): the quantizer applies
+        # the first matching pattern, so a protected tensor must match
+        # its own pattern before its group's.
+        overrides = protection_overrides(recipe) + tensor_overrides(recipe)
         command = [str(self.quantize_bin), "--pure"]
         if self.imatrix is not None:
             command += ["--imatrix", str(self.imatrix)]

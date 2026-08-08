@@ -1,7 +1,8 @@
 # ADR-0012: The GGUF backend maps nominal bits to K-quant types
 
 - **Status:** Accepted, amended by
-  [ADR-0013](0013-runtime-capability-in-recipes.md)
+  [ADR-0013](0013-runtime-capability-in-recipes.md) and
+  [ADR-0022](0022-within-layer-protections.md)
 - **Date:** 2026-07-28 (accepted 2026-07-28)
 - **Amendment (2026-07-28):** the type tables in decisions 1 and 3
   gain 6- and 5-bit rows (6→`Q6_K`, 5→`Q5_K`, base ftype
@@ -16,6 +17,12 @@
   on two backends, payloads finite). Pack output needs a smoke test —
   a few perplexity chunks — before anything downstream trusts it.
   Implementation is an open question below.
+- **Amendment (2026-08-08):** decision 2 gains within-layer
+  protections ([ADR-0022](0022-within-layer-protections.md)). A
+  recipe's resolved (tensor, precision) pairs become per-tensor
+  overrides, placed before the group overrides — the quantizer
+  applies the first matching pattern. The backend still rejects
+  tensor-level *groups*: the boundary moved for protections only.
 
 ## Context
 

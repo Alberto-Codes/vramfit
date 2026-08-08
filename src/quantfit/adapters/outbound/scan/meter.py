@@ -280,13 +280,17 @@ class TorchDamageMeter:
 
         Returns:
             All groups in module order, sized at 2 bytes per parameter
-            (the bf16 reference).
+            (the bf16 reference), with per-tensor sizes for the
+            protection pricing (ADR-0022).
         """
         return tuple(
             GroupSpec(
                 name=name,
                 tensors=tuple(tensors),
                 bytes_fp16=sum(t.numel() * 2 for t in map(self._param, tensors)),
+                # Per-tensor sizes ride into the map so protections
+                # can price against them (ADR-0022).
+                tensor_bytes={t: self._param(t).numel() * 2 for t in tensors},
             )
             for name, tensors in self._groups.items()
         )

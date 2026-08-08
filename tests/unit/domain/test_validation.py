@@ -25,6 +25,7 @@ def make_recipe(damages: tuple[float, ...]) -> Recipe:
             predicted_damage=sum(damages),
             solver="greedy-damage-per-byte",
             pins={},
+            protections={},
             format_overhead=0.05,
             trace=(),
         ),
@@ -35,6 +36,7 @@ def make_recipe(damages: tuple[float, ...]) -> Recipe:
         runtime=None,
         within_group=None,
         imatrix=None,
+        protected_tensors=(),
     )
 
 
