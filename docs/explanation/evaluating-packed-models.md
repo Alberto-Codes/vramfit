@@ -1029,6 +1029,124 @@ measure: not the scan frame, not the validation pass, not a
 runtime-frame prices for 2-bit re-entry, and enough evaluation
 breadth to see instabilities the calibration-sized windows miss.
 
+## The thirteenth data point: the imatrix swap, and the instability's address
+
+The twelfth data point left one untested lever that plausibly
+touched chunks 347 and 502: the importance matrix. The case was
+circumstantial but consistent — the fit collapse looked
+imatrix-dependent (the baseline's own layer-1 `attn_v` reconstructs
+10× better than ours at the same type), imatrix effects are
+allocation-dependent and large (the eighth and ninth data points),
+and the no-2 artifact already ran hot on both chunks under our
+matrix. On 2026-08-08 the probe ran: bartowski's published
+importance matrix (483 chunks of his calibration set, an 18 MB
+fetch — no rescan), swapped into the G1 pack pattern. Two builds:
+**G1-bimx**, the exact 44-block pattern, isolating the imatrix
+variable; and **G1b-bimx**, the full 47-block pattern including
+layers 1, 2, and 5, testing whether his matrix removes the
+collapse. The reconstruction check ran before any eval, and this
+time its raw output is saved (`probes/recon-*.jsonl` — the twelfth
+data point's collapse ratios were computed live and never written
+to disk, a gap this run closes).
+
+**The collapse is not the imatrix's alone.** Under bartowski's
+matrix, in our pack layout, layer 1's `attn_v` at `Q5_K`
+reconstructs at RMSE 0.0245 — the same signature as ours (0.0241),
+5.15× worse than its own `Q3_K` fit (0.00476). Layers 2 and 5
+repeat the pattern at 1.87× and 1.32×. The twelfth data point's
+cross-check ("his matrix avoids it 10×") was measured in *his* pack
+layout, and the correction matters: the collapse belongs to the
+(tensor, type, allocation) triple, not to the matrix. No imatrix
+swap alone removes it. A related constant: layer 3's `attn_v` at
+`Q4_K` reconstructs at relative RMSE 0.53 under both matrices — the
+front-stack `attn_v` outliers are simply hostile to mid-size
+K-quant fits.
+
+**A collapsed signature is not a destroyed model.** The build that
+carried this signature under our matrix cost +0.94 PPL (9.594
+against G1's 8.650). The same signature under bartowski's cost
+nothing — G1b-bimx scored 0.11 PPL *better* than its 44-block
+sibling. RMSE magnitude does not decide model-level damage; the
+identity of the sacrificed channels does. The reconstruction check
+stays a conservative gate: it refuses some packs that would serve
+fine, and it catches the one catastrophic case on record.
+
+**The results.** Tier 1 is the full WikiText-2 set, tier 2 the
+standard 100-chunk KL window:
+
+| Model | PPL ↓ | Mean KLD (100) ↓ | Same top ↑ |
+|-------|-------|------------------|------------|
+| Q3_K_S heuristic (bartowski) | **8.532 ± 0.064** | 0.1584 | 83.8 % |
+| G1 (ours, 44 blocks) | 8.650 ± 0.064 | **0.1512** | 83.8 % |
+| G1b-bimx (bartowski imx, 47 blocks) | 8.646 ± 0.065 | 0.1551 | 83.6 % |
+| G1-bimx (bartowski imx, 44 blocks) | 8.752 ± 0.066 | 0.1550 | 83.6 % |
+
+The probe misses. Neither bartowski-imatrix build beats the
+baseline's PPL, and neither touches G1's KLD. The 47-block
+inversion — under his matrix, promoting *more* layers scores
+better — is the allocation-dependence of the ninth data point
+again, now within a single pack pattern.
+
+**The instability has an address, and it is not the imatrix.**
+Per-chunk NLL at the two hot chunks:
+
+| Build | chunk 347 | chunk 502 |
+|-------|-----------|-----------|
+| baseline Q3_K_S | 2.4 | 2.3 |
+| no-2 | 3.3 | 3.5 |
+| G1 (ours, 44) | 7.3 | 8.4 |
+| G1-bimx (bartowski, 44) | 8.3 | 9.1 |
+| G1b-bimx (bartowski, 47) | **2.4** | **2.3** |
+
+Swapping the matrix in the 44-block layout made both chunks
+*worse*. Adding layers 1, 2, and 5 — the "collapsed" tensors —
+returned both chunks exactly to baseline level. The instability is
+a property of the joint weight configuration: the front-stack
+`attn_v` states and the mid-stack promotions have to agree, and
+which side a build lands on is decided by interactions no
+per-tensor instrument sees. This is the twelfth data point's
+dynamical-instability reading, now with a demonstrated off switch
+that unfortunately costs the KLD lead to reach.
+
+**The full-window KLD settles the two-window disagreement.** A
+564-chunk KL base (34.4 GiB of f16 logits, 81 minutes) put tier 2
+over the same window as tier 1 for the first time:
+
+| Model | Mean KLD (564) ↓ | chunk 347 | chunk 502 | Mean KLD excl. those two | Same top ↑ |
+|-------|------------------|-----------|-----------|--------------------------|------------|
+| Q3_K_S heuristic | **0.2959** | 0.120 | 0.107 | 0.2966 | **83.4 %** |
+| G1 | 0.3066 | 5.963 | 6.864 | **0.2849** | 82.8 % |
+| no-2 | 0.3088 | 1.558 | 1.674 | 0.3042 | 81.8 % |
+
+Two chunks out of 564 carry G1's entire full-window KLD loss —
+exclude them and G1 leads the baseline (0.2849 against 0.2966),
+exactly as it leads on per-chunk PPL across the other 562. The
+100-chunk and 564-chunk windows never disagreed about quality; they
+disagreed about whether the instability sites were in frame. Both
+metrics now tell one story. G1 is the better quantization of 562 of
+564 chunks, and the baseline wins both full-set means because two
+passages sit on the wrong side of a knife edge G1's configuration
+happens to land on. no-2 loses the exclusion comparison too
+(0.3042) — the `attn_v` protection is what closes the smooth-quality
+gap, confirming the twelfth data point's split-decision structure
+on a second metric.
+
+**What this changes.** The imatrix lane is closed: swapping the
+matrix neither removes the fit collapse in our layout nor
+stabilizes the hot chunks in the 44-block pattern, and the
+G1b-bimx configuration that does stabilize them pays for it in
+mean KLD. The honest scoreboard claim is the split decision with
+its structure fully mapped: an in-budget measured recipe that
+beats the heuristic everywhere except two unstable passages, on
+both metrics, over the full evaluation window. Whole-model
+stability under weight perturbation remains the one phenomenon no
+instrument in the pipeline prices, and the runtime-frame lane
+(issue #40, ADR-0021) keeps its second job description unchanged.
+
+Raw logs: `eval/ppl-probeG1{,b}-bimx.log`,
+`eval/kl-probeG1{,b}-bimx.log`, `eval/kl564-{baseline-q3ks,probeG1-attnv5,no2}.log`,
+`eval/kl-base-564.log`, `probes/recon-{g1-ourimx,g1-bimx,g1b-bimx}.{jsonl,txt}`.
+
 ## Provenance is not evidence
 
 Hashes answer a different question and must not be confused with
@@ -1071,7 +1189,12 @@ compute.
   not signal.
 - Whether evaluation results become a versioned artifact of their own
   (an "evals" sidecar) or stay embedded in the model card.
-- Which window rules when the two disagree. The twelfth data point's
+- ~~Which window rules when the two disagree. The twelfth data point's
   G1 wins the 100-chunk KLD window and loses the 564-chunk PPL
   window against the same baseline — and the unstable chunks sit
-  only in the second.
+  only in the second.~~ **Measured (the thirteenth data point): the
+  windows never disagreed about quality.** Full-window KLD shows G1
+  ahead of the baseline on 562 of 564 chunks; the two unstable
+  chunks carry the entire full-set loss on both metrics. The
+  564-chunk KL base (34.4 GiB, 81 minutes of GPU-assisted f16) is
+  now on disk for future full-window tier-2 runs.
