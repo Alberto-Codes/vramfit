@@ -170,6 +170,15 @@ change.
 :   A user-forced precision for a group, overriding the solver
     (`--pin "layers.0.*=8"`). Recorded verbatim in the recipe.
 
+**Protection**
+:   A precision floor for named tensors inside their layer groups
+    (`--protect "*.self_attn.v_proj=5"`). A protected tensor packs
+    at the higher of its group's assignment and the **protection
+    floor** — distinct from the recipe's base-type floor
+    (ADR-0012). Priced by size only, never by damage
+    ([ADR-0022](../adr/0022-within-layer-protections.md)). Not
+    "tensor pin" or "override" (that word belongs to pack).
+
 **Solver**
 :   The algorithm that assigns precisions under the weight budget. Strategy
     tracked in [ADR-0007](../adr/0007-recipe-solver-strategy.md).
@@ -241,6 +250,24 @@ change.
     against the base GGUF over the scan's calibration set
     ([ADR-0016](../adr/0016-imatrix-in-the-pack-path.md)). Not
     "calibration data" (that names the text) or "activation cache".
+
+**Fit collapse**
+:   A quantizer failure mode under a fixed imatrix: the weighted
+    fit sacrifices outlier channels the calibration set marks
+    unimportant, and the tensor reconstructs *worse* at the higher
+    type. A tensor in this state is **collapsed**. Discovered on
+    the front-stack `attn_v` tensors (the twelfth data point in
+    [evaluating packed models](../explanation/evaluating-packed-models.md)).
+    Not "quantizer bug" — the fit does what the weighting tells it.
+
+**Reconstruction check**
+:   The per-tensor proof that a promoted tensor reconstructs
+    closer to the f16 base than its unprotected type does:
+    dequantize the packed tensor and compare (gguf-py, seconds of
+    CPU). Guards protected packs made with an imatrix — fit
+    collapse is invisible to the smoke test
+    ([ADR-0022](../adr/0022-within-layer-protections.md)). Not
+    "fit check" or "dequant test".
 
 **Smoke test**
 :   The post-pack proof that a packed model emits language: a few
