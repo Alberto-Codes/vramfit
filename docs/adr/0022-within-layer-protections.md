@@ -54,7 +54,9 @@ gguf-py) caught it.
 1. **Tensor-level precision enters the recipe as protections, not
    tensor-level groups.** A protection is an ordered glob pattern
    over tensor names plus a protection floor, for example
-   `--protect "*.self_attn.v_proj=5"`. A protected tensor packs at
+   `--protect "*.self_attn.v_proj=5"`. The pattern language is
+   fnmatch, the same as `--pin` — never regex. A protected tensor
+   packs at
    the higher of its group's assignment and the floor. Layer
    groups stay the unit of scanning and assignment.
 2. **The solver prices a protection by size only, at effective
@@ -83,8 +85,10 @@ gguf-py) caught it.
    refuses a protection against a map without tensor sizes and
    names the missing field.
 5. **Pack drives the resolved (tensor, type) pairs, never the raw
-   floors.** Protection overrides precede group overrides:
-   `llama-quantize` applies the first matching pattern, so order
+   floors.** Pack derives the quantizer's escaped regex overrides
+   from the resolved pairs — user glob input never reaches
+   `llama-quantize`. Protection overrides precede group overrides:
+   the quantizer applies the first matching pattern, so order
    encodes priority (`blk\.3\.attn_v` before `blk\.3\.`). Emitting
    resolved types keeps a protection from demoting a tensor whose
    group assignment exceeds the floor. A fixed class table maps HF
