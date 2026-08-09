@@ -259,10 +259,11 @@ change.
     its unweighted fit (`Q3_K` only inflates ~1.4×). Range alone
     does not decide — the reconstruction check does. A tensor in
     this state is **collapsed**.
-    Discovered on the front-stack `attn_v` tensors (the twelfth
-    data point), mechanism isolated and fixed by per-tensor
-    imatrix exclusion (the fourteenth data point, both in
-    [evaluating packed models](../explanation/evaluating-packed-models.md)).
+    Discovered on the front-stack `attn_v` tensors by the twelfth
+    data point in
+    [evaluating packed models](../explanation/evaluating-packed-models.md).
+    The fourteenth data point on the same page isolates the
+    mechanism and fixes it by per-tensor imatrix exclusion.
     Not "quantizer bug" — the fit does what the weighting tells it.
 
 **Reconstruction check**

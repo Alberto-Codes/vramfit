@@ -30,9 +30,9 @@ status: draft
 > again** — eliminating super-block structure as the frame leak
 > and promoting the imatrix weighting to prime suspect
 > ([the eighth data point](#the-eighth-data-point-honest-prices-worse-artifact)).
-> On 2026-08-08 the fit-collapse root cause fell — extreme-range
-> imatrix rows, not flags or vintage — and probe G1c **ended the
-> split decision**: an outright 100-window KLD win, statistical
+> On 2026-08-08 the fit-collapse root cause fell — imatrix rows
+> with extreme column dynamic range, not flags or vintage — and
+> probe G1c **ended the split decision**: an outright 100-window KLD win, statistical
 > ties on full-window KLD and PPL, and the instability silenced
 > at baseline level
 > ([the fourteenth data point](#the-fourteenth-data-point-the-pack-path-gap-closed-and-the-split-decision-ended)).
