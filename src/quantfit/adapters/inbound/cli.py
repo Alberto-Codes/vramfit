@@ -15,9 +15,11 @@ exit. Domain failures surface through one catch of the
 Malformed options — including a NaN or infinite overhead — are
 usage errors, rejected before any work starts. ``plan`` records
 its ``--runtime`` in the recipe and reports what the runtime
-filter drops (ADR-0013), and its ``--protect`` rules resolve to
+filter drops (ADR-0013), its ``--protect`` rules resolve to
 per-tensor floors with a no-op warning when a rule changes nothing
-(ADR-0022). ``--format-overhead`` defaults per size
+(ADR-0022), and its ``--exclude-imatrix`` globs mark protected
+tensors with a warning when a glob overreaches the protected set
+(ADR-0023). ``--format-overhead`` defaults per size
 model (ADR-0014): the residual when the runtime has an
 effective-bits table, the scalar otherwise.
 
@@ -62,6 +64,7 @@ from quantfit.domain.errors import QuantfitError
 from quantfit.domain.protection import (
     expand_protections,
     noop_protection_patterns,
+    overreaching_exclusion_patterns,
 )
 from quantfit.domain.runtime import LLAMA_CPP, RUNTIME_CAPABILITIES
 from quantfit.domain.solver import (
@@ -273,6 +276,14 @@ def plan(
             '"glob=bits". Repeatable (ADR-0022).'
         ),
     ] = None,
+    exclude_imatrix: Annotated[
+        list[str] | None,
+        typer.Option(
+            help="Quantize matched protected tensors without their imatrix "
+            'rows: "glob". Repeatable (ADR-0023). The fit-collapse remedy '
+            "that keeps the promotion."
+        ),
+    ] = None,
     out: Annotated[Path, typer.Option(help="Output recipe path.")] = Path(
         "recipe.json"
     ),
@@ -311,6 +322,13 @@ def plan(
     already met, or a later rule overriding every tensor it
     matched — draws a warning, never silence.
 
+    An ``--exclude-imatrix`` glob marks matched protected tensors to
+    quantize without their imatrix rows (ADR-0023) — the remedy when
+    the reconstruction check names a collapsed tensor. The pattern
+    must land inside the protected set: the solver refuses a miss,
+    and a glob that also matches unprotected tensors draws a
+    warning naming what it did not cover.
+
     Raises:
         typer.BadParameter: If a ``--pin`` or ``--protect`` is not of
             the form ``pattern=bits`` with positive bits, a size
@@ -342,6 +360,7 @@ def plan(
         )
     pins = _parse_rules(pin, "--pin")
     protections = _parse_rules(protect, "--protect")
+    exclusions = tuple(exclude_imatrix or [])
 
     vram_bytes = _parse_size_option(vram, "--vram")
     headroom_bytes = _parse_size_option(kv_headroom, "--kv-headroom")
@@ -376,6 +395,7 @@ def plan(
             kv_headroom_bytes=headroom_bytes,
             pins=pins,
             protections=protections,
+            imatrix_exclusions=exclusions,
             format_overhead=format_overhead,
             runtime=runtime,
         )
@@ -386,8 +406,10 @@ def plan(
         raise typer.Exit(code=1) from exc
 
     # A protection that changed nothing must not read as protection
-    # applied (ADR-0022). The solver already validated the rules, so
-    # re-expansion here cannot fail.
+    # applied (ADR-0022), and an exclusion glob that reaches outside
+    # the protected set must not read as full coverage (ADR-0023).
+    # The solver already validated the rules, so re-expansion here
+    # cannot fail.
     if protections:
         state = {a.group: a.bits for a in recipe.assignments}
         floors = expand_protections(protections, map_, runtime)
@@ -396,6 +418,14 @@ def plan(
                 f'warning: --protect "{pattern}={protections[pattern]}" is a '
                 "no-op — every tensor it governs already meets the floor, "
                 "or a later rule overrides it",
+                err=True,
+            )
+        overreach = overreaching_exclusion_patterns(exclusions, floors, map_)
+        for pattern, outside in overreach.items():
+            typer.echo(
+                f'warning: --exclude-imatrix "{pattern}" also matches '
+                f'{len(outside)} unprotected tensors (first: "{outside[0]}") '
+                "— their imatrix rows stay (ADR-0023)",
                 err=True,
             )
 
@@ -410,6 +440,9 @@ def plan(
         if recipe.protected_tensors
         else ""
     )
+    excluded_count = sum(1 for p in recipe.protected_tensors if p.exclude_imatrix)
+    if excluded_count:
+        protected_note += f" ({excluded_count} imatrix-excluded)"
     typer.echo(
         f"planned {len(recipe.assignments)} groups for {runtime}: "
         f"{format_size(recipe.plan.predicted_total_bytes)} of "

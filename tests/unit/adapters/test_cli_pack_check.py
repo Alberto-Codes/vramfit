@@ -84,6 +84,20 @@ def save_protected_recipe(tmp_path: Path, protected: bool = True) -> Path:
     return path
 
 
+def save_excluded_recipe(tmp_path: Path) -> Path:
+    model_dir = tmp_path / "model"
+    model_dir.mkdir(exist_ok=True)
+    recipe = make_protected_recipe(str(model_dir))
+    recipe = replace(
+        recipe,
+        plan=replace(recipe.plan, imatrix_exclusions=(PROTECTED_HF,)),
+        protected_tensors=(ProtectedTensor(PROTECTED_HF, 5, exclude_imatrix=True),),
+    )
+    path = tmp_path / "recipe.json"
+    save_recipe(recipe, path)
+    return path
+
+
 def patch_checkers(
     monkeypatch, protected_rmse: float, reference_rmse: float
 ) -> list[Path]:
@@ -160,9 +174,72 @@ class TestReconstructionGate:
         assert PROTECTED_HF in result.output
         assert "COLLAPSED" in result.output
         assert f"kept at {out}" in result.output
+        # The refusal suggests the ADR-0023 remedy verbatim.
+        assert f'--exclude-imatrix "{PROTECTED_HF}"' in result.output
         events = events_of(out)
         assert "reconstruction_checked" in events
         assert events[-1] == "pack_halted"
+
+    def test_excluded_recipe_still_faces_the_gate(
+        self, tmp_path, monkeypatch, llama_cpp_dir, imatrix_path
+    ) -> None:
+        # An exclusion changes the fit, not the verdict path: the
+        # gate still measures the excluded tensor (ADR-0023).
+        recipe_path = save_excluded_recipe(tmp_path)
+        fake = MemoryRecipePacker(
+            packed_bytes=WEIGHT_BUDGET - 100, imatrix=str(imatrix_path)
+        )
+        monkeypatch.setattr(cli_pack, "_build_packer", lambda *args: fake)
+        patch_checkers(monkeypatch, protected_rmse=0.00164, reference_rmse=0.0048)
+        out = tmp_path / "packed.gguf"
+
+        result = invoke_pack(
+            recipe_path, llama_cpp_dir, out, "--imatrix", str(imatrix_path)
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "imatrix exclusions applied" in result.output
+        assert PROTECTED_GGUF in result.output
+        assert "reconstruction check passed" in result.output
+        # The reference pack strips the exclusions with the
+        # protections, so its packer sees no marked pair.
+        assert fake.packed[1].plan.imatrix_exclusions == ()
+
+    def test_collapse_on_excluded_pair_offers_only_the_drop_remedy(
+        self, tmp_path, monkeypatch, llama_cpp_dir, imatrix_path
+    ) -> None:
+        # The exclusion already failed for this tensor — suggesting
+        # the same flag again would send the user in a circle
+        # (ADR-0023).
+        recipe_path = save_excluded_recipe(tmp_path)
+        fake = MemoryRecipePacker(
+            packed_bytes=WEIGHT_BUDGET - 100, imatrix=str(imatrix_path)
+        )
+        monkeypatch.setattr(cli_pack, "_build_packer", lambda *args: fake)
+        patch_checkers(monkeypatch, protected_rmse=0.0241, reference_rmse=0.0048)
+        out = tmp_path / "packed.gguf"
+
+        result = invoke_pack(
+            recipe_path, llama_cpp_dir, out, "--imatrix", str(imatrix_path)
+        )
+
+        assert result.exit_code == 1
+        assert "fit collapse" in result.output
+        assert "already failed" in result.output
+        assert "--exclude-imatrix" not in result.output
+
+    def test_excluded_recipe_without_imatrix_warns(
+        self, tmp_path, monkeypatch, llama_cpp_dir
+    ) -> None:
+        recipe_path = save_excluded_recipe(tmp_path)
+        fake = MemoryRecipePacker(packed_bytes=WEIGHT_BUDGET - 100)
+        monkeypatch.setattr(cli_pack, "_build_packer", lambda *args: fake)
+        out = tmp_path / "packed.gguf"
+
+        result = invoke_pack(recipe_path, llama_cpp_dir, out)
+
+        assert result.exit_code == 0, result.output
+        assert "exclusions change nothing" in result.output
 
     def test_protected_pack_without_imatrix_skips_with_a_note(
         self, tmp_path, monkeypatch, llama_cpp_dir

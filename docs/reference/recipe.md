@@ -16,7 +16,7 @@ that produced it.
 
 ```json
 {
-  "quantfit_schema": 3,
+  "quantfit_schema": 4,
   "model_id": "nvidia/Llama-3_3-Nemotron-Super-49B-v1_5",
   "runtime": "llama.cpp",
   "within_group": "kquant-imx",
@@ -30,6 +30,7 @@ that produced it.
     "solver": "greedy-damage-per-byte",
     "pins": {"model.layers.0.*": 8},
     "protections": {"*.self_attn.v_proj.weight": 5},
+    "imatrix_exclusions": ["model.layers.1.self_attn.v_proj.weight"],
     "format_overhead": 0.005,
     "trace": [
       {
@@ -53,8 +54,14 @@ that produced it.
   ],
   "protected_tensors": [
     {
+      "tensor": "model.layers.1.self_attn.v_proj.weight",
+      "bits": 5,
+      "exclude_imatrix": true
+    },
+    {
       "tensor": "model.layers.4.self_attn.v_proj.weight",
-      "bits": 5
+      "bits": 5,
+      "exclude_imatrix": false
     }
   ]
 }
@@ -62,9 +69,10 @@ that produced it.
 
 ## Field notes
 
-- **`quantfit_schema`** — 3 since recipes gained protections
-  ([ADR-0022](../adr/0022-within-layer-protections.md)). A schema-2
-  reader would silently drop the protections record and pack a
+- **`quantfit_schema`** — 4 since recipes gained imatrix exclusions
+  ([ADR-0023](../adr/0023-imatrix-exclusions.md)); 3 added protections
+  ([ADR-0022](../adr/0022-within-layer-protections.md)). A reader that
+  dropped either record would silently pack a
   different artifact than the recipe intends — ADR-0013 ruled that
   case breaking. Schema versions advance per artifact — the
   sensitivity map stays at 1.
@@ -107,12 +115,19 @@ that produced it.
   case-sensitive `fnmatch` globs against full tensor names, and later
   rules override earlier ones for overlapping tensors. Empty for an
   unprotected recipe.
+- **`imatrix_exclusions`** — the `--exclude-imatrix` globs, kept
+  verbatim ([ADR-0023](../adr/0023-imatrix-exclusions.md)). Each marks
+  matched *protected* tensors to quantize without their imatrix rows —
+  the fit-collapse remedy that keeps the promotion. Empty when the
+  recipe excludes nothing.
 - **`protected_tensors`** — the resolved (tensor, precision) pairs, in
   map order. Each precision is the higher of the tensor's group
   assignment and its protection floor. `quantfit pack` drives these
   pairs, never the raw patterns — a resolved pair cannot demote a
   tensor whose group assignment exceeds the floor. Present exactly
-  when `protections` is.
+  when `protections` is. `exclude_imatrix` marks the pairs the
+  exclusion globs resolved to — pack emits `--exclude-weights` for
+  each marked pair when it runs with an imatrix.
 - **`format_overhead`** — the overhead fraction used for every size
   prediction, resolved from the size model's default when `--format-overhead`
   is not given (0.005 with an effective-bits table, 0.05 without). Together

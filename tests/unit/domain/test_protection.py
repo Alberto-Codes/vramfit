@@ -5,8 +5,10 @@ import pytest
 from quantfit.domain.model import LayerGroup, ProtectedTensor, ScanMeta, SensitivityMap
 from quantfit.domain.protection import (
     ProtectionError,
+    expand_exclusions,
     expand_protections,
     noop_protection_patterns,
+    overreaching_exclusion_patterns,
     protected_group_bytes,
     resolve_protected,
 )
@@ -165,6 +167,106 @@ class TestResolveProtected:
             ProtectedTensor("model.layers.0.self_attn.v_proj.weight", 5),
             ProtectedTensor("model.layers.1.self_attn.v_proj.weight", 8),
         )
+
+    def test_excluded_tensor_carries_the_mark(self) -> None:
+        map_ = make_layer_map()
+        floors = {
+            "model.layers.0.self_attn.v_proj.weight": 5,
+            "model.layers.1.self_attn.v_proj.weight": 5,
+        }
+        state = {"model.layers.0": 3, "model.layers.1": 3, "model.embed_tokens": 8}
+        excluded = frozenset({"model.layers.0.self_attn.v_proj.weight"})
+
+        resolved = resolve_protected(map_, state, floors, excluded)
+
+        assert resolved == (
+            ProtectedTensor(
+                "model.layers.0.self_attn.v_proj.weight", 5, exclude_imatrix=True
+            ),
+            ProtectedTensor("model.layers.1.self_attn.v_proj.weight", 5),
+        )
+
+
+@pytest.mark.unit
+class TestExpandExclusions:
+    def make_floors(self) -> dict[str, int]:
+        return expand_protections(
+            {"*.self_attn.v_proj.weight": 5}, make_layer_map(), runtime=None
+        )
+
+    def test_pattern_resolves_to_matched_protected_tensors(self) -> None:
+        excluded = expand_exclusions(
+            ("model.layers.0.*",), self.make_floors(), make_layer_map()
+        )
+
+        assert excluded == frozenset({"model.layers.0.self_attn.v_proj.weight"})
+
+    def test_exact_name_resolves_to_itself(self) -> None:
+        excluded = expand_exclusions(
+            ("model.layers.1.self_attn.v_proj.weight",),
+            self.make_floors(),
+            make_layer_map(),
+        )
+
+        assert excluded == frozenset({"model.layers.1.self_attn.v_proj.weight"})
+
+    def test_exclusions_without_protections_rejected(self) -> None:
+        with pytest.raises(ProtectionError, match="require protections"):
+            expand_exclusions(("model.layers.0.*",), {}, make_layer_map())
+
+    def test_no_match_pattern_rejected(self) -> None:
+        with pytest.raises(ProtectionError, match="matches no tensor"):
+            expand_exclusions(("no.such.tensor",), self.make_floors(), make_layer_map())
+
+    def test_unprotected_only_match_rejected_naming_the_tensor(self) -> None:
+        with pytest.raises(ProtectionError, match="only unprotected"):
+            expand_exclusions(
+                ("*.mlp.down_proj.weight",), self.make_floors(), make_layer_map()
+            )
+
+    def test_no_exclusions_expand_to_nothing(self) -> None:
+        assert (
+            expand_exclusions((), self.make_floors(), make_layer_map()) == frozenset()
+        )
+
+    def test_duplicate_patterns_expand_once(self) -> None:
+        excluded = expand_exclusions(
+            ("model.layers.0.*", "model.layers.0.*"),
+            self.make_floors(),
+            make_layer_map(),
+        )
+
+        assert excluded == frozenset({"model.layers.0.self_attn.v_proj.weight"})
+
+
+@pytest.mark.unit
+class TestOverreachingExclusionPatterns:
+    def make_floors(self) -> dict[str, int]:
+        return expand_protections(
+            {"model.layers.0.self_attn.v_proj.weight": 5},
+            make_layer_map(),
+            runtime=None,
+        )
+
+    def test_glob_reaching_unprotected_tensors_is_named(self) -> None:
+        # "*.v_proj.weight" matches the protected layer-0 tensor and
+        # the unprotected layer-1 sibling — the truncation must warn.
+        overreach = overreaching_exclusion_patterns(
+            ("*.v_proj.weight",), self.make_floors(), make_layer_map()
+        )
+
+        assert overreach == {
+            "*.v_proj.weight": ("model.layers.1.self_attn.v_proj.weight",)
+        }
+
+    def test_glob_inside_the_protected_set_is_not_named(self) -> None:
+        overreach = overreaching_exclusion_patterns(
+            ("model.layers.0.self_attn.v_proj.weight",),
+            self.make_floors(),
+            make_layer_map(),
+        )
+
+        assert overreach == {}
 
 
 @pytest.mark.unit

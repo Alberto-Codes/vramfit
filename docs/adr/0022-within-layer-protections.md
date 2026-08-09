@@ -4,6 +4,9 @@
 - **Date:** 2026-08-07 (accepted 2026-08-08)
 - **Extends:** [ADR-0012](0012-gguf-type-mapping.md) decision 2. The
   amendment bullet lands there when this record is accepted.
+- **Amendment (2026-08-09):** [ADR-0023](0023-imatrix-exclusions.md)
+  adds a second remedy to decision 6's refusal — keep the promotion
+  and drop the tensor's imatrix row (`--exclude-imatrix`).
 
 ## Context
 

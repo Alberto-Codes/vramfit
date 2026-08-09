@@ -126,6 +126,18 @@ class TestPackResult:
                 imatrix_path="",
             )
 
+    def test_excluded_tensors_without_imatrix_raise_value_error(self) -> None:
+        with pytest.raises(ValueError, match="imatrix_excluded"):
+            PackResult(
+                packed_bytes=500,
+                base_type="Q4_K_S",
+                token_embedding_type=None,
+                output_tensor_type=None,
+                overrides=(),
+                imatrix_path=None,
+                imatrix_excluded=("blk.0.attn_v.weight",),
+            )
+
     def test_uncovered_tensors_without_imatrix_raise_value_error(self) -> None:
         with pytest.raises(ValueError, match="imatrix_uncovered"):
             PackResult(
@@ -214,13 +226,16 @@ class TestWithoutProtections:
                 protections={"*.v_proj.weight": 5},
                 format_overhead=0.05,
                 trace=(),
+                imatrix_exclusions=("model.layers.0.*",),
             ),
             assignments=recipe.assignments,
             runtime=None,
             within_group=None,
             imatrix=None,
             protected_tensors=(
-                ProtectedTensor("model.layers.0.self_attn.v_proj.weight", 5),
+                ProtectedTensor(
+                    "model.layers.0.self_attn.v_proj.weight", 5, exclude_imatrix=True
+                ),
             ),
         )
 
@@ -228,6 +243,7 @@ class TestWithoutProtections:
 
         assert stripped.protected_tensors == ()
         assert dict(stripped.plan.protections) == {}
+        assert stripped.plan.imatrix_exclusions == ()
         assert stripped.assignments == protected.assignments
         assert stripped.model_id == protected.model_id
 

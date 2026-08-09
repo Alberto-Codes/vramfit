@@ -94,8 +94,13 @@ class PackResult:
             one.
         imatrix_uncovered (tuple[str, ...]): Tensors the importance
             matrix did not cover — the quantizer only warns and
-            quantizes them unassisted (ADR-0016). Empty without an
-            imatrix.
+            quantizes them unassisted (ADR-0016). Excludes the
+            intentional misses in ``imatrix_excluded``. Empty
+            without an imatrix.
+        imatrix_excluded (tuple[str, ...]): Tensors whose imatrix
+            rows the pack dropped on the recipe's instruction
+            (ADR-0023). Empty without an imatrix — an exclusion
+            without a matrix is a no-op.
 
     Examples:
         Inspect the real size of a packed model:
@@ -112,6 +117,7 @@ class PackResult:
     overrides: tuple[TypeOverride, ...]
     imatrix_path: str | None = None
     imatrix_uncovered: tuple[str, ...] = ()
+    imatrix_excluded: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         """Enforce the result invariants.
@@ -120,8 +126,9 @@ class PackResult:
             ValueError: If ``packed_bytes`` is not positive,
                 ``base_type`` is empty, ``token_embedding_type``,
                 ``output_tensor_type``, or ``imatrix_path`` is empty,
-                ``imatrix_uncovered`` is set without an
-                ``imatrix_path``, or two overrides share a pattern.
+                ``imatrix_uncovered`` or ``imatrix_excluded`` is set
+                without an ``imatrix_path``, or two overrides share a
+                pattern.
         """
         if self.packed_bytes <= 0:
             raise ValueError("packed_bytes must be positive")
@@ -135,6 +142,8 @@ class PackResult:
             raise ValueError("imatrix_path must not be empty")
         if self.imatrix_uncovered and self.imatrix_path is None:
             raise ValueError("imatrix_uncovered requires an imatrix_path")
+        if self.imatrix_excluded and self.imatrix_path is None:
+            raise ValueError("imatrix_excluded requires an imatrix_path")
         patterns = [override.pattern for override in self.overrides]
         if len(set(patterns)) != len(patterns):
             raise ValueError("override patterns must be unique")
@@ -183,7 +192,10 @@ def without_protections(recipe: Recipe) -> Recipe:
         recipe: The protected recipe.
 
     Returns:
-        The recipe with empty protections, equal otherwise.
+        The recipe with empty protections and imatrix exclusions,
+        equal otherwise. The exclusions ride the protections
+        (ADR-0023), so the reference measures the assisted fit at
+        the unprotected types.
 
     Examples:
         The reference recipe packs no protected tensors:
@@ -194,7 +206,7 @@ def without_protections(recipe: Recipe) -> Recipe:
     """
     return replace(
         recipe,
-        plan=replace(recipe.plan, protections={}),
+        plan=replace(recipe.plan, protections={}, imatrix_exclusions=()),
         protected_tensors=(),
     )
 

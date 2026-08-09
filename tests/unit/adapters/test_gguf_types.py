@@ -13,6 +13,7 @@ from quantfit.adapters.outbound.gguf.types import (
     check_runtime,
     ggml_type_for,
     gguf_tensor_name,
+    imatrix_exclusion_names,
     output_tensor_type,
     protection_overrides,
     tensor_overrides,
@@ -206,13 +207,21 @@ def test_tensor_overrides_reject_tensor_level_groups() -> None:
 def make_protected_recipe(
     pairs: tuple[tuple[str, int], ...],
     *assignments: tuple[str, int],
+    excluded: tuple[str, ...] = (),
 ) -> Recipe:
     base = make_recipe(*assignments)
     return replace(
         base,
-        plan=replace(base.plan, protections={"user-pattern": min(b for _, b in pairs)}),
+        plan=replace(
+            base.plan,
+            protections={"user-pattern": min(b for _, b in pairs)},
+            imatrix_exclusions=("user-exclusion",) if excluded else (),
+        ),
         protected_tensors=tuple(
-            ProtectedTensor(tensor=tensor, bits=bits) for tensor, bits in pairs
+            ProtectedTensor(
+                tensor=tensor, bits=bits, exclude_imatrix=tensor in excluded
+            )
+            for tensor, bits in pairs
         ),
     )
 
@@ -285,3 +294,36 @@ class TestProtectionOverrides:
 
         with pytest.raises(PackError, match="no GGUF type maps 7-bit"):
             protection_overrides(recipe)
+
+
+class TestImatrixExclusionNames:
+    def test_marked_pair_yields_the_full_gguf_name(self) -> None:
+        recipe = make_protected_recipe(
+            (
+                ("model.layers.1.self_attn.v_proj.weight", 5),
+                ("model.layers.4.self_attn.v_proj.weight", 5),
+            ),
+            ("model.layers.1", 3),
+            ("model.layers.4", 3),
+            excluded=("model.layers.1.self_attn.v_proj.weight",),
+        )
+
+        assert imatrix_exclusion_names(recipe) == ("blk.1.attn_v.weight",)
+
+    def test_recipe_without_marks_yields_nothing(self) -> None:
+        recipe = make_protected_recipe(
+            (("model.layers.4.self_attn.v_proj.weight", 5),),
+            ("model.layers.4", 3),
+        )
+
+        assert imatrix_exclusion_names(recipe) == ()
+
+    def test_unmappable_excluded_tensor_raises_pack_error(self) -> None:
+        recipe = make_protected_recipe(
+            (("model.layers.4.input_layernorm.weight", 5),),
+            ("model.layers.4", 3),
+            excluded=("model.layers.4.input_layernorm.weight",),
+        )
+
+        with pytest.raises(PackError, match="no GGUF mapping"):
+            imatrix_exclusion_names(recipe)

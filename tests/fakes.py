@@ -8,6 +8,7 @@ from quantfit.adapters.outbound.gguf.types import (
     PackError,
     base_type,
     check_runtime,
+    imatrix_exclusion_names,
     output_tensor_type,
     protection_overrides,
     tensor_overrides,
@@ -185,6 +186,7 @@ class MemoryRecipePacker:
             raise PackError("base GGUF does not exist — run convert first")
         if self.fail_stage == "quantize":
             raise PackError("quantize failed with exit code 3:\nconfigured failure")
+        excluded = imatrix_exclusion_names(recipe) if self.imatrix is not None else ()
         result = PackResult(
             packed_bytes=self.packed_bytes,
             base_type=base_type(recipe),
@@ -192,7 +194,12 @@ class MemoryRecipePacker:
             output_tensor_type=output_tensor_type(recipe),
             overrides=protection_overrides(recipe) + tensor_overrides(recipe),
             imatrix_path=self.imatrix,
-            imatrix_uncovered=self.imatrix_uncovered if self.imatrix else (),
+            imatrix_uncovered=(
+                tuple(n for n in self.imatrix_uncovered if n not in excluded)
+                if self.imatrix is not None
+                else ()
+            ),
+            imatrix_excluded=excluded,
         )
         self.packed.append(recipe)
         return result

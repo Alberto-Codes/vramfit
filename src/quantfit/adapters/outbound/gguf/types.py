@@ -5,7 +5,8 @@ is testable and the verified fake can share it. Nominal precisions
 map to K-quant types (the full llama.cpp capability set since
 ADR-0013), layer groups map to escaped `blk.<n>.` regex patterns,
 protected tensors map through the fixed HF-to-GGUF class table to
-per-tensor patterns (ADR-0022),
+per-tensor patterns (ADR-0022), excluded pairs map to the full GGUF
+tensor names ``--exclude-weights`` deletes by substring (ADR-0023),
 and the embedding and `lm_head` groups map to the quantizer's
 dedicated embedding and output flags. The backend's own runtime
 name is the domain's `LLAMA_CPP` constant, so the table key and
@@ -332,6 +333,38 @@ def protection_overrides(recipe: Recipe) -> tuple[TypeOverride, ...]:
             )
         )
     return tuple(overrides)
+
+
+def imatrix_exclusion_names(recipe: Recipe) -> tuple[str, ...]:
+    """Name the GGUF tensors whose imatrix rows the pack must drop.
+
+    One name per protected pair marked ``exclude_imatrix``
+    (ADR-0023). The quantizer's ``--exclude-weights`` matches by
+    substring, so the full tensor name — ``blk.<n>.<class>.weight``
+    — matches exactly one imatrix row.
+
+    Args:
+        recipe: The recipe to pack.
+
+    Returns:
+        Full GGUF tensor names, in recipe order. Empty for a recipe
+        without exclusions.
+
+    Raises:
+        PackError: If an excluded tensor has no class-table mapping.
+
+    Examples:
+        The G1c exclusion for layer 1:
+
+        ```python
+        assert imatrix_exclusion_names(recipe) == ("blk.1.attn_v.weight",)
+        ```
+    """
+    return tuple(
+        gguf_tensor_name(pair.tensor)
+        for pair in recipe.protected_tensors
+        if pair.exclude_imatrix
+    )
 
 
 def tensor_overrides(recipe: Recipe) -> tuple[TypeOverride, ...]:
