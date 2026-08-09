@@ -169,7 +169,7 @@ change.
 
 **Pin**
 :   A user-forced precision for a group, overriding the solver
-    (`--pin "layers.0.*=8"`). Recorded verbatim in the recipe.
+    (`--pin "*.layers.0=8"`). Recorded verbatim in the recipe.
 
 **Protection**
 :   A precision floor for named tensors inside their layer groups

@@ -35,7 +35,7 @@ that produced it.
     "trace": [
       {
         "step": 1,
-        "group": "model.layers.17.mlp",
+        "group": "model.layers.17",
         "from_bits": 8,
         "to_bits": 4,
         "damage_delta": 0.0004,
@@ -46,7 +46,7 @@ that produced it.
   },
   "assignments": [
     {
-      "group": "model.layers.0.self_attn",
+      "group": "model.layers.0",
       "bits": 8,
       "bytes": 50000000,
       "damage": 0.0001
