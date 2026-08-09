@@ -33,8 +33,9 @@ status: draft
 > On 2026-08-08 the fit-collapse root cause fell — imatrix rows
 > with extreme column dynamic range, not flags or vintage — and
 > probe G1c **ended the split decision**: an outright 100-window KLD win, statistical
-> ties on full-window KLD and PPL, and the instability silenced
-> at baseline level
+> ties on full-window KLD and PPL, and chunks 347/502 silenced
+> at baseline level — though the knife edge, it later turned
+> out, had moved rather than vanished
 > ([the fourteenth data point](#the-fourteenth-data-point-the-pack-path-gap-closed-and-the-split-decision-ended)).
 > On 2026-08-09 the CLI ran the whole loop itself — protections,
 > imatrix exclusions, all-green reconstruction gate — and its
