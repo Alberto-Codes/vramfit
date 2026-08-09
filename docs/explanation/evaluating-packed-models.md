@@ -30,6 +30,12 @@ status: draft
 > again** — eliminating super-block structure as the frame leak
 > and promoting the imatrix weighting to prime suspect
 > ([the eighth data point](#the-eighth-data-point-honest-prices-worse-artifact)).
+> On 2026-08-08 the fit-collapse root cause fell — extreme-range
+> imatrix rows, not flags or vintage — and probe G1c **ended the
+> split decision**: an outright 100-window KLD win, statistical
+> ties on full-window KLD and PPL, and the instability silenced
+> at baseline level
+> ([the fourteenth data point](#the-fourteenth-data-point-the-pack-path-gap-closed-and-the-split-decision-ended)).
 > Tier 3 has not run. The publication gates that consume
 > these evaluations live in [the artifact ecosystem](artifact-ecosystem.md)
 > and issue #11.
@@ -1186,6 +1192,152 @@ Raw logs: `eval/ppl-probeG1{,b}-bimx.log`,
 and `eval/ppl-recipe-no2-assisted.log` for the no-2 rows — not
 `eval/ppl-no2.log`, which is the destroyed 2026-07-29 build.
 
+## The fourteenth data point: the pack-path gap closed, and the split decision ended
+
+The thirteenth data point left one fact standing between the
+project and an outright win: bartowski's published pack fits the
+front-stack `attn_v` tensors 10× cleaner than every pack we
+quantize — same tensor, same type, same f16 base, same imatrix.
+The suspects were quantizer flags and toolchain vintage. On
+2026-08-08 both were run down, and both are innocent. The real
+mechanism is uglier and more useful.
+
+**Flags exonerated in one run.** Test A: a stock `Q3_K_S`
+quantize on our build — no `--pure`, no `--tensor-type`
+overrides, bartowski's own imatrix — the closest replica of his
+invocation our toolchain can produce. Layer 1's `attn_v` at
+`Q5_K` reconstructs at RMSE 0.02448, digit-identical to the
+G1b-bimx probe and 10× worse than his 0.00241
+(`probes/recon-testA-stock-bimx.jsonl`). Every flag we ever
+passed is irrelevant: the stock path collapses the same way.
+
+**Vintage exonerated at the source level.** His model card names
+llama.cpp release b5962 (2025-07). Diffing b5962 against our
+build (e9fa078, 2026-07-28): `make_qkx3_quants` and
+`quantize_row_q5_K_impl` — the entire weighted `Q5_K` fit — are
+byte-identical, `make_qp_quants` differs only in two epsilon
+guards no healthy scale triggers, and the imatrix loader computes
+the same per-column means in both (a global scale the fit is
+invariant to). There is no vintage to blame.
+
+**The mechanism, isolated.** A 53-line harness
+(`probes/qfit.c`) calls `ggml_quantize_chunk` on the single
+extracted tensor with a single extracted imatrix row — no
+llama-quantize, no driver, no flags. It reproduces the pack
+fits to eight significant digits (blk.1 under bartowski's row:
+RMSE 0.0244839988, max error 11.641464 — the pack recon says
+0.0244839974, 11.641464). The fit is fully determined by
+(tensor, type, imatrix row). And the rows are the problem: the
+calibration activations for the front-stack attention inputs
+span up to 4×10¹³ from smallest to largest column (blk.0
+4.1×10¹³, blk.1 1.1×10¹², blk.2 2.4×10¹¹, blk.3 1.5×10¹⁰,
+blk.5 5.6×10⁸), in both our matrix and his. Under a row like that, the weighted
+super-block scale fit (`make_qkx3_quants` feeding
+`make_qp_quants`) collapses at `Q4_K`/`Q5_K` — 5.8× to 14.7×
+worse than the unweighted fit — while the `Q3_K` path only
+inflates ~1.4× (0.00476 against 0.00346 on blk.1). Raw range
+only loosely predicts the failure: blk.5 collapses 5.8× at
+5.6×10⁸ while blk.23 fits clean at 3.8×10⁹, and blk.4's ffn
+row spans 2.0×10¹⁰ untested at the collapsing types — how the
+extreme columns land inside the 32-wide sub-blocks decides,
+and the reconstruction check, not a range threshold, is the
+instrument. The type-dependence is why the twelfth data
+point saw promotions *hurt*: promote a front-stack tensor from
+`Q3_K` to `Q5_K` under a pathological row and the fit gets
+worse, not better.
+
+| fit of blk.N `attn_v` | weighted (our imatrix) | unweighted | ratio |
+|-----------------------|------------------------|------------|-------|
+| blk.1 @ `Q5_K` | 0.02413 | 0.00164 | 14.7× |
+| blk.2 @ `Q5_K` | 0.00426 | 0.00057 | 7.4× |
+| blk.3 @ `Q4_K` | 0.01182 | 0.00114 | 10.4× |
+| blk.5 @ `Q5_K` | 0.00289 | 0.00050 | 5.8× |
+
+**What the harness says about his pack.** Bartowski's published
+row reproduces *our* collapse (0.0245), and the unweighted fit
+gives 0.00164 — his published 0.00241 matches neither branch of
+code that has not changed since his release. His `attn_output`
+fits match ours within ~4 %, his `attn_q`/`attn_k` within a few
+percent everywhere except blk.0 (~25 % off — the front stack
+again). The simplest explanation consistent with all of it: the
+imatrix he fed `llama-quantize` is not byte-for-byte the file he
+published — the front-stack rows differed. A patched non-release
+build would fit the observations too. Either way his pack is
+unreproducible from his published artifacts, and the gap is off
+the project's critical path. The open question below closes.
+
+**The fix, and probe G1c.** `llama-quantize --exclude-weights
+<tensor>` drops the imatrix row for named tensors and takes the
+clean unweighted fit. Probe G1c is G1b's exact 47-layer pattern
+— the one that silences chunks 347 and 502 — with four
+exclusions: `blk.{1,2,3,5}.attn_v.weight`
+(`eval/run-probeG1c-cleanfit-quantize.sh`). Exclusions change
+no tensor layout, so the size holds: 21,972,739,584 B, 5.2 MiB
+under budget. The
+reconstruction check comes back all-green for the first time on
+any pack we quantize: every promoted `attn_v` sits in the
+0.036–0.050 relative band (blk.0's `Q8_0` far cleaner at
+0.005), blk.1 at RMSE 0.00164 — cleaner than bartowski's own
+0.00241 (`probes/recon-g1c-cleanfit.jsonl`).
+
+**The results.** Tier 1 full set, tier 2 both windows:
+
+| Model | PPL ↓ | KLD (100) ↓ | KLD (564) ↓ | chunk 347 | chunk 502 | KLD (564) excl. | Same top (564) ↑ |
+|-------|-------|-------------|-------------|-----------|-----------|------------------|-------------------|
+| Q3_K_S heuristic | **8.532 ± 0.064** | 0.1584 | 0.2959 | 0.120 | 0.107 | 0.2966 | **83.4 %** |
+| G1 (44 layers) | 8.650 ± 0.064 | 0.1512 | 0.3066 | 5.963 | 6.864 | **0.2849** | 82.8 % |
+| G1c (47 layers, clean fits) | 8.549 ± 0.063 | **0.1509** | **0.2949** | 0.120 | 0.122 | 0.2956 | 82.9 % |
+
+G1c wins the 100-chunk KLD window outright — 0.1509 against
+0.1584, better on 67 of 100 chunks in a paired per-chunk
+comparison — and sits at exactly baseline level on both
+instability chunks: 0.120 and 0.122 against the baseline's
+0.120 and 0.107, where G1 scored 5.963 and 6.864. The knife
+edge is off. The full-window mean KLD is a statistical tie at
+a nominal lead (0.2949 against 0.2959, 0.3σ — the same margin
+this page calls a tie when PPL wears it), but the tie
+decomposes G1c's way: chunk by chunk, G1c is better on 416 of
+564 (74 %), and the mean only ties because chunk-level KLD
+differences are heavy-tailed. PPL is the same kind of tie in
+the other direction — Δ0.017 against a ±0.064 interval, with
+the nominal lead on the baseline's side. The baseline's one
+clear remaining lead is 564-window top-token agreement
+(83.4 % against 82.9 %).
+
+Two structural notes. First, the result decomposes cleanly:
+G1b-bimx proved the 47-layer pattern silences the hot chunks
+even with collapsed fits, and the twelfth data point proved the
+same pattern with collapsed fits *under our matrix* costs +0.94
+PPL — clean fits are what let the pattern pay. Second, G1's
+excluded-window KLD (0.2849) is still the best smooth-text
+number on record: the collapsed 44-layer state sacrificed
+channels the smooth window never exercises. G1c gives up that
+edge (0.2956) to be uniformly good. A recipe cannot currently
+express "collapse on purpose", and nothing measured suggests it
+should.
+
+**What this changes.** The scoreboard headline: the split
+decision is over. An in-budget measured recipe wins one KLD
+window outright, ties the size-matched heuristic on full-window
+mean KLD and on PPL while leading 74 % of chunks on the former,
+silences the instability, and passes every reconstruction gate.
+What remains on the baseline's side is a real half-point of
+564-window top-token agreement. ADR-0022's refuse-and-name remedy gains a
+second option: instead of dropping the protection, exclude the
+named tensor's imatrix row and keep the promotion — the pack
+path should learn to emit `--exclude-weights` (a new lane).
+The reconstruction check graduates from conservative gate to
+the instrument that found, diagnosed, and verified the fix for
+a 10× fit defect — without a single GPU eval until the final
+scoreboard run.
+
+Raw receipts: `probes/qfit.c` (the harness),
+`probes/qfit-runs-2026-08-08.txt` (every fit variant),
+`probes/recon-{testA-stock-bimx,g1c-cleanfit}.jsonl`,
+`eval/run-{testA-stock-bimx,probeG1c-cleanfit}-quantize.sh`,
+`eval/{ppl,kl,kl564}-probeG1c-cleanfit.log`,
+`eval/testA-stock-bimx-quantize.log`, `probeG1c-quantize.log`.
+
 ## Provenance is not evidence
 
 Hashes answer a different question and must not be confused with
@@ -1239,10 +1391,24 @@ compute.
   decomposition beside it. The 564-chunk KL base (34.4 GiB, 81
   minutes of GPU-assisted f16) stays on disk for future
   full-window tier-2 runs.
-- Why bartowski's published pack fits the front-stack `attn_v`
+- ~~Why bartowski's published pack fits the front-stack `attn_v`
   tensors 10× cleaner than every pack we quantize — same tensor,
   same type, same f16 base, and the gap survives using his own
   imatrix in our invocation (the thirteenth data point). The
   difference lives in the pack path: toolchain vintage or
-  quantizer flags. Until it is explained, front-stack `attn_v`
-  promotions stay gated by the reconstruction check.
+  quantizer flags.~~ **Measured (the fourteenth data point):
+  flags and vintage are both innocent.** The collapse is the
+  weighted `Q4_K`/`Q5_K` fit itself under imatrix rows with
+  extreme column dynamic range — a stock quantize on our
+  build reproduces it, a single-tensor harness reproduces it
+  to eight significant digits, and the fit code is
+  byte-identical to his b5962 release. His published imatrix reproduces *our* collapse, so
+  his clean pack traces to an imatrix that differs from the one
+  he published — unreproducible from his artifacts, and closed.
+  The remedy is `--exclude-weights` per collapsed tensor (probe
+  G1c). Front-stack promotions stay gated by the reconstruction
+  check.
+- Whether the pack path should emit `--exclude-weights` from a
+  recipe, so a protection whose reconstruction check fails can
+  keep its promotion and drop only the imatrix row — the
+  fourteenth data point applied the fix by hand.
