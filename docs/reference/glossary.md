@@ -181,12 +181,18 @@ change.
     "tensor pin" or "override" (that word belongs to pack).
 
 **Per-tensor no-op**
-:   A protected tensor whose group assignment already meets the
-    floor. Its pair would quantize identically to the unprotected
-    reference and falsely fail the reconstruction check, so the
-    recipe drops it with a warning, and its imatrix exclusion drops
-    with it (issue #59). Not "dead protection" (a dead *rule* is a
-    whole pattern that changed nothing).
+:   A protected pair whose floor the group assignment already
+    meets. The pair would quantize identically to the unprotected
+    reference, and the reconstruction check would read the tie as
+    a collapse. `plan` drops the pair and warns per tensor
+    (issue #59). Its imatrix exclusion drops with it. Not a
+    **dead rule** — that names a whole pattern.
+
+**Dead rule**
+:   A protection pattern that changed nothing: every tensor it
+    governs already meets the floor, or a later rule overrides it.
+    `plan` warns once per dead rule (ADR-0022). Not "no-op
+    pattern" — the per-tensor case has its own term.
 
 **Solver**
 :   The algorithm that assigns precisions under the weight budget. Strategy
