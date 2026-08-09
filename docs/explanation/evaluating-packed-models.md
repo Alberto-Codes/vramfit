@@ -56,7 +56,8 @@ status: draft
 > ([the fifteenth data point](#the-fifteenth-data-point-the-pipeline-packs-its-own-winner)).
 > Tier 3's slice is fixed
 > ([ADR-0024](../adr/0024-tier3-task-slice.md)), its harness lane
-> is decided and cross-validated (that record's open questions),
+> is decided and spot-checked against the stock backend (that
+> record's open questions),
 > and the first slice runs launched 2026-08-09 — candidate first,
 > baseline chained after. Results ship as an evals sidecar
 > ([ADR-0025](../adr/0025-evals-sidecar.md)).
@@ -1555,7 +1556,7 @@ For publication number one (a Qwen-class packed model, per
 3. Every number on the card next to its baseline counterpart, with
    the losing numbers included if any lose.
 
-All three tiers will run on the reference box. None require training
+All three tiers run on the reference box. None require training
 compute.
 
 ## Open questions
@@ -1568,7 +1569,7 @@ compute.
   evaluation splits, and deltas inside the combined standard error
   report as ties. The harness lane followed on the same date: an
   in-process llama-cpp-python class over the b10172 Vulkan build,
-  after both lanes named in the record failed the spike (no prompt
+  after both lanes named in the record failed the probe (no prompt
   logprobs from llama-server, 64 s per request through the stock
   `gguf` backend). The lane's cross-checks and the launch note live
   in that ADR's open questions.
