@@ -27,6 +27,13 @@ change.
     produced by applying a recipe. Not "quantized model" (ambiguous — every
     stage quantizes something).
 
+**Evals sidecar**
+:   The versioned JSON artifact that records a packed model's evaluation
+    results (all three scoreboard tiers, their settings, and the toolchain
+    that produced them), published beside the weights
+    ([ADR-0025](../adr/0025-evals-sidecar.md)). Not "eval log" (the raw
+    tool output) or "benchmark report".
+
 ## Measurement
 
 **Layer group** (short: **group**)
@@ -308,6 +315,16 @@ change.
     ([ADR-0017](../adr/0017-post-pack-smoke-test.md)). Enabled by
     `quantfit pack --smoke-text`. Not "sanity check" or "quick eval" —
     the evaluation tiers are a different step.
+
+## Evaluation
+
+**Tier-3 slice**
+:   The fixed set of lm-evaluation-harness tasks and few-shot settings
+    that certifies a publication candidate's capabilities: five tasks at
+    leaderboard settings
+    ([ADR-0024](../adr/0024-tier3-task-slice.md)). Fixed before any run,
+    so cards compare across candidates and time. Not "benchmark suite"
+    or "eval suite".
 
 ## Architecture
 
