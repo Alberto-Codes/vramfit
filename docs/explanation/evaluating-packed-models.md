@@ -54,9 +54,13 @@ status: draft
 > uncovered a knife-edge spike (chunk 137) the 347/502 watch
 > had missed in G1c itself
 > ([the fifteenth data point](#the-fifteenth-data-point-the-pipeline-packs-its-own-winner)).
-> Tier 3 has not run, and its slice is now fixed
-> ([ADR-0024](../adr/0024-tier3-task-slice.md)), with results due to
-> ship as an evals sidecar ([ADR-0025](../adr/0025-evals-sidecar.md)).
+> Tier 3's slice is fixed
+> ([ADR-0024](../adr/0024-tier3-task-slice.md)), its harness lane
+> is decided and spot-checked against the stock backend (that
+> record's open questions),
+> and the first slice runs launched 2026-08-09 — candidate first,
+> baseline chained after. Results ship as an evals sidecar
+> ([ADR-0025](../adr/0025-evals-sidecar.md)).
 > The publication gates that consume
 > these evaluations live in [the artifact ecosystem](artifact-ecosystem.md)
 > and issue #11.
@@ -1552,7 +1556,7 @@ For publication number one (a Qwen-class packed model, per
 3. Every number on the card next to its baseline counterpart, with
    the losing numbers included if any lose.
 
-All three tiers will run on the reference box. None require training
+All three tiers run on the reference box. None require training
 compute.
 
 ## Open questions
@@ -1563,8 +1567,12 @@ compute.
   leaderboard settings.** MMLU 5-shot, GSM8K 5-shot, HellaSwag
   10-shot, Winogrande 5-shot, ARC-Challenge 25-shot — full
   evaluation splits, and deltas inside the combined standard error
-  report as ties. The harness lane on the reference box is that record's
-  first open question.
+  report as ties. The harness lane followed on the same date: an
+  in-process llama-cpp-python class over the b10172 Vulkan build,
+  after both lanes named in the record failed the probe (no prompt
+  logprobs from llama-server, 64 s per request through the stock
+  `gguf` backend). The lane's cross-checks and the launch note live
+  in that ADR's open questions.
 - ~~Whether tier 2 uses the scan's calibration set, WikiText-2, or
   both — same-set confirms the additivity story, held-out text guards
   against calibration overfit.~~ **Measured (the ninth data point):
