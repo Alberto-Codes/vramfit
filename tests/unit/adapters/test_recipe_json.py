@@ -14,7 +14,7 @@ from quantfit.domain.model import Assignment, PlanMeta, TraceStep
 
 def make_recipe_dict() -> dict:
     return {
-        "quantfit_schema": 3,
+        "quantfit_schema": 4,
         "model_id": "test/model",
         "runtime": "llama.cpp",
         "plan": {
@@ -26,6 +26,7 @@ def make_recipe_dict() -> dict:
             "solver": "greedy-damage-per-byte",
             "pins": {"g*": 8},
             "protections": {},
+            "imatrix_exclusions": [],
             "format_overhead": 0.05,
             "trace": [
                 {
@@ -263,7 +264,11 @@ class TestProtections:
         raw = make_recipe_dict()
         raw["plan"]["protections"] = {"*.self_attn.v_proj.weight": 5}
         raw["protected_tensors"] = [
-            {"tensor": "model.layers.0.self_attn.v_proj.weight", "bits": 5}
+            {
+                "tensor": "model.layers.0.self_attn.v_proj.weight",
+                "bits": 5,
+                "exclude_imatrix": False,
+            }
         ]
         return raw
 
@@ -279,9 +284,9 @@ class TestProtections:
 
     def test_old_schema_version_rejected(self) -> None:
         raw = make_recipe_dict()
-        raw["quantfit_schema"] = 2
+        raw["quantfit_schema"] = 3
 
-        with pytest.raises(ArtifactError, match="version 3"):
+        with pytest.raises(ArtifactError, match="version 4"):
             recipe_from_dict(raw)
 
     def test_missing_protections_field_rejected(self) -> None:
@@ -308,7 +313,11 @@ class TestProtections:
     def test_duplicate_protected_tensor_rejected(self) -> None:
         raw = self.make_protected_dict()
         raw["protected_tensors"].append(
-            {"tensor": "model.layers.0.self_attn.v_proj.weight", "bits": 6}
+            {
+                "tensor": "model.layers.0.self_attn.v_proj.weight",
+                "bits": 6,
+                "exclude_imatrix": False,
+            }
         )
 
         with pytest.raises(ArtifactError, match="duplicate"):
@@ -326,4 +335,72 @@ class TestProtections:
         raw["protected_tensors"][0]["bits"] = 0
 
         with pytest.raises(ArtifactError, match="positive"):
+            recipe_from_dict(raw)
+
+
+@pytest.mark.unit
+class TestImatrixExclusions:
+    def make_excluded_dict(self) -> dict:
+        raw = make_recipe_dict()
+        raw["plan"]["protections"] = {"*.self_attn.v_proj.weight": 5}
+        raw["plan"]["imatrix_exclusions"] = ["model.layers.0.*"]
+        raw["protected_tensors"] = [
+            {
+                "tensor": "model.layers.0.self_attn.v_proj.weight",
+                "bits": 5,
+                "exclude_imatrix": True,
+            }
+        ]
+        return raw
+
+    def test_exclusions_round_trip(self) -> None:
+        raw = self.make_excluded_dict()
+
+        recipe = recipe_from_dict(raw)
+        again = recipe_from_dict(recipe_to_dict(recipe))
+
+        assert again == recipe
+        assert recipe.plan.imatrix_exclusions == ("model.layers.0.*",)
+        assert recipe.protected_tensors[0].exclude_imatrix is True
+
+    def test_missing_exclusions_field_rejected(self) -> None:
+        raw = make_recipe_dict()
+        del raw["plan"]["imatrix_exclusions"]
+
+        with pytest.raises(ArtifactError, match="imatrix_exclusions"):
+            recipe_from_dict(raw)
+
+    def test_missing_exclude_imatrix_mark_rejected(self) -> None:
+        raw = self.make_excluded_dict()
+        del raw["protected_tensors"][0]["exclude_imatrix"]
+
+        with pytest.raises(ArtifactError, match="exclude_imatrix"):
+            recipe_from_dict(raw)
+
+    def test_non_boolean_exclude_imatrix_rejected(self) -> None:
+        raw = self.make_excluded_dict()
+        raw["protected_tensors"][0]["exclude_imatrix"] = 1
+
+        with pytest.raises(ArtifactError, match="boolean"):
+            recipe_from_dict(raw)
+
+    def test_patterns_without_marks_rejected(self) -> None:
+        raw = self.make_excluded_dict()
+        raw["protected_tensors"][0]["exclude_imatrix"] = False
+
+        with pytest.raises(ArtifactError, match="both"):
+            recipe_from_dict(raw)
+
+    def test_marks_without_patterns_rejected(self) -> None:
+        raw = self.make_excluded_dict()
+        raw["plan"]["imatrix_exclusions"] = []
+
+        with pytest.raises(ArtifactError, match="both"):
+            recipe_from_dict(raw)
+
+    def test_empty_exclusion_pattern_rejected(self) -> None:
+        raw = self.make_excluded_dict()
+        raw["plan"]["imatrix_exclusions"] = [""]
+
+        with pytest.raises(ArtifactError, match="empty"):
             recipe_from_dict(raw)

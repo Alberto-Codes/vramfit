@@ -21,7 +21,7 @@ import pytest
 
 from quantfit.adapters.outbound.gguf.pack import LlamaCppPacker
 from quantfit.adapters.outbound.gguf.types import PackError
-from quantfit.domain.model import Assignment, PlanMeta, Recipe
+from quantfit.domain.model import Assignment, PlanMeta, ProtectedTensor, Recipe
 from quantfit.domain.pack import TypeOverride
 from quantfit.ports.outbound import RecipePacker
 from tests.fakes import MemoryRecipePacker
@@ -54,6 +54,12 @@ with open(sys.argv[-3], "wb") as handle:
 
 UNCOVERED_WARNING = (
     "====== llama_tensor_get_wanted_type: did not find weights for token_embd.weight"
+)
+
+# The quantizer reports an excluded tensor's dropped row with the same
+# warning — the adapter must file it as intentional (ADR-0023).
+EXCLUDED_MISS_WARNING = (
+    "====== llama_tensor_get_wanted_type: did not find weights for blk.0.attn_v.weight"
 )
 
 _FAILING_STUB = """\
@@ -97,6 +103,23 @@ def sample_pack_recipe() -> Recipe:
     )
 
 
+def excluded_pack_recipe() -> Recipe:
+    base = sample_pack_recipe()
+    return replace(
+        base,
+        plan=replace(
+            base.plan,
+            protections={"*.self_attn.v_proj.weight": 5},
+            imatrix_exclusions=("model.layers.0.*",),
+        ),
+        protected_tensors=(
+            ProtectedTensor(
+                "model.layers.0.self_attn.v_proj.weight", 5, exclude_imatrix=True
+            ),
+        ),
+    )
+
+
 def _write_stub(path: Path, body: str) -> Path:
     path.write_text(body)
     path.chmod(0o700)
@@ -110,15 +133,21 @@ def _real_packer(
     silent_stage: str | None = None,
     with_imatrix: bool = False,
     with_uncovered: bool = False,
+    with_excluded_miss: bool = False,
 ) -> RecipePacker:
     def stub_body(stage: str, template: str) -> str:
         if fail_stage == stage:
             return _FAILING_STUB
         if silent_stage == stage:
             return _SILENT_STUB
+        lines = []
+        if with_uncovered:
+            lines.append(UNCOVERED_WARNING)
+        if with_excluded_miss:
+            lines.append(EXCLUDED_MISS_WARNING)
         return template.format(
             argv_log=str(tmp_path / f"{stage}-argv.json"),
-            extra_line=UNCOVERED_WARNING if with_uncovered else "",
+            extra_line="\n".join(lines),
         )
 
     convert = _write_stub(tmp_path / "convert.py", stub_body("convert", _CONVERT_STUB))
@@ -148,14 +177,18 @@ def _fake_packer(
     silent_stage: str | None = None,
     with_imatrix: bool = False,
     with_uncovered: bool = False,
+    with_excluded_miss: bool = False,
 ) -> RecipePacker:
+    uncovered = ("token_embd.weight",) if with_uncovered else ()
+    if with_excluded_miss:
+        uncovered += ("blk.0.attn_v.weight",)
     return MemoryRecipePacker(
         base_bytes=BASE_BYTES,
         packed_bytes=PACKED_BYTES,
         fail_stage=fail_stage,
         has_base=base_exists,
         imatrix=str(tmp_path / "imatrix.gguf") if with_imatrix else None,
-        imatrix_uncovered=("token_embd.weight",) if with_uncovered else (),
+        imatrix_uncovered=uncovered,
     )
 
 
@@ -237,6 +270,37 @@ class TestRecipePackerContract:
         result = packer.pack(sample_pack_recipe())
 
         assert result.imatrix_uncovered == ()
+
+    def test_pack_with_imatrix_records_excluded_tensors(self, build, tmp_path) -> None:
+        packer: RecipePacker = build(tmp_path, with_imatrix=True)
+        packer.convert()
+
+        result = packer.pack(excluded_pack_recipe())
+
+        assert result.imatrix_excluded == ("blk.0.attn_v.weight",)
+
+    def test_pack_without_imatrix_records_no_excluded_tensors(
+        self, build, tmp_path
+    ) -> None:
+        packer: RecipePacker = build(tmp_path)
+        packer.convert()
+
+        result = packer.pack(excluded_pack_recipe())
+
+        assert result.imatrix_excluded == ()
+
+    def test_pack_excluded_miss_not_reported_uncovered(self, build, tmp_path) -> None:
+        # The dropped row surfaces as a quantizer miss — intentional,
+        # so it must not read as a coverage gap (ADR-0023).
+        packer: RecipePacker = build(
+            tmp_path, with_imatrix=True, with_uncovered=True, with_excluded_miss=True
+        )
+        packer.convert()
+
+        result = packer.pack(excluded_pack_recipe())
+
+        assert result.imatrix_uncovered == ("token_embd.weight",)
+        assert result.imatrix_excluded == ("blk.0.attn_v.weight",)
 
     def test_pack_llama_cpp_recipe_is_accepted(self, build, tmp_path) -> None:
         packer: RecipePacker = build(tmp_path, base_exists=True)
@@ -327,6 +391,26 @@ class TestLlamaCppCommandLines:
 
         argv = json.loads((tmp_path / "quantize-argv.json").read_text())
         assert "--imatrix" not in argv
+
+    def test_quantize_argv_with_exclusions_carries_the_flags(self, tmp_path) -> None:
+        packer = _real_packer(tmp_path, with_imatrix=True)
+        packer.convert()
+
+        packer.pack(excluded_pack_recipe())
+
+        argv = json.loads((tmp_path / "quantize-argv.json").read_text())
+        assert argv[argv.index("--exclude-weights") + 1] == "blk.0.attn_v.weight"
+
+    def test_quantize_argv_without_imatrix_omits_exclude_weights(
+        self, tmp_path
+    ) -> None:
+        packer = _real_packer(tmp_path)
+        packer.convert()
+
+        packer.pack(excluded_pack_recipe())
+
+        argv = json.loads((tmp_path / "quantize-argv.json").read_text())
+        assert "--exclude-weights" not in argv
 
     def test_quantize_argv_without_lm_head_pins_output_to_the_embedding(
         self, tmp_path

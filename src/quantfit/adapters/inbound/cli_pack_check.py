@@ -6,7 +6,9 @@ must prove it reconstructs closer to the f16 base than it does at
 its unprotected type. The reference is a second pack of the same
 recipe with its protections stripped — the same assisted fit at the
 unprotected types, which a cheap unweighted re-quantize cannot
-reproduce. The stage refuses and names the collapsed tensors; it
+reproduce. The stage refuses and names the collapsed tensors, suggesting the
+``--exclude-imatrix`` flags for the ones whose exclusion remedy is
+still unused (ADR-0023); it
 never repacks on its own, so the packed file stays recipe-driven
 (ADR-0012 decision 3). The mapping pre-flight lives here too, and
 the run-log event guards non-finite measurements the sink would
@@ -150,10 +152,10 @@ def _run_reconstruction(
     Packs the unprotected reference, measures every protected tensor
     against the f16 base in both files, deletes the reference file,
     and halts when any tensor is collapsed — the revision is the
-    user's: exclude the named tensors from the protection and
-    re-plan (ADR-0022). The event guards non-finite measurements —
-    the sink rejects NaN, and the halt record must survive
-    (ADR-0011).
+    user's, and `_collapse_error` picks the remedies the refusal
+    offers. The event guards
+    non-finite measurements — the sink rejects NaN, and the halt
+    record must survive (ADR-0011).
 
     Args:
         run_log: Sink for the ``reconstruction_checked`` event.
@@ -228,11 +230,57 @@ def _run_reconstruction(
             f"unprotected rmse {reference_rmse[name]:.6f} — {verdict}"
         )
     if collapsed:
-        failed = ", ".join(hf_by_gguf[name] for name in collapsed)
-        error = RuntimeError(
-            f"fit collapse on {failed} — the protection makes these tensors "
-            f"reconstruct worse than their unprotected type. Exclude them "
-            f"from --protect and re-plan (ADR-0022). The file is kept at {out}"
+        raise _halt(
+            run_log,
+            "reconstruction",
+            _collapse_error(recipe, collapsed, hf_by_gguf, out),
         )
-        raise _halt(run_log, "reconstruction", error)
     typer.echo("reconstruction check passed — no fit collapse")
+
+
+def _collapse_error(
+    recipe: Recipe,
+    collapsed: tuple[str, ...],
+    hf_by_gguf: dict[str, str],
+    out: Path,
+) -> RuntimeError:
+    """Build the refusal, suggesting only remedies not yet applied.
+
+    A collapsed tensor whose pair already carries ``exclude_imatrix``
+    has exhausted the ADR-0023 remedy — suggesting the same flag
+    again would send the user in a circle. Such a tensor gets the
+    ADR-0022 remedy only: drop its protection.
+
+    Args:
+        recipe: The protected recipe that was just packed.
+        collapsed: Collapsed GGUF tensor names.
+        hf_by_gguf: GGUF-to-HF name mapping for the protected pairs.
+        out: The packed model, kept for inspection.
+
+    Returns:
+        The refusal, naming every collapsed tensor.
+    """
+    already = {p.tensor for p in recipe.protected_tensors if p.exclude_imatrix}
+    failed = ", ".join(hf_by_gguf[name] for name in collapsed)
+    fresh = [hf_by_gguf[name] for name in collapsed if hf_by_gguf[name] not in already]
+    exhausted = [hf_by_gguf[name] for name in collapsed if hf_by_gguf[name] in already]
+    remedies = []
+    if fresh:
+        flags = " ".join(f'--exclude-imatrix "{name}"' for name in fresh)
+        remedies.append(
+            f"Re-plan with {flags} to keep those promotions on the "
+            f"unweighted fit (ADR-0023), or exclude the tensors from "
+            f"--protect (ADR-0022)."
+        )
+    if exhausted:
+        names = ", ".join(exhausted)
+        remedies.append(
+            f"The unweighted fit already failed for {names} — exclude "
+            f"them from --protect and re-plan (ADR-0022)."
+        )
+    return RuntimeError(
+        f"fit collapse on {failed} — the protection makes these tensors "
+        f"reconstruct worse than their unprotected type. "
+        + " ".join(remedies)
+        + f" The file is kept at {out}"
+    )

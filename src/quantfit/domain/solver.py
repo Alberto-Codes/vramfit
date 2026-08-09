@@ -18,7 +18,10 @@ nominal-bits prediction and the 0.05 scalar remain. Protections
 (ADR-0022) enter through the size model only: a protected tensor
 prices at the higher of the candidate precision and its floor
 ([quantfit.domain.protection][]), so downgrading a protected group
-frees fewer bytes and the ranking shifts. Inputs are
+frees fewer bytes and the ranking shifts. Imatrix exclusions
+(ADR-0023) change no size and no damage — the solver only expands
+their patterns against the protected set and records the marked
+pairs in the recipe. Inputs are
 validated at the API boundary: a negative ``format_overhead`` raises
 ``ValueError`` before any solving starts.
 
@@ -71,6 +74,7 @@ from quantfit.domain.model import (
     TraceStep,
 )
 from quantfit.domain.protection import (
+    expand_exclusions,
     expand_protections,
     protected_group_bytes,
     resolve_protected,
@@ -369,6 +373,7 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
     kv_headroom_bytes: int,
     pins: Mapping[str, int] | None = None,
     protections: Mapping[str, int] | None = None,
+    imatrix_exclusions: tuple[str, ...] = (),
     format_overhead: float | None = None,
     runtime: str | None = None,
 ) -> Recipe:
@@ -405,6 +410,11 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
             for overlapping tensors. A protected tensor prices at
             the higher of the candidate precision and its floor —
             by size only, never by damage.
+        imatrix_exclusions: Fnmatch patterns over protected tensor
+            names (ADR-0023). Each matched tensor keeps its
+            promotion and quantizes without its imatrix row. Size
+            and damage predictions do not change — the exclusion
+            swaps the fit, not the type.
         format_overhead: Overhead fraction on top of the per-weight
             bit cost. None means the default for the size model:
             `DEFAULT_RESIDUAL_OVERHEAD` when the runtime has an
@@ -428,8 +438,9 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
         PinError: If a pin is malformed with respect to the candidate
             set.
         ProtectionError: If a protection floor is unservable, a
-            pattern matches no tensor or a single-tensor group, or
-            the map lacks per-tensor sizes (ADR-0022).
+            pattern matches no tensor or a single-tensor group, the
+            map lacks per-tensor sizes (ADR-0022), or an imatrix
+            exclusion misses the protected set (ADR-0023).
         InfeasibleBudgetError: If even minimum precision (pins and
             protections respected) exceeds the budget — the message
             counts the protected tensors that raised the floor.
@@ -466,6 +477,7 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
     dropped = tuple(p for p in sensitivity_map.scan.precisions if p not in candidates)
     pinned = _expand_pins(pins, sensitivity_map, candidates)
     floors = expand_protections(protections, sensitivity_map, runtime)
+    excluded = expand_exclusions(imatrix_exclusions, floors, sensitivity_map)
 
     def price(bytes_fp16: int, bits: int) -> int:
         """Shorthand for `group_bytes` with the solver's size model.
@@ -559,6 +571,7 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
             protections=protections,
             format_overhead=format_overhead,
             trace=tuple(trace),
+            imatrix_exclusions=imatrix_exclusions,
         ),
         assignments=assignments,
         runtime=runtime,
@@ -569,5 +582,5 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
         imatrix=sensitivity_map.scan.imatrix,
         # Resolved pairs, not raw floors — pack must never demote a
         # tensor whose group assignment exceeds the floor (ADR-0022).
-        protected_tensors=resolve_protected(sensitivity_map, state, floors),
+        protected_tensors=resolve_protected(sensitivity_map, state, floors, excluded),
     )

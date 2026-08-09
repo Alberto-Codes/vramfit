@@ -285,6 +285,10 @@ class ProtectedTensor:
         tensor (str): The protected tensor's name, e.g.
             ``model.layers.4.self_attn.v_proj.weight``.
         bits (int): The resolved precision the tensor packs at.
+        exclude_imatrix (bool): True when the tensor quantizes
+            without its imatrix row (ADR-0023). The imatrix
+            exclusion is the fit-collapse remedy that keeps the
+            promotion.
 
     Examples:
         A v_proj held at 5-bit inside a 3-bit group:
@@ -298,6 +302,7 @@ class ProtectedTensor:
 
     tensor: str
     bits: int
+    exclude_imatrix: bool = False
 
     def __post_init__(self) -> None:
         """Enforce the pair invariants.
@@ -403,6 +408,11 @@ class PlanMeta:
             (ADR-0014).
         trace (tuple[TraceStep, ...]): Ordered downgrade steps explaining
             the recipe.
+        imatrix_exclusions (tuple[str, ...]): User exclusion patterns,
+            verbatim (ADR-0023). Each marks matched protected tensors
+            to quantize without their imatrix rows. The resolved
+            tensors carry ``exclude_imatrix`` in
+            `Recipe.protected_tensors`.
 
     Examples:
         Minimal plan metadata:
@@ -435,6 +445,7 @@ class PlanMeta:
     protections: Mapping[str, int] = field(hash=False)
     format_overhead: float = field(hash=False)
     trace: tuple[TraceStep, ...] = field(hash=False)
+    imatrix_exclusions: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         """Freeze the pin and protection records against aliasing."""
@@ -504,9 +515,11 @@ class Recipe:
                 is an empty string — unknown provenance is None,
                 never "" — ``imatrix`` does not pair with the
                 assisted method token (ADR-0020), two protected
-                tensors share a name, or the protection record and
+                tensors share a name, the protection record and
                 the resolved pairs disagree about whether the recipe
-                is protected (ADR-0022).
+                is protected (ADR-0022), or the exclusion record and
+                the resolved ``exclude_imatrix`` marks disagree about
+                whether the recipe excludes imatrix rows (ADR-0023).
         """
         if self.within_group is not None and not self.within_group:
             raise ValueError("within_group must not be empty — use None for unknown")
@@ -535,4 +548,11 @@ class Recipe:
                 "plan.protections and protected_tensors must both be empty "
                 "or both be present — a protection always resolves to at "
                 "least one tensor (ADR-0022)"
+            )
+        excluded = any(p.exclude_imatrix for p in self.protected_tensors)
+        if bool(self.plan.imatrix_exclusions) != excluded:
+            raise ValueError(
+                "plan.imatrix_exclusions and the exclude_imatrix marks must "
+                "both be empty or both be present — an exclusion always "
+                "resolves to at least one protected tensor (ADR-0023)"
             )

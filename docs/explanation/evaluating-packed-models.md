@@ -1412,3 +1412,9 @@ compute.
   recipe, so a protection whose reconstruction check fails can
   keep its promotion and drop only the imatrix row — the
   fourteenth data point applied the fix by hand.
+  **Resolved (2026-08-09,
+  [ADR-0023](../adr/0023-imatrix-exclusions.md)):** it should, and
+  does — `plan --exclude-imatrix` marks protected pairs, the recipe
+  schema bumps to 4, pack emits the flags under an imatrix, and the
+  gate's refusal now prints the exact flags for the re-plan. The
+  CLI replication of G1c is the outstanding proof.
