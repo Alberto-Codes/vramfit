@@ -72,7 +72,13 @@ uses for genuine coverage gaps.
 - G1c becomes reproducible from the CLI: `plan --protect
   --exclude-imatrix` plus `pack --imatrix`. The winning artifact
   gets a recipe file with provenance — that replication is the
-  next lane.
+  next lane. **Measured (2026-08-09, the fifteenth data point):
+  the loop ran end-to-end and the gate passed all-green.** The
+  solver kept its format-overhead margin and demoted blk.3 one
+  step below G1c's hand layout. The sibling artifact set the
+  best full-window KLD on record and holds the scoreboard's
+  first spike-free chunk profile. The mechanism replicates. The
+  exact layout does not, and no measurement argues to force it.
 - The fit-collapse revision loop shortens: the gate's refusal is a
   copy-paste re-plan instead of a forfeited promotion.
 - Schema 4 breaks version-3 readers — the loader reads exactly one

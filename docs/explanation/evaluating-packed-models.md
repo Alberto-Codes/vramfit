@@ -36,6 +36,14 @@ status: draft
 > ties on full-window KLD and PPL, and the instability silenced
 > at baseline level
 > ([the fourteenth data point](#the-fourteenth-data-point-the-pack-path-gap-closed-and-the-split-decision-ended)).
+> On 2026-08-09 the CLI ran the whole loop itself — protections,
+> imatrix exclusions, all-green reconstruction gate — and its
+> artifact **set the best full-window KLD on record**, beating
+> the baseline at 7.8σ paired with the scoreboard's first
+> spike-free chunk profile; the hunt for its mean gap to G1c
+> uncovered a knife-edge spike (chunk 137) the 347/502 watch
+> had missed in G1c itself
+> ([the fifteenth data point](#the-fifteenth-data-point-the-pipeline-packs-its-own-winner)).
 > Tier 3 has not run. The publication gates that consume
 > these evaluations live in [the artifact ecosystem](artifact-ecosystem.md)
 > and issue #11.
@@ -1293,7 +1301,13 @@ G1c wins the 100-chunk KLD window outright — 0.1509 against
 comparison — and sits at exactly baseline level on both
 instability chunks: 0.120 and 0.122 against the baseline's
 0.120 and 0.107, where G1 scored 5.963 and 6.864. The knife
-edge is off. The full-window mean KLD is a statistical tie at
+edge is off. **[Correction, the fifteenth data point: off at
+347 and 502 — not gone. G1c's own full-window log carries a
+fresh knife-edge spike at chunk 137, own-chunk KLD 6.09 against
+the baseline's 0.108, which the 347/502 watch never flagged.
+The fifteenth data point's paired comparison found it while
+hunting down a mean gap. The instability moved, and a
+two-chunk watchlist could not see it.]** The full-window mean KLD is a statistical tie at
 a nominal lead (0.2949 against 0.2959, 0.3σ — the same margin
 this page calls a tie when PPL wears it), but the tie
 decomposes G1c's way: chunk by chunk, G1c is better on 416 of
@@ -1337,6 +1351,161 @@ Raw receipts: `probes/qfit.c` (the harness),
 `eval/run-{testA-stock-bimx,probeG1c-cleanfit}-quantize.sh`,
 `eval/{ppl,kl,kl564}-probeG1c-cleanfit.log`,
 `eval/testA-stock-bimx-quantize.log`, `probeG1c-quantize.log`.
+
+## The fifteenth data point: the pipeline packs its own winner
+
+Every scoreboard entry above G1's came from hand-written
+`llama-quantize` invocations — the probes proved what the right
+pack looks like, and ADR-0022/0023 built the CLI to express it.
+The outstanding proof was the end-to-end run: `plan --protect
+--exclude-imatrix`, `pack --imatrix`, and an all-green
+reconstruction check, with no hand-edited flags anywhere. On
+2026-08-09 that run happened. It did not replicate G1c — and the
+divergence is the interesting part.
+
+**The plan, and the one-step divergence.** The solve took the
+sized no-2 map at the no-2 budget (24 GiB, KV headroom
+3,791,650,816 B), G1c's 47 `attn_v` layers as explicit
+`--protect …=5` rules, one `--protect
+model.layers.3.self_attn.v_proj.weight=4` rule, and the four
+`--exclude-imatrix` tensor names. The solver reproduced blk.0 at
+8-bit and every other group of G1c's layout — except blk.3. The
+47 floors price at ~97 MiB, the unprotected no-2 solve had
+finished with 9.4 MiB of predicted headroom, so the greedy took
+exactly one more step: blk.3's group from 4-bit to 3-bit (step
+162, freeing 113,087,938 B at a predicted damage of 0.113 —
+29 % of the recipe's whole predicted damage, the largest share
+any archived solve trace has spent on one step). Pinning blk.3
+would not restore
+G1c: every other group already sits at floor, so the same bytes
+would have to come out of blk.0. G1c itself really does fit —
+5.2 MiB under budget — but only the 0.005 format-overhead margin
+keeps predicted sizes honest against real GGUF bytes, and that
+margin is ~104 MiB on this file. The hand layout lives inside
+the safety margin the solver refuses to spend. So the artifact
+is a sibling of G1c, not a clone: same protections, same
+exclusions, same 47-layer pattern, blk.3's unprotected tensors
+one step lower. The recipe records all of it
+(`recipe-g1c-replication.json`, schema 4, 48 protected pairs, 4
+marked `exclude_imatrix`).
+
+One trap is worth naming for the next protection author. The
+first draft used a single glob, which also matched blk.0's
+`attn_v` — a per-tensor no-op, floor 5 under a group assigned 8.
+The reconstruction check demands a protected tensor reconstruct
+*strictly* better than the unprotected reference, and a no-op
+pair quantizes identically in both packs: equal RMSE, verdict
+collapsed, on a perfectly healthy tensor. The plan-time no-op
+warning is per-pattern, and a pattern that lifts 47 real floors
+does not warn about its 48th silent match. Enumerating the
+layers avoided it — this page flags the gap so the gate can
+learn to skip pairs the floor never moved (issue #59).
+
+**The pack, gated.** `pack --imatrix` emitted `--pure`, the
+per-group `--tensor-type` overrides, and the four
+`--exclude-weights` flags on its own: 21,860,214,272 B
+(20.36 GiB), 112.48 MiB under the weight budget — inside the
+band the predicted 19.9 MiB margin plus the ~104 MiB overhead
+cushion allows. The reconstruction check packed its unprotected
+reference and measured all 48 protected tensors: green across
+the board, the first all-green gate on a pack this pipeline
+produced end-to-end. The four excluded tensors reproduce the
+qfit.c harness fits to the digit — blk.1 at RMSE 0.001641
+against the receipt's 0.00164, blk.2 0.000574, blk.3 0.001136,
+blk.5 0.000501 — against unprotected references of 0.004755,
+0.002229, 0.002303, and 0.002178. The remedy the gate proposes
+is now the remedy the pipeline executes.
+
+**The results.** Tier 1 full set, tier 2 both windows, against
+the two artifacts that matter:
+
+| Model | PPL ↓ | KLD (100) ↓ | KLD (564) ↓ | chunk 347 | chunk 502 | chunk 137 | KLD (564) excl. | Same top (564) ↑ |
+|-------|-------|-------------|-------------|-----------|-----------|-----------|------------------|-------------------|
+| Q3_K_S heuristic | 8.532 ± 0.064 | 0.1584 | 0.2959 | 0.120 | 0.107 | 0.108 | 0.2966 | **83.4 %** |
+| G1c (hand-quantized) | 8.549 ± 0.063 | **0.1509** | 0.2949 | 0.120 | 0.122 | 6.086 | 0.2956 | 82.9 % |
+| CLI pack (this data point) | **8.517 ± 0.063** | 0.1538 | **0.2873** | 0.126 | 0.124 | 0.106 | **0.2878** | 82.9 % |
+
+The chunk 137 column is new to this table, and the reason it is
+new is the finding below.
+
+Against the baseline the verdict is unambiguous, and stronger
+than any before it: the CLI pack is better on 369 of 564 chunks
+(65 %), the mean gap is 0.0086, and a paired per-chunk test
+puts the difference at 7.8σ — the first time a quantfit
+artifact beats the size-matched heuristic beyond argument on
+the window this page says rules.
+
+Against G1c the mean also leads (0.2873 to 0.2949), but the
+decomposition dissolves that lead into a single chunk — and the
+chunk is a discovery. G1c is better on 429 of 564 chunks by a
+hair. The whole mean gap of 0.0077 lives at **chunk 137, where
+G1c spikes to own-chunk KLD 6.09 against the baseline's 0.108
+and the CLI pack's 0.106**. Exclude that chunk and G1c leads
+the mean too (by 0.0029, at 9.6σ paired). Chunk 137 is exactly
+the knife-edge class this page built the 347/502 watch for, in
+the artifact that watch declared clean: the fourteenth data
+point's claim that G1c silenced the instability was too broad
+— G1c moved the knife edge, from 347/502 to 137, and nothing
+flagged it until this comparison went hunting for its mean gap.
+The honest statement of the full window is: G1c wins the
+per-chunk grind, the CLI pack is the scoreboard's first
+spike-free profile — its worst excess over the baseline
+anywhere in 564 chunks is +0.05 — and the mean prefers
+spike-free. All three known knife-edge chunks stay quiet on the
+CLI pack: 0.126 at 347, 0.124 at 502, 0.106 at 137.
+
+The 100-window KLD lands between its parents — 0.1538 beats the
+baseline's 0.1584 (59 of 100 chunks) and gives back nearly two
+fifths of G1c's 0.1509 lead. PPL reads 8.517 ± 0.063: a tie by
+the interval, but the nominal lead over the baseline (8.532)
+sits on a measured recipe's side for the first time in the 49B
+lane. Top-token agreement holds at G1c's 82.9 % against the
+baseline's 83.4 % — still the baseline's one clear lead.
+
+Step 162 deserves its own paragraph, carefully. The solver
+predicted 0.113 damage for demoting blk.3 — 29 % of the
+recipe's total, a step it took expecting to hurt — and the
+measured ledger says the demotion taxed most chunks a hair
+(G1c's 429-chunk edge, the two-fifths giveback on the
+100-window) while the knife-edge spike the hand layout carried
+is gone. The demotion is the only layout difference, so the
+ledger is cleanly attributable. What is not clean is causality
+on one flip: the 347/502 history says knife-edge chunks move
+under small perturbations, and one artifact is one sample. The
+defensible claim: the solver's forced trade cost nothing the
+intervals can see, and on the deciding window it came out
+ahead. The validation gap (the eleventh data point's −79.5 %
+overprediction) has always said marginal damage overprices
+demotions — step 162 is that gap steering a live allocation,
+and this time the measurement did not punish it.
+
+**What this changes.** The outstanding proof closes. What is
+proven: the full loop — sensitivity map to recipe to gated pack
+— runs from the CLI with protections and imatrix exclusions,
+passes the reconstruction gate without a single hand-edited
+flag, and produces the best full-window KLD on record with the
+scoreboard's first spike-free chunk profile. What is *not*
+proven: byte-replication of G1c at the same budget — the
+solver's overhead margin will not buy the hand layout, and
+pinning cannot force it without moving the bytes somewhere
+worse. Nothing measured argues it should be forced: against
+the baseline the CLI artifact is the strongest result this
+page has recorded, and against G1c the hand layout's remaining
+edge is a per-chunk grind that comes packaged with a knife
+edge. The publication candidate is now a pipeline artifact,
+not a probe.
+
+Raw receipts: `recipe-g1c-replication.json` (schema 4, the
+trace, 48 protected pairs),
+`pack-g1c-replication.console.log`,
+`nemotron-49b-g1c-replication.runlog.jsonl` (the
+`reconstruction_checked` event, all 48 tensors),
+`eval/run-g1c-replication-evals.sh`,
+`eval/{ppl,kl,kl564}-g1c-replication.log`. The `g1c-replication`
+in the filenames is the lane's name from before the divergence
+was measured — the artifact is G1c's sibling, not a
+byte-replication, and this page is the record of that
+distinction.
 
 ## Provenance is not evidence
 
@@ -1416,5 +1585,13 @@ compute.
   [ADR-0023](../adr/0023-imatrix-exclusions.md)):** it should, and
   does — `plan --exclude-imatrix` marks protected pairs, the recipe
   schema bumps to 4, pack emits the flags under an imatrix, and the
-  gate's refusal now prints the exact flags for the re-plan. The
-  CLI replication of G1c is the outstanding proof.
+  gate's refusal now prints the exact flags for the re-plan. ~~The
+  CLI replication of G1c is the outstanding proof.~~ **Answered
+  (the fifteenth data point), with a twist:** the CLI ran the loop
+  end-to-end and passed the gate all-green, but the solver refused
+  G1c's exact layout — its overhead margin demotes blk.3 one step
+  — and the sibling artifact set the best full-window KLD on
+  record with the scoreboard's first spike-free chunk profile.
+  The mechanism replicates. The exact layout does not, and the
+  hand layout turned out to carry a knife edge (chunk 137) that
+  the sibling does not.
