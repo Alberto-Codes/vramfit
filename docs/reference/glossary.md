@@ -267,11 +267,11 @@ change.
     Not "quantizer bug" — the fit does what the weighting tells it.
 
 **Imatrix exclusion**
-:   The fit-collapse remedy that keeps the promotion: quantize one
-    named protected tensor without its imatrix row, taking the clean
-    unweighted fit (`llama-quantize --exclude-weights`, 5.8–14.7×
-    cleaner on the collapsed rows). Marked per protected tensor in
-    the recipe by `quantfit plan --exclude-imatrix`
+:   The fit-collapse remedy that keeps the promotion. One named
+    protected tensor quantizes without its imatrix row and takes
+    the clean unweighted fit (`llama-quantize --exclude-weights`,
+    5.8–14.7× cleaner on the collapsed rows). Marked per protected
+    tensor in the recipe by `quantfit plan --exclude-imatrix`
     ([ADR-0023](../adr/0023-imatrix-exclusions.md)). Not "imatrix
     miss" — that names an unintentional coverage gap.
 

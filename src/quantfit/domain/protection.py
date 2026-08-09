@@ -13,8 +13,9 @@ unservable floor, a no-match pattern, a protection on a single-tensor
 group, a map without tensor sizes, and an exclusion that matches no
 protected tensor each raise `ProtectionError`
 before any solving starts. Nothing about a protection is silent —
-the no-op case (`noop_protection_patterns`) surfaces as a CLI
-warning after solving.
+the no-op case (`noop_protection_patterns`) and the overreaching
+exclusion glob (`overreaching_exclusion_patterns`) surface as CLI
+warnings after solving.
 
 Examples:
     Expand protections against a map:
@@ -170,6 +171,41 @@ def expand_exclusions(
             raise ProtectionError(f'imatrix exclusion "{pattern}" matches no tensor')
         excluded.update(matched)
     return frozenset(excluded)
+
+
+def overreaching_exclusion_patterns(
+    exclusions: tuple[str, ...],
+    floors: Mapping[str, int],
+    map_: SensitivityMap,
+) -> dict[str, tuple[str, ...]]:
+    """Name each exclusion pattern's unprotected matches.
+
+    A pattern that matches protected and unprotected tensors expands
+    to the protected subset only — correct, but the truncation must
+    not be silent (ADR-0023). The CLI warns with this record, as it
+    does for no-op protections.
+
+    Args:
+        exclusions: Exclusion patterns, in rule order.
+        floors: The expanded per-tensor protection floors.
+        map_: The sensitivity map whose tensors are matched.
+
+    Returns:
+        Mapping of overreaching pattern to its unprotected matches,
+        in rule order. Empty when every pattern stays inside the
+        protected set.
+    """
+    all_tensors = [name for group in map_.groups for name in group.tensors]
+    overreach: dict[str, tuple[str, ...]] = {}
+    for pattern in exclusions:
+        outside = tuple(
+            name
+            for name in all_tensors
+            if name not in floors and fnmatchcase(name, pattern)
+        )
+        if outside and any(fnmatchcase(name, pattern) for name in floors):
+            overreach[pattern] = outside
+    return overreach
 
 
 def protected_group_bytes(

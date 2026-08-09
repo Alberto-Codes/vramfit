@@ -18,8 +18,11 @@ The remedy is per-tensor: `llama-quantize --exclude-weights` deletes
 one row from the loaded matrix, and every other tensor keeps its
 assisted fit. Probe G1c applied it by hand to `blk.{1,2,3,5}.attn_v`
 and produced the first all-green reconstruction check, the best
-100-window KLD on record (0.1509 against the baseline's 0.1584), and
-returned the two instability chunks exactly to baseline.
+in-budget 100-window KLD on record (0.1509 against the baseline's
+0.1584), and
+returned the two instability chunks to baseline order — per-chunk
+KLD 0.120/0.122 against the baseline's 0.120/0.107, from G1's
+5.96/6.86.
 
 The pipeline cannot reproduce G1c. ADR-0022's only remedy for a
 collapsed tensor is to drop its protection and re-plan — which
@@ -58,8 +61,11 @@ uses for genuine coverage gaps.
 5. **The reconstruction gate still measures excluded tensors, and
    its refusal suggests the exclusion flags.** The gate already
    names the collapsed tensors — it now prints the exact
-   `--exclude-imatrix` flags for the re-plan. The revision stays
-   the user's (ADR-0012 decision 3), and stays one round.
+   `--exclude-imatrix` flags for the re-plan, and only for tensors
+   not already excluded. A tensor that collapses *with* its
+   exclusion has exhausted this remedy — the refusal then offers
+   only ADR-0022's: drop the protection. The revision stays the
+   user's (ADR-0012 decision 3).
 
 ## Consequences
 

@@ -8,6 +8,7 @@ from quantfit.domain.protection import (
     expand_exclusions,
     expand_protections,
     noop_protection_patterns,
+    overreaching_exclusion_patterns,
     protected_group_bytes,
     resolve_protected,
 )
@@ -227,6 +228,45 @@ class TestExpandExclusions:
         assert (
             expand_exclusions((), self.make_floors(), make_layer_map()) == frozenset()
         )
+
+    def test_duplicate_patterns_expand_once(self) -> None:
+        excluded = expand_exclusions(
+            ("model.layers.0.*", "model.layers.0.*"),
+            self.make_floors(),
+            make_layer_map(),
+        )
+
+        assert excluded == frozenset({"model.layers.0.self_attn.v_proj.weight"})
+
+
+@pytest.mark.unit
+class TestOverreachingExclusionPatterns:
+    def make_floors(self) -> dict[str, int]:
+        return expand_protections(
+            {"model.layers.0.self_attn.v_proj.weight": 5},
+            make_layer_map(),
+            runtime=None,
+        )
+
+    def test_glob_reaching_unprotected_tensors_is_named(self) -> None:
+        # "*.v_proj.weight" matches the protected layer-0 tensor and
+        # the unprotected layer-1 sibling — the truncation must warn.
+        overreach = overreaching_exclusion_patterns(
+            ("*.v_proj.weight",), self.make_floors(), make_layer_map()
+        )
+
+        assert overreach == {
+            "*.v_proj.weight": ("model.layers.1.self_attn.v_proj.weight",)
+        }
+
+    def test_glob_inside_the_protected_set_is_not_named(self) -> None:
+        overreach = overreaching_exclusion_patterns(
+            ("model.layers.0.self_attn.v_proj.weight",),
+            self.make_floors(),
+            make_layer_map(),
+        )
+
+        assert overreach == {}
 
 
 @pytest.mark.unit

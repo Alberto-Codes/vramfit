@@ -726,6 +726,25 @@ class TestPlanProtect:
         assert result.exit_code == 1
         assert "require protections" in result.output
 
+    def test_exclude_imatrix_overreaching_glob_warns(self, tmp_path) -> None:
+        map_path = self._write_protected_map(tmp_path)
+        out = tmp_path / "recipe.json"
+
+        result = self._plan(
+            map_path,
+            out,
+            "--protect",
+            "model.layers.0.self_attn.v_proj.weight=5",
+            "--pin",
+            "model.layers.0=3",
+            "--exclude-imatrix",
+            "*.self_attn.v_proj.weight",
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "their imatrix rows stay" in result.output
+        assert "model.layers.1.self_attn.v_proj.weight" in result.output
+
     def test_exclude_imatrix_matching_unprotected_tensor_exits_one(
         self, tmp_path
     ) -> None:

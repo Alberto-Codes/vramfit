@@ -186,7 +186,7 @@ class MemoryRecipePacker:
             raise PackError("base GGUF does not exist — run convert first")
         if self.fail_stage == "quantize":
             raise PackError("quantize failed with exit code 3:\nconfigured failure")
-        excluded = imatrix_exclusion_names(recipe) if self.imatrix else ()
+        excluded = imatrix_exclusion_names(recipe) if self.imatrix is not None else ()
         result = PackResult(
             packed_bytes=self.packed_bytes,
             base_type=base_type(recipe),
@@ -196,7 +196,7 @@ class MemoryRecipePacker:
             imatrix_path=self.imatrix,
             imatrix_uncovered=(
                 tuple(n for n in self.imatrix_uncovered if n not in excluded)
-                if self.imatrix
+                if self.imatrix is not None
                 else ()
             ),
             imatrix_excluded=excluded,
