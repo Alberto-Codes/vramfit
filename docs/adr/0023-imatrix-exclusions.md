@@ -6,6 +6,11 @@
   (the reconstruction gate gains a second remedy) and
   [ADR-0016](0016-imatrix-in-the-pack-path.md) (the imatrix pass-through
   gains per-tensor exclusions).
+- **Amendment (2026-08-09, issue #59):** the recipe schema is 5, not
+  the 4 decision 3 records — no-op protection pairs stopped
+  resolving (ADR-0022's issue-#59 amendment). Decision 1's refusal
+  surface also grew: an exclusion pattern whose every pair drops as
+  a per-tensor no-op refuses, because nothing survives to ride.
 
 ## Context
 

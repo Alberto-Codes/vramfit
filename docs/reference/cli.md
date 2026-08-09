@@ -328,10 +328,13 @@ reference, dequantizes every protected tensor from both files with
 gguf-py, and compares each against the f16 base. The reference file
 is deleted after measurement. A tensor that does not reconstruct
 strictly closer to f16 than its unprotected type is collapsed — the
-command names it, keeps the file, and exits 1. The revision is the
-user's: exclude the named tensors from `--protect` and re-plan. A
+command names it, keeps the file, and exits 1. The remedy is the
+user's: re-plan with `--exclude-imatrix` for the named tensors
+(ADR-0023) — the refusal prints the exact flags. A
 protected pack without `--imatrix` skips the check with a note —
-every known fit collapse involved a promotion under one. With
+every known fit collapse involved a promotion under one. A recipe
+that records protections but resolved no pairs also skips with a
+note: every floor was a per-tensor no-op at plan time (issue #59). With
 `--smoke-text` the command
 then runs the smoke test: `--smoke-chunks` perplexity chunks through
 `build/bin/llama-perplexity`, gated by the `--smoke-threshold`
