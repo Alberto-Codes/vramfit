@@ -36,6 +36,9 @@ status: draft
 > granularity probes opened a split decision: first in-budget KLD
 > win, PPL still behind
 > ([the twelfth data point](#the-twelfth-data-point-the-granularity-probes-and-a-split-decision)).
+> The thirteenth data point mapped the split fully and fixed the
+> ruling 564-chunk window
+> ([the thirteenth data point](#the-thirteenth-data-point-the-imatrix-swap-and-the-instabilitys-address)).
 > On 2026-08-08 the fit-collapse root cause fell — imatrix rows
 > with extreme column dynamic range, not flags or vintage — and
 > probe G1c **ended the split decision**: an outright 100-window KLD win, statistical

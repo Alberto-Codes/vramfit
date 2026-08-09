@@ -67,7 +67,7 @@ flowchart TD
         P["Protocols: SensitivityMapSource/Sink,<br/>RecipeSink, ModelShapeSource,<br/>DamageMeter, ScanCheckpointStore,<br/>RunLogSink, RecipePacker,<br/>ReconstructionChecker, SmokeTester"]
     end
     subgraph domain["domain (pure)"]
-        D["model · budget · solver · scan ·<br/>protection · pack · validation · runtime"]
+        D["model · budget · solver · scan ·<br/>protection · pack · validation ·<br/>runtime · errors"]
     end
     CLI --> JSONAD
     CLI --> HF
@@ -88,7 +88,7 @@ The layer table (ADR-0008), top may import down, never up:
 | `adapters.inbound` | Typer CLI, the composition root and scan loop | everything below |
 | `adapters.outbound` | JSON artifacts, HF configs, the torch meter | ports, domain |
 | `ports` | `typing.Protocol` capabilities | domain |
-| `domain` | dataclasses, budget math, solver, protection rules, scan/pack/validation logic, runtime capability tables | domain only |
+| `domain` | dataclasses, budget math, solver, protection rules, scan/pack/validation logic, runtime capability tables, the error root | domain only |
 
 Three import-linter contracts make this checked, not aspirational:
 layer order, domain purity (no `json`/`pathlib`/`os`/`io`/`typer`/

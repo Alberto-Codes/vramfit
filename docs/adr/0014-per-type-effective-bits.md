@@ -74,7 +74,8 @@ Qwen2.5-3B packs) shows the real cost has two parts:
    predictions. The assignments' `bytes` values embed the size
    model, and the recorded `runtime` plus the quantfit version name
    the table that produced them. Schema stays at version 2 as of
-   this record (since bumped to 5 by later ADRs — see ADR-0022).
+   this record. (Since bumped to 3, 4, then 5 — ADR-0022, ADR-0023,
+   issue #59.)
 
 ## Consequences
 

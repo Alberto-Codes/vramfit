@@ -122,9 +122,9 @@ with `--exclude-imatrix` for the named tensors — the tensor keeps
 its promotion and quantizes without its imatrix row
 ([ADR-0023](../adr/0023-imatrix-exclusions.md)). Dropping the
 tensor from `--protect` is the fallback when the exclusion has
-already failed. G1 needed exactly one such round (layers 1, 2,
-and 5), and the fifteenth data point's pack cleared the gate
-all-green with four exclusions.
+already failed. G1 needed exactly one drop round (layers 1, 2,
+and 5, before exclusions existed), and the fifteenth data point's
+pack cleared the gate all-green with four exclusions.
 
 ## Reading the result
 

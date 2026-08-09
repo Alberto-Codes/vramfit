@@ -181,8 +181,9 @@ pack path did not yet use. The full scoreboard and diagnosis live in
 [the fourth data point](evaluating-packed-models.md#the-fourth-data-point-the-north-star-attempt-lost-honestly).
 The map's
 selectivity survived that result, and the rematch arc proved it:
-after the pack path gained the imatrix (ADR-0016), the solver
-banned unpriced 2-bit (ADR-0021), and within-layer protections
+after the pack path gained the imatrix (ADR-0016), unpriced
+2-bit left the solve via a map copy without its column (ADR-0021),
+and within-layer protections
 with imatrix exclusions landed (ADR-0022, ADR-0023), the
 fifteenth data point's end-to-end pack (2026-08-09) beat the same
 baseline on full-window KL divergence at 7.8σ. The argument this

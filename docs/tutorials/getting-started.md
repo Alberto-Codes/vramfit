@@ -74,7 +74,7 @@ uv run quantfit validate recipe.json --calibration calibration.txt --max-tokens 
 ```
 
 Compare the measured number against the prediction. Six of seven
-real measurements came in sub-additive. The seventh measured 11.9×
+real measurements came in sub-additive. The outlier measured 11.9×
 above prediction on a 2-bit-heavy recipe — treat that direction as
 a solve-again signal, not a pack input (ADR-0006).
 

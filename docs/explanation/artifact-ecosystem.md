@@ -50,17 +50,17 @@ portable recipe with recorded provenance. quantfit's differentiated assets
    [ADR-0010](../adr/0010-sub-4-bit-serving-path.md)), with the
    validation pass checking our own additivity assumption on the way.
 
-The core experiment ran, and it closed. The additivity worry has
+The core experiment ran, and the competitive question closed. The additivity worry has
 been measured seven times and points both ways: six passes
 sub-additive (2.05×, 2.94×, 1.6×, 2.0×, 1.87×, 4.87×), one
 super-additive by 11.9× on a 2-bit-heavy recipe — caught before
 packing, which is the pass doing its job. The competitive worry
-resolved on 2026-08-09: after four losing head-to-heads mapped the
+resolved on 2026-08-09: after five losing head-to-heads mapped the
 gap (imatrix, 2-bit membership, frame transfer, granularity), the
 fifteenth data point's end-to-end pack beat the size-matched
 heuristic-plus-imatrix quant on full-window KL divergence at 7.8σ.
-The measurement infrastructure and curves remain the durable
-contribution either way.
+The measurement infrastructure and curves remain a durable
+contribution beside the win.
 
 ## The thesis: make the artifact the standard, not the tool
 
@@ -122,7 +122,7 @@ reference box (148 cells ≈ one hour), and the first 49B scan ran at
 ([ADR-0015](../adr/0015-offload-aware-scanning.md)). The 49B writeup
 remains the gate for everything *else* in the phase list.
 
-Hard gates before any publication, with their 2026-07-29 status:
+Hard gates before any publication, with their current status:
 
 1. `quantfit pack` exists (the GGUF backend of
    [ADR-0010](../adr/0010-sub-4-bit-serving-path.md)). **Satisfied** —
@@ -136,11 +136,11 @@ Hard gates before any publication, with their 2026-07-29 status:
    judged per [evaluating packed models](evaluating-packed-models.md).
    One bad debut kills a "measured beats folklore" brand permanently.
    If it loses, publish the negative result in the writeup instead of
-   the model. **Satisfied on 2026-08-09**: after four published
+   the model. **Satisfied on 2026-08-09**: after five published
    losses mapped the gap, the fifteenth data point's pipeline pack
    beats the imatrix Q3_K_S on full-window KL divergence at 7.8σ
    with the best nominal perplexity in the lane. The remaining
-   publication gate is the task-eval tier.
+   publication step is the task-eval tier.
 
 Conventions to settle at publication time: a `quantfit` HF tag, the
 budget in the repo name (e.g. `-fit24gib`), and which artifacts sit

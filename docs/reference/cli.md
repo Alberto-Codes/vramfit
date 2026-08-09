@@ -105,8 +105,8 @@ reference and falsely fail the reconstruction check. A dropped
 pair's `--exclude-imatrix` mark drops with it, and the warning says
 so. An `--exclude-imatrix` pattern left with no surviving pair is
 rejected — the pack would keep the imatrix rows the pattern names.
-A glob that also matches unprotected tensors draws a warning naming
-what it did not cover — their imatrix rows stay (ADR-0023).
+A glob that also matches unprotected tensors draws a warning
+naming what it did not cover. The unprotected rows stay (ADR-0023).
 
 Exit codes: 1 when the map is invalid, the output is unwritable, no
 recipe fits the budget (the gap is reported), or a `--protect` or
@@ -342,12 +342,12 @@ note: every floor was a per-tensor no-op at plan time (issue #59).
 
 A recipe with imatrix exclusions drives one `--exclude-weights`
 flag per marked pair when the pack runs with `--imatrix`
-([ADR-0023](../adr/0023-imatrix-exclusions.md)) — the excluded
+([ADR-0023](../adr/0023-imatrix-exclusions.md)). The excluded
 tensors keep their promoted types and quantize without their
 imatrix rows. Packing such a recipe without `--imatrix` warns that
-the exclusions change nothing. With
-`--smoke-text` the command
-then runs the smoke test: `--smoke-chunks` perplexity chunks through
+the exclusions change nothing.
+
+With `--smoke-text` the command runs the smoke test: `--smoke-chunks` perplexity chunks through
 `build/bin/llama-perplexity`, gated by the `--smoke-threshold`
 ceiling (ADR-0017). Without the flag the command warns that the
 packed model is unproven. Every run appends the pack events to the

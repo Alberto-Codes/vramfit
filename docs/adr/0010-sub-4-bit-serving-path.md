@@ -23,7 +23,9 @@
   the size-matched Q3_K_S baseline on full-window KL divergence at
   7.8σ with the best nominal perplexity in the lane
   ([evaluating packed models](../explanation/evaluating-packed-models.md)).
-  Decision 3's benchmark claim is achieved. Open question 3 (serving
+  Decision 3's benchmark claim is achieved against Q3_K_S — the
+  size-matched baseline in practice, per the 2026-07-29 amendment,
+  not the IQ3 quants the decision names. Open question 3 (serving
   overhead at 16k context) stays open.
 
 ## Context
