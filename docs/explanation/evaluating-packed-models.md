@@ -1586,7 +1586,8 @@ compute.
   **Resolved (2026-08-09,
   [ADR-0023](../adr/0023-imatrix-exclusions.md)):** it should, and
   does — `plan --exclude-imatrix` marks protected pairs, the recipe
-  schema bumps to 4, pack emits the flags under an imatrix, and the
+  schema bumped to 4 (now 5, after the no-op pair drop of issue
+  #59), pack emits the flags under an imatrix, and the
   gate's refusal now prints the exact flags for the re-plan. ~~The
   CLI replication of G1c is the outstanding proof.~~ **Answered
   (the fifteenth data point), with a twist:** the CLI ran the loop
