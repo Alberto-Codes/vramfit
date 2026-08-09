@@ -1561,9 +1561,9 @@ compute.
   few-shot settings.~~ **Decided (2026-08-09,
   [ADR-0024](../adr/0024-tier3-task-slice.md)): five tasks at
   leaderboard settings.** MMLU 5-shot, GSM8K 5-shot, HellaSwag
-  10-shot, Winogrande 5-shot, ARC-Challenge 25-shot — full test
-  sets, and deltas inside the combined standard error report as
-  ties. The harness lane on the reference box is that record's
+  10-shot, Winogrande 5-shot, ARC-Challenge 25-shot — full
+  evaluation splits, and deltas inside the combined standard error
+  report as ties. The harness lane on the reference box is that record's
   first open question.
 - ~~Whether tier 2 uses the scan's calibration set, WikiText-2, or
   both — same-set confirms the additivity story, held-out text guards

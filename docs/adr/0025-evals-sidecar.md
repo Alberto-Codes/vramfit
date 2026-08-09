@@ -6,7 +6,8 @@
 ## Context
 
 Publication number one ships weights with receipts: sensitivity
-map, recipe, run log (the artifact ecosystem). Evaluation results
+map, recipe, run log
+(the [artifact ecosystem](../explanation/artifact-ecosystem.md)). Evaluation results
 have no artifact of their own. Tier numbers live in raw eval logs
 and the scoreboard page, and a model card would hand-copy them.
 
@@ -50,7 +51,7 @@ and versioned. The evidence deserves the same treatment.
   so every card comparison is a pair of machine-readable
   documents.
 - When the writer lands, it is an outbound adapter behind a port
-  with a verified-fake contract suite (ADR-0009), and the schema
+  with a verified-fake contract suite (ADR-0009). The schema then
   joins the `quantfit_schema` versioning rule: breaking changes
   bump it.
 - One more artifact rides every publication. The upload checklist
@@ -83,5 +84,6 @@ and versioned. The evidence deserves the same treatment.
 - Whether the sidecar embeds the baseline comparison or the card
   joins two sidecars at render time.
 - Where the sidecar sits in the published repo, and whether the
-  planned `quantfit` HF tag points at it (the artifact ecosystem's
+  planned `quantfit` HF tag points at it (the
+  [artifact ecosystem's](../explanation/artifact-ecosystem.md)
   conventions-to-settle list).
