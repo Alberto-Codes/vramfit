@@ -252,12 +252,18 @@ change.
     "calibration data" (that names the text) or "activation cache".
 
 **Fit collapse**
-:   A quantizer failure mode under a fixed imatrix: the weighted
-    fit sacrifices outlier channels the calibration set marks
-    unimportant, and the tensor reconstructs *worse* at the higher
-    type. A tensor in this state is **collapsed**. Discovered on
-    the front-stack `attn_v` tensors (the twelfth data point in
-    [evaluating packed models](../explanation/evaluating-packed-models.md)).
+:   A quantizer failure mode under a fixed imatrix: an imatrix row
+    with extreme column dynamic range (the collapsed rows span
+    10⁸–10¹³) destabilizes the weighted super-block scale fit at
+    `Q4_K`/`Q5_K`, and the tensor reconstructs 5–15× *worse* than
+    its unweighted fit (`Q3_K` only inflates ~1.4×). Range alone
+    does not decide — the reconstruction check does. A tensor in
+    this state is **collapsed**.
+    Discovered on the front-stack `attn_v` tensors by the twelfth
+    data point in
+    [evaluating packed models](../explanation/evaluating-packed-models.md).
+    The fourteenth data point on the same page isolates the
+    mechanism and fixes it by per-tensor imatrix exclusion.
     Not "quantizer bug" — the fit does what the weighting tells it.
 
 **Reconstruction check**
