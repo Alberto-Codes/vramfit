@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from hypothesis import given
+from hypothesis import assume, given
 from hypothesis import strategies as st
 
 from quantfit.adapters.outbound.recipe_json import recipe_from_dict, recipe_to_dict
@@ -49,6 +49,11 @@ class TestArtifactRoundTripProperties:
     def test_excluded_recipes_round_trip_through_json(self, drawn, data) -> None:
         raw, floor = drawn
         map_ = map_from_dict(raw)
+        lowest = map_.scan.precisions[-1]
+        # The excluded tensor's pair must survive the resolve: pin its
+        # group to the lowest candidate and require the floor above it,
+        # or the pair drops and the exclusion refuses (issue #59).
+        assume(floor > lowest)
         # Split pricing rounds each protected piece up, so allow one
         # extra byte per group over the one-piece ceiling.
         ceiling = sum(
@@ -62,6 +67,7 @@ class TestArtifactRoundTripProperties:
             weight_budget_bytes=budget,
             vram_budget_bytes=budget + 1000,
             kv_headroom_bytes=1000,
+            pins={"model.layers.0": lowest},
             protections={"model.layers.*.t0": floor},
             imatrix_exclusions=("model.layers.0.t0",),
         )

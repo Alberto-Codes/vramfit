@@ -612,14 +612,14 @@ class TestPlanProtect:
         )
 
         assert result.exit_code == 0, result.output
-        assert "2 protected tensors" in result.output
+        assert "1 protected tensors" in result.output
         recipe = load_recipe(out)
         assert dict(recipe.plan.protections) == {"*.self_attn.v_proj.weight": 5}
         resolved = {p.tensor: p.bits for p in recipe.protected_tensors}
         # Layer 0 is pinned at 3-bit, so its v_proj rises to the floor;
-        # layer 1 stays at 8-bit, above the floor.
-        assert resolved["model.layers.0.self_attn.v_proj.weight"] == 5
-        assert resolved["model.layers.1.self_attn.v_proj.weight"] == 8
+        # layer 1 stays at 8-bit above the floor, so its pair drops —
+        # a no-op pair would falsely fail the reconstruction gate.
+        assert resolved == {"model.layers.0.self_attn.v_proj.weight": 5}
 
     def test_noop_protection_warns(self, tmp_path) -> None:
         map_path = self._write_protected_map(tmp_path)
@@ -629,8 +629,31 @@ class TestPlanProtect:
 
         assert result.exit_code == 0, result.output
         assert "no-op" in result.output
+        # The dead rule warns once, per pattern — its tensors do not
+        # warn again individually.
+        assert "per-tensor no-op" not in result.output
 
     def test_effective_protection_does_not_warn(self, tmp_path) -> None:
+        map_path = self._write_protected_map(tmp_path)
+        out = tmp_path / "recipe.json"
+
+        result = self._plan(
+            map_path,
+            out,
+            "--protect",
+            "*.self_attn.v_proj.weight=5",
+            "--pin",
+            "model.layers.0=3",
+            "--pin",
+            "model.layers.1=3",
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "no-op" not in result.output
+
+    def test_partial_noop_protection_warns_per_tensor(self, tmp_path) -> None:
+        # The glob lifts layer 0's floor and no-ops on layer 1 — the
+        # per-pattern warning is blind to the partial case (issue #59).
         map_path = self._write_protected_map(tmp_path)
         out = tmp_path / "recipe.json"
 
@@ -644,7 +667,52 @@ class TestPlanProtect:
         )
 
         assert result.exit_code == 0, result.output
-        assert "no-op" not in result.output
+        assert "per-tensor no-op" in result.output
+        assert "model.layers.1.self_attn.v_proj.weight" in result.output
+        assert "drops the pair" in result.output
+        # The rule lifted a real floor, so the pattern warning stays out.
+        assert "is a no-op — every tensor" not in result.output
+
+    def test_dropped_pair_warns_about_its_lost_exclusion(self, tmp_path) -> None:
+        # The exclusion glob matches layer 0's surviving pair and
+        # layer 1's dropped one — the survivor keeps the pattern
+        # alive, and the dropped mark must warn (issue #59).
+        map_path = self._write_protected_map(tmp_path)
+        out = tmp_path / "recipe.json"
+
+        result = self._plan(
+            map_path,
+            out,
+            "--protect",
+            "*.self_attn.v_proj.weight=5",
+            "--pin",
+            "model.layers.0=3",
+            "--exclude-imatrix",
+            "*.self_attn.v_proj.weight",
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "imatrix exclusion drops with it" in result.output
+        recipe = load_recipe(out)
+        marks = {p.tensor: p.exclude_imatrix for p in recipe.protected_tensors}
+        assert marks == {"model.layers.0.self_attn.v_proj.weight": True}
+
+    def test_exclusion_riding_only_dropped_pairs_exits_one(self, tmp_path) -> None:
+        map_path = self._write_protected_map(tmp_path)
+
+        result = self._plan(
+            map_path,
+            tmp_path / "r.json",
+            "--protect",
+            "*.self_attn.v_proj.weight=5",
+            "--pin",
+            "model.layers.0=3",
+            "--exclude-imatrix",
+            "model.layers.1.self_attn.v_proj.weight",
+        )
+
+        assert result.exit_code == 1
+        assert "every protected tensor it matches drops" in result.output
 
     def test_unmatched_protection_exits_one(self, tmp_path) -> None:
         map_path = self._write_protected_map(tmp_path)
@@ -712,9 +780,10 @@ class TestPlanProtect:
         assert "(1 imatrix-excluded)" in result.output
         recipe = load_recipe(out)
         assert recipe.plan.imatrix_exclusions == ("model.layers.0.*",)
+        # Layer 1's pair drops as a per-tensor no-op (issue #59), so
+        # the pinned layer 0 carries the only mark.
         marks = {p.tensor: p.exclude_imatrix for p in recipe.protected_tensors}
-        assert marks["model.layers.0.self_attn.v_proj.weight"] is True
-        assert marks["model.layers.1.self_attn.v_proj.weight"] is False
+        assert marks == {"model.layers.0.self_attn.v_proj.weight": True}
 
     def test_exclude_imatrix_without_protect_exits_one(self, tmp_path) -> None:
         map_path = self._write_protected_map(tmp_path)

@@ -14,7 +14,7 @@ from quantfit.domain.model import Assignment, PlanMeta, TraceStep
 
 def make_recipe_dict() -> dict:
     return {
-        "quantfit_schema": 4,
+        "quantfit_schema": 5,
         "model_id": "test/model",
         "runtime": "llama.cpp",
         "plan": {
@@ -286,7 +286,7 @@ class TestProtections:
         raw = make_recipe_dict()
         raw["quantfit_schema"] = 3
 
-        with pytest.raises(ArtifactError, match="version 4"):
+        with pytest.raises(ArtifactError, match="version 5"):
             recipe_from_dict(raw)
 
     def test_missing_protections_field_rejected(self) -> None:
@@ -303,12 +303,15 @@ class TestProtections:
         with pytest.raises(ArtifactError, match="protected_tensors"):
             recipe_from_dict(raw)
 
-    def test_patterns_without_resolved_pairs_rejected(self) -> None:
+    def test_patterns_without_resolved_pairs_load(self) -> None:
+        # Legal since issue #59: a rule whose every floor is a
+        # per-tensor no-op resolves to zero pairs.
         raw = make_recipe_dict()
         raw["plan"]["protections"] = {"*.v_proj.weight": 5}
 
-        with pytest.raises(ArtifactError, match="both"):
-            recipe_from_dict(raw)
+        recipe = recipe_from_dict(raw)
+
+        assert recipe.protected_tensors == ()
 
     def test_duplicate_protected_tensor_rejected(self) -> None:
         raw = self.make_protected_dict()
@@ -385,6 +388,8 @@ class TestImatrixExclusions:
             recipe_from_dict(raw)
 
     def test_patterns_without_marks_rejected(self) -> None:
+        # The solver refuses an exclusion whose every pair dropped
+        # (issue #59), so a record without marks is a broken artifact.
         raw = self.make_excluded_dict()
         raw["protected_tensors"][0]["exclude_imatrix"] = False
 

@@ -1,8 +1,8 @@
 """JSON file adapter for the recipe artifact.
 
 Owns (de)serialization and validation of the recipe schema, including
-the ``quantfit_schema`` envelope (version 4 since recipes record
-their imatrix exclusions, ADR-0023). A known runtime must serve every
+the ``quantfit_schema`` envelope (version 5 since no-op protection
+pairs stopped resolving, issue #59). A known runtime must serve every
 assigned and protected precision — an unknown runtime name loads
 untouched.
 Mirrors the strict reject-don't-normalize stance of the
@@ -63,11 +63,14 @@ from quantfit.domain.scan import KQUANT_IMX_METHOD
 
 # The recipe schema version. Bumped to 2 when recipes gained the
 # required (nullable) ``runtime`` field (ADR-0013), to 3 when
-# they gained protections (ADR-0022), and to 4 when they gained
+# they gained protections (ADR-0022), to 4 when they gained
 # imatrix exclusions (ADR-0023) — a reader that dropped either
 # record would silently pack a different artifact than the recipe
-# intends.
-RECIPE_SCHEMA_VERSION: Final[int] = 4
+# intends — and to 5 when no-op protection pairs stopped resolving
+# (issue #59). A schema-4 reader rejects a protection record with
+# zero pairs, and a schema-4 recipe can carry no-op pairs that
+# falsely fail the reconstruction gate — re-plan it.
+RECIPE_SCHEMA_VERSION: Final[int] = 5
 
 
 def recipe_from_dict(data: object) -> Recipe:
@@ -88,12 +91,15 @@ def recipe_from_dict(data: object) -> Recipe:
     null — recipes written before the fields existed do not record
     their map's method (ADR-0019) or imatrix (ADR-0020). A present
     ``imatrix`` must pair with the assisted method token.
-    ``protected_tensors`` and ``plan.protections`` are required and
-    must agree about whether the recipe is protected — a known
-    runtime must also serve every protected precision (ADR-0022).
-    Each protected pair carries a required ``exclude_imatrix`` mark,
-    and ``plan.imatrix_exclusions`` must agree with the marks about
-    whether the recipe excludes imatrix rows (ADR-0023).
+    ``protected_tensors`` and ``plan.protections`` are required.
+    Resolved pairs need a protection record, and a known runtime
+    must serve every protected precision (ADR-0022). A record with
+    zero pairs is legal — every floor can be a per-tensor no-op
+    (issue #59). Each protected pair carries a required
+    ``exclude_imatrix`` mark, and ``plan.imatrix_exclusions`` must
+    agree with the marks about whether the recipe excludes imatrix
+    rows — the solver refuses an exclusion whose every pair dropped
+    (ADR-0023).
 
     Raises:
         ArtifactError: If any field is missing, mistyped, or violates a
@@ -197,10 +203,10 @@ def recipe_from_dict(data: object) -> Recipe:
         seen_tensors.add(pair.tensor)
         protected.append(pair)
     _require(
-        bool(plan.protections) == bool(protected),
+        not protected or bool(plan.protections),
         "$.protected_tensors",
-        "plan.protections and protected_tensors must both be empty or both "
-        "be present (ADR-0022)",
+        "protected_tensors requires plan.protections — resolved pairs "
+        "cannot exist without the rules that made them (ADR-0022)",
     )
     _require(
         bool(plan.imatrix_exclusions) == any(p.exclude_imatrix for p in protected),

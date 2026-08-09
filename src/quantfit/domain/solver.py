@@ -21,7 +21,9 @@ prices at the higher of the candidate precision and its floor
 frees fewer bytes and the ranking shifts. Imatrix exclusions
 (ADR-0023) change no size and no damage — the solver only expands
 their patterns against the protected set and records the marked
-pairs in the recipe. Inputs are
+pairs in the recipe. A pair resolves only where its floor exceeds
+the final assignment, and the solver refuses an exclusion left with
+no surviving pair (issue #59). Inputs are
 validated at the API boundary: a negative ``format_overhead`` raises
 ``ValueError`` before any solving starts.
 
@@ -77,6 +79,7 @@ from quantfit.domain.protection import (
     expand_exclusions,
     expand_protections,
     protected_group_bytes,
+    refuse_dead_exclusions,
     resolve_protected,
 )
 from quantfit.domain.runtime import effective_bits, servable_precisions
@@ -439,8 +442,10 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
             set.
         ProtectionError: If a protection floor is unservable, a
             pattern matches no tensor or a single-tensor group, the
-            map lacks per-tensor sizes (ADR-0022), or an imatrix
-            exclusion misses the protected set (ADR-0023).
+            map lacks per-tensor sizes (ADR-0022), an imatrix
+            exclusion misses the protected set (ADR-0023), or every
+            pair an exclusion matches drops as a per-tensor no-op
+            (issue #59).
         InfeasibleBudgetError: If even minimum precision (pins and
             protections respected) exceeds the budget — the message
             counts the protected tensors that raised the floor.
@@ -514,13 +519,22 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
         size(g, pinned.get(g.name, candidates[-1])) for g in sensitivity_map.groups
     )
     if floor_total > weight_budget_bytes:
+        # Count only the floors that raise the minimum — a floor the
+        # minimum state already meets is a per-tensor no-op and holds
+        # nothing (issue #59).
+        group_of = {t: g.name for g in sensitivity_map.groups for t in g.tensors}
+        raised = sum(
+            1
+            for name, floor in floors.items()
+            if floor > pinned.get(group_of[name], candidates[-1])
+        )
         raise InfeasibleBudgetError(
             gap_bytes=floor_total - weight_budget_bytes,
             minimum_bytes=floor_total,
             weight_budget_bytes=weight_budget_bytes,
             runtime=runtime,
             dropped_precisions=dropped,
-            protected_count=len(floors),
+            protected_count=raised,
         )
 
     trace: list[TraceStep] = []
@@ -549,6 +563,12 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
     total = _refine_last_step(
         sensitivity_map, trace, state, total, weight_budget_bytes, candidates, size
     )
+    # Resolved pairs, not raw floors — a pair exists only where the
+    # floor exceeds the final assignment (ADR-0022, issue #59). An
+    # exclusion whose every pair dropped refuses here: the state it
+    # rides on is only known after solving.
+    protected_pairs = resolve_protected(sensitivity_map, state, floors, excluded)
+    refuse_dead_exclusions(imatrix_exclusions, protected_pairs)
     assignments = tuple(
         Assignment(
             group=g.name,
@@ -580,7 +600,5 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
         # frame that does not match them.
         within_group=sensitivity_map.scan.within_group,
         imatrix=sensitivity_map.scan.imatrix,
-        # Resolved pairs, not raw floors — pack must never demote a
-        # tensor whose group assignment exceeds the floor (ADR-0022).
-        protected_tensors=resolve_protected(sensitivity_map, state, floors, excluded),
+        protected_tensors=protected_pairs,
     )

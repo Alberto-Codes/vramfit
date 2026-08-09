@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import ClassVar
+
 import pytest
 
 from quantfit.domain.model import LayerGroup, ProtectedTensor, ScanMeta, SensitivityMap
@@ -7,9 +9,11 @@ from quantfit.domain.protection import (
     ProtectionError,
     expand_exclusions,
     expand_protections,
+    noop_protected_tensors,
     noop_protection_patterns,
     overreaching_exclusion_patterns,
     protected_group_bytes,
+    refuse_dead_exclusions,
     resolve_protected,
 )
 
@@ -153,7 +157,25 @@ class TestProtectedGroupBytes:
 
 @pytest.mark.unit
 class TestResolveProtected:
-    def test_resolved_bits_are_max_of_assignment_and_floor(self) -> None:
+    def test_floor_above_assignment_resolves_at_floor(self) -> None:
+        map_ = make_layer_map()
+        floors = {
+            "model.layers.0.self_attn.v_proj.weight": 5,
+            "model.layers.1.self_attn.v_proj.weight": 5,
+        }
+        state = {"model.layers.0": 3, "model.layers.1": 4, "model.embed_tokens": 8}
+
+        resolved = resolve_protected(map_, state, floors)
+
+        assert resolved == (
+            ProtectedTensor("model.layers.0.self_attn.v_proj.weight", 5),
+            ProtectedTensor("model.layers.1.self_attn.v_proj.weight", 5),
+        )
+
+    def test_floor_at_or_below_assignment_drops_the_pair(self) -> None:
+        # A no-op pair would quantize identically in both packs, and
+        # the reconstruction check's strict inequality would read the
+        # tie as a collapse (issue #59).
         map_ = make_layer_map()
         floors = {
             "model.layers.0.self_attn.v_proj.weight": 5,
@@ -165,8 +187,22 @@ class TestResolveProtected:
 
         assert resolved == (
             ProtectedTensor("model.layers.0.self_attn.v_proj.weight", 5),
-            ProtectedTensor("model.layers.1.self_attn.v_proj.weight", 8),
         )
+
+    def test_floor_equal_to_assignment_drops_the_pair(self) -> None:
+        map_ = make_layer_map()
+        floors = {"model.layers.0.self_attn.v_proj.weight": 4}
+        state = {"model.layers.0": 4, "model.layers.1": 4, "model.embed_tokens": 8}
+
+        assert resolve_protected(map_, state, floors) == ()
+
+    def test_dropped_pair_takes_its_exclusion_with_it(self) -> None:
+        map_ = make_layer_map()
+        floors = {"model.layers.1.self_attn.v_proj.weight": 5}
+        state = {"model.layers.0": 3, "model.layers.1": 8, "model.embed_tokens": 8}
+        excluded = frozenset({"model.layers.1.self_attn.v_proj.weight"})
+
+        assert resolve_protected(map_, state, floors, excluded) == ()
 
     def test_excluded_tensor_carries_the_mark(self) -> None:
         map_ = make_layer_map()
@@ -185,6 +221,68 @@ class TestResolveProtected:
             ),
             ProtectedTensor("model.layers.1.self_attn.v_proj.weight", 5),
         )
+
+
+@pytest.mark.unit
+class TestNoopProtectedTensors:
+    PROTECTIONS: ClassVar[dict[str, int]] = {"*.self_attn.v_proj.weight": 5}
+
+    def make_floors(self) -> dict[str, int]:
+        return expand_protections(self.PROTECTIONS, make_layer_map(), runtime=None)
+
+    def test_partial_noop_glob_names_only_the_noop_tensor(self) -> None:
+        # The glob lifts layer 0's floor and no-ops on layer 1 — the
+        # partial case the per-pattern warning cannot see (issue #59).
+        map_ = make_layer_map()
+        state = {"model.layers.0": 3, "model.layers.1": 8, "model.embed_tokens": 8}
+
+        named = noop_protected_tensors(
+            self.PROTECTIONS, map_, state, self.make_floors()
+        )
+
+        assert named == ("model.layers.1.self_attn.v_proj.weight",)
+
+    def test_fully_dead_rule_tensors_stay_out(self) -> None:
+        # noop_protection_patterns already warns for the dead rule —
+        # naming its tensors again would repeat the warning.
+        map_ = make_layer_map()
+        state = {"model.layers.0": 5, "model.layers.1": 8, "model.embed_tokens": 8}
+
+        named = noop_protected_tensors(
+            self.PROTECTIONS, map_, state, self.make_floors()
+        )
+
+        assert named == ()
+
+    def test_named_tensors_complement_the_resolved_pairs(self) -> None:
+        map_ = make_layer_map()
+        floors = self.make_floors()
+        state = {"model.layers.0": 3, "model.layers.1": 8, "model.embed_tokens": 8}
+
+        resolved = {p.tensor for p in resolve_protected(map_, state, floors)}
+        dropped = set(noop_protected_tensors(self.PROTECTIONS, map_, state, floors))
+
+        assert resolved | dropped == set(floors)
+        assert resolved & dropped == set()
+
+
+@pytest.mark.unit
+class TestRefuseDeadExclusions:
+    def test_pattern_with_a_surviving_pair_passes(self) -> None:
+        pairs = (ProtectedTensor("model.layers.0.self_attn.v_proj.weight", 5),)
+
+        refuse_dead_exclusions(("model.layers.0.*",), pairs)
+
+    def test_pattern_whose_every_pair_dropped_rejected(self) -> None:
+        # The pack would keep the imatrix rows the user asked to drop
+        # — a warning would silently change the packed bytes.
+        pairs = (ProtectedTensor("model.layers.0.self_attn.v_proj.weight", 5),)
+
+        with pytest.raises(ProtectionError, match="per-tensor no-op"):
+            refuse_dead_exclusions(("model.layers.1.*",), pairs)
+
+    def test_no_exclusions_pass_with_no_pairs(self) -> None:
+        refuse_dead_exclusions((), ())
 
 
 @pytest.mark.unit

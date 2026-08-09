@@ -259,9 +259,12 @@ class TestProtectionProperties:
         assert protected.plan.predicted_total_bytes >= bare.plan.predicted_total_bytes
 
     @given(drawn=raw_protected_maps(), overhead=overheads, data=st.data())
-    def test_resolved_pairs_are_max_of_assignment_and_floor(
+    def test_resolved_pairs_exist_exactly_where_floor_exceeds_assignment(
         self, drawn, overhead, data
     ) -> None:
+        # A pair at the group's own assignment would pack identically
+        # to the unprotected reference and falsely fail the
+        # reconstruction gate's strict inequality (issue #59).
         raw, floor = drawn
         map_ = map_from_dict(raw)
         _, ceiling = bounds(raw, overhead)
@@ -271,8 +274,10 @@ class TestProtectionProperties:
 
         recipe = solve_simple(map_, budget, overhead, protections=protections)
 
-        bits_by_group = {a.group: a.bits for a in recipe.assignments}
-        assert len(recipe.protected_tensors) == len(recipe.assignments)
-        for pair in recipe.protected_tensors:
-            group = pair.tensor.rsplit(".", 1)[0]
-            assert pair.bits == max(bits_by_group[group], floor)
+        resolved = {p.tensor: p.bits for p in recipe.protected_tensors}
+        for assignment in recipe.assignments:
+            tensor = f"{assignment.group}.t0"
+            if floor > assignment.bits:
+                assert resolved[tensor] == floor
+            else:
+                assert tensor not in resolved
