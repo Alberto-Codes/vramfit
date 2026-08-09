@@ -54,7 +54,10 @@ status: draft
 > uncovered a knife-edge spike (chunk 137) the 347/502 watch
 > had missed in G1c itself
 > ([the fifteenth data point](#the-fifteenth-data-point-the-pipeline-packs-its-own-winner)).
-> Tier 3 has not run. The publication gates that consume
+> Tier 3 has not run, and its slice is now fixed
+> ([ADR-0024](../adr/0024-tier3-task-slice.md)), with results due to
+> ship as an evals sidecar ([ADR-0025](../adr/0025-evals-sidecar.md)).
+> The publication gates that consume
 > these evaluations live in [the artifact ecosystem](artifact-ecosystem.md)
 > and issue #11.
 
@@ -125,7 +128,9 @@ that matters: quantfit's packed model versus the size-matched
 heuristic GGUF ([ADR-0010](../adr/0010-sub-4-bit-serving-path.md)
 names IQ3-class baselines for the 49B). A small, fixed slice of tasks,
 reported honestly with the noise acknowledged, beats a sprawling suite
-nobody re-runs.
+nobody re-runs. The slice is fixed in
+[ADR-0024](../adr/0024-tier3-task-slice.md), and the results ship as
+an evals sidecar ([ADR-0025](../adr/0025-evals-sidecar.md)).
 
 ## The first data point
 
@@ -1542,7 +1547,8 @@ For publication number one (a Qwen-class packed model, per
 
 1. Tier 1 and tier 2 on every candidate, against the same-size
    heuristic GGUF.
-2. A fixed tier-3 slice on the winner only.
+2. The fixed tier-3 slice ([ADR-0024](../adr/0024-tier3-task-slice.md))
+   on the winner only.
 3. Every number on the card next to its baseline counterpart, with
    the losing numbers included if any lose.
 
@@ -1551,8 +1557,14 @@ compute.
 
 ## Open questions
 
-- Which lm-evaluation-harness tasks form the fixed slice, and at what
-  few-shot settings.
+- ~~Which lm-evaluation-harness tasks form the fixed slice, and at what
+  few-shot settings.~~ **Decided (2026-08-09,
+  [ADR-0024](../adr/0024-tier3-task-slice.md)): five tasks at
+  leaderboard settings.** MMLU 5-shot, GSM8K 5-shot, HellaSwag
+  10-shot, Winogrande 5-shot, ARC-Challenge 25-shot — full
+  evaluation splits, and deltas inside the combined standard error
+  report as ties. The harness lane on the reference box is that record's
+  first open question.
 - ~~Whether tier 2 uses the scan's calibration set, WikiText-2, or
   both — same-set confirms the additivity story, held-out text guards
   against calibration overfit.~~ **Measured (the ninth data point):
@@ -1560,8 +1572,14 @@ compute.
   calibration affinity (the baseline scored below f16), and in-set
   KLD ranked the artifacts the same as wiki — same-set adds noise,
   not signal.
-- Whether evaluation results become a versioned artifact of their own
-  (an "evals" sidecar) or stay embedded in the model card.
+- ~~Whether evaluation results become a versioned artifact of their own
+  (an "evals" sidecar) or stay embedded in the model card.~~
+  **Decided (2026-08-09,
+  [ADR-0025](../adr/0025-evals-sidecar.md)): a versioned evals
+  sidecar.** One JSON document per evaluated artifact carries all
+  three tiers with their settings and toolchain versions, and
+  model-card numbers trace to it. The schema shape is that
+  record's open item — no code yet.
 - ~~Which window rules when the two disagree. The twelfth data point's
   G1 wins the 100-chunk KLD window and loses the 564-chunk PPL
   window against the same baseline — and the unstable chunks sit
