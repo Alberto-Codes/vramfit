@@ -135,8 +135,10 @@ def expand_exclusions(
     An imatrix exclusion rides a protection (ADR-0023): only a
     protected tensor can drop its imatrix row, because the known fit
     collapses live in promotions under an imatrix. A pattern that
-    reaches outside the protected set is a mistake and refuses
-    loudly.
+    matches no protected tensor refuses loudly. A pattern that
+    matches both sides expands to its protected matches only — the
+    caller warns about the rest through
+    `overreaching_exclusion_patterns`.
 
     Args:
         exclusions: Exclusion patterns, in rule order.
