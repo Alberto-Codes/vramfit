@@ -2,6 +2,10 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-09
+- **Note (2026-08-09):** the lane spike ran, and both candidate
+  lanes failed. The recorded lane is an in-process third path —
+  see the first open question. The first slice runs launched the
+  same day: candidate first, baseline chained after it.
 
 ## Context
 
@@ -103,14 +107,37 @@ quant-evaluation corpus.
 
 ## Open questions
 
-- Which harness lane drives the packed GGUF on the reference box.
+- ~~Which harness lane drives the packed GGUF on the reference box.
   The loglikelihood tasks need prompt logprobs. Candidates:
   `local-completions` against llama-server (`echo` plus
   `logprobs`), or the harness's `gguf` backend through
   llama-cpp-python. The first tier-3 run decides and records the
-  lane.
+  lane.~~ **Decided (2026-08-09): in-process llama-cpp-python with
+  the b10172 Vulkan build injected.** Both named candidates failed
+  the spike. llama-server returns no prompt logprobs, and upstream
+  rejects `echo` ("Only no echo is supported"). The stock `gguf`
+  backend scores correctly but spends 64 s per request in a
+  per-token Python sort over the 131k vocab — MMLU alone would
+  cost ~2 months. The recorded lane: lm-evaluation-harness 0.4.12
+  drives an in-process model class over llama-cpp-python 0.3.34,
+  with `LLAMA_CPP_LIB_PATH` pointing at the b10172 Vulkan
+  libraries. That is the build behind every tier-1 and tier-2
+  number. The class reads continuation logprobs from the logits
+  buffer with vectorized numpy and reuses the KV prefix across
+  requests. Cross-checks against the stock backend: identical
+  aggregate scores on eight ARC items at a fixed seed, identical
+  greedy flags, and a 150× speedup (13.6 s against 34 min). The
+  driver lives beside the run artifacts
+  (`eval/tier3/llamacpp_lm.py`, `eval/tier3/run_tier3.py`) in the
+  `lm-eval-venv` side venv. ADR-0005 keeps the harness out of the
+  project env.
 - Measured hours per task on the reference box. The estimates
   above are projections from tier-1 throughput, not measurements.
+  **Note (2026-08-09):** the first runs record wall-clock per task
+  (`eval/tier3/*/<task>.json`). Spike measurements: ARC-Challenge
+  25-shot scores at 3.7 requests/s, GSM8K decodes at ~5 s per
+  item. Projection for the full slice: 9–12 h per artifact. The
+  measured hours land with the results.
 - Whether instruct-tuned targets also get a chat-template variant
   of the slice. The fixed slice runs harness-default prompts. The
   packed-versus-baseline delta is the claim, and absolute scores
