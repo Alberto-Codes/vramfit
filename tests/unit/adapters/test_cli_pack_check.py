@@ -241,6 +241,33 @@ class TestReconstructionGate:
         assert result.exit_code == 0, result.output
         assert "exclusions change nothing" in result.output
 
+    def test_protections_with_zero_pairs_skips_with_a_note(
+        self, tmp_path, monkeypatch, llama_cpp_dir, imatrix_path
+    ) -> None:
+        # Every floor was a per-tensor no-op at plan time (issue #59):
+        # the record survives, no pair does, and the silence would
+        # read as a gated pack.
+        model_dir = tmp_path / "model"
+        model_dir.mkdir(exist_ok=True)
+        recipe = make_protected_recipe(str(model_dir))
+        recipe = replace(recipe, protected_tensors=())
+        recipe_path = tmp_path / "recipe.json"
+        save_recipe(recipe, recipe_path)
+        fake = MemoryRecipePacker(
+            packed_bytes=WEIGHT_BUDGET - 100, imatrix=str(imatrix_path)
+        )
+        monkeypatch.setattr(cli_pack, "_build_packer", lambda *args: fake)
+        out = tmp_path / "packed.gguf"
+
+        result = invoke_pack(
+            recipe_path, llama_cpp_dir, out, "--imatrix", str(imatrix_path)
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "resolved no pairs" in result.output
+        assert "reconstruction_checked" not in events_of(out)
+        assert len(fake.packed) == 1
+
     def test_protected_pack_without_imatrix_skips_with_a_note(
         self, tmp_path, monkeypatch, llama_cpp_dir
     ) -> None:

@@ -61,6 +61,8 @@ quantfit plan SENSITIVITY_MAP
   --pin TEXT             Pin groups to a precision, repeatable (glob=bits)
   --protect TEXT         Hold tensors at a precision floor inside
                          their groups, repeatable (glob=bits)
+  --exclude-imatrix TEXT Quantize matched protected tensors without
+                         their imatrix rows, repeatable (glob)
   --out PATH             Output recipe  [default: recipe.json]
   --runtime TEXT         Target runtime the recipe is planned for
                          [default: llama.cpp]
@@ -95,11 +97,18 @@ that matches no tensor, a protection on a single-tensor group (use
 map without per-tensor sizes. A rule whose floor every matched
 group's assignment already meets draws a no-op warning. The recipe
 records the rules verbatim and the resolved (tensor, precision)
-pairs.
+pairs. A pair exists only where the floor exceeds the group's
+assignment (issue #59). A matched tensor whose assignment already
+meets the floor draws a per-tensor warning, and the recipe drops
+that pair — it would quantize identically to the unprotected
+reference and falsely fail the reconstruction check. A dropped
+pair's `--exclude-imatrix` mark drops with it, and the warning says
+so. An `--exclude-imatrix` pattern left with no surviving pair is
+rejected — the pack would keep the imatrix rows the pattern names.
 
 Exit codes: 1 when the map is invalid, the output is unwritable, no
-recipe fits the budget (the gap is reported), or a `--protect` rule is
-rejected. Exit 2 on malformed options (`--pin` or `--protect` not of
+recipe fits the budget (the gap is reported), or a `--protect` or
+`--exclude-imatrix` rule is rejected. Exit 2 on malformed options (`--pin` or `--protect` not of
 the form `pattern=bits` with positive bits, unparseable sizes, a
 negative, NaN, or infinite `--format-overhead`, or a `--runtime`
 outside the capability table).
@@ -319,10 +328,13 @@ reference, dequantizes every protected tensor from both files with
 gguf-py, and compares each against the f16 base. The reference file
 is deleted after measurement. A tensor that does not reconstruct
 strictly closer to f16 than its unprotected type is collapsed — the
-command names it, keeps the file, and exits 1. The revision is the
-user's: exclude the named tensors from `--protect` and re-plan. A
+command names it, keeps the file, and exits 1. The remedy is the
+user's: re-plan with `--exclude-imatrix` for the named tensors
+(ADR-0023) — the refusal prints the exact flags. A
 protected pack without `--imatrix` skips the check with a note —
-every known fit collapse involved a promotion under one. With
+every known fit collapse involved a promotion under one. A recipe
+that records protections but resolved no pairs also skips with a
+note: every floor was a per-tensor no-op at plan time (issue #59). With
 `--smoke-text` the command
 then runs the smoke test: `--smoke-chunks` perplexity chunks through
 `build/bin/llama-perplexity`, gated by the `--smoke-threshold`
