@@ -39,7 +39,7 @@ counted; on large-vocab models they are gigabytes, not a rounding error.
 Per token, across the whole stack:
 
 ```
-kv_bytes_per_token = 2 × n_layers × n_kv_heads × head_dim × bytes_per_elem
+kv_bytes_per_token = 2 × n_attention_layers × n_kv_heads × head_dim × bytes_per_elem
 ```
 
 (2 = keys + values.) Multiply by context length × concurrent sequences.

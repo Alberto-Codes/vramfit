@@ -105,6 +105,8 @@ reference and falsely fail the reconstruction check. A dropped
 pair's `--exclude-imatrix` mark drops with it, and the warning says
 so. An `--exclude-imatrix` pattern left with no surviving pair is
 rejected — the pack would keep the imatrix rows the pattern names.
+A glob that also matches unprotected tensors draws a warning naming
+what it did not cover — their imatrix rows stay (ADR-0023).
 
 Exit codes: 1 when the map is invalid, the output is unwritable, no
 recipe fits the budget (the gap is reported), or a `--protect` or
@@ -269,7 +271,9 @@ the model's, or the measurement fails. Exit 2 on a malformed
 `--group-by`, `--within-group`, or `--gpu-memory`, a `--gpu-memory`
 without `--device auto`, an `--imatrix` without the kquant method or
 naming a missing file, a frame that contradicts the recipe's
-recorded method, or a missing `--runlog` directory.
+recorded method, a `--within-group kquant` that meets recipe
+assignments the ported quantizers do not cover, or a missing
+`--runlog` directory.
 
 ## `quantfit pack`
 
@@ -334,7 +338,14 @@ user's: re-plan with `--exclude-imatrix` for the named tensors
 protected pack without `--imatrix` skips the check with a note —
 every known fit collapse involved a promotion under one. A recipe
 that records protections but resolved no pairs also skips with a
-note: every floor was a per-tensor no-op at plan time (issue #59). With
+note: every floor was a per-tensor no-op at plan time (issue #59).
+
+A recipe with imatrix exclusions drives one `--exclude-weights`
+flag per marked pair when the pack runs with `--imatrix`
+([ADR-0023](../adr/0023-imatrix-exclusions.md)) — the excluded
+tensors keep their promoted types and quantize without their
+imatrix rows. Packing such a recipe without `--imatrix` warns that
+the exclusions change nothing. With
 `--smoke-text` the command
 then runs the smoke test: `--smoke-chunks` perplexity chunks through
 `build/bin/llama-perplexity`, gated by the `--smoke-threshold`
@@ -342,7 +353,7 @@ ceiling (ADR-0017). Without the flag the command warns that the
 packed model is unproven. Every run appends the pack events to the
 run log: pack_started, gguf_converted (with `reused`), model_packed
 (real bytes, base type, embedding and output tensor types, override
-count, imatrix, uncovered tensors), size_checked (margin and
+count, imatrix, uncovered tensors, excluded tensors), size_checked (margin and
 `fits`), reconstruction_checked when the gate ran (per-tensor
 protected and reference RMSE, `collapsed`, `passed`), smoke_tested
 when the smoke test ran (perplexity — null

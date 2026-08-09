@@ -64,7 +64,7 @@ Hexagonal, mechanically enforced by import-linter (ADR-0008):
 `adapters/inbound` (CLI, composition root) → `adapters/outbound` (JSON
 artifacts, HF configs, the torch scan meter, the GGUF pack toolchain) →
 `ports` (Protocols) → `domain` (pure — no
-json/pathlib/os/io/typer, enforced). The `quantfit_schema` envelope
+json/pathlib/os/io/typer/logging/structlog, enforced). The `quantfit_schema` envelope
 belongs to the JSON adapters, never to domain dataclasses. New external
 integrations (torch, llm-compressor, runtimes) are outbound adapters
 behind ports.

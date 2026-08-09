@@ -24,11 +24,13 @@ The pack step drives external tools — none ship with quantfit:
    ```bash
    git clone https://github.com/ggml-org/llama.cpp.git
    cmake -B llama.cpp/build llama.cpp -DCMAKE_BUILD_TYPE=Release
-   cmake --build llama.cpp/build -j --target llama-quantize llama-perplexity
+   cmake --build llama.cpp/build -j --target llama-quantize llama-perplexity llama-imatrix
    ```
 
    `llama-perplexity` runs the post-pack smoke test (ADR-0017) —
-   build it unless you plan to skip the smoke test.
+   build it unless you plan to skip the smoke test. `llama-imatrix`
+   generates the importance matrix used below — build it unless one
+   already exists for your model.
 
 2. A Python able to run `convert_hf_to_gguf.py`. The `pack` extra
    provisions it (torch, transformers, sentencepiece):
@@ -115,8 +117,14 @@ tensor from both files, and compares each against the f16 base. The
 reference file is deleted afterward. Budget one extra quantize run
 (5–17 minutes at 49B scale, thread-count dependent) and transient
 disk for a second full-size artifact beside `--out`. A collapsed tensor names itself in
-the output — exclude it from `--protect`, re-plan, and pack again.
-G1 needed exactly one such round (layers 1, 2, and 5).
+the output, and the refusal prints the exact remedy flags: re-plan
+with `--exclude-imatrix` for the named tensors — the tensor keeps
+its promotion and quantizes without its imatrix row
+([ADR-0023](../adr/0023-imatrix-exclusions.md)). Dropping the
+tensor from `--protect` is the fallback when the exclusion has
+already failed. G1 needed exactly one such round (layers 1, 2,
+and 5), and the fifteenth data point's pack cleared the gate
+all-green with four exclusions.
 
 ## Reading the result
 

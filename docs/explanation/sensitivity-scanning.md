@@ -5,8 +5,10 @@ status: draft
 # How sensitivity scanning works
 
 > **Status: draft** — the method below is implemented in the scan
-> adapter and has produced two full-size maps: Qwen2.5-3B (148 cells)
-> and the 49B north-star target (328 cells, offload-aware per
+> adapter and has produced full-size maps for Qwen2.5-3B (148
+> cells) and the 49B north-star target at 8k, 32k, and 64k tokens
+> plus kquant and imatrix-assisted variants (328 cells each,
+> offload-aware per
 > [ADR-0015](../adr/0015-offload-aware-scanning.md)). The open
 > questions at the bottom now carry measured partial answers.
 
@@ -39,13 +41,17 @@ can be jointly fragile.
 
 The mitigation is implemented as `quantfit validate`: replay the exact
 recipe in one pass and compare against the sum of marginal predictions.
-Four real measurements have come in, and both directions have
-appeared. Three were **sub-additive** — the safe direction: 2.05×
+Seven real measurements have come in, and both directions have
+appeared. Six were **sub-additive** — the safe direction: 2.05×
 over-prediction on Qwen2.5-3B (0.0322 measured vs 0.0661 predicted),
-2.94× and 1.6× on the 49B. One was **super-additive by 11.9×** on a
-2-bit-heavy 49B recipe — the dangerous direction, driven by which
-groups sat at 2-bit, and caught by this pass before packing
-([ADR-0006](../adr/0006-sensitivity-metric.md)).
+then 2.94×, 1.6×, 2.0×, 1.87×, and 4.87× on the 49B. One was
+**super-additive by 11.9×** on a 2-bit-heavy 49B recipe — the
+dangerous direction, driven by which groups sat at 2-bit, and
+caught by this pass before packing
+([ADR-0006](../adr/0006-sensitivity-metric.md)). Sub-additive
+validation also cleared three recipes that packed badly — the gate
+guards additivity, not the frame transfer
+([ADR-0021](../adr/0021-runtime-frame-measurement.md)).
 
 ## What "divergence" means here
 
@@ -68,7 +74,9 @@ groups sat at 2-bit, and caught by this pass before packing
    ([ADR-0006](../adr/0006-sensitivity-metric.md)): 8,192 tokens is
    not enough on the 49B — the 32,768-token re-scan moves median
    cell damage up to 4.5× and flips 41 of 82 planned assignments.
-   Whether 32,768 suffices needs a point beyond it. The
+   The 65,536-token point answered the follow-up: 32k is converged
+   for 3-bit and above (cell ratios 1.00–1.10), while 2-bit was
+   still rising ×1.29 (the sixth data point). The
    131,072-token default stands.
 3. **Quantization method within a group** — round-to-nearest is v1,
    and a method change is a new scan, not a new schema. The 49B loop
@@ -83,9 +91,14 @@ groups sat at 2-bit, and caught by this pass before packing
    the real K-quant round trip, RTN *over*-prices 2-bit cells
    2.0–3.9x and 3-bit cells up to 1.7x, per-cell. Its symmetric
    absmax grid spends three usable levels at 2-bit where `Q2_K`
-   fits four plus a minimum. Sub-4-bit recipes now price with the
-   kquant method
-   ([ADR-0019](../adr/0019-kquant-priced-maps.md), Proposed).
+   fits four plus a minimum. Kquant-priced and imatrix-assisted
+   maps then packed worse anyway — every in-frame refinement bought
+   more 2-bit breadth and lost. Sub-4-bit damage is now measured in
+   the runtime frame, and the solver refuses 2-bit without a
+   runtime-frame price
+   ([ADR-0021](../adr/0021-runtime-frame-measurement.md) supersedes
+   [ADR-0019](../adr/0019-kquant-priced-maps.md) and
+   [ADR-0020](../adr/0020-imatrix-assisted-pricing.md)).
 4. **Streaming** — the v1 meter relies on `device_map=auto` sharding,
    and groups offloaded to host RAM measure through accelerate's
    weights map (ADR-0015). Streaming one group at a time to the GPU

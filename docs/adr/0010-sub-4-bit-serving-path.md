@@ -17,6 +17,14 @@
   model at 2-bit: the validation pass measured it super-additive by
   11.9× on the 32,768-token map's recipe, and that recipe packed
   worse than the pilot map's in every cell of the 2×2.
+- **Note (2026-08-09):** the gate cleared. ADR-0021 banned unpriced
+  2-bit, ADR-0022/0023 added within-layer protections with imatrix
+  exclusions, and the fifteenth data point's end-to-end pack beat
+  the size-matched Q3_K_S baseline on full-window KL divergence at
+  7.8σ with the best nominal perplexity in the lane
+  ([evaluating packed models](../explanation/evaluating-packed-models.md)).
+  Decision 3's benchmark claim is achieved. Open question 3 (serving
+  overhead at 16k context) stays open.
 
 ## Context
 

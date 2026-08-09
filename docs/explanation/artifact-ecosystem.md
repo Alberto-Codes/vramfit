@@ -50,13 +50,17 @@ portable recipe with recorded provenance. quantfit's differentiated assets
    [ADR-0010](../adr/0010-sub-4-bit-serving-path.md)), with the
    validation pass checking our own additivity assumption on the way.
 
-The core experiment can still fail. The additivity worry has been
-measured four times and points both ways: three passes sub-additive
-(2.05×, 2.94×, 1.6×), one super-additive by 11.9× on a 2-bit-heavy
-recipe — caught before packing, which is the pass doing its job. The competitive worry is live:
-the first head-to-head went to the heuristic-plus-imatrix quant. If
-the gap does not close, the published measurement infrastructure and
-curves remain the durable contribution.
+The core experiment ran, and it closed. The additivity worry has
+been measured seven times and points both ways: six passes
+sub-additive (2.05×, 2.94×, 1.6×, 2.0×, 1.87×, 4.87×), one
+super-additive by 11.9× on a 2-bit-heavy recipe — caught before
+packing, which is the pass doing its job. The competitive worry
+resolved on 2026-08-09: after four losing head-to-heads mapped the
+gap (imatrix, 2-bit membership, frame transfer, granularity), the
+fifteenth data point's end-to-end pack beat the size-matched
+heuristic-plus-imatrix quant on full-window KL divergence at 7.8σ.
+The measurement infrastructure and curves remain the durable
+contribution either way.
 
 ## The thesis: make the artifact the standard, not the tool
 
@@ -125,16 +129,18 @@ Hard gates before any publication, with their 2026-07-29 status:
    it packed the 49B, 169.7 MiB under budget, first try.
 2. The whole-recipe validation pass exists — publishing a recipe whose
    additivity assumption was never checked is the exact sin the
-   project criticizes. **Satisfied** — `quantfit validate` has two
-   four measurements across both directions, including the
+   project criticizes. **Satisfied** — `quantfit validate` has seven
+   measurements across both directions, including the
    super-additive one that stopped a bad recipe before packing.
 3. The packed model measurably beats the size-matched heuristic GGUF,
    judged per [evaluating packed models](evaluating-packed-models.md).
    One bad debut kills a "measured beats folklore" brand permanently.
    If it loses, publish the negative result in the writeup instead of
-   the model. **This branch is live**: the 49B recipe lost to the
-   imatrix Q3_K_S, the negative result is published in the fourth
-   data point, and no model ships until the imatrix gap closes.
+   the model. **Satisfied on 2026-08-09**: after four published
+   losses mapped the gap, the fifteenth data point's pipeline pack
+   beats the imatrix Q3_K_S on full-window KL divergence at 7.8σ
+   with the best nominal perplexity in the lane. The remaining
+   publication gate is the task-eval tier.
 
 Conventions to settle at publication time: a `quantfit` HF tag, the
 budget in the repo name (e.g. `-fit24gib`), and which artifacts sit

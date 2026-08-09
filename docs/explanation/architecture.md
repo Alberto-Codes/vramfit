@@ -55,7 +55,7 @@ they are the strongest seams in the system
 ```mermaid
 flowchart TD
     subgraph inbound["adapters.inbound"]
-        CLI["cli / cli_scan / cli_validate /<br/>cli_pack (composition root)"]
+        CLI["cli / cli_scan / cli_validate /<br/>cli_pack + pack gate stages<br/>(composition root)"]
     end
     subgraph outbound["adapters.outbound"]
         JSONAD["artifact + checkpoint<br/>JSON files"]
@@ -64,10 +64,10 @@ flowchart TD
         GGUF["gguf/ pack toolchain<br/>(subprocess, no torch)"]
     end
     subgraph ports["ports"]
-        P["Protocols: SensitivityMapSource/Sink,<br/>RecipeSink, ModelShapeSource,<br/>DamageMeter, ScanCheckpointStore,<br/>RunLogSink, RecipePacker"]
+        P["Protocols: SensitivityMapSource/Sink,<br/>RecipeSink, ModelShapeSource,<br/>DamageMeter, ScanCheckpointStore,<br/>RunLogSink, RecipePacker,<br/>ReconstructionChecker, SmokeTester"]
     end
     subgraph domain["domain (pure)"]
-        D["model · budget · solver · scan"]
+        D["model · budget · solver · scan ·<br/>protection · pack · validation · runtime"]
     end
     CLI --> JSONAD
     CLI --> HF
@@ -88,10 +88,11 @@ The layer table (ADR-0008), top may import down, never up:
 | `adapters.inbound` | Typer CLI, the composition root and scan loop | everything below |
 | `adapters.outbound` | JSON artifacts, HF configs, the torch meter | ports, domain |
 | `ports` | `typing.Protocol` capabilities | domain |
-| `domain` | dataclasses, budget math, solver, scan logic | domain only |
+| `domain` | dataclasses, budget math, solver, protection rules, scan/pack/validation logic, runtime capability tables | domain only |
 
 Three import-linter contracts make this checked, not aspirational:
-layer order, domain purity (no `json`/`pathlib`/`os`/`io`/`typer`), and
+layer order, domain purity (no `json`/`pathlib`/`os`/`io`/`typer`/
+`logging`/`structlog`), and
 no heavy ML imports outside `adapters/outbound/scan/`.
 
 ## The scan loop: ports in motion

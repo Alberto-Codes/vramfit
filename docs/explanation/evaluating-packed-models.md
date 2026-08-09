@@ -30,6 +30,12 @@ status: draft
 > again** — eliminating super-block structure as the frame leak
 > and promoting the imatrix weighting to prime suspect
 > ([the eighth data point](#the-eighth-data-point-honest-prices-worse-artifact)).
+> The elimination ledger then closed on the scan side — eval set,
+> imatrix assistance — and banning 2-bit outright **tied the
+> baseline** (ninth through eleventh data points), before the
+> granularity probes opened a split decision: first in-budget KLD
+> win, PPL still behind
+> ([the twelfth data point](#the-twelfth-data-point-the-granularity-probes-and-a-split-decision)).
 > On 2026-08-08 the fit-collapse root cause fell — imatrix rows
 > with extreme column dynamic range, not flags or vintage — and
 > probe G1c **ended the split decision**: an outright 100-window KLD win, statistical
@@ -1341,6 +1347,8 @@ What remains on the baseline's side is a real half-point of
 second option: instead of dropping the protection, exclude the
 named tensor's imatrix row and keep the promotion — the pack
 path should learn to emit `--exclude-weights` (a new lane).
+*(Built: [ADR-0023](../adr/0023-imatrix-exclusions.md), exercised
+end-to-end by the fifteenth data point.)*
 The reconstruction check graduates from conservative gate to
 the instrument that found, diagnosed, and verified the fix for
 a 10× fit defect — without a single GPU eval until the final

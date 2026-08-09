@@ -50,7 +50,8 @@ time.
    field, string or null. `quantfit plan` always sets it
    (`--runtime`, default `llama.cpp`), so real artifacts always
    carry it. The recipe schema version bumps to 2 — a version-1
-   reader would silently drop the constraint. Schema versions now
+   reader would silently drop the constraint. (Since bumped to 3,
+   4, then 5 — ADR-0022, ADR-0023, issue #59.) Schema versions now
    advance per artifact: the sensitivity map stays at 1. The loader
    enforces the cross-field invariant for runtimes it knows: an
    assignment precision the recorded runtime cannot serve is a

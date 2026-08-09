@@ -59,11 +59,17 @@ change either between a crash and its resume.
 ## Pricing cells the way the pack quantizes
 
 The default within-group method is round-to-nearest — fast, and
-honest at 4 bits and above. A scan that will feed sub-4-bit
-assignments prices with the ported K-quant quantizers instead, per
-[ADR-0019](../adr/0019-kquant-priced-maps.md) (Proposed — the rule
-holds until packed evidence settles it). The method itself is
-[ADR-0018](../adr/0018-kquant-within-group-method.md):
+honest at 4 bits and above. Packed evidence settled the sub-4-bit
+rule the hard way: kquant-priced and imatrix-assisted maps each
+bought more 2-bit and packed worse
+([ADR-0021](../adr/0021-runtime-frame-measurement.md) supersedes
+[ADR-0019](../adr/0019-kquant-priced-maps.md) and
+[ADR-0020](../adr/0020-imatrix-assisted-pricing.md)). Sub-4-bit
+damage is measured in the runtime frame, and the solver does not
+buy 2-bit without a runtime-frame price — current practice plans
+on a map copy without the 2-bit column. The kquant method itself
+remains available
+([ADR-0018](../adr/0018-kquant-within-group-method.md)):
 
 ```bash
 uv run quantfit scan ./model --calibration calibration.txt \
@@ -73,8 +79,9 @@ uv run quantfit scan ./model --calibration calibration.txt \
 ```
 
 `--imatrix` adds the pack's importance matrix to the fit (assisted
-pricing, [ADR-0020](../adr/0020-imatrix-assisted-pricing.md), also
-Proposed).
+pricing, [ADR-0020](../adr/0020-imatrix-assisted-pricing.md),
+Superseded — the mechanics remain, the sub-4-bit licensing claim
+does not).
 Use the same file the pack step will consume — the map records the
 imatrix path, and the recipe carries it forward so the validation
 pass and the pack can hold the frame. The command echoes the
