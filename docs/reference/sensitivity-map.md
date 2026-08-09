@@ -65,7 +65,8 @@ The sensitivity map is the output of `quantfit scan` and the input to
   `--protect` rule on a group without them. The field is additive
   and informational, so the schema stays 1: the loader accepts an
   absent field as unknown, and a present field must cover exactly
-  the group's tensors with positive sizes. New scans record it. For
+  the group's tensors with positive sizes summing to
+  `bytes_fp16`. New scans record it. For
   older maps, `scripts/backfill_tensor_sizes.py` reads the
   checkpoint's safetensors headers — a JSON parse, no torch — and
   writes an annotated map copy.

@@ -140,10 +140,13 @@ gguf-py) caught it.
 - Damage accounting is honestly incomplete. The plan's predicted
   damage ignores protection benefit. The evidence page carries the
   benefit claim, measured per artifact, not the recipe.
-- The validation pass quantizes protected tensors at their
-  resolved precision, so its measured damage includes protection
-  benefit while the predicted sum does not. The gap moves in the
-  sub-additive direction — the safe one.
+- The validation pass ignores protections — `measure_recipe`
+  takes group-to-bits assignments only, so protected tensors
+  perturb at their group's assignment, not their floor.
+  *(Corrected 2026-08-09: this bullet originally claimed the pass
+  quantizes protected tensors at their resolved precision. The
+  code never did. Protection benefit is measured on the packed
+  artifact, per the evidence page, not in the validation pass.)*
 - The solver cannot trade a protection against a downgrade.
   Protections carry no damage price, so the user supplies the
   judgment, as with pins.

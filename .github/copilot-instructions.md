@@ -3,8 +3,8 @@
 quantfit measures per-layer quantization sensitivity of LLMs (`scan`),
 solves mixed-precision recipes under a VRAM budget (`plan`), measures
 whole-recipe damage against the prediction (`validate`), and packs GGUF
-models for llama.cpp (`pack`, ADR-0010/0012). All five commands plus
-`budget` are implemented. A vLLM pack backend for ≥4-bit recipes is
+models for llama.cpp (`pack`, ADR-0010/0012). All four pipeline commands plus
+`budget` and `version` are implemented. A vLLM pack backend for ≥4-bit recipes is
 planned.
 
 ## Project stances (do not flag these as issues)

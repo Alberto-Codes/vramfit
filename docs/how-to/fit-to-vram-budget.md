@@ -45,8 +45,12 @@ extremes before packing:
 
 - Groups pinned at high precision are where your budget went — sanity-check
   they match known-fragile structures (first/last blocks, attention).
-- Groups crushed to 2-bit are where quality risk concentrates — if one looks
-  load-bearing for your workload, pin it: `--pin "layers.0.*=8"`.
+- Since [ADR-0021](../adr/0021-runtime-frame-measurement.md) the
+  solver does not buy 2-bit without a runtime-frame price — current
+  practice plans on a map copy without the 2-bit column. If a group
+  still looks load-bearing for your workload, pin it:
+  `--pin "*.layers.0=8"` (patterns match the full group name,
+  `model.layers.0`).
 - When one tensor class inside otherwise-fine groups is the fragile
   part (the twelfth data point's `attn_v`), protect it instead of
   pinning whole groups:
