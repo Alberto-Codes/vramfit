@@ -300,7 +300,8 @@ def noop_protected_tensors(
     on its 48th match is not a dead rule, yet its 48th pair would
     falsely fail the reconstruction gate. Tensors a fully dead rule
     governs stay out — `noop_protection_patterns` already warns for
-    those, and a second warning per tensor would only repeat it.
+    those, and a second warning per tensor would only repeat it. One
+    `_governing_patterns` scan serves both checks.
 
     Args:
         protections: The verbatim pattern-to-floor rules.
@@ -311,8 +312,10 @@ def noop_protected_tensors(
     Returns:
         The dropped tensor names the CLI warns for, in map order.
     """
-    dead = frozenset(noop_protection_patterns(protections, map_, state, floors))
     governed_by = _governing_patterns(protections, floors)
+    dead = frozenset(
+        noop_protection_patterns(protections, map_, state, floors, governed_by)
+    )
     return tuple(
         name
         for group in map_.groups
@@ -386,6 +389,7 @@ def noop_protection_patterns(
     map_: SensitivityMap,
     state: Mapping[str, int],
     floors: Mapping[str, int],
+    governed_by: Mapping[str, str] | None = None,
 ) -> tuple[str, ...]:
     """Name the protection patterns that changed nothing.
 
@@ -403,6 +407,9 @@ def noop_protection_patterns(
         state: Final assigned precision per group name.
         floors: The expanded per-tensor floors (later patterns
             already override earlier ones).
+        governed_by: Precomputed `_governing_patterns` result, so a
+            caller that already holds one avoids a second
+            pattern-by-tensor scan. None computes it here.
 
     Returns:
         The no-op patterns, in rule order.
@@ -410,7 +417,8 @@ def noop_protection_patterns(
     group_of: dict[str, str] = {
         tensor: group.name for group in map_.groups for tensor in group.tensors
     }
-    governed_by = _governing_patterns(protections, floors)
+    if governed_by is None:
+        governed_by = _governing_patterns(protections, floors)
     noop: list[str] = []
     for pattern, floor in protections.items():
         governed = [name for name, p in governed_by.items() if p == pattern]
