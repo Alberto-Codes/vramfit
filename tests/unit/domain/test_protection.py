@@ -7,6 +7,7 @@ from quantfit.domain.protection import (
     ProtectionError,
     expand_exclusions,
     expand_protections,
+    noop_protected_tensors,
     noop_protection_patterns,
     overreaching_exclusion_patterns,
     protected_group_bytes,
@@ -153,7 +154,25 @@ class TestProtectedGroupBytes:
 
 @pytest.mark.unit
 class TestResolveProtected:
-    def test_resolved_bits_are_max_of_assignment_and_floor(self) -> None:
+    def test_floor_above_assignment_resolves_at_floor(self) -> None:
+        map_ = make_layer_map()
+        floors = {
+            "model.layers.0.self_attn.v_proj.weight": 5,
+            "model.layers.1.self_attn.v_proj.weight": 5,
+        }
+        state = {"model.layers.0": 3, "model.layers.1": 4, "model.embed_tokens": 8}
+
+        resolved = resolve_protected(map_, state, floors)
+
+        assert resolved == (
+            ProtectedTensor("model.layers.0.self_attn.v_proj.weight", 5),
+            ProtectedTensor("model.layers.1.self_attn.v_proj.weight", 5),
+        )
+
+    def test_floor_at_or_below_assignment_drops_the_pair(self) -> None:
+        # A no-op pair would quantize identically in both packs, and
+        # the reconstruction check's strict inequality would read the
+        # tie as a collapse (issue #59).
         map_ = make_layer_map()
         floors = {
             "model.layers.0.self_attn.v_proj.weight": 5,
@@ -165,8 +184,22 @@ class TestResolveProtected:
 
         assert resolved == (
             ProtectedTensor("model.layers.0.self_attn.v_proj.weight", 5),
-            ProtectedTensor("model.layers.1.self_attn.v_proj.weight", 8),
         )
+
+    def test_floor_equal_to_assignment_drops_the_pair(self) -> None:
+        map_ = make_layer_map()
+        floors = {"model.layers.0.self_attn.v_proj.weight": 4}
+        state = {"model.layers.0": 4, "model.layers.1": 4, "model.embed_tokens": 8}
+
+        assert resolve_protected(map_, state, floors) == ()
+
+    def test_dropped_pair_takes_its_exclusion_with_it(self) -> None:
+        map_ = make_layer_map()
+        floors = {"model.layers.1.self_attn.v_proj.weight": 5}
+        state = {"model.layers.0": 3, "model.layers.1": 8, "model.embed_tokens": 8}
+        excluded = frozenset({"model.layers.1.self_attn.v_proj.weight"})
+
+        assert resolve_protected(map_, state, floors, excluded) == ()
 
     def test_excluded_tensor_carries_the_mark(self) -> None:
         map_ = make_layer_map()
@@ -185,6 +218,48 @@ class TestResolveProtected:
             ),
             ProtectedTensor("model.layers.1.self_attn.v_proj.weight", 5),
         )
+
+
+@pytest.mark.unit
+class TestNoopProtectedTensors:
+    def test_floor_at_or_below_assignment_is_named_in_map_order(self) -> None:
+        map_ = make_layer_map()
+        floors = {
+            "model.layers.0.self_attn.v_proj.weight": 5,
+            "model.layers.1.self_attn.v_proj.weight": 5,
+        }
+        state = {"model.layers.0": 5, "model.layers.1": 8, "model.embed_tokens": 8}
+
+        assert noop_protected_tensors(map_, state, floors) == (
+            "model.layers.0.self_attn.v_proj.weight",
+            "model.layers.1.self_attn.v_proj.weight",
+        )
+
+    def test_effective_floor_is_not_named(self) -> None:
+        map_ = make_layer_map()
+        floors = {
+            "model.layers.0.self_attn.v_proj.weight": 5,
+            "model.layers.1.self_attn.v_proj.weight": 5,
+        }
+        state = {"model.layers.0": 3, "model.layers.1": 8, "model.embed_tokens": 8}
+
+        assert noop_protected_tensors(map_, state, floors) == (
+            "model.layers.1.self_attn.v_proj.weight",
+        )
+
+    def test_named_tensors_complement_the_resolved_pairs(self) -> None:
+        map_ = make_layer_map()
+        floors = {
+            "model.layers.0.self_attn.v_proj.weight": 5,
+            "model.layers.1.self_attn.v_proj.weight": 5,
+        }
+        state = {"model.layers.0": 3, "model.layers.1": 8, "model.embed_tokens": 8}
+
+        resolved = {p.tensor for p in resolve_protected(map_, state, floors)}
+        dropped = set(noop_protected_tensors(map_, state, floors))
+
+        assert resolved | dropped == set(floors)
+        assert resolved & dropped == set()
 
 
 @pytest.mark.unit

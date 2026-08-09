@@ -1399,8 +1399,9 @@ pair quantizes identically in both packs: equal RMSE, verdict
 collapsed, on a perfectly healthy tensor. The plan-time no-op
 warning is per-pattern, and a pattern that lifts 47 real floors
 does not warn about its 48th silent match. Enumerating the
-layers avoided it — this page flags the gap so the gate can
-learn to skip pairs the floor never moved (issue #59).
+layers avoided it. Issue #59 closed the trap for the next
+author: `resolve_protected` now drops a pair the floor never
+moved, and the CLI warns per tensor.
 
 **The pack, gated.** `pack --imatrix` emitted `--pure`, the
 per-group `--tensor-type` overrides, and the four

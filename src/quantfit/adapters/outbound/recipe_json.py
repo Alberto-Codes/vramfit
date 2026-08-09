@@ -88,12 +88,14 @@ def recipe_from_dict(data: object) -> Recipe:
     null — recipes written before the fields existed do not record
     their map's method (ADR-0019) or imatrix (ADR-0020). A present
     ``imatrix`` must pair with the assisted method token.
-    ``protected_tensors`` and ``plan.protections`` are required and
-    must agree about whether the recipe is protected — a known
-    runtime must also serve every protected precision (ADR-0022).
+    ``protected_tensors`` and ``plan.protections`` are required.
+    Resolved pairs need a protection record, and a known runtime
+    must serve every protected precision (ADR-0022). A record with
+    zero pairs is legal — every floor can be a per-tensor no-op.
     Each protected pair carries a required ``exclude_imatrix`` mark,
-    and ``plan.imatrix_exclusions`` must agree with the marks about
-    whether the recipe excludes imatrix rows (ADR-0023).
+    and a mark needs a ``plan.imatrix_exclusions`` record — a
+    recorded exclusion with zero marks is legal, its pair dropped as
+    a no-op (ADR-0023).
 
     Raises:
         ArtifactError: If any field is missing, mistyped, or violates a
@@ -197,16 +199,17 @@ def recipe_from_dict(data: object) -> Recipe:
         seen_tensors.add(pair.tensor)
         protected.append(pair)
     _require(
-        bool(plan.protections) == bool(protected),
+        not protected or bool(plan.protections),
         "$.protected_tensors",
-        "plan.protections and protected_tensors must both be empty or both "
-        "be present (ADR-0022)",
+        "protected_tensors requires plan.protections — resolved pairs "
+        "cannot exist without the rules that made them (ADR-0022)",
     )
     _require(
-        bool(plan.imatrix_exclusions) == any(p.exclude_imatrix for p in protected),
+        not any(p.exclude_imatrix for p in protected) or bool(plan.imatrix_exclusions),
         "$.plan.imatrix_exclusions",
-        "plan.imatrix_exclusions and the exclude_imatrix marks must both be "
-        "empty or both be present (ADR-0023)",
+        "exclude_imatrix marks require plan.imatrix_exclusions — an "
+        "excluded pair cannot exist without the pattern that excluded it "
+        "(ADR-0023)",
     )
     return Recipe(
         model_id=model_id,

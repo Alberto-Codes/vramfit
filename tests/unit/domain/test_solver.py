@@ -550,9 +550,10 @@ class TestSolveWithProtections:
     def test_recipe_records_patterns_and_resolved_pairs(self) -> None:
         map_ = make_protected_map()
 
+        # 600 forces both groups to 4-bit, below the floor of 5.
         recipe = solve_simple(
             map_,
-            budget=10_000,
+            budget=600,
             protections={"*.self_attn.v_proj.weight": 5},
             format_overhead=0.0,
         )
@@ -562,15 +563,32 @@ class TestSolveWithProtections:
             "model.layers.0.self_attn.v_proj.weight",
             "model.layers.1.self_attn.v_proj.weight",
         ]
-        # Budget fits at 8-bit, and 8 exceeds the floor of 5.
-        assert all(p.bits == 8 for p in recipe.protected_tensors)
+        assert all(p.bits == 5 for p in recipe.protected_tensors)
 
-    def test_imatrix_exclusions_reach_the_recipe(self) -> None:
+    def test_noop_floor_resolves_to_no_pairs(self) -> None:
+        # Budget fits at 8-bit, above the floor of 5 — every pair
+        # would pack identically to the unprotected reference and
+        # falsely fail the reconstruction gate (issue #59). The
+        # verbatim rule stays as provenance.
         map_ = make_protected_map()
 
         recipe = solve_simple(
             map_,
             budget=10_000,
+            protections={"*.self_attn.v_proj.weight": 5},
+            format_overhead=0.0,
+        )
+
+        assert dict(recipe.plan.protections) == {"*.self_attn.v_proj.weight": 5}
+        assert recipe.protected_tensors == ()
+
+    def test_imatrix_exclusions_reach_the_recipe(self) -> None:
+        map_ = make_protected_map()
+
+        # 600 forces both groups to 4-bit, so the floor of 5 holds.
+        recipe = solve_simple(
+            map_,
+            budget=600,
             protections={"*.self_attn.v_proj.weight": 5},
             imatrix_exclusions=("model.layers.0.*",),
             format_overhead=0.0,

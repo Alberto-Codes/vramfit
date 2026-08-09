@@ -13,7 +13,8 @@ unservable floor, a no-match pattern, a protection on a single-tensor
 group, a map without tensor sizes, and an exclusion that matches no
 protected tensor each raise `ProtectionError`
 before any solving starts. Nothing about a protection is silent —
-the no-op case (`noop_protection_patterns`) and the overreaching
+the dead rule (`noop_protection_patterns`), the dropped per-tensor
+no-op pair (`noop_protected_tensors`), and the overreaching
 exclusion glob (`overreaching_exclusion_patterns`) surface as CLI
 warnings after solving.
 
@@ -251,6 +252,14 @@ def resolve_protected(
 ) -> tuple[ProtectedTensor, ...]:
     """Record the resolved (tensor, precision) pairs for the recipe.
 
+    A pair exists only where the floor exceeds the group's
+    assignment. A floor the assignment already meets is a per-tensor
+    no-op: its pair would quantize identically in the protected pack
+    and the unprotected reference, and the reconstruction check's
+    strict inequality would read the tie as a collapse (ADR-0022).
+    `noop_protected_tensors` names the dropped tensors for the CLI
+    warning.
+
     Args:
         map_: The sensitivity map, fixing tensor order.
         state: Final assigned precision per group name.
@@ -259,19 +268,49 @@ def resolve_protected(
             imatrix rows (ADR-0023).
 
     Returns:
-        One `ProtectedTensor` per protected tensor, in map order,
-        each at the higher of its group's assignment and its floor,
-        marked ``exclude_imatrix`` when excluded.
+        One `ProtectedTensor` per effective protection, in map
+        order, each at its floor, marked ``exclude_imatrix`` when
+        excluded. A dropped no-op pair takes its imatrix exclusion
+        with it — the exclusion rides the protection (ADR-0023).
     """
     return tuple(
         ProtectedTensor(
             tensor=name,
-            bits=max(state[group.name], floors[name]),
+            bits=floors[name],
             exclude_imatrix=name in excluded,
         )
         for group in map_.groups
         for name in group.tensors
-        if name in floors
+        if name in floors and floors[name] > state[group.name]
+    )
+
+
+def noop_protected_tensors(
+    map_: SensitivityMap,
+    state: Mapping[str, int],
+    floors: Mapping[str, int],
+) -> tuple[str, ...]:
+    """Name the protected tensors whose floor changed nothing.
+
+    `resolve_protected` drops these pairs from the recipe. The
+    per-pattern warning cannot see them: a glob that lifts 47 real
+    floors and no-ops on its 48th match is not a dead rule, yet its
+    48th pair would falsely fail the reconstruction gate. The CLI
+    warns per tensor with this record (ADR-0022).
+
+    Args:
+        map_: The sensitivity map, fixing tensor order.
+        state: Final assigned precision per group name.
+        floors: Protection floor per tensor name.
+
+    Returns:
+        The dropped tensor names, in map order.
+    """
+    return tuple(
+        name
+        for group in map_.groups
+        for name in group.tensors
+        if name in floors and floors[name] <= state[group.name]
     )
 
 

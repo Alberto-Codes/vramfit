@@ -303,12 +303,15 @@ class TestProtections:
         with pytest.raises(ArtifactError, match="protected_tensors"):
             recipe_from_dict(raw)
 
-    def test_patterns_without_resolved_pairs_rejected(self) -> None:
+    def test_patterns_without_resolved_pairs_load(self) -> None:
+        # Legal since issue #59: a rule whose every floor is a
+        # per-tensor no-op resolves to zero pairs.
         raw = make_recipe_dict()
         raw["plan"]["protections"] = {"*.v_proj.weight": 5}
 
-        with pytest.raises(ArtifactError, match="both"):
-            recipe_from_dict(raw)
+        recipe = recipe_from_dict(raw)
+
+        assert recipe.protected_tensors == ()
 
     def test_duplicate_protected_tensor_rejected(self) -> None:
         raw = self.make_protected_dict()
@@ -384,18 +387,21 @@ class TestImatrixExclusions:
         with pytest.raises(ArtifactError, match="boolean"):
             recipe_from_dict(raw)
 
-    def test_patterns_without_marks_rejected(self) -> None:
+    def test_patterns_without_marks_load(self) -> None:
+        # Legal since issue #59: an exclusion drops with its no-op
+        # pair, and the recorded pattern stays as provenance.
         raw = self.make_excluded_dict()
         raw["protected_tensors"][0]["exclude_imatrix"] = False
 
-        with pytest.raises(ArtifactError, match="both"):
-            recipe_from_dict(raw)
+        recipe = recipe_from_dict(raw)
+
+        assert not any(p.exclude_imatrix for p in recipe.protected_tensors)
 
     def test_marks_without_patterns_rejected(self) -> None:
         raw = self.make_excluded_dict()
         raw["plan"]["imatrix_exclusions"] = []
 
-        with pytest.raises(ArtifactError, match="both"):
+        with pytest.raises(ArtifactError, match="require"):
             recipe_from_dict(raw)
 
     def test_empty_exclusion_pattern_rejected(self) -> None:

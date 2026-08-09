@@ -196,12 +196,15 @@ class TestRecipeProtectionInvariants:
                 (ProtectedTensor("t", 5), ProtectedTensor("t", 6)),
             )
 
-    def test_protections_without_resolved_pairs_rejected(self) -> None:
-        with pytest.raises(ValueError, match="both"):
-            self.make_protected_recipe({"*.v_proj.weight": 5}, ())
+    def test_protections_without_resolved_pairs_construct(self) -> None:
+        # Legal since issue #59: a rule whose every floor is a
+        # per-tensor no-op resolves to zero pairs.
+        recipe = self.make_protected_recipe({"*.v_proj.weight": 5}, ())
+
+        assert recipe.protected_tensors == ()
 
     def test_resolved_pairs_without_protections_rejected(self) -> None:
-        with pytest.raises(ValueError, match="both"):
+        with pytest.raises(ValueError, match=r"requires plan\.protections"):
             self.make_protected_recipe({}, (ProtectedTensor("t", 5),))
 
     def test_exclusion_patterns_with_marked_pair_construct(self) -> None:
@@ -213,13 +216,16 @@ class TestRecipeProtectionInvariants:
 
         assert recipe.protected_tensors[0].exclude_imatrix is True
 
-    def test_exclusion_patterns_without_marks_rejected(self) -> None:
-        with pytest.raises(ValueError, match="exclusion"):
-            self.make_protected_recipe(
-                {"*.v_proj.weight": 5},
-                (ProtectedTensor("t", 5),),
-                imatrix_exclusions=("t",),
-            )
+    def test_exclusion_patterns_without_marks_construct(self) -> None:
+        # Legal since issue #59: an exclusion drops with its no-op
+        # pair, and the recorded pattern stays as provenance.
+        recipe = self.make_protected_recipe(
+            {"*.v_proj.weight": 5},
+            (ProtectedTensor("t", 5),),
+            imatrix_exclusions=("t",),
+        )
+
+        assert recipe.plan.imatrix_exclusions == ("t",)
 
     def test_marks_without_exclusion_patterns_rejected(self) -> None:
         with pytest.raises(ValueError, match="exclusion"):

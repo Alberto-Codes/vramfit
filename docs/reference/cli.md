@@ -95,7 +95,13 @@ that matches no tensor, a protection on a single-tensor group (use
 map without per-tensor sizes. A rule whose floor every matched
 group's assignment already meets draws a no-op warning. The recipe
 records the rules verbatim and the resolved (tensor, precision)
-pairs.
+pairs. A pair exists only where the floor exceeds the group's
+assignment (issue #59). A matched tensor whose assignment already
+meets the floor draws a per-tensor warning, and the recipe drops
+that pair — it would quantize identically to the unprotected
+reference and falsely fail the reconstruction check. A dropped
+pair's `--exclude-imatrix` mark drops with it, and the warning says
+so.
 
 Exit codes: 1 when the map is invalid, the output is unwritable, no
 recipe fits the budget (the gap is reported), or a `--protect` rule is

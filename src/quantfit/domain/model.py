@@ -275,11 +275,12 @@ class SensitivityMap:
 class ProtectedTensor:
     """One resolved protection: a tensor and the precision it packs at.
 
-    The resolved side of a ``--protect`` rule (ADR-0022): the higher
-    of the tensor's group assignment and its protection floor. Pack
-    drives these pairs, never the raw floors — emitting resolved
-    precisions keeps a protection from demoting a tensor whose group
-    assignment exceeds the floor.
+    The resolved side of a ``--protect`` rule (ADR-0022): the
+    protection floor, recorded only where it exceeds the tensor's
+    group assignment. Pack drives these pairs, never the raw floors.
+    A floor the assignment already meets resolves to no pair — that
+    pair would quantize identically to the unprotected reference and
+    falsely fail the reconstruction check.
 
     Attributes:
         tensor (str): The protected tensor's name, e.g.
@@ -515,11 +516,13 @@ class Recipe:
                 is an empty string — unknown provenance is None,
                 never "" — ``imatrix`` does not pair with the
                 assisted method token (ADR-0020), two protected
-                tensors share a name, the protection record and
-                the resolved pairs disagree about whether the recipe
-                is protected (ADR-0022), or the exclusion record and
-                the resolved ``exclude_imatrix`` marks disagree about
-                whether the recipe excludes imatrix rows (ADR-0023).
+                tensors share a name, resolved pairs exist without a
+                protection record (ADR-0022), or ``exclude_imatrix``
+                marks exist without an exclusion record (ADR-0023).
+                The reverse holes are legal: a recorded rule can
+                resolve to zero pairs when every floor is a
+                per-tensor no-op, and a recorded exclusion drops
+                with its no-op pair.
         """
         if self.within_group is not None and not self.within_group:
             raise ValueError("within_group must not be empty — use None for unknown")
@@ -543,16 +546,16 @@ class Recipe:
         protected = [p.tensor for p in self.protected_tensors]
         if len(set(protected)) != len(protected):
             raise ValueError("protected tensors must be unique")
-        if bool(self.plan.protections) != bool(self.protected_tensors):
+        if self.protected_tensors and not self.plan.protections:
             raise ValueError(
-                "plan.protections and protected_tensors must both be empty "
-                "or both be present — a protection always resolves to at "
-                "least one tensor (ADR-0022)"
+                "protected_tensors requires plan.protections — resolved "
+                "pairs cannot exist without the rules that made them "
+                "(ADR-0022)"
             )
         excluded = any(p.exclude_imatrix for p in self.protected_tensors)
-        if bool(self.plan.imatrix_exclusions) != excluded:
+        if excluded and not self.plan.imatrix_exclusions:
             raise ValueError(
-                "plan.imatrix_exclusions and the exclude_imatrix marks must "
-                "both be empty or both be present — an exclusion always "
-                "resolves to at least one protected tensor (ADR-0023)"
+                "exclude_imatrix marks require plan.imatrix_exclusions — "
+                "an excluded pair cannot exist without the pattern that "
+                "excluded it (ADR-0023)"
             )

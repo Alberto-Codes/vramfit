@@ -16,10 +16,10 @@ Malformed options — including a NaN or infinite overhead — are
 usage errors, rejected before any work starts. ``plan`` records
 its ``--runtime`` in the recipe and reports what the runtime
 filter drops (ADR-0013), its ``--protect`` rules resolve to
-per-tensor floors with a no-op warning when a rule changes nothing
-(ADR-0022), and its ``--exclude-imatrix`` globs mark protected
-tensors with a warning when a glob overreaches the protected set
-(ADR-0023). ``--format-overhead`` defaults per size
+per-tensor floors with a warning for a dead rule and for each
+dropped no-op pair (ADR-0022, issue #59), and its
+``--exclude-imatrix`` globs mark protected tensors with a warning
+when a glob overreaches the protected set (ADR-0023). ``--format-overhead`` defaults per size
 model (ADR-0014): the residual when the runtime has an
 effective-bits table, the scalar otherwise.
 
@@ -61,8 +61,11 @@ from quantfit.domain.budget import (
     parse_size,
 )
 from quantfit.domain.errors import QuantfitError
+from quantfit.domain.model import SensitivityMap
 from quantfit.domain.protection import (
+    expand_exclusions,
     expand_protections,
+    noop_protected_tensors,
     noop_protection_patterns,
     overreaching_exclusion_patterns,
 )
@@ -256,6 +259,58 @@ def _parse_rules(raw_rules: list[str] | None, option: str) -> dict[str, int]:
     return rules
 
 
+def _warn_protection_gaps(
+    protections: dict[str, int],
+    exclusions: tuple[str, ...],
+    map_: SensitivityMap,
+    state: dict[str, int],
+    runtime: str,
+) -> None:
+    """Warn about protection input that changed nothing.
+
+    A protection that changed nothing must not read as protection
+    applied (ADR-0022), and an exclusion glob that reaches outside
+    the protected set must not read as full coverage (ADR-0023).
+    The solver already validated the rules, so re-expansion here
+    cannot fail.
+
+    Args:
+        protections: The verbatim pattern-to-floor rules.
+        exclusions: The verbatim ``--exclude-imatrix`` patterns.
+        map_: The solved sensitivity map.
+        state: Final assigned precision per group name.
+        runtime: The target runtime the floors were validated for.
+    """
+    floors = expand_protections(protections, map_, runtime)
+    for pattern in noop_protection_patterns(protections, map_, state, floors):
+        typer.echo(
+            f'warning: --protect "{pattern}={protections[pattern]}" is a '
+            "no-op — every tensor it governs already meets the floor, "
+            "or a later rule overrides it",
+            err=True,
+        )
+    group_of = {t: g.name for g in map_.groups for t in g.tensors}
+    excluded = expand_exclusions(exclusions, floors, map_)
+    for name in noop_protected_tensors(map_, state, floors):
+        group = group_of[name]
+        message = (
+            f'warning: protection floor {floors[name]} on "{name}" is a '
+            f'per-tensor no-op — group "{group}" already packs at '
+            f"{state[group]}-bit. The recipe drops the pair."
+        )
+        if name in excluded:
+            message += " Its imatrix exclusion drops with it (ADR-0023)."
+        typer.echo(message, err=True)
+    overreach = overreaching_exclusion_patterns(exclusions, floors, map_)
+    for pattern, outside in overreach.items():
+        typer.echo(
+            f'warning: --exclude-imatrix "{pattern}" also matches '
+            f'{len(outside)} unprotected tensors (first: "{outside[0]}") '
+            "— their imatrix rows stay (ADR-0023)",
+            err=True,
+        )
+
+
 @app.command()
 def plan(
     sensitivity_map: Annotated[
@@ -316,11 +371,12 @@ def plan(
     details, including the infeasibility gap.
 
     A ``--protect`` rule holds the matched tensors at a precision
-    floor inside their groups (ADR-0022): each protected tensor
-    packs at the higher of its group's assignment and the floor,
-    priced by size only. A rule that changes nothing — the floor
-    already met, or a later rule overriding every tensor it
-    matched — draws a warning, never silence.
+    floor inside their groups (ADR-0022), priced by size only. A
+    pair reaches the recipe only where the floor exceeds the
+    group's assignment. A rule or a matched tensor that changes
+    nothing draws a warning, never silence — the recipe drops a
+    no-op pair, which would otherwise falsely fail the
+    reconstruction check (issue #59).
 
     An ``--exclude-imatrix`` glob marks matched protected tensors to
     quantize without their imatrix rows (ADR-0023) — the remedy when
@@ -405,29 +461,9 @@ def plan(
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
-    # A protection that changed nothing must not read as protection
-    # applied (ADR-0022), and an exclusion glob that reaches outside
-    # the protected set must not read as full coverage (ADR-0023).
-    # The solver already validated the rules, so re-expansion here
-    # cannot fail.
     if protections:
         state = {a.group: a.bits for a in recipe.assignments}
-        floors = expand_protections(protections, map_, runtime)
-        for pattern in noop_protection_patterns(protections, map_, state, floors):
-            typer.echo(
-                f'warning: --protect "{pattern}={protections[pattern]}" is a '
-                "no-op — every tensor it governs already meets the floor, "
-                "or a later rule overrides it",
-                err=True,
-            )
-        overreach = overreaching_exclusion_patterns(exclusions, floors, map_)
-        for pattern, outside in overreach.items():
-            typer.echo(
-                f'warning: --exclude-imatrix "{pattern}" also matches '
-                f'{len(outside)} unprotected tensors (first: "{outside[0]}") '
-                "— their imatrix rows stay (ADR-0023)",
-                err=True,
-            )
+        _warn_protection_gaps(protections, exclusions, map_, state, runtime)
 
     sink: RecipeSink = JsonRecipeFile(out)
     try:
