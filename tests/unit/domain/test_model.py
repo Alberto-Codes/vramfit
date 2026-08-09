@@ -158,6 +158,7 @@ class TestRecipeProtectionInvariants:
         self,
         protections: dict[str, int],
         protected_tensors: tuple[ProtectedTensor, ...],
+        imatrix_exclusions: tuple[str, ...] = (),
     ) -> Recipe:
         return Recipe(
             model_id="test/model",
@@ -172,6 +173,7 @@ class TestRecipeProtectionInvariants:
                 protections=protections,
                 format_overhead=0.05,
                 trace=(),
+                imatrix_exclusions=imatrix_exclusions,
             ),
             assignments=(Assignment(group="g0", bits=4, bytes=40, damage=0.1),),
             runtime=None,
@@ -201,3 +203,30 @@ class TestRecipeProtectionInvariants:
     def test_resolved_pairs_without_protections_rejected(self) -> None:
         with pytest.raises(ValueError, match="both"):
             self.make_protected_recipe({}, (ProtectedTensor("t", 5),))
+
+    def test_exclusion_patterns_with_marked_pair_construct(self) -> None:
+        recipe = self.make_protected_recipe(
+            {"*.v_proj.weight": 5},
+            (ProtectedTensor("t", 5, exclude_imatrix=True),),
+            imatrix_exclusions=("t",),
+        )
+
+        assert recipe.protected_tensors[0].exclude_imatrix is True
+
+    def test_exclusion_patterns_without_marks_rejected(self) -> None:
+        with pytest.raises(ValueError, match="exclusion"):
+            self.make_protected_recipe(
+                {"*.v_proj.weight": 5},
+                (ProtectedTensor("t", 5),),
+                imatrix_exclusions=("t",),
+            )
+
+    def test_marks_without_exclusion_patterns_rejected(self) -> None:
+        with pytest.raises(ValueError, match="exclusion"):
+            self.make_protected_recipe(
+                {"*.v_proj.weight": 5},
+                (ProtectedTensor("t", 5, exclude_imatrix=True),),
+            )
+
+    def test_exclude_imatrix_defaults_to_false(self) -> None:
+        assert ProtectedTensor("t", 5).exclude_imatrix is False

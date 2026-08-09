@@ -273,6 +273,14 @@ def plan(
             '"glob=bits". Repeatable (ADR-0022).'
         ),
     ] = None,
+    exclude_imatrix: Annotated[
+        list[str] | None,
+        typer.Option(
+            help="Quantize matched protected tensors without their imatrix "
+            'rows: "glob". Repeatable (ADR-0023). The fit-collapse remedy '
+            "that keeps the promotion."
+        ),
+    ] = None,
     out: Annotated[Path, typer.Option(help="Output recipe path.")] = Path(
         "recipe.json"
     ),
@@ -311,6 +319,11 @@ def plan(
     already met, or a later rule overriding every tensor it
     matched — draws a warning, never silence.
 
+    An ``--exclude-imatrix`` glob marks matched protected tensors to
+    quantize without their imatrix rows (ADR-0023) — the remedy when
+    the reconstruction check names a collapsed tensor. The pattern
+    must land inside the protected set: the solver refuses a miss.
+
     Raises:
         typer.BadParameter: If a ``--pin`` or ``--protect`` is not of
             the form ``pattern=bits`` with positive bits, a size
@@ -342,6 +355,7 @@ def plan(
         )
     pins = _parse_rules(pin, "--pin")
     protections = _parse_rules(protect, "--protect")
+    exclusions = tuple(dict.fromkeys(exclude_imatrix or []))
 
     vram_bytes = _parse_size_option(vram, "--vram")
     headroom_bytes = _parse_size_option(kv_headroom, "--kv-headroom")
@@ -376,6 +390,7 @@ def plan(
             kv_headroom_bytes=headroom_bytes,
             pins=pins,
             protections=protections,
+            imatrix_exclusions=exclusions,
             format_overhead=format_overhead,
             runtime=runtime,
         )
@@ -410,6 +425,9 @@ def plan(
         if recipe.protected_tensors
         else ""
     )
+    excluded_count = sum(1 for p in recipe.protected_tensors if p.exclude_imatrix)
+    if excluded_count:
+        protected_note += f" ({excluded_count} imatrix-excluded)"
     typer.echo(
         f"planned {len(recipe.assignments)} groups for {runtime}: "
         f"{format_size(recipe.plan.predicted_total_bytes)} of "

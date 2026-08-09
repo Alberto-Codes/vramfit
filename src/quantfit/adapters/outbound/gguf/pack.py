@@ -13,7 +13,9 @@ layer group, plus dedicated embedding and output-head flags. With an
 importance matrix (ADR-0016) the adapter also scans the quantizer's
 zero-exit output for tensors the matrix did not cover — the
 quantizer only warns, and a silently unassisted tensor must not
-pass unrecorded. Every failure — a tool that cannot start, exits
+pass unrecorded. The recipe's imatrix exclusions become
+``--exclude-weights`` flags, and their intentional misses stay out
+of that coverage record (ADR-0023). Every failure — a tool that cannot start, exits
 nonzero, dies to a signal, or leaves no usable file — translates to
 `PackError` at this boundary (ADR-0011), carrying the tool's last
 output lines.
@@ -51,6 +53,7 @@ from quantfit.adapters.outbound.gguf.types import (
     PackError,
     base_type,
     check_runtime,
+    imatrix_exclusion_names,
     output_tensor_type,
     protection_overrides,
     tensor_overrides,
@@ -144,7 +147,11 @@ class LlamaCppPacker:
         resolved pairs become the leading overrides (ADR-0022). A configured importance
         matrix reaches the quantizer as ``--imatrix``, lands in the
         result's provenance, and the quantizer's output is scanned
-        for tensors the matrix did not cover (ADR-0016).
+        for tensors the matrix did not cover (ADR-0016). The
+        recipe's imatrix exclusions become ``--exclude-weights``
+        flags (ADR-0023) — the quantizer drops those rows, so the
+        coverage scan discounts them as intentional. Without an
+        imatrix the exclusions are no-ops and stay unemitted.
 
         Args:
             recipe: The recipe to apply.
@@ -171,9 +178,12 @@ class LlamaCppPacker:
         # the first matching pattern, so a protected tensor must match
         # its own pattern before its group's.
         overrides = protection_overrides(recipe) + tensor_overrides(recipe)
+        excluded = imatrix_exclusion_names(recipe) if self.imatrix is not None else ()
         command = [str(self.quantize_bin), "--pure"]
         if self.imatrix is not None:
             command += ["--imatrix", str(self.imatrix)]
+        for name in excluded:
+            command += ["--exclude-weights", name]
         if embedding is not None:
             command += ["--token-embedding-type", embedding]
         if output is not None:
@@ -184,8 +194,15 @@ class LlamaCppPacker:
             command += ["--tensor-type", f"{override.pattern}={override.quant_type}"]
         command += [str(self.base_gguf), str(self.out_path), base, str(self.threads)]
         quantize_output = run_tool(command, stage="quantize")
+        # An excluded tensor's row is gone from the loaded matrix, so
+        # the quantizer reports it as a miss — an intentional one,
+        # recorded in imatrix_excluded instead (ADR-0023).
         uncovered = (
-            tuple(dict.fromkeys(_IMATRIX_MISS.findall(quantize_output)))
+            tuple(
+                name
+                for name in dict.fromkeys(_IMATRIX_MISS.findall(quantize_output))
+                if name not in excluded
+            )
             if self.imatrix is not None
             else ()
         )
@@ -197,4 +214,5 @@ class LlamaCppPacker:
             overrides=overrides,
             imatrix_path=None if self.imatrix is None else str(self.imatrix),
             imatrix_uncovered=uncovered,
+            imatrix_excluded=excluded,
         )

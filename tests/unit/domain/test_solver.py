@@ -565,6 +565,39 @@ class TestSolveWithProtections:
         # Budget fits at 8-bit, and 8 exceeds the floor of 5.
         assert all(p.bits == 8 for p in recipe.protected_tensors)
 
+    def test_imatrix_exclusions_reach_the_recipe(self) -> None:
+        map_ = make_protected_map()
+
+        recipe = solve_simple(
+            map_,
+            budget=10_000,
+            protections={"*.self_attn.v_proj.weight": 5},
+            imatrix_exclusions=("model.layers.0.*",),
+            format_overhead=0.0,
+        )
+
+        assert recipe.plan.imatrix_exclusions == ("model.layers.0.*",)
+        marks = {p.tensor: p.exclude_imatrix for p in recipe.protected_tensors}
+        assert marks["model.layers.0.self_attn.v_proj.weight"] is True
+        assert marks["model.layers.1.self_attn.v_proj.weight"] is False
+
+    def test_exclusion_does_not_change_size_or_damage(self) -> None:
+        map_ = make_protected_map(layers=1)
+        kwargs = {
+            "budget": 300,
+            "protections": {"*.self_attn.v_proj.weight": 5},
+            "format_overhead": 0.0,
+        }
+
+        plain = solve_simple(map_, **kwargs)
+        excluded = solve_simple(
+            map_, imatrix_exclusions=("model.layers.0.*",), **kwargs
+        )
+
+        assert excluded.assignments == plain.assignments
+        assert excluded.plan.predicted_total_bytes == plain.plan.predicted_total_bytes
+        assert excluded.plan.predicted_damage == plain.plan.predicted_damage
+
     def test_protected_tensor_holds_floor_through_a_downgrade(self) -> None:
         map_ = make_protected_map(layers=1)
 

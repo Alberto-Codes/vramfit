@@ -5,7 +5,9 @@ Every extractor takes a JSON path string so validation errors read like
 ``$.groups[3].sensitivity: key "4x" is not an integer precision``.
 Numeric extractors reject booleans (JSON ``true`` is a valid Python int)
 and non-finite floats (``json.loads`` accepts ``NaN``/``Infinity``, which
-would poison solver comparisons downstream). Schema versions advance
+would poison solver comparisons downstream). The boolean extractor
+accepts only real booleans, and the string extractors reject the
+empty string. Schema versions advance
 per artifact (ADR-0013) — each adapter owns its version constant and
 passes it to `_check_schema_version`.
 
@@ -139,6 +141,44 @@ def _get_str(obj: dict[str, Any], key: str, path: str) -> str:
     value = obj[key]
     _require(isinstance(value, str), f"{path}.{key}", "expected a string")
     _require(value != "", f"{path}.{key}", "must not be empty")
+    return value
+
+
+def _as_str(value: Any, path: str) -> str:
+    """Return ``value`` as a non-empty string.
+
+    Args:
+        value: Candidate value.
+        path: JSON path for error reporting.
+
+    Returns:
+        The string value.
+
+    Raises:
+        ArtifactError: If the value is not a string, or empty.
+    """
+    _require(isinstance(value, str), path, "expected a string")
+    _require(value != "", path, "must not be empty")
+    return value
+
+
+def _get_bool(obj: dict[str, Any], key: str, path: str) -> bool:
+    """Return the boolean stored at ``key``.
+
+    Args:
+        obj: Parent JSON object.
+        key: Key to read.
+        path: JSON path of the parent for error reporting.
+
+    Returns:
+        The boolean value.
+
+    Raises:
+        ArtifactError: If the key is missing or not a boolean.
+    """
+    _require(key in obj, path, f'missing required field "{key}"')
+    value = obj[key]
+    _require(isinstance(value, bool), f"{path}.{key}", "expected a boolean")
     return value
 
 

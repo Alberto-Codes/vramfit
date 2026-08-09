@@ -1,8 +1,8 @@
 """JSON file adapter for the recipe artifact.
 
 Owns (de)serialization and validation of the recipe schema, including
-the ``quantfit_schema`` envelope (version 3 since recipes record
-their protections, ADR-0022). A known runtime must serve every
+the ``quantfit_schema`` envelope (version 4 since recipes record
+their imatrix exclusions, ADR-0023). A known runtime must serve every
 assigned and protected precision — an unknown runtime name loads
 untouched.
 Mirrors the strict reject-don't-normalize stance of the
@@ -39,7 +39,9 @@ from typing import Any, Final
 
 from quantfit.adapters.outbound.json_common import (
     _as_int,
+    _as_str,
     _check_schema_version,
+    _get_bool,
     _get_dict,
     _get_float,
     _get_int,
@@ -60,11 +62,12 @@ from quantfit.domain.runtime import RUNTIME_CAPABILITIES
 from quantfit.domain.scan import KQUANT_IMX_METHOD
 
 # The recipe schema version. Bumped to 2 when recipes gained the
-# required (nullable) ``runtime`` field (ADR-0013), and to 3 when
-# they gained protections (ADR-0022) — a version-2 reader that
-# dropped the protections record would silently pack a different
-# artifact than the recipe intends.
-RECIPE_SCHEMA_VERSION: Final[int] = 3
+# required (nullable) ``runtime`` field (ADR-0013), to 3 when
+# they gained protections (ADR-0022), and to 4 when they gained
+# imatrix exclusions (ADR-0023) — a reader that dropped either
+# record would silently pack a different artifact than the recipe
+# intends.
+RECIPE_SCHEMA_VERSION: Final[int] = 4
 
 
 def recipe_from_dict(data: object) -> Recipe:
@@ -88,6 +91,9 @@ def recipe_from_dict(data: object) -> Recipe:
     ``protected_tensors`` and ``plan.protections`` are required and
     must agree about whether the recipe is protected — a known
     runtime must also serve every protected precision (ADR-0022).
+    Each protected pair carries a required ``exclude_imatrix`` mark,
+    and ``plan.imatrix_exclusions`` must agree with the marks about
+    whether the recipe excludes imatrix rows (ADR-0023).
 
     Raises:
         ArtifactError: If any field is missing, mistyped, or violates a
@@ -172,7 +178,11 @@ def recipe_from_dict(data: object) -> Recipe:
         obj = _get_dict(raw, path)
         bits = _get_int(obj, "bits", path)
         _require(bits > 0, f"{path}.bits", "must be positive")
-        pair = ProtectedTensor(tensor=_get_str(obj, "tensor", path), bits=bits)
+        pair = ProtectedTensor(
+            tensor=_get_str(obj, "tensor", path),
+            bits=bits,
+            exclude_imatrix=_get_bool(obj, "exclude_imatrix", path),
+        )
         _require(
             pair.tensor not in seen_tensors,
             f"{path}.tensor",
@@ -192,6 +202,12 @@ def recipe_from_dict(data: object) -> Recipe:
         "plan.protections and protected_tensors must both be empty or both "
         "be present (ADR-0022)",
     )
+    _require(
+        bool(plan.imatrix_exclusions) == any(p.exclude_imatrix for p in protected),
+        "$.plan.imatrix_exclusions",
+        "plan.imatrix_exclusions and the exclude_imatrix marks must both be "
+        "empty or both be present (ADR-0023)",
+    )
     return Recipe(
         model_id=model_id,
         plan=plan,
@@ -210,7 +226,8 @@ def recipe_to_dict(recipe: Recipe) -> dict[str, Any]:
     unknown provenance serializes ``within_group`` and ``imatrix``
     as null. An unprotected recipe serializes ``plan.protections``
     as an empty object and ``protected_tensors`` as an empty list —
-    the fields are always present (ADR-0022).
+    the fields are always present (ADR-0022), as is
+    ``plan.imatrix_exclusions`` (ADR-0023).
 
     Args:
         recipe: The recipe to serialize.
@@ -235,6 +252,7 @@ def recipe_to_dict(recipe: Recipe) -> dict[str, Any]:
             "solver": plan.solver,
             "pins": dict(plan.pins),
             "protections": dict(plan.protections),
+            "imatrix_exclusions": list(plan.imatrix_exclusions),
             "format_overhead": plan.format_overhead,
             "trace": [
                 {
@@ -254,7 +272,8 @@ def recipe_to_dict(recipe: Recipe) -> dict[str, Any]:
             for a in recipe.assignments
         ],
         "protected_tensors": [
-            {"tensor": p.tensor, "bits": p.bits} for p in recipe.protected_tensors
+            {"tensor": p.tensor, "bits": p.bits, "exclude_imatrix": p.exclude_imatrix}
+            for p in recipe.protected_tensors
         ],
     }
 
@@ -322,7 +341,8 @@ def _parse_plan_meta(obj: dict[str, Any]) -> PlanMeta:
 
     Raises:
         ArtifactError: If a field is missing or invalid. All plan fields
-            are required — including ``protections`` (ADR-0022) — the
+            are required — including ``protections`` (ADR-0022) and
+            ``imatrix_exclusions`` (ADR-0023) — the
             writer always emits them, so a missing
             field means a truncated or hand-edited artifact.
     """
@@ -339,6 +359,11 @@ def _parse_plan_meta(obj: dict[str, Any]) -> PlanMeta:
         pattern: _as_int(floor, f"{path}.protections.{pattern}")
         for pattern, floor in protections_obj.items()
     }
+    exclusions_raw = _get_list(obj, "imatrix_exclusions", path)
+    exclusions = tuple(
+        _as_str(pattern, f"{path}.imatrix_exclusions[{i}]")
+        for i, pattern in enumerate(exclusions_raw)
+    )
     trace_raw = _get_list(obj, "trace", path)
     trace: list[TraceStep] = []
     for i, raw in enumerate(trace_raw):
@@ -366,4 +391,5 @@ def _parse_plan_meta(obj: dict[str, Any]) -> PlanMeta:
         protections=protections,
         format_overhead=_get_float(obj, "format_overhead", path),
         trace=tuple(trace),
+        imatrix_exclusions=exclusions,
     )

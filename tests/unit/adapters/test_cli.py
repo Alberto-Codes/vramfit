@@ -692,3 +692,53 @@ class TestPlanProtect:
 
         assert result.exit_code == 2
         assert "pattern=bits" in result.output
+
+    def test_exclude_imatrix_marks_the_matched_pair(self, tmp_path) -> None:
+        map_path = self._write_protected_map(tmp_path)
+        out = tmp_path / "recipe.json"
+
+        result = self._plan(
+            map_path,
+            out,
+            "--protect",
+            "*.self_attn.v_proj.weight=5",
+            "--pin",
+            "model.layers.0=3",
+            "--exclude-imatrix",
+            "model.layers.0.*",
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "(1 imatrix-excluded)" in result.output
+        recipe = load_recipe(out)
+        assert recipe.plan.imatrix_exclusions == ("model.layers.0.*",)
+        marks = {p.tensor: p.exclude_imatrix for p in recipe.protected_tensors}
+        assert marks["model.layers.0.self_attn.v_proj.weight"] is True
+        assert marks["model.layers.1.self_attn.v_proj.weight"] is False
+
+    def test_exclude_imatrix_without_protect_exits_one(self, tmp_path) -> None:
+        map_path = self._write_protected_map(tmp_path)
+
+        result = self._plan(
+            map_path, tmp_path / "r.json", "--exclude-imatrix", "model.layers.0.*"
+        )
+
+        assert result.exit_code == 1
+        assert "require protections" in result.output
+
+    def test_exclude_imatrix_matching_unprotected_tensor_exits_one(
+        self, tmp_path
+    ) -> None:
+        map_path = self._write_protected_map(tmp_path)
+
+        result = self._plan(
+            map_path,
+            tmp_path / "r.json",
+            "--protect",
+            "*.self_attn.v_proj.weight=5",
+            "--exclude-imatrix",
+            "*.mlp.down_proj.weight",
+        )
+
+        assert result.exit_code == 1
+        assert "only unprotected" in result.output

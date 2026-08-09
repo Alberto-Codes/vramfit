@@ -150,10 +150,11 @@ def _run_reconstruction(
     Packs the unprotected reference, measures every protected tensor
     against the f16 base in both files, deletes the reference file,
     and halts when any tensor is collapsed — the revision is the
-    user's: exclude the named tensors from the protection and
-    re-plan (ADR-0022). The event guards non-finite measurements —
-    the sink rejects NaN, and the halt record must survive
-    (ADR-0011).
+    user's, and the refusal prints both remedies: re-plan with the
+    exact ``--exclude-imatrix`` flags to keep the promotions
+    (ADR-0023), or drop the protections (ADR-0022). The event guards
+    non-finite measurements — the sink rejects NaN, and the halt
+    record must survive (ADR-0011).
 
     Args:
         run_log: Sink for the ``reconstruction_checked`` event.
@@ -229,10 +230,15 @@ def _run_reconstruction(
         )
     if collapsed:
         failed = ", ".join(hf_by_gguf[name] for name in collapsed)
+        flags = " ".join(
+            f'--exclude-imatrix "{hf_by_gguf[name]}"' for name in collapsed
+        )
         error = RuntimeError(
             f"fit collapse on {failed} — the protection makes these tensors "
-            f"reconstruct worse than their unprotected type. Exclude them "
-            f"from --protect and re-plan (ADR-0022). The file is kept at {out}"
+            f"reconstruct worse than their unprotected type. Re-plan with "
+            f"{flags} to keep the promotions on the unweighted fit "
+            f"(ADR-0023), or exclude them from --protect (ADR-0022). "
+            f"The file is kept at {out}"
         )
         raise _halt(run_log, "reconstruction", error)
     typer.echo("reconstruction check passed — no fit collapse")

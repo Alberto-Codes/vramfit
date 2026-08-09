@@ -1,12 +1,17 @@
 """Within-layer protections: expansion, validation, and size pricing.
 
-Implements ADR-0022. A protection is an ordered fnmatch pattern over
+Implements ADR-0022 and the imatrix-exclusion side of ADR-0023. A
+protection is an ordered fnmatch pattern over
 tensor names plus a protection floor. A protected tensor packs at the
-higher of its group's assignment and the floor. The solver prices a
+higher of its group's assignment and the floor. An imatrix exclusion
+is an fnmatch pattern over *protected* tensor names — a matched
+tensor keeps its promotion and quantizes without its imatrix row,
+the fit-collapse remedy. The solver prices a
 protection by size only — predicted damage stays the group-level sum,
 and no per-tensor damage is invented. Validation is total: an
 unservable floor, a no-match pattern, a protection on a single-tensor
-group, and a map without tensor sizes each raise `ProtectionError`
+group, a map without tensor sizes, and an exclusion that matches no
+protected tensor each raise `ProtectionError`
 before any solving starts. Nothing about a protection is silent —
 the no-op case (`noop_protection_patterns`) surfaces as a CLI
 warning after solving.
@@ -119,6 +124,54 @@ def expand_protections(
     return floors
 
 
+def expand_exclusions(
+    exclusions: tuple[str, ...],
+    floors: Mapping[str, int],
+    map_: SensitivityMap,
+) -> frozenset[str]:
+    """Resolve exclusion patterns to concrete protected tensor names.
+
+    An imatrix exclusion rides a protection (ADR-0023): only a
+    protected tensor can drop its imatrix row, because the known fit
+    collapses live in promotions under an imatrix. A pattern that
+    reaches outside the protected set is a mistake and refuses
+    loudly.
+
+    Args:
+        exclusions: Exclusion patterns, in rule order.
+        floors: The expanded per-tensor protection floors.
+        map_: The sensitivity map whose tensors diagnose a miss.
+
+    Returns:
+        The excluded protected tensor names.
+
+    Raises:
+        ProtectionError: If exclusions are given without protections,
+            a pattern matches no protected tensor, or a pattern
+            matches only unprotected tensors.
+    """
+    if exclusions and not floors:
+        raise ProtectionError(
+            "imatrix exclusions require protections — an exclusion keeps a "
+            "protected tensor's promotion and drops its imatrix row (ADR-0023)"
+        )
+    all_tensors = [name for group in map_.groups for name in group.tensors]
+    excluded: set[str] = set()
+    for pattern in exclusions:
+        matched = [name for name in floors if fnmatchcase(name, pattern)]
+        if not matched:
+            unprotected = [name for name in all_tensors if fnmatchcase(name, pattern)]
+            if unprotected:
+                raise ProtectionError(
+                    f'imatrix exclusion "{pattern}" matches only unprotected '
+                    f'tensors (first: "{unprotected[0]}") — protect them '
+                    "first, or narrow the pattern (ADR-0023)"
+                )
+            raise ProtectionError(f'imatrix exclusion "{pattern}" matches no tensor')
+        excluded.update(matched)
+    return frozenset(excluded)
+
+
 def protected_group_bytes(
     group: LayerGroup,
     bits: int,
@@ -156,6 +209,7 @@ def resolve_protected(
     map_: SensitivityMap,
     state: Mapping[str, int],
     floors: Mapping[str, int],
+    excluded: frozenset[str] = frozenset(),
 ) -> tuple[ProtectedTensor, ...]:
     """Record the resolved (tensor, precision) pairs for the recipe.
 
@@ -163,13 +217,20 @@ def resolve_protected(
         map_: The sensitivity map, fixing tensor order.
         state: Final assigned precision per group name.
         floors: Protection floor per tensor name.
+        excluded: Protected tensors that quantize without their
+            imatrix rows (ADR-0023).
 
     Returns:
         One `ProtectedTensor` per protected tensor, in map order,
-        each at the higher of its group's assignment and its floor.
+        each at the higher of its group's assignment and its floor,
+        marked ``exclude_imatrix`` when excluded.
     """
     return tuple(
-        ProtectedTensor(tensor=name, bits=max(state[group.name], floors[name]))
+        ProtectedTensor(
+            tensor=name,
+            bits=max(state[group.name], floors[name]),
+            exclude_imatrix=name in excluded,
+        )
         for group in map_.groups
         for name in group.tensors
         if name in floors
