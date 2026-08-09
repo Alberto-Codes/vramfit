@@ -61,6 +61,8 @@ quantfit plan SENSITIVITY_MAP
   --pin TEXT             Pin groups to a precision, repeatable (glob=bits)
   --protect TEXT         Hold tensors at a precision floor inside
                          their groups, repeatable (glob=bits)
+  --exclude-imatrix TEXT Quantize matched protected tensors without
+                         their imatrix rows, repeatable (glob)
   --out PATH             Output recipe  [default: recipe.json]
   --runtime TEXT         Target runtime the recipe is planned for
                          [default: llama.cpp]
@@ -101,11 +103,12 @@ meets the floor draws a per-tensor warning, and the recipe drops
 that pair — it would quantize identically to the unprotected
 reference and falsely fail the reconstruction check. A dropped
 pair's `--exclude-imatrix` mark drops with it, and the warning says
-so.
+so. An `--exclude-imatrix` pattern left with no surviving pair is
+rejected — the pack would keep the imatrix rows the pattern names.
 
 Exit codes: 1 when the map is invalid, the output is unwritable, no
-recipe fits the budget (the gap is reported), or a `--protect` rule is
-rejected. Exit 2 on malformed options (`--pin` or `--protect` not of
+recipe fits the budget (the gap is reported), or a `--protect` or
+`--exclude-imatrix` rule is rejected. Exit 2 on malformed options (`--pin` or `--protect` not of
 the form `pattern=bits` with positive bits, unparseable sizes, a
 negative, NaN, or infinite `--format-overhead`, or a `--runtime`
 outside the capability table).

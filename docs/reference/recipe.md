@@ -16,7 +16,7 @@ that produced it.
 
 ```json
 {
-  "quantfit_schema": 4,
+  "quantfit_schema": 5,
   "model_id": "nvidia/Llama-3_3-Nemotron-Super-49B-v1_5",
   "runtime": "llama.cpp",
   "within_group": "kquant-imx",
@@ -69,7 +69,11 @@ that produced it.
 
 ## Field notes
 
-- **`quantfit_schema`** — 4 since recipes gained imatrix exclusions
+- **`quantfit_schema`** — 5 since no-op protection pairs stopped
+  resolving (issue #59): a schema-4 reader rejects a protection
+  record with zero pairs, and a schema-4 recipe can carry no-op
+  pairs that falsely fail the reconstruction check — re-plan it.
+  4 added imatrix exclusions
   ([ADR-0023](../adr/0023-imatrix-exclusions.md)); 3 added protections
   ([ADR-0022](../adr/0022-within-layer-protections.md)). A reader that
   dropped either record would silently pack a
@@ -130,7 +134,8 @@ that produced it.
   `protections` whose pairs all dropped as no-ops.
   `exclude_imatrix` marks the pairs the exclusion globs resolved
   to — pack emits `--exclude-weights` for each marked pair when it
-  runs with an imatrix. An exclusion drops with its no-op pair.
+  runs with an imatrix. A dropped pair's mark drops with it, and
+  plan refuses an exclusion pattern left with no surviving pair.
 - **`format_overhead`** — the overhead fraction used for every size
   prediction, resolved from the size model's default when `--format-overhead`
   is not given (0.005 with an effective-bits table, 0.05 without). Together

@@ -599,6 +599,22 @@ class TestSolveWithProtections:
         assert marks["model.layers.0.self_attn.v_proj.weight"] is True
         assert marks["model.layers.1.self_attn.v_proj.weight"] is False
 
+    def test_exclusion_riding_only_dropped_pairs_rejected(self) -> None:
+        # Budget fits at 8-bit, so every floor-5 pair drops — nothing
+        # survives for the exclusion to ride (issue #59).
+        from quantfit.domain.protection import ProtectionError
+
+        map_ = make_protected_map()
+
+        with pytest.raises(ProtectionError, match="per-tensor no-op"):
+            solve_simple(
+                map_,
+                budget=10_000,
+                protections={"*.self_attn.v_proj.weight": 5},
+                imatrix_exclusions=("model.layers.0.*",),
+                format_overhead=0.0,
+            )
+
     def test_exclusion_does_not_change_size_or_damage(self) -> None:
         map_ = make_protected_map(layers=1)
         kwargs = {

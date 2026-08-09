@@ -14,7 +14,7 @@ from quantfit.domain.model import Assignment, PlanMeta, TraceStep
 
 def make_recipe_dict() -> dict:
     return {
-        "quantfit_schema": 4,
+        "quantfit_schema": 5,
         "model_id": "test/model",
         "runtime": "llama.cpp",
         "plan": {
@@ -286,7 +286,7 @@ class TestProtections:
         raw = make_recipe_dict()
         raw["quantfit_schema"] = 3
 
-        with pytest.raises(ArtifactError, match="version 4"):
+        with pytest.raises(ArtifactError, match="version 5"):
             recipe_from_dict(raw)
 
     def test_missing_protections_field_rejected(self) -> None:
@@ -387,21 +387,20 @@ class TestImatrixExclusions:
         with pytest.raises(ArtifactError, match="boolean"):
             recipe_from_dict(raw)
 
-    def test_patterns_without_marks_load(self) -> None:
-        # Legal since issue #59: an exclusion drops with its no-op
-        # pair, and the recorded pattern stays as provenance.
+    def test_patterns_without_marks_rejected(self) -> None:
+        # The solver refuses an exclusion whose every pair dropped
+        # (issue #59), so a record without marks is a broken artifact.
         raw = self.make_excluded_dict()
         raw["protected_tensors"][0]["exclude_imatrix"] = False
 
-        recipe = recipe_from_dict(raw)
-
-        assert not any(p.exclude_imatrix for p in recipe.protected_tensors)
+        with pytest.raises(ArtifactError, match="both"):
+            recipe_from_dict(raw)
 
     def test_marks_without_patterns_rejected(self) -> None:
         raw = self.make_excluded_dict()
         raw["plan"]["imatrix_exclusions"] = []
 
-        with pytest.raises(ArtifactError, match="require"):
+        with pytest.raises(ArtifactError, match="both"):
             recipe_from_dict(raw)
 
     def test_empty_exclusion_pattern_rejected(self) -> None:

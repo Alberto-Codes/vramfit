@@ -216,16 +216,15 @@ class TestRecipeProtectionInvariants:
 
         assert recipe.protected_tensors[0].exclude_imatrix is True
 
-    def test_exclusion_patterns_without_marks_construct(self) -> None:
-        # Legal since issue #59: an exclusion drops with its no-op
-        # pair, and the recorded pattern stays as provenance.
-        recipe = self.make_protected_recipe(
-            {"*.v_proj.weight": 5},
-            (ProtectedTensor("t", 5),),
-            imatrix_exclusions=("t",),
-        )
-
-        assert recipe.plan.imatrix_exclusions == ("t",)
+    def test_exclusion_patterns_without_marks_rejected(self) -> None:
+        # The solver refuses an exclusion whose every pair dropped
+        # (issue #59), so a record without marks is a broken artifact.
+        with pytest.raises(ValueError, match="both"):
+            self.make_protected_recipe(
+                {"*.v_proj.weight": 5},
+                (ProtectedTensor("t", 5),),
+                imatrix_exclusions=("t",),
+            )
 
     def test_marks_without_exclusion_patterns_rejected(self) -> None:
         with pytest.raises(ValueError, match="exclusion"):

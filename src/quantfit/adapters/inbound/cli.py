@@ -271,8 +271,10 @@ def _warn_protection_gaps(
     A protection that changed nothing must not read as protection
     applied (ADR-0022), and an exclusion glob that reaches outside
     the protected set must not read as full coverage (ADR-0023).
-    The solver already validated the rules, so re-expansion here
-    cannot fail.
+    A dead rule warns once per pattern. A dropped no-op pair warns
+    per tensor unless its rule already warned as fully dead
+    (issue #59). The solver already validated the rules, so
+    re-expansion here cannot fail.
 
     Args:
         protections: The verbatim pattern-to-floor rules.
@@ -291,7 +293,7 @@ def _warn_protection_gaps(
         )
     group_of = {t: g.name for g in map_.groups for t in g.tensors}
     excluded = expand_exclusions(exclusions, floors, map_)
-    for name in noop_protected_tensors(map_, state, floors):
+    for name in noop_protected_tensors(protections, map_, state, floors):
         group = group_of[name]
         message = (
             f'warning: protection floor {floors[name]} on "{name}" is a '

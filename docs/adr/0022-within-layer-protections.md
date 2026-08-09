@@ -12,9 +12,15 @@
   the assignment already meets quantizes identically to the
   unprotected reference, and decision 6's strict-inequality gate
   reads the tie as a collapse. `resolve_protected` drops such a
-  pair, its imatrix exclusion drops with it, and the CLI warns per
-  tensor — decision 3's per-pattern warning cannot see a glob that
-  lifts some floors and no-ops on others.
+  pair and the CLI warns per tensor — decision 3's per-pattern
+  warning cannot see a glob that lifts some floors and no-ops on
+  others. A dropped pair loses its imatrix exclusion, and the
+  solver refuses an exclusion pattern left with no surviving pair —
+  a warning would silently keep the imatrix rows the user asked to
+  drop (ADR-0023). The recipe schema bumps to 5: a protection
+  record may now resolve to zero pairs, and schema-4 recipes can
+  carry no-op pairs that falsely fail decision 6's gate — re-plan
+  them.
 
 ## Context
 

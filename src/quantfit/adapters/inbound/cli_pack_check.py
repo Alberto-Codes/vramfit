@@ -89,7 +89,9 @@ def _reconstruction_stage(
     The check is mandatory on protected imatrix packs (ADR-0022). A
     protected pack without an imatrix skips it with a note — every
     known fit collapse involved a promotion under one — and an
-    unprotected pack passes through silently.
+    unprotected pack passes through silently. A recipe that records
+    protections but resolved zero pairs also skips with a note: every
+    floor was a per-tensor no-op at plan time (issue #59).
 
     Args:
         run_log: Sink for the stage's events.
@@ -104,6 +106,12 @@ def _reconstruction_stage(
         typer.Exit: With code 1 when the gate runs and fails.
     """
     if not recipe.protected_tensors:
+        if recipe.plan.protections:
+            typer.echo(
+                "reconstruction check skipped: the recipe records "
+                "protections but resolved no pairs — every floor was a "
+                "per-tensor no-op at plan time (issue #59)"
+            )
         return
     if imatrix is None:
         typer.echo(

@@ -2,11 +2,12 @@
 
 Implements ADR-0022 and the imatrix-exclusion side of ADR-0023. A
 protection is an ordered fnmatch pattern over
-tensor names plus a protection floor. A protected tensor packs at the
-higher of its group's assignment and the floor. An imatrix exclusion
-is an fnmatch pattern over *protected* tensor names — a matched
-tensor keeps its promotion and quantizes without its imatrix row,
-the fit-collapse remedy. The solver prices a
+tensor names plus a protection floor. A protected tensor packs at
+its floor where the floor exceeds the group's assignment — a floor
+the assignment already meets resolves to no pair (issue #59). An
+imatrix exclusion is an fnmatch pattern over *protected* tensor
+names — a matched tensor keeps its promotion and quantizes without
+its imatrix row, the fit-collapse remedy. The solver prices a
 protection by size only — predicted damage stays the group-level sum,
 and no per-tensor damage is invented. Validation is total: an
 unservable floor, a no-match pattern, a protection on a single-tensor
@@ -286,32 +287,98 @@ def resolve_protected(
 
 
 def noop_protected_tensors(
+    protections: Mapping[str, int],
     map_: SensitivityMap,
     state: Mapping[str, int],
     floors: Mapping[str, int],
 ) -> tuple[str, ...]:
-    """Name the protected tensors whose floor changed nothing.
+    """Name the dropped tensors that no pattern warning covers.
 
-    `resolve_protected` drops these pairs from the recipe. The
-    per-pattern warning cannot see them: a glob that lifts 47 real
-    floors and no-ops on its 48th match is not a dead rule, yet its
-    48th pair would falsely fail the reconstruction gate. The CLI
-    warns per tensor with this record (ADR-0022).
+    `resolve_protected` drops every pair whose floor the group
+    assignment meets. This record carries the drops the per-pattern
+    warning cannot see: a glob that lifts 47 real floors and no-ops
+    on its 48th match is not a dead rule, yet its 48th pair would
+    falsely fail the reconstruction gate. Tensors a fully dead rule
+    governs stay out — `noop_protection_patterns` already warns for
+    those, and a second warning per tensor would only repeat it.
 
     Args:
+        protections: The verbatim pattern-to-floor rules.
         map_: The sensitivity map, fixing tensor order.
         state: Final assigned precision per group name.
         floors: Protection floor per tensor name.
 
     Returns:
-        The dropped tensor names, in map order.
+        The dropped tensor names the CLI warns for, in map order.
     """
+    dead = frozenset(noop_protection_patterns(protections, map_, state, floors))
+    governed_by = _governing_patterns(protections, floors)
     return tuple(
         name
         for group in map_.groups
         for name in group.tensors
-        if name in floors and floors[name] <= state[group.name]
+        if name in floors
+        and floors[name] <= state[group.name]
+        and governed_by[name] not in dead
     )
+
+
+def refuse_dead_exclusions(
+    exclusions: tuple[str, ...],
+    protected: tuple[ProtectedTensor, ...],
+) -> None:
+    """Refuse exclusion patterns that no surviving pair carries.
+
+    An exclusion rides a protection (ADR-0023). When every pair a
+    pattern matched drops as a per-tensor no-op, nothing survives to
+    ride — the pack would keep the imatrix rows the user asked to
+    drop. That miss refuses loudly, like a no-match pattern at
+    expansion time (issue #59). A warning would not do: the same
+    flags would pack different bytes than the user instructed, and
+    scripted pipelines do not read plan-time warnings.
+
+    Args:
+        exclusions: Exclusion patterns, in rule order.
+        protected: The resolved pairs from `resolve_protected`.
+
+    Raises:
+        ProtectionError: Naming the first pattern whose every match
+            dropped.
+    """
+    survivors = [pair.tensor for pair in protected]
+    for pattern in exclusions:
+        if not any(fnmatchcase(name, pattern) for name in survivors):
+            raise ProtectionError(
+                f'imatrix exclusion "{pattern}": every protected tensor it '
+                "matches drops as a per-tensor no-op — no floor it rides "
+                "exceeds its group assignment. Raise the floor, or remove "
+                "the exclusion (issue #59)"
+            )
+
+
+def _governing_patterns(
+    protections: Mapping[str, int],
+    floors: Mapping[str, int],
+) -> dict[str, str]:
+    """Map each protected tensor to the rule that governs it.
+
+    Replays the rules in order so the *last* matching pattern
+    governs each tensor — matching on floor value would credit an
+    earlier rule a same-floor successor overrides.
+
+    Args:
+        protections: The verbatim pattern-to-floor rules.
+        floors: The expanded per-tensor protection floors.
+
+    Returns:
+        Mapping of tensor name to its governing pattern.
+    """
+    governed_by: dict[str, str] = {}
+    for pattern in protections:
+        for name in floors:
+            if fnmatchcase(name, pattern):
+                governed_by[name] = pattern
+    return governed_by
 
 
 def noop_protection_patterns(
@@ -327,7 +394,8 @@ def noop_protection_patterns(
     later rule overrides every tensor it matched — a dead rule, and
     a same-floor override still kills the earlier rule. The
     CLI warns either way — a silent no-op would read as protection
-    applied (ADR-0022).
+    applied (ADR-0022). Tensors a dead rule governs stay out of
+    `noop_protected_tensors` — one warning per fact.
 
     Args:
         protections: The verbatim pattern-to-floor rules.
@@ -342,14 +410,7 @@ def noop_protection_patterns(
     group_of: dict[str, str] = {
         tensor: group.name for group in map_.groups for tensor in group.tensors
     }
-    # Replay the rules in order so the *last* matching pattern governs
-    # each tensor — matching on floor value would credit an earlier
-    # rule a same-floor successor overrides.
-    governed_by: dict[str, str] = {}
-    for pattern in protections:
-        for name in floors:
-            if fnmatchcase(name, pattern):
-                governed_by[name] = pattern
+    governed_by = _governing_patterns(protections, floors)
     noop: list[str] = []
     for pattern, floor in protections.items():
         governed = [name for name, p in governed_by.items() if p == pattern]

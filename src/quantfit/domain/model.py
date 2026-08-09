@@ -517,12 +517,14 @@ class Recipe:
                 never "" — ``imatrix`` does not pair with the
                 assisted method token (ADR-0020), two protected
                 tensors share a name, resolved pairs exist without a
-                protection record (ADR-0022), or ``exclude_imatrix``
-                marks exist without an exclusion record (ADR-0023).
-                The reverse holes are legal: a recorded rule can
-                resolve to zero pairs when every floor is a
-                per-tensor no-op, and a recorded exclusion drops
-                with its no-op pair.
+                protection record (ADR-0022), or the exclusion
+                record and the resolved ``exclude_imatrix`` marks
+                disagree about whether the recipe excludes imatrix
+                rows (ADR-0023). One reverse hole is legal: a
+                protection record can resolve to zero pairs when
+                every floor is a per-tensor no-op (issue #59). An
+                exclusion cannot — the solver refuses a pattern
+                whose every pair dropped.
         """
         if self.within_group is not None and not self.within_group:
             raise ValueError("within_group must not be empty — use None for unknown")
@@ -553,9 +555,9 @@ class Recipe:
                 "(ADR-0022)"
             )
         excluded = any(p.exclude_imatrix for p in self.protected_tensors)
-        if excluded and not self.plan.imatrix_exclusions:
+        if bool(self.plan.imatrix_exclusions) != excluded:
             raise ValueError(
-                "exclude_imatrix marks require plan.imatrix_exclusions — "
-                "an excluded pair cannot exist without the pattern that "
-                "excluded it (ADR-0023)"
+                "plan.imatrix_exclusions and the exclude_imatrix marks must "
+                "both be empty or both be present — the solver refuses an "
+                "exclusion whose every pair dropped (ADR-0023, issue #59)"
             )
