@@ -147,15 +147,16 @@ change.
 **Fingerprint**
 :   The identity string that ties a scan checkpoint to one scan's
     recorded provenance: model, metric, calibration, token count,
-    grouping, precisions, and within-group method. It identifies
+    grouping, precisions, within-group method, and imatrix path. It
+    identifies
     provenance, not content — swapping weights or calibration text
     under an unchanged path defeats it.
 
 ## Budgeting
 
 **Precision**
-:   Bits per weight for a group (8, 4, 3, 2). Not "quant level" or
-    "bit depth".
+:   Bits per weight for a group (e.g. 8, 4, 3, 2 — protection
+    floors also use 5 and 6). Not "quant level" or "bit depth".
 
 **Weight budget**
 :   VRAM available for weights: card total minus KV headroom minus runtime
@@ -168,16 +169,30 @@ change.
 
 **Pin**
 :   A user-forced precision for a group, overriding the solver
-    (`--pin "layers.0.*=8"`). Recorded verbatim in the recipe.
+    (`--pin "*.layers.0=8"`). Recorded verbatim in the recipe.
 
 **Protection**
 :   A precision floor for named tensors inside their layer groups
-    (`--protect "*.self_attn.v_proj=5"`). A protected tensor packs
-    at the higher of its group's assignment and the **protection
-    floor** — distinct from the recipe's base-type floor
+    (`--protect "*.self_attn.v_proj.weight=5"`). A protected tensor
+    packs at its **protection floor** where the floor exceeds the
+    group's assignment — distinct from the recipe's base-type floor
     (ADR-0012). Priced by size only, never by damage
     ([ADR-0022](../adr/0022-within-layer-protections.md)). Not
     "tensor pin" or "override" (that word belongs to pack).
+
+**Per-tensor no-op**
+:   A protected pair whose floor the group assignment already
+    meets. The pair would quantize identically to the unprotected
+    reference, and the reconstruction check would read the tie as
+    a collapse. `plan` drops the pair and warns per tensor
+    (issue #59). Its imatrix exclusion drops with it. Not a
+    **dead rule** — that names a whole pattern.
+
+**Dead rule**
+:   A protection pattern that changed nothing: every tensor it
+    governs already meets the floor, or a later rule overrides it.
+    `plan` warns once per dead rule (ADR-0022). Not "no-op
+    pattern" — the per-tensor case has its own term.
 
 **Solver**
 :   The algorithm that assigns precisions under the weight budget. Strategy
@@ -233,15 +248,17 @@ change.
 
 **Type override**
 :   One (tensor pattern → quantization type) pair driven into the
-    runtime's quantizer. One per layer group, first match wins. Code
+    runtime's quantizer. One per layer group plus one per protected
+    tensor, protections first, first match wins (ADR-0022). Code
     type `quantfit.domain.pack.TypeOverride`.
 
 **Pack result**
 :   The pack step's accounting record: real packed bytes plus the type
     mapping driven into the quantizer — base type, embedding and
-    output-head flag types, the pattern overrides, and the importance
-    matrix path when one was used. Code type
-    `quantfit.domain.pack.PackResult`.
+    output-head flag types, the pattern overrides, the importance
+    matrix path when one was used, and the imatrix coverage record
+    (uncovered tensors, and the exclusions the recipe instructed).
+    Code type `quantfit.domain.pack.PackResult`.
 
 **Importance matrix** (short: **imatrix**)
 :   Per-weight activation statistics collected over a calibration run,

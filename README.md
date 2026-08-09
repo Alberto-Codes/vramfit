@@ -51,22 +51,27 @@ maturity status). Design decisions are recorded as [ADRs](docs/adr/index.md).
 
 The full pipeline is implemented: `scan`, `plan`, `validate`, `pack`, plus
 `budget` for the VRAM arithmetic. Pack quantizes with an importance matrix
-(ADR-0016) and smoke-tests every artifact before trusting it (ADR-0017).
-Three complete loops have run on the 49B target (2026-07-29 to
-2026-07-31). Every packed model fits the card first try. The quality
-head-to-head against the size-matched community imatrix quant is
-**still lost, by less**: 0.53 perplexity behind at equal size and
-equal toolchain, down from 1.39. The rematch isolated the causes.
-Importance-weighted rounding was worth 0.86 of the old gap. A
-controlled A/B then showed 2-bit group membership decides whether
-damages add: the same predicted damage measures super-additive by
-11.9× on one 2-bit set and sub-additive by 1.6× on another.
-Converged marginals plus the validation gate steer the solver out of
-the bad set without interaction modeling. The
+(ADR-0016), guards protected packs with a per-tensor reconstruction
+check (ADR-0022), and smoke-tests every artifact before trusting it
+(ADR-0017). Fifteen data points span 2026-07-29 to 2026-08-09 on
+the 49B target. Every packed model fits the card first try. The
+pipeline now **wins the head-to-head on the ruling window**. On
+2026-08-09 an end-to-end pack beat the size-matched community
+imatrix quant on full-window KL divergence: 0.2873 vs 0.2959,
+7.8σ paired. The same artifact holds the best nominal perplexity
+in the lane (8.517 vs 8.532) at 112 MiB under budget. The baseline
+keeps a half-point lead on full-window top-token agreement. The
+road there ran through measured eliminations. Importance-weighted
+rounding was worth 0.86 of the original 1.39-perplexity gap. 2-bit
+group membership decides whether damages add: super-additive by
+11.9× on one 2-bit set, sub-additive by 1.6× on another. 2-bit
+stays out of the solve until runtime-frame prices exist — current
+practice plans on a map copy without the 2-bit column (ADR-0021).
+Within-layer protections plus imatrix exclusions (ADR-0022,
+ADR-0023) closed the fit-collapse gap. The
 [evidence page](docs/explanation/evaluating-packed-models.md) records
-all six data points. The remaining deficit sits in the
-scan-to-runtime frame transfer at low bits and in allocation
-granularity — closing those is the current work. See
+all fifteen data points. Current work: the rented-GPU measurement
+lane (#40) and the task-eval tier before publication. See
 [Issues](https://github.com/Alberto-Codes/quantfit/issues) for the roadmap.
 
 ## Requirements

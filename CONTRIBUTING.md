@@ -64,6 +64,7 @@ Hooks that run on each commit:
 | pytest | Fast suite: unit + contract (hermetic) |
 | import-linter | Hex layers, domain purity, no heavy ML deps (ADR-0008) |
 | loc-check | 300/320 code-line cap per module |
+| doc-refs | Docs reference living module paths |
 | docvet | Docstring quality on staged files |
 
 All hooks must pass before the commit succeeds. A **pre-push** hook
@@ -82,7 +83,7 @@ All seven gates must pass before opening a PR. Run them locally:
 uv run ruff check .                  # Linting
 uv run ruff format --check .         # Format check
 uv run ty check                      # Type checking
-uv run pytest -m "not gpu"           # Tests (CI enforces 90% coverage)
+uv run pytest -m "not gpu and not integration"  # Tests (CI enforces 90% coverage)
 uv run lint-imports                  # Hex layers + domain purity
 uv run python scripts/check_loc.py src  # File size cap (300/320 code lines)
 uv run docvet check --all            # Docstring quality

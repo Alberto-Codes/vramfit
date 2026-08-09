@@ -11,8 +11,8 @@ paths:
 
 - Name tests `test_<what>_<condition>_<expected_result>`.
 - Layout mirrors the hex layers: `tests/unit/domain/`,
-  `tests/unit/adapters/`, `tests/contract/`, `tests/e2e/`
-  (`tests/integration/` when the scan milestone lands).
+  `tests/unit/adapters/`, `tests/contract/`, `tests/e2e/`,
+  `tests/integration/`.
 - Shared fixtures in `tests/unit/conftest.py`; hypothesis strategies in
   `tests/strategies.py`; port fakes in `tests/fakes.py`.
 
