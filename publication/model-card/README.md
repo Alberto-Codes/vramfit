@@ -13,28 +13,22 @@ tags:
 ---
 
 <!--
-DRAFT — issue #81. Not final until three dependencies resolve:
-1. #65 (evals-sidecar schema): decides whether baseline rows get sidecar
-   entries or a render-time join. The numbers tables are not final before
-   that ruling. The ledger beside this file (card-ledger.md) maps every
-   number to its source record and sidecar destination.
-2. #85 (maps dataset): the sensitivity-map link is a placeholder.
-3. #82 (upload dry run): final file names and the sha256 list.
+DRAFT — issue #81. Not final until two dependencies resolve:
+1. #85 (maps dataset): the sensitivity-map link is a placeholder.
+2. #99 (tier-2 analysis artifact): the derived tier-2 statistics
+   (369/564, 7.8σ, +0.05 bound, spike chunks) have no recorded
+   artifact. Do not ship before it lands.
 
-FLAG for the maintainer (#79 record vs reality): the #79 record names the
-repo `Llama-3_3-Nemotron-Super-49B-v1-fit24gib-GGUF` and
-`base_model: nvidia/Llama-3_3-Nemotron-Super-49B-v1`. Every measured
-artifact derives from **v1_5**: the local checkpoint is
-`nemotron-super-49b-v1_5`, and the baselines came from
-`bartowski/nvidia_Llama-3_3-Nemotron-Super-49B-v1_5-GGUF` and
-`unsloth/Llama-3_3-Nemotron-Super-49B-v1_5-GGUF`. This draft uses v1_5
-throughout. Either the #79 record carries a version slip, or this draft
-must change. The maintainer resolves it.
+Resolved 2026-08-10 by the #82 dry run: the #65 ruling covers every
+baseline row (render-time join, baseline sidecars under `baselines/`).
+The maintainer ruled the v1-vs-v1_5 flag: the publication carries v1_5,
+corrected on the #79 record. File names and sha256s are final — the
+ledger beside this file (card-ledger.md) carries the upload file list.
 -->
 
 # Llama-3_3-Nemotron-Super-49B-v1_5-fit24gib-GGUF
 
-**DRAFT — do not ship. Issue #81; final only after #65, #82, and #85
+**DRAFT — do not ship. Issue #81; final only after #85 and #99
 resolve. Remove this line at upload.**
 
 This repository carries one mixed-precision GGUF of
@@ -269,11 +263,11 @@ uv run quantfit pack recipe.json --llama-cpp <llama.cpp checkout> \
   --imatrix imatrix.gguf --out Llama-3_3-Nemotron-Super-49B-v1_5-fit24gib.gguf
 ```
 
-**PLACEHOLDER #82 — the file names above are not final until the upload
-dry run. Remove this line at upload.**
-
-<!-- Source artifacts: recipe-g1c-replication.json,
-     nemotron-49b-f16.imatrix.gguf. -->
+<!-- File names final per the #82 dry run. Local source artifacts:
+     recipe-g1c-replication.json -> recipe.json,
+     nemotron-49b-f16.imatrix.gguf -> imatrix.gguf,
+     nemotron-49b-g1c-replication.gguf ->
+     Llama-3_3-Nemotron-Super-49B-v1_5-fit24gib.gguf. -->
 
 The command converts the f16 base GGUF once, drives the recorded type
 overrides and imatrix exclusions into `llama-quantize`, and runs the
@@ -324,8 +318,13 @@ notice files. Built with Llama.
 - Packed file SHA-256:
   `48271199ee97d5559caa6bb963162265a9fc35cb5c7ec2b181513f7c4c810122`
   (21,860,214,272 B).
-- The run log beside the weights records the pack events and the
-  48-tensor reconstruction check.
+- The run log beside the weights
+  (`Llama-3_3-Nemotron-Super-49B-v1_5-fit24gib.runlog.jsonl`) records
+  the pack events and the 48-tensor reconstruction check.
+- The evals sidecar
+  (`Llama-3_3-Nemotron-Super-49B-v1_5-fit24gib.gguf.evals.json`,
+  ADR-0025 schema 1) records all three tiers. Baseline sidecars sit
+  under `baselines/`.
 - Toolchain: llama.cpp b10172 quantizer, `convert_hf_to_gguf.py` for the
   f16 base, lm-evaluation-harness 0.4.12 with llama-cpp-python 0.3.34
   for tier 3.
