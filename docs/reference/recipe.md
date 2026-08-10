@@ -85,7 +85,9 @@ that produced it.
   filtered its candidates to this runtime's capability, and pack
   backends refuse a recipe recorded for a runtime they do not serve.
 - **`within_group`** — the within-group method token of the map that
-  priced the recipe ([ADR-0019](../adr/0019-kquant-priced-maps.md)),
+  priced the recipe ([ADR-0019](../adr/0019-kquant-priced-maps.md),
+  Superseded by [ADR-0021](../adr/0021-runtime-frame-measurement.md):
+  the field remains, the pricing claim does not),
   or null when the provenance is unknown. `quantfit plan` copies it
   from the map. `quantfit validate` resolves its frame from this
   field and refuses flags that contradict it. The loader accepts an

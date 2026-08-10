@@ -54,7 +54,9 @@ The sensitivity map is the output of `quantfit scan` and the input to
   full-precision reference, measured per
   [ADR-0006](../adr/0006-sensitivity-metric.md) (mean final-logits KL).
   Higher = more damage. Values are comparable *within* a scan, not across
-  scans with different calibration sets.
+  scans with different calibration sets. The scan frame over-prices low
+  bits ([ADR-0021](../adr/0021-runtime-frame-measurement.md)) — current
+  practice plans on a map copy without the 2-bit column.
 - **`bytes_fp16`** — group size at reference precision. The solver derives
   per-precision sizes from this — at the runtime's per-type effective
   bits when it has a table ([ADR-0014](../adr/0014-per-type-effective-bits.md)),
@@ -75,7 +77,9 @@ The sensitivity map is the output of `quantfit scan` and the input to
   `rtn-block32` (round-to-nearest, the v1 default), `kquant-ref`
   (the ported llama.cpp reference quantizers), or `kquant-imx`
   (the same port with assisted pricing,
-  [ADR-0020](../adr/0020-imatrix-assisted-pricing.md)). The writer
+  [ADR-0020](../adr/0020-imatrix-assisted-pricing.md), Superseded by
+  [ADR-0021](../adr/0021-runtime-frame-measurement.md): the token
+  remains, the pricing claim does not). The writer
   always records it. The loader accepts an absent field as
   `rtn-block32` — every map written before the field existed
   measured with that method. Damage values are only comparable
