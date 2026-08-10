@@ -17,9 +17,10 @@ pages carry trust tiers (`sketch → draft → stable`). The scoreboard
 page accretes numbered data points. Issues park triggers so phases
 resurface instead of rotting.
 
-What the project lacks is a **frontier**: one queryable answer to
-"what can I decide *right now*?" Open questions live smeared across
-ADR "Open questions" sections, sketch pages, and tickler issues.
+What the project lacks is a **claimable set**: one queryable answer
+to "what can I decide *right now*?" Open questions live smeared
+across ADR "Open questions" sections, sketch pages, and the issues
+that park triggers.
 Ordering between them is implicit. When an effort spans many sessions
 — the go-public push, the rented-GPU lane — each session re-derives
 the state of the plan from scattered prose.
@@ -77,14 +78,18 @@ Types, as labels:
 
 | Label | Mode | Resolves by |
 |-------|------|-------------|
-| `chart:research` | AFK | A background agent gathers facts against primary sources. |
-| `chart:prototype` | HITL | A throwaway artifact raises the fidelity of a discussion. |
-| `chart:discuss` | HITL | Conversation with the maintainer. The default type. |
+| `chart:research` | Background | A background agent gathers facts against primary sources. |
+| `chart:prototype` | Live | A throwaway artifact raises the fidelity of a discussion. |
+| `chart:discuss` | Live | Conversation with the maintainer. The default type. |
 | `chart:task` | Either | Real-world work that unblocks a decision (the only type that does rather than decides). |
 
+A `chart:task` ticket has no decision to record. It closes with what
+was done and the facts later tickets depend on, and its line in
+Decisions so far records those facts.
+
 Blocking uses GitHub's native issue dependencies, and children are
-native sub-issues of the chart. The **frontier** is the set of open,
-unblocked, unclaimed tickets.
+native sub-issues of the chart. The **claimable set** is the open,
+unblocked, unassigned tickets.
 
 ## Fog discipline
 
@@ -96,9 +101,10 @@ only gathers toward the destination — anything else goes to Out of
 scope.
 
 Fog is effort-scoped and lives in the chart. Strategy-scoped
-unknowns stay where they already live: sketch pages with tickler
-issues (the [artifact ecosystem](artifact-ecosystem.md) / issue #11
-pattern). A chart may cite a sketch page; it does not replace one.
+unknowns stay where they already live: sketch pages with a paired
+issue that parks the triggers (the
+[artifact ecosystem](artifact-ecosystem.md) / issue #11 pattern). A
+chart may cite a sketch page; it does not replace one.
 
 ## Session discipline
 
@@ -124,23 +130,35 @@ pre-`sketch`: not even written from first principles yet, only named.
 
 Chart only when the way to the destination is unclear **and** the
 effort exceeds one session. If one session can plan it, plan it in
-that session. If grilling surfaces no fog, stop — no chart.
+that session. If the destination discussion surfaces no fog, stop —
+no chart.
 
 ## Mechanics (GitHub)
 
+Verified against the GitHub REST docs and this repo on 2026-08-09.
+Sub-issues and issue dependencies are enabled here.
+
 ```bash
-# Create the chart, then tickets as native sub-issues
+# Once per repo: create the labels
+gh label create chart
+for t in research prototype discuss task; do gh label create "chart:$t"; done
+
+# Create the chart, then add tickets as native sub-issues
 gh issue create --label chart --title "<effort>" --body-file chart.md
 gh api repos/{owner}/{repo}/issues/<chart>/sub_issues \
-  -f sub_issue_id=<child-db-id>          # db id: gh api .../issues/<n> --jq .id
+  -F sub_issue_id=<child-db-id>          # db id: gh api .../issues/<n> --jq .id
 
 # Wire a blocking edge (second pass, after ids exist)
 gh api --method POST \
   repos/{owner}/{repo}/issues/<child>/dependencies/blocked_by \
   -F issue_id=<blocker-db-id>
 
-# Frontier: open sub-issues with no open blockers and no assignee
-gh issue list --state open --label "chart:*"   # then filter blocked/claimed
+# Claimable set: open, unassigned sub-issues of the chart...
+gh api repos/{owner}/{repo}/issues/<chart>/sub_issues \
+  --jq '.[] | select(.state == "open" and (.assignees | length == 0))
+        | "#\(.number) \(.title)"'
+# ...minus any ticket with open blockers
+gh api repos/{owner}/{repo}/issues/<n>/dependencies/blocked_by --jq length
 
 # Claim, resolve, close
 gh issue edit <n> --add-assignee @me
@@ -154,8 +172,8 @@ gh issue close <n>
   names need to survive contact with the first chart.
 - **First chart.** The go-public cluster (#66, #67, #11, #68) has
   four interlocking issues with implicit ordering — the natural
-  proving run. Charting it means grilling the maintainer for the
-  destination first.
+  proving run. Charting it starts with a live discussion that names
+  the destination.
 - **Automation.** The convention runs by hand first. A repo skill
   (`.claude/skills/`) is worth writing only after two or three
   charts prove the shape.

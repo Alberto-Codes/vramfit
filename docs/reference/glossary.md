@@ -352,29 +352,33 @@ change.
 
 **Chart**
 :   The GitHub issue that indexes one multi-session effort: a
-    destination, the decisions so far, the fog, and the ruled-out
-    scope. Decision tickets are its sub-issues. An index, never a
-    decision store. Convention in
+    destination, standing notes, the decisions so far, the fog, and
+    the ruled-out scope. Decision tickets are its sub-issues. An
+    index, never a decision store. Convention in
     [charting](../explanation/charting.md). Not "map" (that word
     belongs to the sensitivity map), "epic", or "roadmap".
 
 **Decision ticket**
 :   A chart's sub-issue that resolves one question, sized to one
-    agent session. It closes with a pointer to the record that holds
-    the decision (an ADR, an amendment, a data point, or a docs
-    change) — it never stores the decision itself. Typed by label:
-    `chart:research`, `chart:prototype`, `chart:discuss`,
-    `chart:task`.
+    agent session. It closes with a pointer to the record that
+    holds the decision: an ADR, an amendment, a data point, or a
+    docs change. The ticket never stores the decision itself. Typed
+    by label: `chart:research`, `chart:prototype`, `chart:discuss`,
+    `chart:task`. A `chart:task` ticket records completed work and
+    resulting facts instead of a decision.
 
-**Frontier**
+**Claimable set**
 :   The decision tickets a session may claim right now: open,
-    unblocked by open dependencies, and unassigned.
+    unblocked by open dependencies, and unassigned. Not "frontier"
+    (that word belongs to the quality-size frontier on the
+    scoreboard).
 
 **Fog**
 :   An in-scope question not yet sharp enough to ticket, listed in
-    the chart's `## Fog` section. Graduates to a decision ticket when
-    the question can be stated precisely — answerability is not the
-    test. Not "open question" (that names a section inside an ADR).
+    the chart's `## Fog` section. Graduates to a decision ticket
+    when the question can be stated precisely — answerability is
+    not the test. Not "open question" (that names a section in ADRs
+    and docs pages).
 
 ## Project
 
