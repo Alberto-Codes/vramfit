@@ -4,10 +4,10 @@ status: sketch
 
 # Charting: planning work bigger than one session
 
-> **Status: sketch** — process design recorded 2026-08-09. No chart
-> has been run yet. The go-public cluster (issues #66, #67, #11, #68)
-> is the intended proving run. Promote this page when the first chart
-> reaches its destination.
+> **Status: sketch** — process design recorded 2026-08-09. The first
+> chart is #70 (go-public), created 2026-08-09 from the #66/#67/#11/#68
+> cluster. Findings from that run are folded in below. Promote this
+> page when the chart reaches its destination.
 
 ## The gap this closes
 
@@ -73,6 +73,9 @@ Each child issue resolves one question and is sized to one agent
 session. The body is a single `## Question`. The answer arrives only
 at resolution: a closing comment with the gist and the pointer to the
 record. Assets (research notes, prototypes) are linked, not pasted.
+A research ticket's record is its own closing comment: one gist line,
+the key facts, and links to primary sources. **Open question:**
+whether one comment still serves when the findings grow large.
 
 Types, as labels:
 
@@ -91,6 +94,10 @@ Blocking uses GitHub's native issue dependencies, and children are
 native sub-issues of the chart. The **claimable set** is the open,
 unblocked, unassigned tickets.
 
+Edges may point at issues outside the chart — wire one whenever a
+blocker has an issue. A real-world prerequisite without an issue
+lives in the chart's Notes. There, claimable does not mean ready.
+
 ## Fog discipline
 
 The graduation test is precision, not answerability: **ticket when
@@ -105,6 +112,22 @@ unknowns stay where they already live: sketch pages with a paired
 issue that parks the triggers (the
 [artifact ecosystem](artifact-ecosystem.md) / issue #11 pattern). A
 chart may cite a sketch page; it does not replace one.
+
+## Folding existing issues
+
+A new chart often overlaps issues that already exist. Scope decides
+their fate:
+
+- **Effort-scoped issues** — checklists or umbrellas that describe
+  this chart's route. Absorb and close them. Each checkbox lands as
+  a ticket, a Notes line, or fog. The closing comment maps every
+  checkbox to its destination and links the chart.
+- **Strategy-scoped issues** — trigger parkers paired with a sketch
+  page. Leave them open. The chart cites them and rules their
+  contents in or out of scope.
+
+An open effort-scoped issue beside the chart forks the index. That
+is the same failure the one inversion guards against.
 
 ## Session discipline
 
@@ -168,12 +191,11 @@ gh issue close <n>
 
 ## Open questions
 
-- **Label spelling.** `chart` / `chart:<type>` proposed here. Final
-  names need to survive contact with the first chart.
-- **First chart.** The go-public cluster (#66, #67, #11, #68) has
-  four interlocking issues with implicit ordering — the natural
-  proving run. Charting it starts with a live discussion that names
-  the destination.
+- **Label spelling.** `chart` / `chart:<type>` proposed here.
+  Resolved 2026-08-09: chart #70 used the names unchanged.
+- **First chart.** Resolved 2026-08-09: chart #70 indexes the
+  go-public effort. The fold rules, the research-record rule, and
+  the claimable-set caveat above came from that run.
 - **Automation.** The convention runs by hand first. A repo skill
   (`.claude/skills/`) is worth writing only after two or three
   charts prove the shape.
