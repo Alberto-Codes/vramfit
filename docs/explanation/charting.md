@@ -223,6 +223,9 @@ gh issue close <n>
   the claimable-set caveat above came from that run.
 - **Automation.** The convention runs by hand first. A repo skill
   (`.claude/skills/`) is worth writing only after two or three
-  charts prove the shape.
+  charts prove the shape. Partially resolved 2026-08-10: triage
+  automated first (`.claude/skills/chart-triage/`), proven by
+  repetition inside chart #70. Full charting automation still
+  waits for the second or third chart.
 - **CLAUDE.md pointer.** Add one when this page reaches `draft`, not
   before — the trust rules forbid building on a sketch.
