@@ -13,15 +13,13 @@ tags:
 ---
 
 <!--
-DRAFT — issue #81. Not final until four dependencies resolve:
+DRAFT — issue #81. Not final until three dependencies resolve:
 1. #65 (evals-sidecar schema): decides whether baseline rows get sidecar
    entries or a render-time join. The numbers tables are not final before
    that ruling. The ledger beside this file (card-ledger.md) maps every
    number to its source record and sidecar destination.
-2. #86 (NVIDIA OML stance): the guardrails section below is a marked
-   placeholder. Do not ship without resolving it.
-3. #85 (maps dataset): the sensitivity-map link is a placeholder.
-4. #82 (upload dry run): final file names and the sha256 list.
+2. #85 (maps dataset): the sensitivity-map link is a placeholder.
+3. #82 (upload dry run): final file names and the sha256 list.
 
 FLAG for the maintainer (#79 record vs reality): the #79 record names the
 repo `Llama-3_3-Nemotron-Super-49B-v1-fit24gib-GGUF` and
@@ -36,8 +34,8 @@ must change. The maintainer resolves it.
 
 # Llama-3_3-Nemotron-Super-49B-v1_5-fit24gib-GGUF
 
-**DRAFT — do not ship. Issue #81; final only after #65, #82, #85, and
-#86 resolve. Remove this line at upload.**
+**DRAFT — do not ship. Issue #81; final only after #65, #82, and #85
+resolve. Remove this line at upload.**
 
 This repository carries one mixed-precision GGUF of
 [nvidia/Llama-3_3-Nemotron-Super-49B-v1_5](https://huggingface.co/nvidia/Llama-3_3-Nemotron-Super-49B-v1_5),
@@ -289,14 +287,28 @@ there: **[PLACEHOLDER #85 — sensitivity map dataset link]**.
 
 ## Guardrails and damage disclosure
 
-**PLACEHOLDER — blocked on #86. Do not ship this card with this section
-empty.**
+<!-- Stance decided in #86: comply-and-disclose. Record: the
+     guardrail-efficacy stance note in
+     docs/explanation/evaluating-packed-models.md. -->
 
-<!-- PLACEHOLDER — blocked on #86 (stance on the NVIDIA Open Model
-License guardrail-efficacy clause). This section may need: a statement
-that quantization can change guardrail behavior, what this card
-discloses about measured damage, and any language the OML requires.
-Do not pre-decide it here. Do not ship the card with this comment. -->
+This pack modifies no guardrail. Quantization compresses every weight
+tensor with one uniform lossy procedure. It does not bypass, disable,
+or circumvent the base model's safety training, which ships in these
+weights at lower precision.
+
+Quantization can shift any model behavior, and guardrail behavior is no
+exception. The tables above are the measured bound on that shift: tier
+2 measures whole-model KL divergence against the f16 base over the full
+held-out set, and tier 3 holds five statistical ties at equal size. The
+NVIDIA Open Model License conditions distribution on keeping "a
+substantially similar Guardrail appropriate for your use case" — this
+card's damage disclosure is the evidence of that similarity.
+
+One limit, stated plainly: damage measures the general output
+distribution on held-out WikiText-2 text, not guardrail behavior
+separately. Read this card as a damage disclosure, not a safety
+certificate. Deploy this pack with the same system-prompt and
+application-layer protections you would give the base model.
 
 ## License
 
