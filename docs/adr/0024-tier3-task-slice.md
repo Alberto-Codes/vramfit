@@ -10,7 +10,7 @@
   statistical ties against the baseline, none past 0.8σ — the
   slice certifies the candidate at equal size (the
   [sixteenth data point](../explanation/evaluating-packed-models.md#the-sixteenth-data-point-five-tasks-five-ties)).
-  Measured cost: 5.70 h per artifact — see the second open
+  Measured cost: 5.70 h per artifact. See the second open
   question.
 
 ## Context
@@ -103,7 +103,9 @@ quant-evaluation corpus.
 - The multiple-choice tasks are prefill-bound, and the server
   processes each shared few-shot prefix once through prompt
   caching. GSM8K is decode-bound and sets the floor no caching
-  removes.
+  removes. **Note (2026-08-10): measured otherwise.** HellaSwag
+  sets the slice's floor at 2.88 h, and GSM8K runs 1.35 h. See
+  the measured-hours open question.
 - Nobody can cherry-pick a slice fixed before any run. The card
   reports all five scores, including any losses, per the
   publication procedure.
@@ -141,16 +143,23 @@ quant-evaluation corpus.
   ADR-0005 keeps the harness out of the project env.
 - ~~Measured hours per task on the reference box. The estimates
   above are projections from tier-1 throughput, not
-  measurements.~~ **Measured (2026-08-10): 5.70 h per 49B
+  measurements.~~ **Note (2026-08-09):** the first runs record
+  wall-clock per task (`eval/tier3/*/<task>.json`). Probe
+  measurements: ARC-Challenge 25-shot scores at 3.7 requests/s,
+  and GSM8K decodes at ~5 s per item. Projection for the full
+  slice: 9–12 h per artifact, narrowing the 8–14 h estimate in
+  Consequences. **Measured (2026-08-10): 5.70 h per 49B
   artifact.** Both slices, within three minutes of each other.
-  Per task: HellaSwag 2.90 h, GSM8K 1.35 h, MMLU 1.06 h,
-  ARC-Challenge 0.32 h, Winogrande 0.10 h. The total lands under
-  the 8–14 h estimate in Consequences. The estimate priced MMLU
-  most wrong (3–5 h projected): the lane's KV-prefix reuse makes
-  the shared few-shot prefix nearly free, so HellaSwag's long
-  continuations are the real cost center. Two artifacts fit one
-  night. Wall-clock per task is recorded in
-  `eval/tier3/*/<task>.json`.
+  Per task, candidate run: HellaSwag 2.88 h, GSM8K 1.35 h, MMLU
+  1.06 h, ARC-Challenge 0.32 h, Winogrande 0.10 h. The baseline
+  matches each task within 0.05 h. The rounded parts sum to
+  5.71 h, and the unrounded total is 5.70 h. The total lands
+  under the 8–14 h estimate and under the probe's 9–12 h
+  projection. Both estimates priced MMLU (3–5 h) and GSM8K
+  (4–5 h) high. KV-prefix reuse makes MMLU's shared few-shot
+  prefixes nearly free, and GSM8K decoded at ~3.6 s per item.
+  HellaSwag's long continuations are the slice's cost center.
+  Two artifacts fit one night.
 - Whether instruct-tuned targets also get a chat-template variant
   of the slice. The fixed slice runs harness-default prompts. The
   packed-versus-baseline delta is the claim, and absolute scores
