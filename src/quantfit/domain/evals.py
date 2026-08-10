@@ -405,19 +405,36 @@ class EvalsSidecar:
     def __post_init__(self) -> None:
         """Enforce the whole-record invariants.
 
+        The harness toolchain fields pair with tier 3 in both
+        directions (ADR-0025): a present tier 3 requires all three,
+        and an absent tier 3 forbids them — no harness ran.
+
         Raises:
-            ValueError: If every tier is absent, or tier 3 is present
-                without the harness toolchain fields.
+            ValueError: If every tier is absent, if tier 3 is present
+                without the harness toolchain fields, or if a harness
+                field is present without tier 3.
         """
         if self.tier1 is None and self.tier2 is None and self.tier3 is None:
             raise ValueError("at least one tier must be present")
-        if self.tier3 is not None and (
+        harness_absent = (
             self.toolchain.lm_eval is None
             or self.toolchain.llama_cpp_python is None
             or self.toolchain.lane is None
-        ):
+        )
+        harness_present = (
+            self.toolchain.lm_eval is not None
+            or self.toolchain.llama_cpp_python is not None
+            or self.toolchain.lane is not None
+        )
+        if self.tier3 is not None and harness_absent:
             raise ValueError(
                 "tier3 requires the toolchain's lm_eval, llama_cpp_python, "
                 "and lane — the sidecar names what produced the numbers "
+                "(ADR-0025)"
+            )
+        if self.tier3 is None and harness_present:
+            raise ValueError(
+                "the toolchain's lm_eval, llama_cpp_python, and lane pair "
+                "with tier3 — without the task slice no harness ran "
                 "(ADR-0025)"
             )

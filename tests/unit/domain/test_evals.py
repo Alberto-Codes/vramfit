@@ -115,6 +115,14 @@ class TestEvalsSidecar:
                 tier3=Tier3Result((TASK,)),
             )
 
+    def test_harness_toolchain_without_tier3_raises_value_error(self) -> None:
+        with pytest.raises(ValueError, match="pair"):
+            EvalsSidecar(
+                artifact=ARTIFACT,
+                toolchain=EvalToolchain(llama_cpp_build="b10172", lm_eval="0.4.12"),
+                tier1=TIER1,
+            )
+
     def test_tiers_1_and_2_without_harness_toolchain_is_valid(self) -> None:
         sidecar = EvalsSidecar(
             artifact=ARTIFACT,

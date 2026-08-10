@@ -16,6 +16,7 @@ from typing import Any
 import pytest
 
 from quantfit.adapters.outbound.evals_sidecar_json import (
+    EVALS_SIDECAR_SCHEMA_VERSION,
     JsonEvalsSidecarFile,
     sidecar_to_dict,
 )
@@ -110,7 +111,7 @@ class TestEvalsSidecarSinkContract:
 
         sink.save(sample_sidecar())
 
-        assert readback()["quantfit_schema"] == 1
+        assert readback()["quantfit_schema"] == EVALS_SIDECAR_SCHEMA_VERSION
 
     def test_absent_tiers_read_back_null(self, build, tmp_path) -> None:
         sink, readback = build(tmp_path)
