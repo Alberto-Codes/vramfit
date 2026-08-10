@@ -10,7 +10,7 @@ Selective per-layer quantization to fit large open models on a single GPU.
 
 **The problem.** A model's weights are billions of numbers, normally stored at
 16 bits each — Nemotron Super 49B is ~98 GB at full precision, and an RTX 4090
-has 24 GB. Quantization stores those numbers with fewer bits (8, 4, even 2),
+has 24 GiB. Quantization stores those numbers with fewer bits (8, 4, even 2),
 trading a little accuracy for a lot of memory. But even uniform 4-bit puts 49B
 parameters at ~26 GB — still doesn't fit — and uniform 3-bit wrecks quality,
 because some parts of a transformer get badly stupid when you crush them.
@@ -85,7 +85,7 @@ Hugging Face (issue #70). See
 ## Requirements
 
 - Python 3.12+
-- CUDA GPU (developed against an RTX 4090 / 24 GB)
+- CUDA GPU (developed against an RTX 4090 / 24 GiB)
 - [uv](https://docs.astral.sh/uv/)
 
 ## Installation

@@ -69,6 +69,10 @@ that produced it.
 
 ## Field notes
 
+[ADR-0021](../adr/0021-runtime-frame-measurement.md) supersedes
+ADR-0019 and ADR-0020: the fields below remain, the sub-4-bit
+pricing claims do not.
+
 - **`quantfit_schema`** — 5 since no-op protection pairs stopped
   resolving (issue #59): a schema-4 reader rejects a protection
   record with zero pairs, and a schema-4 recipe can carry no-op
@@ -85,9 +89,7 @@ that produced it.
   filtered its candidates to this runtime's capability, and pack
   backends refuse a recipe recorded for a runtime they do not serve.
 - **`within_group`** — the within-group method token of the map that
-  priced the recipe ([ADR-0019](../adr/0019-kquant-priced-maps.md),
-  Superseded by [ADR-0021](../adr/0021-runtime-frame-measurement.md):
-  the field remains, the pricing claim does not),
+  priced the recipe ([ADR-0019](../adr/0019-kquant-priced-maps.md)),
   or null when the provenance is unknown. `quantfit plan` copies it
   from the map. `quantfit validate` resolves its frame from this
   field and refuses flags that contradict it. The loader accepts an
