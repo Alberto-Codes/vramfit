@@ -1715,8 +1715,10 @@ The card links it.
   [ADR-0025](../adr/0025-evals-sidecar.md)): a versioned evals
   sidecar.** One JSON document per evaluated artifact carries all
   three tiers with their settings and toolchain versions, and
-  model-card numbers trace to it. The schema shape is that
-  record's open item — no code yet.
+  model-card numbers trace to it. The schema settled and the
+  writer landed on 2026-08-10 (that record's amendment, issue
+  #65). Every card artifact has a sidecar, the i-quant baselines
+  included.
 - ~~Which window rules when the two disagree. The twelfth data point's
   G1 wins the 100-chunk KLD window and loses the 564-chunk PPL
   window against the same baseline — and the unstable chunks sit

@@ -16,6 +16,7 @@ from quantfit.adapters.outbound.gguf.types import (
 )
 from quantfit.adapters.outbound.json_common import ArtifactError
 from quantfit.domain.budget import ModelShape
+from quantfit.domain.evals import EvalsSidecar
 from quantfit.domain.model import Recipe, SensitivityMap
 from quantfit.domain.pack import PackResult
 from quantfit.domain.scan import GroupSpec, Measurement
@@ -253,3 +254,17 @@ class MemoryRunLog:
 
     def emit(self, event: str, fields) -> None:
         self.events.append((event, dict(fields)))
+
+
+@dataclass
+class MemoryEvalsSidecarSink:
+    """In-memory `EvalsSidecarSink` capturing every save. Last one wins."""
+
+    saved: list[EvalsSidecar] = field(default_factory=list)
+
+    def save(self, sidecar: EvalsSidecar) -> None:
+        self.saved.append(sidecar)
+
+    @property
+    def last(self) -> EvalsSidecar:
+        return self.saved[-1]
