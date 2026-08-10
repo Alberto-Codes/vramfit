@@ -57,9 +57,12 @@ status: draft
 > Tier 3's slice is fixed
 > ([ADR-0024](../adr/0024-tier3-task-slice.md)), its harness lane
 > is decided and spot-checked against the stock backend (that
-> record's open questions),
-> and the first slice runs launched 2026-08-09 — candidate first,
-> baseline chained after. Results ship as an evals sidecar
+> record's open questions), and both slice runs completed
+> 2026-08-10: **five tasks, five statistical ties** against the
+> standing baseline, none past 0.8σ — the slice certifies the
+> candidate at equal size
+> ([the sixteenth data point](#the-sixteenth-data-point-five-tasks-five-ties)).
+> Results ship as an evals sidecar
 > ([ADR-0025](../adr/0025-evals-sidecar.md)).
 > The publication gates that consume
 > these evaluations live in [the artifact ecosystem](artifact-ecosystem.md)
@@ -126,8 +129,9 @@ metrics cannot: does the model still *do things*. It is also what
 skeptical readers trust most, precisely because it is furthest from
 our own machinery.
 
-It is the expensive tier — hours per model, and scores carry enough
-noise that small deltas mean nothing. Reserve it for the head-to-head
+It is the expensive tier — measured at 5.70 h per 49B artifact on
+the reference box (the sixteenth data point), and scores carry
+enough noise that small deltas mean nothing. Reserve it for the head-to-head
 that matters: quantfit's packed model versus the size-matched
 heuristic GGUF ([ADR-0010](../adr/0010-sub-4-bit-serving-path.md)
 names IQ3-class baselines for the 49B). A small, fixed slice of tasks,
@@ -1528,6 +1532,79 @@ in the filenames is the lane's name from before the divergence
 was measured — the artifact is G1c's sibling, not a
 byte-replication, and this page is the record of that
 distinction.
+
+## The sixteenth data point: five tasks, five ties
+
+The first tier-3 runs completed 2026-08-10: the fixed slice
+([ADR-0024](../adr/0024-tier3-task-slice.md)) on the publication
+candidate, then the identical slice on the standing baseline,
+chained back to back in one detached run on the reference box. Same
+instruments end to end — lm-evaluation-harness 0.4.12 through the
+recorded in-process llama-cpp-python lane on the b10172 Vulkan
+build, the build behind every tier-1 and tier-2 number on this
+page. Full evaluation splits, no `--limit`, zero context
+truncations, zero task failures, and both artifacts' SHA-256s,
+per-task versions, and per-item outputs in the raw JSON.
+
+| Task (metric) | Candidate | Baseline Q3_K_S | Δ | Combined σ | Verdict |
+|---|---|---|---|---|---|
+| MMLU 5-shot (acc) | 0.7829 ± 0.0033 | 0.7827 ± 0.0033 | +0.0002 | 0.0047 | tie |
+| GSM8K 5-shot (strict) | 0.9318 ± 0.0069 | 0.9242 ± 0.0073 | +0.0076 | 0.0101 | tie |
+| HellaSwag 10-shot (acc_norm) | 0.8412 ± 0.0036 | 0.8379 ± 0.0037 | +0.0033 | 0.0052 | tie |
+| Winogrande 5-shot (acc) | 0.7845 ± 0.0116 | 0.7861 ± 0.0115 | −0.0016 | 0.0163 | tie |
+| ARC-Challenge 25-shot (acc_norm) | 0.6493 ± 0.0139 | 0.6604 ± 0.0138 | −0.0111 | 0.0196 | tie |
+
+Every delta sits inside the combined standard error — the largest
+is 0.8σ (GSM8K, candidate nominally ahead) — so the card says
+"tie" five times, per ADR-0024 decision 4. The candidate leads
+nominally on three tasks and trails on two, a split consistent
+with noise. Nobody cherry-picked: the slice was fixed before any
+run, and both nominal deficits print here with their error bars.
+
+**The certification reads clean.** Tier 3 asked the one question
+the distributional tiers cannot: does the packed model still
+perform tasks. At equal size the answer is indistinguishable from
+the standing baseline on all five axes — knowledge breadth,
+generative math, commonsense continuation, coreference, science
+reasoning. That is the outcome the field's largest quantization
+evaluation predicted (quantized checkpoints recovering over 99 %
+of baseline scores), and it is the outcome that lets tier 2 carry
+the ranking claim: the 7.8σ full-window KLD win now stands on a
+certified-capable artifact. The one failure mode this slice was
+built to catch — decode-compounding damage that multiple-choice
+scoring masks — did not appear in this run: GSM8K ties the
+baseline, and strict-versus-flexible answer extraction differ by
+at most 0.4 percentage points on either artifact, so both models
+follow the answer format cleanly.
+
+**The cost surprised in the right direction.** 5.70 h per
+artifact — both slices, within three minutes of each other —
+against the 8–14 h estimate and the lane probe's 9–12 h
+projection. Both projections priced MMLU (3–5 h) and GSM8K
+(4–5 h) high: MMLU's fourteen thousand questions spread across
+57 subjects, each subject sharing one few-shot prefix the lane's
+KV-prefix reuse makes nearly free (1.06 h measured), and GSM8K
+decoded at ~3.6 s per item (1.35 h). HellaSwag's ten thousand
+long continuations (2.88 h) are the slice's real cost center.
+Two artifacts ran back to back in 11.4 h of wall-clock: one
+night.
+
+**What this changes.** The publication procedure's last
+measurement exists. The tiers now read as one story: tier 2
+ranks (the 7.8σ full-window KLD win), tier 3 certifies (five
+ties at equal size), and no task lost outside noise, so the
+procedure's publish-the-negative-result branch has no trigger.
+Issue #80 consumes this table as its go/no-go evidence, and the
+evals sidecars (ADR-0025, issue #65) will carry it beside the
+weights.
+
+Raw receipts: `eval/tier3/{candidate,baseline}/<task>.json`
+(scores, stderr, wall-clock, artifact SHA-256, lm-eval and
+llama.cpp versions, per-item samples),
+`eval/tier3/{candidate,baseline}.console.log`,
+`eval/tier3/run-chain.sh`, and the lane's cross-checks in
+`eval/tier3/probe-receipts-2026-08-09.md`. The measured hours are
+annotated in ADR-0024's open questions.
 
 ## Provenance is not evidence
 
