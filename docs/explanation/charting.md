@@ -145,13 +145,19 @@ way a second decision store would fork the truth.
   newly surfaced tickets or graduated fog.
 - A decision that invalidates existing tickets updates or closes
   them in the same session.
-- Sessions may run in parallel on different tickets. Chart-body
-  writes land one session at a time: re-read the body before
-  writing it.
+- Sessions may run in parallel on different tickets. The chart
+  body has no lock. Re-read it immediately before writing. Re-read
+  after writing to confirm the prior content and the new line both
+  survived.
+- Background research agents never write the chart body. The
+  charting session folds their gist lines into Decisions so far.
 - A session that ends without resolving leaves a progress comment
-  on its ticket. Every session claims as the same account, so a
-  silent claim hides the ticket from the claimable set. Any
-  session may release a claim that has no progress comment.
+  on its ticket and unassigns itself. Assignment then signals a
+  live session or a crash. Every session claims as the same
+  account, so a dead claim hides the ticket from the claimable
+  set.
+- Any session may release a claim older than one day that has no
+  comment since assignment.
 
 ## Trust mapping
 
