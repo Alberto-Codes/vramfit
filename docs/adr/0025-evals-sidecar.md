@@ -13,12 +13,15 @@
 - **Note (2026-08-10, issue #99):** the aggregates-only rule left
   the card's derived tier-2 statistics without a record. Ruling: a
   cross-artifact derivation lands as its own analysis artifact,
-  never in a sidecar. The analysis artifact carries the
-  `quantfit_schema` envelope, the method, the input log hashes, the
-  results, and the derived per-chunk KLD pairs. The pairs let a
-  reader recompute every derived card number without the
-  unpublished logs. The artifact publishes in the model repo under
-  `analysis/`. Its generator sits beside it in the run archive.
+  never in a sidecar. Decision 4 extends: a derived card number
+  traces to its analysis artifact instead. The analysis artifact
+  carries the `quantfit_schema` envelope, the method, the input log
+  hashes, the results, and the derived per-chunk KLD pairs. The
+  pairs let a reader recompute every derived card number without
+  the unpublished logs. This narrows the aggregates-only decision's
+  archive rule to raw outputs — derived pairs may publish. The
+  artifact publishes in the model repo under `analysis/`. Its
+  generator sits beside it in the run archive.
   Publication #1 carries one: `analysis/kld564-paired-q3ks.json`,
   the paired candidate-vs-Q3_K_S comparison.
 

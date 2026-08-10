@@ -19,7 +19,7 @@ DRAFT — issue #81. Not final until one dependency resolves:
 Resolved 2026-08-10 (#99): the derived tier-2 statistics now trace
 to the analysis artifact `analysis/kld564-paired-q3ks.json`
 (ADR-0025 dated note). The ledger carries its upload row and
-sha256.
+SHA-256.
 
 Resolved 2026-08-10: the #65 ruling (ADR-0025 amendment) covers every
 baseline row (render-time join, baseline sidecars under `baselines/`).
@@ -31,7 +31,7 @@ this file (card-ledger.md) carries the upload file list.
 
 # Llama-3_3-Nemotron-Super-49B-v1_5-fit24gib-GGUF
 
-**DRAFT — do not ship. Issue #81; final only after #85 resolves.
+**DRAFT — do not ship. Issue #81. Final only after #85 resolves.
 Remove this line at upload.**
 
 This repository carries one mixed-precision GGUF of
@@ -78,7 +78,7 @@ this model's recorded packs. Its worst per-chunk excess over the
 baseline anywhere in 564 chunks is +0.05. The three chunks where earlier
 packs of this model spiked (347, 502, 137) read 0.126, 0.124, and 0.106.
 [`analysis/kld564-paired-q3ks.json`](analysis/kld564-paired-q3ks.json)
-records this comparison with the per-chunk KLD pairs it derives from.
+records this comparison and the per-chunk KLD pairs that produce it.
 
 ## What fit24gib means
 
