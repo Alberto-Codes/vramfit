@@ -6,14 +6,13 @@ ADR-0025 binds the rule: a card number without a sidecar entry is a
 defect. This ledger maps every number on the card to its source record
 on the reference box and to its sidecar destination. The run root is
 `~/quantfit-runs/nemotron-49b-v1_5/`, and every listed path is relative
-to that root. Issue #65 settles the sidecar schema. Its ruling decides every row marked **pending #65**.
+to that root.
 
-ADR-0025's consequences already commit the Q3_K_S baseline to a sidecar
-of its own (ADR-0024 decision 5: measured once, reused). For its rows,
-only the mechanics are open: the candidate sidecar embeds the comparison,
-or the card joins two sidecars at render time. The three i-quant rows are
-the fully open case — those artifacts were measured in #90 and deleted,
-and no ADR commits them to a sidecar.
+The #65 ruling (2026-08-10, ADR-0025 amendment) settled the schema:
+version 1, aggregates only, render-time baseline join, sidecars for the
+i-quant baselines, baseline sidecars under `baselines/`. All five
+sidecars exist in `eval/sidecars/`. The #82 dry run verified every
+sidecar number against the card tables on 2026-08-10.
 
 ## Candidate numbers (sidecar-bound, source records exist)
 
@@ -31,15 +30,15 @@ and no ADR commits them to a sidecar.
 | SHA-256 `48271199…0122` | `eval/tier3/candidate/*.json` artifact block, `eval/tier3/candidate/nemotron-49b-g1c-replication.gguf.sha256` | candidate sidecar, artifact block |
 | Toolchain versions (lm-eval 0.4.12, llama-cpp-python 0.3.34, b10172) | tier-3 JSON toolchain blocks | candidate sidecar, toolchain block |
 
-## Baseline numbers (pending #65)
+## Baseline numbers (resolved by the #65 ruling — render-time join)
 
 | Card numbers | Source record | Sidecar destination |
 |---|---|---|
-| Q3_K_S row: 20.45 GiB, 8.532 ± 0.064, 0.1584, 0.2959, 83.4 % | `eval/{ppl,kl,kl564}-baseline-q3ks.log`, bytes 21,955,339,776 (local `stat`, tier-3 artifact block) | baseline sidecar (ADR-0025) — embed vs join **pending #65** |
-| Tier-3 baseline column (0.7827, 0.9242, 0.8379, 0.7861, 0.6604 with stderr) | `eval/tier3/baseline/<task>.json` | baseline sidecar (ADR-0025) — embed vs join **pending #65** |
-| IQ3_XS row: 19.47 GiB, 8.554 ± 0.063, 0.1982, 0.3309, 81.7 % | `eval/{ppl,kl,kl564}-baseline-iq3xs.log`, bytes 20,908,008,960 (HF API, #90) | **pending #65** — no ADR commits i-quants to a sidecar |
-| IQ3_XXS row: 18.18 GiB, 8.723 ± 0.065, 0.2302, 0.3665, 80.1 % | `eval/{ppl,kl,kl564}-baseline-iq3xxs.log`, bytes 19,519,022,592 (HF API, #90) | **pending #65** — no ADR commits i-quants to a sidecar |
-| UD-IQ3_XXS row: 18.34 GiB, 8.697 ± 0.065, 0.1805, 0.3439, 82.0 % | `eval/{ppl,kl,kl564}-baseline-udiq3xxs.log`, bytes 19,692,431,264 (HF API, #90) | **pending #65** — no ADR commits i-quants to a sidecar |
+| Q3_K_S row: 20.45 GiB, 8.532 ± 0.064, 0.1584, 0.2959, 83.4 % | `eval/{ppl,kl,kl564}-baseline-q3ks.log`, bytes 21,955,339,776 (local `stat`, tier-3 artifact block) | `baselines/nvidia_Llama-3_3-Nemotron-Super-49B-v1_5-Q3_K_S.gguf.evals.json`, tiers 1–2 |
+| Tier-3 baseline column (0.7827, 0.9242, 0.8379, 0.7861, 0.6604 with stderr) | `eval/tier3/baseline/<task>.json` | same Q3_K_S sidecar, tier 3 |
+| IQ3_XS row: 19.47 GiB, 8.554 ± 0.063, 0.1982, 0.3309, 81.7 % | `eval/{ppl,kl,kl564}-baseline-iq3xs.log`, bytes 20,908,008,960 (HF API, #90) | `baselines/nvidia_Llama-3_3-Nemotron-Super-49B-v1_5-IQ3_XS.gguf.evals.json` |
+| IQ3_XXS row: 18.18 GiB, 8.723 ± 0.065, 0.2302, 0.3665, 80.1 % | `eval/{ppl,kl,kl564}-baseline-iq3xxs.log`, bytes 19,519,022,592 (HF API, #90) | `baselines/nvidia_Llama-3_3-Nemotron-Super-49B-v1_5-IQ3_XXS.gguf.evals.json` |
+| UD-IQ3_XXS row: 18.34 GiB, 8.697 ± 0.065, 0.1805, 0.3439, 82.0 % | `eval/{ppl,kl,kl564}-baseline-udiq3xxs.log`, bytes 19,692,431,264 (HF API, #90) | `baselines/Llama-3_3-Nemotron-Super-49B-v1_5-UD-IQ3_XXS.gguf.evals.json` |
 
 Baseline provenance: Q3_K_S is bartowski's published community GGUF
 (the fourth data point's size match). The i-quants are
@@ -62,17 +61,16 @@ measurement (disk) — logs and HF file hashes are the records.
 
 ## Flagged: numbers with no single source record
 
-These are derived statistics. No artifact on disk records them — they
-were computed from per-chunk KLD logs during the fifteenth data point
-and from tier-3 JSON during the sixteenth. Options: the #65 schema
-carries per-chunk / per-item detail, the sidecar stores derived
-comparison stats, or a recorded analysis artifact lands before upload.
+These are derived statistics. The #65 ruling excludes per-chunk and
+per-item detail from the sidecar (schema 1, aggregates only). The
+sidecars therefore do not cover the first two rows. Issue #99 lands
+the recorded analysis artifact before upload and blocks #83.
 
 | Card claim | Computed from | Risk |
 |---|---|---|
-| 369 of 564 chunks (65 %), mean gap 0.0086, 7.8σ paired | per-chunk KLD in `eval/kl564-g1c-replication.log` vs `eval/kl564-baseline-q3ks.log` | **no recorded artifact** |
-| Spike-free: worst excess +0.05; chunks 347/502/137 = 0.126/0.124/0.106 | same per-chunk logs | **no recorded artifact** |
-| Tier-3 Δ and combined σ columns, "largest delta 0.8σ" | tier-3 JSON pairs, computed in #88 | derived — decide store vs render |
+| 369 of 564 chunks (65 %), mean gap 0.0086, 7.8σ paired | per-chunk KLD in `eval/kl564-g1c-replication.log` vs `eval/kl564-baseline-q3ks.log` | **no recorded artifact — #99** |
+| Spike-free: worst excess +0.05; chunks 347/502/137 = 0.126/0.124/0.106 | same per-chunk logs | **no recorded artifact — #99** |
+| Tier-3 Δ and combined σ columns, "largest delta 0.8σ" | tier-3 JSON pairs, computed in #88 | render-time derivation from the two sidecars' score and stderr fields (#65 join ruling) |
 | Reconstruction improvement range 2.0–4.3× | derived: console-log RMSE pairs (ratios 2.90 / 3.88 / 2.03 / 4.34) | trivial derivation |
 | i-quant sizes in GiB (19.47 / 18.18 / 18.34) | HF API bytes in #90, converted | trivial derivation |
 
@@ -81,14 +79,44 @@ tier-2 value reproduces from the per-chunk logs — 369 of 564 (65.4 %),
 mean gap 0.00864, paired t 7.78σ, worst excess +0.0509 (chunk 263). The
 recompute is not a recorded artifact. The flag stands.
 
+## Upload file list (#82 dry run, 2026-08-10)
+
+Repo: `Llama-3_3-Nemotron-Super-49B-v1_5-fit24gib-GGUF`. Local paths
+are relative to the run root.
+
+| Upload path | Local source | SHA-256 |
+|---|---|---|
+| `Llama-3_3-Nemotron-Super-49B-v1_5-fit24gib.gguf` | `nemotron-49b-g1c-replication.gguf` (rename) | `48271199ee97d5559caa6bb963162265a9fc35cb5c7ec2b181513f7c4c810122` |
+| `Llama-3_3-Nemotron-Super-49B-v1_5-fit24gib.gguf.evals.json` | `eval/sidecars/Llama-3_3-Nemotron-Super-49B-v1_5-fit24gib.gguf.evals.json` (regenerated with the final name, #82) | `fdc48ad3210ea23333c51aeea42fb62d3c95baf9c9d395929e46d4cd2a2f8a7c` |
+| `Llama-3_3-Nemotron-Super-49B-v1_5-fit24gib.runlog.jsonl` | `nemotron-49b-g1c-replication.runlog.jsonl` (rename) | `969537bb5319bb97f90cf241eca0385ff960c1b5f38834b622c9288d830f9d5d` |
+| `recipe.json` | `recipe-g1c-replication.json` (rename) | `c418c24cf7830815f121b3c64a470392b841dc4dbc5a5dc2ed53cf957a06e5f9` |
+| `imatrix.gguf` | `nemotron-49b-f16.imatrix.gguf` (rename) | `eb9b5ffd362b9b1c7a1ae3557804b62c5953756c2db53f7dc5ca6a364ff6d08c` |
+| `baselines/nvidia_Llama-3_3-Nemotron-Super-49B-v1_5-Q3_K_S.gguf.evals.json` | `eval/sidecars/baselines/`, same file name | `25c5cb6de32bc17be3190354dc3f5a5811c7847a314d399aec0d922b44f750d3` |
+| `baselines/nvidia_Llama-3_3-Nemotron-Super-49B-v1_5-IQ3_XS.gguf.evals.json` | `eval/sidecars/baselines/`, same file name | `6850ad842785c3277c4d9331cb438747799f64b9df3faa04e840f17169ac0dae` |
+| `baselines/nvidia_Llama-3_3-Nemotron-Super-49B-v1_5-IQ3_XXS.gguf.evals.json` | `eval/sidecars/baselines/`, same file name | `395cd40f27b0ed2b40369d32543a4b12e1751d3dfb524c06deabafcf2febdadd` |
+| `baselines/Llama-3_3-Nemotron-Super-49B-v1_5-UD-IQ3_XXS.gguf.evals.json` | `eval/sidecars/baselines/`, same file name | `23f230076a438a03d611c5c6dbefe6ddddb52e1a48e98e5f1ba8495d396fe755` |
+| `README.md` | this card, finalized at upload | — |
+| `LICENSE` | NVIDIA Open Model License text — **not on disk, #83 gathers** | — |
+| `LICENSE-llama3.3` | Llama 3.3 Community License text — **not on disk, #83 gathers** | — |
+| `NOTICE` | NVIDIA notice line (#71) — **not on disk, #83 writes** | — |
+| `NOTICE-llama3.3` | Llama 3.3 notice line (#71) — **not on disk, #83 writes** | — |
+
+The i-quant baseline weights are not on disk (deleted, #90). Their
+sidecar `artifact.sha256` values match the download receipts in
+`eval/iquant-baselines.console.log` and the HF tree API check of
+2026-08-10. No re-hash is possible without a re-download — the receipts
+are the record.
+
 ## Other open flags
 
-- Repo identity: #79 record says `…-49B-v1-…` and `base_model …-v1`.
-  All artifacts derive from v1_5. The card uses v1_5. Maintainer call.
-- Publication file names (`recipe.json`, `imatrix.gguf`, sidecar and
-  run-log names) are placeholders until the #82 dry run.
-- `license_link` URL copied from community convention — verify at #82.
+- ~~Repo identity: v1 vs v1_5.~~ **Resolved 2026-08-10 (#82): the
+  maintainer ruled v1_5. Dated correction on the #79 record.**
+- ~~Publication file names.~~ **Resolved 2026-08-10 (#82): the table
+  above.**
+- ~~`license_link` URL.~~ **Verified 2026-08-10 (#82): HTTP 200, no
+  redirect.**
 - Sensitivity-map dataset link is a placeholder until #85.
 - ~~The guardrails section is empty until #86.~~ Resolved 2026-08-10:
   comply-and-disclose stance (#86). The section cites the tables and
   adds no numbers, so it needs no ledger rows.
+- Derived tier-2 statistics need the #99 analysis artifact.
