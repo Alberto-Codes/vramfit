@@ -1623,8 +1623,16 @@ a checksum on folklore.
 
 ## The publication procedure
 
-For publication number one (a Qwen-class packed model, per
-[the artifact ecosystem](artifact-ecosystem.md)):
+For publication number one (the 49B pipeline pack):
+
+> **Amended 2026-08-10 (#78).** This line named a Qwen-class packed
+> model as publication number one, per
+> [the artifact ecosystem](artifact-ecosystem.md). Gate 3 ended that
+> plan. The Qwen2.5-3B artifact tied the Q5_K_S baseline on
+> perplexity and lost KL divergence by 12% — it never earned a
+> publication. The 49B pack beats its size-matched baseline at 7.8σ
+> and carries the only win. A Qwen-class model publishes only with a
+> winning recipe of its own.
 
 1. Tier 1 and tier 2 on every candidate, against the same-size
    heuristic GGUF.
