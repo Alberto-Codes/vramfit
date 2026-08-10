@@ -27,6 +27,11 @@ and do not silently deviate.
   `## Decisions so far`.
 - Claim before work: self-assign the ticket as the session's first
   write. Open and unassigned means unclaimed.
+- Leave a progress comment when the session ends without
+  resolving. Any session may release a claim that has no progress
+  comment.
+- Re-read the chart body before writing it. Chart-body writes
+  land one session at a time.
 - Resolve at most one decision ticket per session. Exception:
   `chart:research` tickets fire as parallel background agents at
   charting time.
