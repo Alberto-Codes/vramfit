@@ -1648,8 +1648,18 @@ compute.
 
 > **Decided 2026-08-10 (#79),** on the research in #71 and #72.
 
+> **Corrected 2026-08-10 (#82).** The #79 record wrote `v1` in the
+> repo id and the `base_model` line. Every measured artifact derives
+> from `nvidia/Llama-3_3-Nemotron-Super-49B-v1_5`: the checkpoint
+> (revision `420ba7d`), the f16 conversion, the candidate pack, and
+> the four baselines. The maintainer ruled that the publication
+> carries `v1_5`. The repo id and metadata below carry the
+> correction. The weight file uploads as
+> `Llama-3_3-Nemotron-Super-49B-v1_5-fit24gib.gguf` (the repo id
+> minus `-GGUF`, plus `.gguf`).
+
 The packed model publishes as
-`Llama-3_3-Nemotron-Super-49B-v1-fit24gib-GGUF`, from the
+`Llama-3_3-Nemotron-Super-49B-v1_5-fit24gib-GGUF`, from the
 maintainer's personal account — no org, matching the
 individual-quantizer precedent (bartowski, mradermacher). The id
 starts with "Llama", which satisfies Meta's §1.b naming clause under
@@ -1668,7 +1678,7 @@ convention:
 
 - `license: other`, `license_name: nvidia-open-model-license`,
   `license_link` to the NVIDIA page.
-- `base_model: nvidia/Llama-3_3-Nemotron-Super-49B-v1`,
+- `base_model: nvidia/Llama-3_3-Nemotron-Super-49B-v1_5`,
   `base_model_relation: quantized`.
 - `quantized_by: Alberto-Codes`, `pipeline_tag: text-generation`.
 - Tags: `quantfit` (tool tag, precedent: `unsloth`, `gguf-my-repo`),
@@ -1683,7 +1693,9 @@ with Llama" on the card.
 The artifact set splits by role. The model repo holds the weights
 and everything specific to this pack: the imatrix (published, per
 3-of-4 precedent), the recipe, the evals sidecar
-([ADR-0025](../adr/0025-evals-sidecar.md)), and the run log. The
+([ADR-0025](../adr/0025-evals-sidecar.md)), and the run log.
+Baseline sidecars publish under `baselines/` with their upstream
+file names (the #65 ruling in that ADR). The
 sensitivity map lives only in the linked dataset repo — it describes
 the base model, not this pack, and the dataset copy is canonical.
 The card links it.
