@@ -61,10 +61,10 @@ measurement (disk) — logs and HF file hashes are the records.
 
 ## Flagged: numbers with no single source record
 
-These are derived statistics. The #65 ruling keeps per-chunk and
-per-item detail out of the sidecar (schema 1, aggregates only), so the
-sidecars do not cover the first two rows. Issue #99 lands the recorded
-analysis artifact before upload. It blocks #83.
+These are derived statistics. The #65 ruling excludes per-chunk and
+per-item detail from the sidecar (schema 1, aggregates only). The
+sidecars therefore do not cover the first two rows. Issue #99 lands
+the recorded analysis artifact before upload and blocks #83.
 
 | Card claim | Computed from | Risk |
 |---|---|---|
@@ -87,14 +87,14 @@ are relative to the run root.
 | Upload path | Local source | SHA-256 |
 |---|---|---|
 | `Llama-3_3-Nemotron-Super-49B-v1_5-fit24gib.gguf` | `nemotron-49b-g1c-replication.gguf` (rename) | `48271199ee97d5559caa6bb963162265a9fc35cb5c7ec2b181513f7c4c810122` |
-| `Llama-3_3-Nemotron-Super-49B-v1_5-fit24gib.gguf.evals.json` | `eval/sidecars/` (regenerated with the final name, #82) | `fdc48ad3210ea23333c51aeea42fb62d3c95baf9c9d395929e46d4cd2a2f8a7c` |
+| `Llama-3_3-Nemotron-Super-49B-v1_5-fit24gib.gguf.evals.json` | `eval/sidecars/Llama-3_3-Nemotron-Super-49B-v1_5-fit24gib.gguf.evals.json` (regenerated with the final name, #82) | `fdc48ad3210ea23333c51aeea42fb62d3c95baf9c9d395929e46d4cd2a2f8a7c` |
 | `Llama-3_3-Nemotron-Super-49B-v1_5-fit24gib.runlog.jsonl` | `nemotron-49b-g1c-replication.runlog.jsonl` (rename) | `969537bb5319bb97f90cf241eca0385ff960c1b5f38834b622c9288d830f9d5d` |
 | `recipe.json` | `recipe-g1c-replication.json` (rename) | `c418c24cf7830815f121b3c64a470392b841dc4dbc5a5dc2ed53cf957a06e5f9` |
 | `imatrix.gguf` | `nemotron-49b-f16.imatrix.gguf` (rename) | `eb9b5ffd362b9b1c7a1ae3557804b62c5953756c2db53f7dc5ca6a364ff6d08c` |
-| `baselines/nvidia_Llama-3_3-Nemotron-Super-49B-v1_5-Q3_K_S.gguf.evals.json` | `eval/sidecars/baselines/` | `25c5cb6de32bc17be3190354dc3f5a5811c7847a314d399aec0d922b44f750d3` |
-| `baselines/nvidia_Llama-3_3-Nemotron-Super-49B-v1_5-IQ3_XS.gguf.evals.json` | `eval/sidecars/baselines/` | `6850ad842785c3277c4d9331cb438747799f64b9df3faa04e840f17169ac0dae` |
-| `baselines/nvidia_Llama-3_3-Nemotron-Super-49B-v1_5-IQ3_XXS.gguf.evals.json` | `eval/sidecars/baselines/` | `395cd40f27b0ed2b40369d32543a4b12e1751d3dfb524c06deabafcf2febdadd` |
-| `baselines/Llama-3_3-Nemotron-Super-49B-v1_5-UD-IQ3_XXS.gguf.evals.json` | `eval/sidecars/baselines/` | `23f230076a438a03d611c5c6dbefe6ddddb52e1a48e98e5f1ba8495d396fe755` |
+| `baselines/nvidia_Llama-3_3-Nemotron-Super-49B-v1_5-Q3_K_S.gguf.evals.json` | `eval/sidecars/baselines/`, same file name | `25c5cb6de32bc17be3190354dc3f5a5811c7847a314d399aec0d922b44f750d3` |
+| `baselines/nvidia_Llama-3_3-Nemotron-Super-49B-v1_5-IQ3_XS.gguf.evals.json` | `eval/sidecars/baselines/`, same file name | `6850ad842785c3277c4d9331cb438747799f64b9df3faa04e840f17169ac0dae` |
+| `baselines/nvidia_Llama-3_3-Nemotron-Super-49B-v1_5-IQ3_XXS.gguf.evals.json` | `eval/sidecars/baselines/`, same file name | `395cd40f27b0ed2b40369d32543a4b12e1751d3dfb524c06deabafcf2febdadd` |
+| `baselines/Llama-3_3-Nemotron-Super-49B-v1_5-UD-IQ3_XXS.gguf.evals.json` | `eval/sidecars/baselines/`, same file name | `23f230076a438a03d611c5c6dbefe6ddddb52e1a48e98e5f1ba8495d396fe755` |
 | `README.md` | this card, finalized at upload | — |
 | `LICENSE` | NVIDIA Open Model License text — **not on disk, #83 gathers** | — |
 | `LICENSE-llama3.3` | Llama 3.3 Community License text — **not on disk, #83 gathers** | — |

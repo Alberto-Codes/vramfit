@@ -19,11 +19,12 @@ DRAFT — issue #81. Not final until two dependencies resolve:
    (369/564, 7.8σ, +0.05 bound, spike chunks) have no recorded
    artifact. Do not ship before it lands.
 
-Resolved 2026-08-10 by the #82 dry run: the #65 ruling covers every
+Resolved 2026-08-10: the #65 ruling (ADR-0025 amendment) covers every
 baseline row (render-time join, baseline sidecars under `baselines/`).
 The maintainer ruled the v1-vs-v1_5 flag: the publication carries v1_5,
-corrected on the #79 record. File names and sha256s are final — the
-ledger beside this file (card-ledger.md) carries the upload file list.
+corrected on the #79 record (#82). The #82 dry run fixed the file
+names, with sha256s for the nine on-disk files — the ledger beside
+this file (card-ledger.md) carries the upload file list.
 -->
 
 # Llama-3_3-Nemotron-Super-49B-v1_5-fit24gib-GGUF
