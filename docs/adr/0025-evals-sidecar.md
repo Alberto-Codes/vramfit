@@ -10,6 +10,17 @@
   comparison put three more baselines on the card, so decision 4
   now requires sidecars for them too. Publication #1 carries five
   sidecars.
+- **Note (2026-08-10, issue #99):** the aggregates-only rule left
+  the card's derived tier-2 statistics without a record. Ruling: a
+  cross-artifact derivation lands as its own analysis artifact,
+  never in a sidecar. The analysis artifact carries the
+  `quantfit_schema` envelope, the method, the input log hashes, the
+  results, and the derived per-chunk KLD pairs. The pairs let a
+  reader recompute every derived card number without the
+  unpublished logs. The artifact publishes in the model repo under
+  `analysis/`. Its generator sits beside it in the run archive.
+  Publication #1 carries one: `analysis/kld564-paired-q3ks.json`,
+  the paired candidate-vs-Q3_K_S comparison.
 
 ## Context
 
