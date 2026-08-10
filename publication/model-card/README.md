@@ -36,25 +36,28 @@ must change. The maintainer resolves it.
 
 # Llama-3_3-Nemotron-Super-49B-v1_5-fit24gib-GGUF
 
+**DRAFT — do not ship. Issue #81; final only after #65, #82, #85, and
+#86 resolve. Remove this line at upload.**
+
 This repository carries one mixed-precision GGUF of
 [nvidia/Llama-3_3-Nemotron-Super-49B-v1_5](https://huggingface.co/nvidia/Llama-3_3-Nemotron-Super-49B-v1_5),
 solved to fit a 24 GiB VRAM budget.
 [quantfit](https://github.com/Alberto-Codes/quantfit) measured each layer
-group's quantization damage, solved the bit allocation under the budget,
-and packed through llama.cpp's quantizer. The `fit24gib` marker names the
-budget the recipe was solved for — this pack has no single quantization
-scheme, and the budget is the claim.
+group's quantization damage — the shift in the model's output
+distribution when that group quantizes — then solved the bit allocation
+under the budget and packed through llama.cpp's quantizer. The
+`fit24gib` marker names the budget the solver targeted. This pack has no
+single quantization scheme, and the budget is the claim. Built with
+Llama.
 
-Every number below sits beside its baseline counterpart. Losing numbers
-are included.
-
-Built with Llama.
+Every measured number below sits beside its baseline counterpart. The
+card prints the losing numbers too.
 
 ## Quality beside size
 
-Held-out WikiText-2 test set, full 564 chunks. KL divergence is measured
-against the f16 base over the first 100 chunks (KLD 100) and all 564
-chunks (KLD 564). Lower is better for PPL and KLD. "Same top" is the
+Held-out WikiText-2 test set, full 564 chunks. Tier 2 measures KL
+divergence (KLD) against the f16 base over two windows: the first 100
+chunks and all 564. Lower is better for PPL and KLD. "Same top" is the
 share of tokens where the quantized model and the f16 base agree on the
 top token — higher is better.
 
@@ -66,22 +69,24 @@ top token — higher is better.
 | IQ3_XXS (bartowski) | 18.18 GiB | 8.723 ± 0.065 | 0.2302 | 0.3665 | 80.1 % |
 | UD-IQ3_XXS (unsloth) | 18.34 GiB | 8.697 ± 0.065 | 0.1805 | 0.3439 | 82.0 % |
 
-This pack beats every in-budget baseline on PPL, KLD 100, and KLD 564.
-The size-matched Q3_K_S keeps one lead: top-token agreement, 83.4 %
-against 82.9 %. The i-quants are 0.9–2.2 GiB smaller — the size column
-is part of the comparison, not a footnote.
+This pack beats every in-budget baseline on KLD 100 and KLD 564. On PPL
+it leads nominally everywhere — a tie by the interval against Q3_K_S and
+IQ3_XS, a clear win over the two smallest. The size-matched Q3_K_S keeps
+one lead: top-token agreement, 83.4 % against 82.9 %. The i-quants are
+0.9–2.2 GiB smaller, and the size column is part of the comparison, not
+a footnote.
 
 Against Q3_K_S on the full window, this pack is better on 369 of 564
 chunks (65 %). The mean gap is 0.0086. A paired per-chunk test puts the
-difference at 7.8σ. The pack is also the first spike-free profile in
-this lane's records: its worst per-chunk excess over the baseline
-anywhere in 564 chunks is +0.05, and the three known knife-edge chunks
-(347, 502, 137) read 0.126, 0.124, and 0.106.
+difference at 7.8σ. The pack is also the first spike-free profile among
+this model's recorded packs. Its worst per-chunk excess over the
+baseline anywhere in 564 chunks is +0.05. The three chunks where earlier
+packs of this model spiked (347, 502, 137) read 0.126, 0.124, and 0.106.
 
 ## What fit24gib means
 
-The recipe was solved for a 24 GiB card serving 16k context at fp8 KV
-cache. The arithmetic, recorded in the recipe:
+The solver targeted a 24 GiB card serving 16k context at fp8 KV cache.
+The recipe records the arithmetic:
 
 | Quantity | Bytes | GiB |
 |---|---|---|
@@ -92,9 +97,9 @@ cache. The arithmetic, recorded in the recipe:
 | Real packed file | 21,860,214,272 | 20.36 |
 
 The real file lands 112.48 MiB under the weight budget. Size prediction
-prices each GGUF type at its effective bits (Q4_K spends 4.5 bits per
-weight, not 4), with a 0.005 overhead fraction for unquantized tensors
-and file metadata.
+prices each GGUF type at its effective bits — Q4_K spends 4.5 bits per
+weight, not 4. A 0.005 overhead fraction covers unquantized tensors and
+file metadata.
 
 ## The recipe
 
@@ -111,8 +116,8 @@ The solver allocated 82 layer groups:
   to f16 than its unprotected reference (RMSE 0.001641 vs 0.004755,
   0.000574 vs 0.002229, 0.001136 vs 0.002303, 0.000501 vs 0.002178).
 
-The pack ran base type Q3_K_S with `--pure` and 128 per-tensor type
-overrides, under the published importance matrix. A mandatory
+The pack ran base type Q3_K_S with `--pure` and 128 type overrides,
+under the published importance matrix. A mandatory
 reconstruction check compared all 48 protected tensors against an
 unprotected reference pack: 48 of 48 reconstruct strictly closer to f16.
 
@@ -122,7 +127,7 @@ on one measurement frame. Do not compare them across scans or across
 models.
 
 <details>
-<summary>Per-group allocation and damage (82 groups, from the recipe)</summary>
+<summary>Per-group allocation and damage (82 groups, from the recipe — higher damage is worse)</summary>
 
 | Group | Precision | GGUF type | Bytes | Damage | Protections |
 |---|---|---|---|---|---|
@@ -213,12 +218,14 @@ models.
 
 ## The solver's trace
 
-The solver is greedy damage-per-byte. It recorded all 162 demotion steps
-in the recipe, so the solve replays from the artifact. The last step is
-the honest one: with 47 protection floors priced in, the solver demoted
-`model.layers.3` from 4-bit to 3-bit, freeing 113,087,938 B at a
-predicted damage of 0.1129 — 29 % of the recipe's total, spent on one
-step. The measurements below did not punish that trade.
+The solver is greedy damage-per-byte: at each step it demotes the group
+with the least predicted damage per byte freed. It recorded all 162
+demotion steps in the recipe, so the solve replays from the artifact.
+The last step is the honest one. With 47 protection floors priced in,
+the solver demoted `model.layers.3` from 4-bit to 3-bit. That step freed
+113,087,938 B at a predicted damage of 0.1129 — 29 % of the recipe's
+total, spent on one step. The measurements below did not punish that
+trade.
 
 ## Evaluation
 
@@ -245,8 +252,8 @@ report as ties.
 
 Five ties. The largest delta is 0.8σ (GSM8K, this pack nominally ahead).
 This pack trails nominally on Winogrande and ARC-Challenge — both
-deficits print here with their error bars. Nobody cherry-picked: the
-slice was fixed before any run.
+deficits print here with their error bars. The project fixed the slice
+before any run, so no result selected the tasks.
 
 Read together: tier 2 ranks (the 7.8σ full-window KLD win over the
 size-matched baseline), tier 3 certifies (five ties at equal size).
@@ -262,8 +269,10 @@ uv run quantfit pack recipe.json --llama-cpp <llama.cpp checkout> \
   --imatrix imatrix.gguf --out Llama-3_3-Nemotron-Super-49B-v1_5-fit24gib.gguf
 ```
 
-<!-- File names above are publication names, pending the #82 dry run.
-     Source artifacts: recipe-g1c-replication.json,
+**PLACEHOLDER #82 — the file names above are not final until the upload
+dry run. Remove this line at upload.**
+
+<!-- Source artifacts: recipe-g1c-replication.json,
      nemotron-49b-f16.imatrix.gguf. -->
 
 The command converts the f16 base GGUF once, drives the recorded type
@@ -274,9 +283,12 @@ The recipe is not a magic constant. It records the full solve: the
 budget bytes, the 48 protections, the 4 exclusions, and the 162-step
 trace. To solve for a different budget, run `quantfit plan` against the
 published sensitivity map with your own `--vram`. The map is right
-there: [sensitivity map dataset](PLACEHOLDER-dataset-repo-link-#85).
+there: **[PLACEHOLDER #85 — sensitivity map dataset link]**.
 
 ## Guardrails and damage disclosure
+
+**PLACEHOLDER — blocked on #86. Do not ship this card with this section
+empty.**
 
 <!-- PLACEHOLDER — blocked on #86 (stance on the NVIDIA Open Model
 License guardrail-efficacy clause). This section may need: a statement

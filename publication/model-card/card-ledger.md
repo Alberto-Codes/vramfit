@@ -20,7 +20,7 @@ and no ADR commits them to a sidecar.
 | Card numbers | Source record | Sidecar destination |
 |---|---|---|
 | PPL 8.517 ± 0.063 | `eval/ppl-g1c-replication.log` | candidate sidecar, tier 1 |
-| KLD 100 0.1538, same-top (100-window basis) | `eval/kl-g1c-replication.log` | candidate sidecar, tier 2 |
+| KLD 100 0.1538 | `eval/kl-g1c-replication.log` | candidate sidecar, tier 2 |
 | KLD 564 0.2873, same top 82.9 % | `eval/kl564-g1c-replication.log` | candidate sidecar, tier 2 |
 | MMLU 0.7829 ± 0.0033 | `eval/tier3/candidate/mmlu.json` | candidate sidecar, tier 3 |
 | GSM8K 0.9318 ± 0.0069 | `eval/tier3/candidate/gsm8k.json` | candidate sidecar, tier 3 |
@@ -42,7 +42,7 @@ and no ADR commits them to a sidecar.
 | UD-IQ3_XXS row: 18.34 GiB, 8.697 ± 0.065, 0.1805, 0.3439, 82.0 % | `eval/{ppl,kl,kl564}-baseline-udiq3xxs.log`, bytes 19,692,431,264 (HF API, #90) | **pending #65** — no ADR commits i-quants to a sidecar |
 
 Baseline provenance: Q3_K_S is bartowski's published community GGUF
-(the third data point's size match). The i-quants are
+(the fourth data point's size match). The i-quants are
 `bartowski/nvidia_Llama-3_3-Nemotron-Super-49B-v1_5-GGUF` and
 `unsloth/Llama-3_3-Nemotron-Super-49B-v1_5-GGUF`, evaluated on the
 recorded instrument in #90. The i-quant artifacts were deleted after
@@ -73,7 +73,13 @@ comparison stats, or a recorded analysis artifact lands before upload.
 | 369 of 564 chunks (65 %), mean gap 0.0086, 7.8σ paired | per-chunk KLD in `eval/kl564-g1c-replication.log` vs `eval/kl564-baseline-q3ks.log` | **no recorded artifact** |
 | Spike-free: worst excess +0.05; chunks 347/502/137 = 0.126/0.124/0.106 | same per-chunk logs | **no recorded artifact** |
 | Tier-3 Δ and combined σ columns, "largest delta 0.8σ" | tier-3 JSON pairs, computed in #88 | derived — decide store vs render |
+| Reconstruction improvement range 2.0–4.3× | derived: console-log RMSE pairs (ratios 2.90 / 3.88 / 2.03 / 4.34) | trivial derivation |
 | i-quant sizes in GiB (19.47 / 18.18 / 18.34) | HF API bytes in #90, converted | trivial derivation |
+
+Independent recompute (2026-08-10, PR #96 review cycle): every derived
+tier-2 value reproduces from the per-chunk logs — 369 of 564 (65.4 %),
+mean gap 0.00864, paired t 7.78σ, worst excess +0.0509 (chunk 263). The
+recompute is not a recorded artifact. The flag stands.
 
 ## Other open flags
 
