@@ -34,6 +34,14 @@ change.
     ([ADR-0025](../adr/0025-evals-sidecar.md)). Not "eval log" (the raw
     tool output) or "benchmark report".
 
+**Analysis artifact**
+:   The JSON record of a derivation across two or more evaluated
+    artifacts, with the method, the input hashes, the results, and the
+    derived per-chunk values (ADR-0025 dated note, 2026-08-10). One
+    sidecar describes one artifact — a cross-artifact derivation lands
+    here. Distinct from the bare word "analysis", a banned synonym for
+    the sensitivity map.
+
 ## Measurement
 
 **Layer group** (short: **group**)
