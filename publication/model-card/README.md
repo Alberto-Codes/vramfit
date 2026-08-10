@@ -77,8 +77,8 @@ difference at 7.8σ. The pack is also the first spike-free profile among
 this model's recorded packs. Its worst per-chunk excess over the
 baseline anywhere in 564 chunks is +0.05. The three chunks where earlier
 packs of this model spiked (347, 502, 137) read 0.126, 0.124, and 0.106.
-[`analysis/kld564-paired-q3ks.json`](analysis/kld564-paired-q3ks.json)
-records this comparison and the per-chunk KLD pairs that produce it.
+`analysis/kld564-paired-q3ks.json` in this repository records this
+comparison and the per-chunk KLD pairs that produce it.
 
 ## What fit24gib means
 
