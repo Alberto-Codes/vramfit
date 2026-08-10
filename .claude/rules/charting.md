@@ -13,14 +13,16 @@ The convention lives in
 Read that page before charting or working a ticket. The page is the
 source. This file only enforces the load-bearing rules.
 
-No chart has proven the convention yet. When a rule fights reality,
-flag the conflict to the maintainer. Do not silently obey and do
-not silently deviate.
+Chart #70 is the proving run, in progress. When a rule fights
+reality, flag the conflict to the maintainer. Do not silently obey
+and do not silently deviate.
 
 - A decision ticket never stores a decision. Close it with a
   pointer to the record: an ADR, an amendment, a data point, or a
   docs change. A `chart:task` ticket instead closes with what was
-  done and the facts later tickets depend on.
+  done and the facts later tickets depend on. A `chart:research`
+  ticket closes with its findings comment: gist, key facts, and
+  primary-source links.
 - Add a one-line gist plus both links to the chart's
   `## Decisions so far`.
 - Claim before work: self-assign the ticket as the session's first
@@ -28,6 +30,12 @@ not silently deviate.
 - Resolve at most one decision ticket per session. Exception:
   `chart:research` tickets fire as parallel background agents at
   charting time.
+- Fold overlapping issues at charting time. Absorb and close
+  effort-scoped checklists. Each checkbox lands as a ticket, a
+  Notes line, or fog. Leave issues that park strategy triggers
+  open and cite them.
+- Claimable does not mean ready. Check the chart's Notes for
+  prerequisites that have no issue to block on.
 - Discussion and prototype tickets resolve only through live
   exchange with the maintainer. Never answer the maintainer's side
   of a discussion.

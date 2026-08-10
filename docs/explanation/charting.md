@@ -4,10 +4,10 @@ status: sketch
 
 # Charting: planning work bigger than one session
 
-> **Status: sketch** — process design recorded 2026-08-09. No chart
-> has been run yet. The go-public cluster (issues #66, #67, #11, #68)
-> is the intended proving run. Promote this page when the first chart
-> reaches its destination.
+> **Status: sketch** — process design recorded 2026-08-09. The first
+> chart is #70 (go-public), created 2026-08-09 from the #66/#67/#11/#68
+> cluster. The sections below fold in findings from that run. Promote
+> this page when the chart reaches its destination.
 
 ## The gap this closes
 
@@ -58,7 +58,7 @@ multi-session effort. Its body holds five sections and nothing else:
 | Section | Contents |
 |---------|----------|
 | `## Destination` | One or two lines: the state that ends the effort. |
-| `## Notes` | Standing constraints for every session. Strict mode applies to all chart and ticket text. |
+| `## Notes` | Standing constraints for every session, and prerequisites that have no issue. Strict mode applies to all chart and ticket text. |
 | `## Decisions so far` | One line per closed ticket: title link, one-line gist, link to the record. |
 | `## Fog` | In-scope questions not yet sharp enough to ticket. |
 | `## Out of scope` | Ruled-out work, one line each with the reason. Never resurrected in place. |
@@ -73,6 +73,9 @@ Each child issue resolves one question and is sized to one agent
 session. The body is a single `## Question`. The answer arrives only
 at resolution: a closing comment with the gist and the pointer to the
 record. Assets (research notes, prototypes) are linked, not pasted.
+A research ticket gathers facts, not a decision, so the inversion
+does not bind it. Its record is its own closing comment: one gist
+line, the key facts, and links to primary sources.
 
 Types, as labels:
 
@@ -91,6 +94,11 @@ Blocking uses GitHub's native issue dependencies, and children are
 native sub-issues of the chart. The **claimable set** is the open,
 unblocked, unassigned tickets.
 
+Edges may point at issues outside the chart. Wire one whenever a
+blocker has an issue. A real-world prerequisite without an issue
+lives in the chart's Notes. Check Notes before claiming: claimable
+does not mean ready.
+
 ## Fog discipline
 
 The graduation test is precision, not answerability: **ticket when
@@ -105,6 +113,26 @@ unknowns stay where they already live: sketch pages with a paired
 issue that parks the triggers (the
 [artifact ecosystem](artifact-ecosystem.md) / issue #11 pattern). A
 chart may cite a sketch page; it does not replace one.
+
+## Folding existing issues
+
+A new chart often overlaps issues that already exist. Scope decides
+their fate:
+
+- **Effort-scoped issues** exist only to route this effort —
+  checklists or umbrellas describing the chart's route. Absorb and
+  close them. Each checkbox lands as a ticket, a Notes line, or
+  fog. The closing comment maps every checkbox to where it landed
+  and links the chart.
+- **Strategy-scoped issues** park triggers for a sketch page beyond
+  this effort. Leave them open. The chart cites them and rules
+  their contents in or out of scope.
+
+An issue that is neither — a plain feature or bug — stays where it
+is. Wire a blocking edge when a ticket depends on it.
+
+An open effort-scoped issue beside the chart forks the index, the
+way a second decision store would fork the truth.
 
 ## Session discipline
 
@@ -168,12 +196,15 @@ gh issue close <n>
 
 ## Open questions
 
-- **Label spelling.** `chart` / `chart:<type>` proposed here. Final
-  names need to survive contact with the first chart.
-- **First chart.** The go-public cluster (#66, #67, #11, #68) has
-  four interlocking issues with implicit ordering — the natural
-  proving run. Charting it starts with a live discussion that names
-  the destination.
+- **Label spelling.** `chart` / `chart:<type>` proposed here.
+  Resolved 2026-08-09: chart #70 used the names unchanged.
+  `chart:prototype` exists but no ticket has carried it yet.
+- **Research-record size.** The closing comment is the record for a
+  research ticket. Unknown whether one comment serves when the
+  findings grow large.
+- **First chart.** Resolved 2026-08-09: chart #70 indexes the
+  go-public effort. The fold rules, the research-record rule, and
+  the claimable-set caveat above came from that run.
 - **Automation.** The convention runs by hand first. A repo skill
   (`.claude/skills/`) is worth writing only after two or three
   charts prove the shape.
