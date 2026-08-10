@@ -13,11 +13,13 @@ tags:
 ---
 
 <!--
-DRAFT — issue #81. Not final until two dependencies resolve:
+DRAFT — issue #81. Not final until one dependency resolves:
 1. #85 (maps dataset): the sensitivity-map link is a placeholder.
-2. #99 (tier-2 analysis artifact): the derived tier-2 statistics
-   (369/564, 7.8σ, +0.05 bound, spike chunks) have no recorded
-   artifact. Do not ship before it lands.
+
+Resolved 2026-08-10 (#99): the derived tier-2 statistics now trace
+to the analysis artifact `analysis/kld564-paired-q3ks.json`
+(ADR-0025 dated note). The ledger carries its upload row and
+SHA-256.
 
 Resolved 2026-08-10: the #65 ruling (ADR-0025 amendment) covers every
 baseline row (render-time join, baseline sidecars under `baselines/`).
@@ -29,8 +31,8 @@ this file (card-ledger.md) carries the upload file list.
 
 # Llama-3_3-Nemotron-Super-49B-v1_5-fit24gib-GGUF
 
-**DRAFT — do not ship. Issue #81; final only after #85 and #99
-resolve. Remove this line at upload.**
+**DRAFT — do not ship. Issue #81. Final only after #85 resolves.
+Remove this line at upload.**
 
 This repository carries one mixed-precision GGUF of
 [nvidia/Llama-3_3-Nemotron-Super-49B-v1_5](https://huggingface.co/nvidia/Llama-3_3-Nemotron-Super-49B-v1_5),
@@ -75,6 +77,8 @@ difference at 7.8σ. The pack is also the first spike-free profile among
 this model's recorded packs. Its worst per-chunk excess over the
 baseline anywhere in 564 chunks is +0.05. The three chunks where earlier
 packs of this model spiked (347, 502, 137) read 0.126, 0.124, and 0.106.
+`analysis/kld564-paired-q3ks.json` in this repository records this
+comparison and the per-chunk KLD pairs that produce it.
 
 ## What fit24gib means
 
