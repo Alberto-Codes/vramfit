@@ -9,9 +9,11 @@ recipe at once for the validation pass (ADR-0006). The pack port (`RecipePacker`
 carries its two toolchain stages separately so the composition root
 can log each (ADR-0012), the smoke port (`SmokeTester`) carries
 the post-pack proof that the artifact emits language (ADR-0017),
-and the reconstruction port (`ReconstructionChecker`) carries the
+the reconstruction port (`ReconstructionChecker`) carries the
 per-tensor measurement that guards protected packs against fit
-collapse (ADR-0022).
+collapse (ADR-0022), and the evals port (`EvalsSidecarSink`) carries
+one evaluated artifact's scoreboard evidence to its published
+sidecar (ADR-0025).
 Concrete implementations live in [quantfit.adapters.outbound][].
 
 Examples:
@@ -36,6 +38,7 @@ from collections.abc import Mapping
 from typing import Protocol
 
 from quantfit.domain.budget import ModelShape
+from quantfit.domain.evals import EvalsSidecar
 from quantfit.domain.model import Recipe, SensitivityMap
 from quantfit.domain.pack import PackResult
 from quantfit.domain.scan import GroupSpec, Measurement
@@ -377,6 +380,35 @@ class SmokeTester(Protocol):
         Raises:
             RuntimeError: If the tool cannot start, exits nonzero, or
                 reports no final estimate.
+        """
+        ...
+
+
+class EvalsSidecarSink(Protocol):
+    """Accepts one artifact's evals sidecar for persistence.
+
+    The writer half of ADR-0025: one call persists one evaluated
+    artifact's complete scoreboard evidence. The reader path for card
+    tooling is deferred — the rule that card numbers trace to a
+    sidecar binds without it.
+
+    Examples:
+        The JSON file adapter satisfies this port:
+
+        ```python
+        from quantfit.adapters.outbound.evals_sidecar_json import (
+            JsonEvalsSidecarFile,
+        )
+
+        sink: EvalsSidecarSink = JsonEvalsSidecarFile(path)
+        ```
+    """
+
+    def save(self, sidecar: EvalsSidecar) -> None:
+        """Persist the sidecar.
+
+        Args:
+            sidecar: The evidence record to persist.
         """
         ...
 

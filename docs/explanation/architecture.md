@@ -64,10 +64,10 @@ flowchart TD
         GGUF["gguf/ pack toolchain<br/>(subprocess, no torch)"]
     end
     subgraph ports["ports"]
-        P["Protocols: SensitivityMapSource/Sink,<br/>RecipeSink, ModelShapeSource,<br/>DamageMeter, ScanCheckpointStore,<br/>RunLogSink, RecipePacker,<br/>ReconstructionChecker, SmokeTester"]
+        P["Protocols: SensitivityMapSource/Sink,<br/>RecipeSink, ModelShapeSource,<br/>DamageMeter, ScanCheckpointStore,<br/>RunLogSink, RecipePacker,<br/>ReconstructionChecker, SmokeTester,<br/>EvalsSidecarSink"]
     end
     subgraph domain["domain (pure)"]
-        D["model · budget · solver · scan ·<br/>protection · pack · validation ·<br/>runtime · errors"]
+        D["model · budget · solver · scan ·<br/>protection · pack · validation ·<br/>runtime · evals · errors"]
     end
     CLI --> JSONAD
     CLI --> HF
