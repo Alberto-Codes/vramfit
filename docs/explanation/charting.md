@@ -149,6 +149,9 @@ way a second decision store would fork the truth.
   body has no lock. Re-read it immediately before writing. Re-read
   after writing to confirm the prior content and the new line both
   survived.
+- Parallel sessions share one checkout unless isolated. A session
+  that edits repo files enters its own git worktree first. Every
+  session stages exact paths, never the whole tree.
 - Background research agents never write the chart body. The
   charting session folds their gist lines into Decisions so far.
 - A session that ends without resolving leaves a progress comment
