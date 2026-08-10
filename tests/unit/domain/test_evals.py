@@ -93,6 +93,10 @@ class TestTier3:
         with pytest.raises(ValueError, match="wall_clock_seconds"):
             Tier3Task("2026-08-09", "mmlu", "2", 5, 14042, "acc", 0.78, 0.003, 0.0)
 
+    def test_empty_tasks_raises_value_error(self) -> None:
+        with pytest.raises(ValueError, match="tasks"):
+            Tier3Result(())
+
     def test_duplicate_task_names_raises_value_error(self) -> None:
         with pytest.raises(ValueError, match="unique"):
             Tier3Result((TASK, TASK))

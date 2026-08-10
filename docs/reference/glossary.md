@@ -326,6 +326,14 @@ change.
     so cards compare across candidates and time. Not "benchmark suite"
     or "eval suite".
 
+**Harness lane** (short: **lane**)
+:   The recorded software path that drives a packed model through the
+    tier-3 slice: the harness, the binding, and the llama.cpp build
+    acting as one instrument
+    ([ADR-0024](../adr/0024-tier3-task-slice.md)). The evals sidecar
+    records it in its toolchain block. Not "backend" (the harness's
+    own term for one piece of the path).
+
 ## Architecture
 
 **Domain**
