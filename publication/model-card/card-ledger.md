@@ -6,8 +6,14 @@ ADR-0025 binds the rule: a card number without a sidecar entry is a
 defect. This ledger maps every number on the card to its source record
 on the reference box and to its sidecar destination. Paths are relative
 to `~/quantfit-runs/nemotron-49b-v1_5/`. Issue #65 settles the sidecar
-schema. Its ruling decides every row marked **pending #65**: baseline
-numbers get embedded sidecar entries or a render-time join.
+schema. Its ruling decides every row marked **pending #65**.
+
+ADR-0025's consequences already commit the Q3_K_S baseline to a sidecar
+of its own (ADR-0024 decision 5: measured once, reused). For its rows,
+only the mechanics are open: the candidate sidecar embeds the comparison,
+or the card joins two sidecars at render time. The three i-quant rows are
+the fully open case — those artifacts were measured in #90 and deleted,
+and no ADR commits them to a sidecar.
 
 ## Candidate numbers (sidecar-bound, source records exist)
 
@@ -29,11 +35,11 @@ numbers get embedded sidecar entries or a render-time join.
 
 | Card numbers | Source record | Sidecar destination |
 |---|---|---|
-| Q3_K_S row: 20.45 GiB, 8.532 ± 0.064, 0.1584, 0.2959, 83.4 % | `eval/{ppl,kl,kl564}-baseline-q3ks.log`, bytes 21,955,339,776 (local `stat`, tier-3 artifact block) | **pending #65** |
-| IQ3_XS row: 19.47 GiB, 8.554 ± 0.063, 0.1982, 0.3309, 81.7 % | `eval/{ppl,kl,kl564}-baseline-iq3xs.log`, bytes 20,908,008,960 (HF API, #90) | **pending #65** |
-| IQ3_XXS row: 18.18 GiB, 8.723 ± 0.065, 0.2302, 0.3665, 80.1 % | `eval/{ppl,kl,kl564}-baseline-iq3xxs.log`, bytes 19,519,022,592 (HF API, #90) | **pending #65** |
-| UD-IQ3_XXS row: 18.34 GiB, 8.697 ± 0.065, 0.1805, 0.3439, 82.0 % | `eval/{ppl,kl,kl564}-baseline-udiq3xxs.log`, bytes 19,692,431,264 (HF API, #90) | **pending #65** |
-| Tier-3 baseline column (0.7827, 0.9242, 0.8379, 0.7861, 0.6604 with stderr) | `eval/tier3/baseline/<task>.json` | **pending #65** |
+| Q3_K_S row: 20.45 GiB, 8.532 ± 0.064, 0.1584, 0.2959, 83.4 % | `eval/{ppl,kl,kl564}-baseline-q3ks.log`, bytes 21,955,339,776 (local `stat`, tier-3 artifact block) | baseline sidecar (ADR-0025) — embed vs join **pending #65** |
+| Tier-3 baseline column (0.7827, 0.9242, 0.8379, 0.7861, 0.6604 with stderr) | `eval/tier3/baseline/<task>.json` | baseline sidecar (ADR-0025) — embed vs join **pending #65** |
+| IQ3_XS row: 19.47 GiB, 8.554 ± 0.063, 0.1982, 0.3309, 81.7 % | `eval/{ppl,kl,kl564}-baseline-iq3xs.log`, bytes 20,908,008,960 (HF API, #90) | **pending #65** — no ADR commits i-quants to a sidecar |
+| IQ3_XXS row: 18.18 GiB, 8.723 ± 0.065, 0.2302, 0.3665, 80.1 % | `eval/{ppl,kl,kl564}-baseline-iq3xxs.log`, bytes 19,519,022,592 (HF API, #90) | **pending #65** — no ADR commits i-quants to a sidecar |
+| UD-IQ3_XXS row: 18.34 GiB, 8.697 ± 0.065, 0.1805, 0.3439, 82.0 % | `eval/{ppl,kl,kl564}-baseline-udiq3xxs.log`, bytes 19,692,431,264 (HF API, #90) | **pending #65** — no ADR commits i-quants to a sidecar |
 
 Baseline provenance: Q3_K_S is bartowski's published community GGUF
 (the third data point's size match). The i-quants are
