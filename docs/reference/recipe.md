@@ -70,8 +70,9 @@ that produced it.
 ## Field notes
 
 [ADR-0021](../adr/0021-runtime-frame-measurement.md) supersedes
-ADR-0019 and ADR-0020: the fields below remain, the sub-4-bit
-pricing claims do not.
+[ADR-0019](../adr/0019-kquant-priced-maps.md) and
+[ADR-0020](../adr/0020-imatrix-assisted-pricing.md): the fields
+below remain, the sub-4-bit pricing claims do not.
 
 - **`quantfit_schema`** — 5 since no-op protection pairs stopped
   resolving (issue #59): a schema-4 reader rejects a protection

@@ -65,7 +65,8 @@ in the lane (8.517 vs 8.532) at 112 MiB under budget. The baseline
 keeps a half-point lead on full-window top-token agreement. On
 2026-08-10 tier 3 certified the pack: five task benchmarks, five
 statistical ties against the baseline, none past 0.8σ (ADR-0024).
-The publication gate ruled GO on this evidence.
+The [publication gate](docs/explanation/artifact-ecosystem.md) ruled GO
+on this evidence.
 
 The road there ran through measured eliminations. Importance-weighted
 rounding was worth 0.86 of the original 1.39-perplexity gap. 2-bit
