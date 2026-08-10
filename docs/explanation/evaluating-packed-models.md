@@ -1644,6 +1644,50 @@ For publication number one (the 49B pipeline pack):
 All three tiers run on the reference box. None require training
 compute.
 
+### The Hugging Face conventions
+
+> **Decided 2026-08-10 (#79),** on the research in #71 and #72.
+
+The packed model publishes as
+`Llama-3_3-Nemotron-Super-49B-v1-fit24gib-GGUF`, from the
+maintainer's personal account — no org, matching the
+individual-quantizer precedent (bartowski, mradermacher). The id
+starts with "Llama", which satisfies Meta's §1.b naming clause under
+its strictest reading, so the repo drops bartowski's `nvidia_`
+prefix.
+
+The `fit24gib` marker names the VRAM budget the recipe was solved
+for. It sits in the slot single-quant repos give the scheme
+(`<Model>-Q4_K_M-GGUF`) — a quantfit pack has no single scheme, and
+the budget is the claim. No surveyed repo encodes a budget in its
+name (#72). The novelty is deliberate: fit-to-budget is the
+differentiator, and the name should carry it.
+
+Card metadata follows the #71 license findings plus community
+convention:
+
+- `license: other`, `license_name: nvidia-open-model-license`,
+  `license_link` to the NVIDIA page.
+- `base_model: nvidia/Llama-3_3-Nemotron-Super-49B-v1`,
+  `base_model_relation: quantized`.
+- `quantized_by: Alberto-Codes`, `pipeline_tag: text-generation`.
+- Tags: `quantfit` (tool tag, precedent: `unsloth`, `gguf-my-repo`),
+  `gguf`, `imatrix`.
+- No `library_name` — post-2024 GGUF-only repos get no
+  auto-detection either way. Revisit only if the "Use this model"
+  widget matters.
+
+The repo carries both license texts, both notice files, and "Built
+with Llama" on the card.
+
+The artifact set splits by role. The model repo holds the weights
+and everything specific to this pack: the imatrix (published, per
+3-of-4 precedent), the recipe, the evals sidecar
+([ADR-0025](../adr/0025-evals-sidecar.md)), and the run log. The
+sensitivity map lives only in the linked dataset repo — it describes
+the base model, not this pack, and the dataset copy is canonical.
+The card links it.
+
 ## Open questions
 
 - ~~Which lm-evaluation-harness tasks form the fixed slice, and at what
