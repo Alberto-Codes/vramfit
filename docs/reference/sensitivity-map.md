@@ -50,11 +50,19 @@ The sensitivity map is the output of `quantfit scan` and the input to
 
 ## Field notes
 
+[ADR-0021](../adr/0021-runtime-frame-measurement.md) supersedes
+[ADR-0019](../adr/0019-kquant-priced-maps.md) and
+[ADR-0020](../adr/0020-imatrix-assisted-pricing.md): the fields
+below remain, the sub-4-bit pricing claims do not.
+
 - **`sensitivity`** — divergence of the perturbed model's output from the
   full-precision reference, measured per
   [ADR-0006](../adr/0006-sensitivity-metric.md) (mean final-logits KL).
   Higher = more damage. Values are comparable *within* a scan, not across
-  scans with different calibration sets.
+  scans with different calibration sets. In-frame low-bit prices do not
+  predict the packed artifact
+  ([ADR-0021](../adr/0021-runtime-frame-measurement.md)) — current
+  practice plans on a map copy without the 2-bit column.
 - **`bytes_fp16`** — group size at reference precision. The solver derives
   per-precision sizes from this — at the runtime's per-type effective
   bits when it has a table ([ADR-0014](../adr/0014-per-type-effective-bits.md)),

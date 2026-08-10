@@ -30,7 +30,7 @@ ADR that supersedes the old one.
 | [0007](0007-recipe-solver-strategy.md) | Solver strategy for recipe selection | Accepted |
 | [0008](0008-hexagonal-architecture.md) | Hexagonal architecture, enforced by import-linter | Accepted |
 | [0009](0009-testing-strategy.md) | Testing strategy — pyramid, verified fakes, properties | Accepted |
-| [0010](0010-sub-4-bit-serving-path.md) | The sub-4-bit serving path runs through GGUF | Accepted, amended 2026-07-29 + 2026-08-09 |
+| [0010](0010-sub-4-bit-serving-path.md) | The sub-4-bit serving path runs through GGUF | Accepted, amended 2026-07-29, noted 2026-08-09 |
 | [0011](0011-run-logs-and-error-root.md) | Run logs as artifacts, and one error root | Accepted |
 | [0012](0012-gguf-type-mapping.md) | The GGUF backend maps nominal bits to K-quant types | Accepted, amended by 0013 + 0022 |
 | [0013](0013-runtime-capability-in-recipes.md) | Recipes record their target runtime | Accepted, amended by 0014 |

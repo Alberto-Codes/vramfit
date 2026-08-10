@@ -10,7 +10,7 @@ Selective per-layer quantization to fit large open models on a single GPU.
 
 **The problem.** A model's weights are billions of numbers, normally stored at
 16 bits each — Nemotron Super 49B is ~98 GB at full precision, and an RTX 4090
-has 24 GB. Quantization stores those numbers with fewer bits (8, 4, even 2),
+has 24 GiB. Quantization stores those numbers with fewer bits (8, 4, even 2),
 trading a little accuracy for a lot of memory. But even uniform 4-bit puts 49B
 parameters at ~26 GB — still doesn't fit — and uniform 3-bit wrecks quality,
 because some parts of a transformer get badly stupid when you crush them.
@@ -36,9 +36,10 @@ VRAM budget:
    [ADR-0010](docs/adr/0010-sub-4-bit-serving-path.md). A vLLM backend for
    ≥4-bit recipes is planned.
 
-**The goal:** NVIDIA **Nemotron Super 49B running on a 24 GB RTX 4090** — a
-model that does not fit today, made to fit selectively, with measured (not
-vibes-based) damage versus running a smaller model instead.
+**The goal:** NVIDIA **Nemotron Super 49B running on a 24 GiB RTX 4090** — a
+model that does not fit at full precision, made to fit selectively, with
+measured (not vibes-based) damage versus running a smaller model instead.
+The [Status](#status) section records the result.
 
 Philosophy borrowed from [antirez/ds4](https://github.com/antirez/ds4): depth
 over breadth. One model profiled properly beats a generic recipe applied to a
@@ -53,31 +54,39 @@ The full pipeline is implemented: `scan`, `plan`, `validate`, `pack`, plus
 `budget` for the VRAM arithmetic. Pack quantizes with an importance matrix
 (ADR-0016), guards protected packs with a per-tensor reconstruction
 check (ADR-0022), and smoke-tests every artifact before trusting it
-(ADR-0017). Fifteen data points span 2026-07-29 to 2026-08-09 on
-the 49B target. Every packed model fits the card first try. The
-pipeline now **wins the head-to-head on the ruling window**. On
+(ADR-0017). Sixteen data points span 2026-07-28 to 2026-08-10.
+Every packed model fits the card first try.
+
+The pipeline **wins the head-to-head on the ruling window**. On
 2026-08-09 an end-to-end pack beat the size-matched community
 imatrix quant on full-window KL divergence: 0.2873 vs 0.2959,
 7.8σ paired. The same artifact holds the best nominal perplexity
 in the lane (8.517 vs 8.532) at 112 MiB under budget. The baseline
-keeps a half-point lead on full-window top-token agreement. The
-road there ran through measured eliminations. Importance-weighted
+keeps a half-point lead on full-window top-token agreement. On
+2026-08-10 tier 3 certified the pack: five task benchmarks, five
+statistical ties against the baseline, none past 0.8σ (ADR-0024).
+The [publication gate](docs/explanation/artifact-ecosystem.md) ruled GO
+on this evidence.
+
+The road there ran through measured eliminations. Importance-weighted
 rounding was worth 0.86 of the original 1.39-perplexity gap. 2-bit
 group membership decides whether damages add: super-additive by
 11.9× on one 2-bit set, sub-additive by 1.6× on another. 2-bit
 stays out of the solve until runtime-frame prices exist — current
 practice plans on a map copy without the 2-bit column (ADR-0021).
 Within-layer protections plus imatrix exclusions (ADR-0022,
-ADR-0023) closed the fit-collapse gap. The
-[evidence page](docs/explanation/evaluating-packed-models.md) records
-all fifteen data points. Current work: the rented-GPU measurement
-lane (#40) and the task-eval tier before publication. See
+ADR-0023) closed the fit-collapse gap.
+
+The [evidence page](docs/explanation/evaluating-packed-models.md) records
+all sixteen data points. Current work: publication #1 — the certified
+pack, its model card, and the sensitivity-map dataset ship to
+Hugging Face (issue #70). See
 [Issues](https://github.com/Alberto-Codes/quantfit/issues) for the roadmap.
 
 ## Requirements
 
 - Python 3.12+
-- CUDA GPU (developed against an RTX 4090 / 24 GB)
+- CUDA GPU (developed against an RTX 4090 / 24 GiB)
 - [uv](https://docs.astral.sh/uv/)
 
 ## Installation
