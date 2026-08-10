@@ -1,5 +1,8 @@
 # Charting rules
 
+Status: sketch — this file shares the convention page's status and
+promotes or demotes with it.
+
 Apply these rules only when the session works a `chart`-labeled
 issue or one of its `chart:*` decision tickets. Chart work has no
 file path, so this file carries no path scope. Ignore it in every
@@ -10,9 +13,9 @@ The convention lives in
 Read that page before charting or working a ticket. The page is the
 source. This file only enforces the load-bearing rules.
 
-The page holds `sketch` status. No chart has proven the convention
-yet. When a rule fights reality, flag the conflict to the
-maintainer. Do not silently obey and do not silently deviate.
+No chart has proven the convention yet. When a rule fights reality,
+flag the conflict to the maintainer. Do not silently obey and do
+not silently deviate.
 
 - A decision ticket never stores a decision. Close it with a
   pointer to the record: an ADR, an amendment, a data point, or a
