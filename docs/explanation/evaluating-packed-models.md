@@ -1539,10 +1539,10 @@ The first tier-3 runs completed 2026-08-10: the fixed slice
 ([ADR-0024](../adr/0024-tier3-task-slice.md)) on the publication
 candidate, then the identical slice on the standing baseline,
 chained back to back in one detached run on the reference box. Same
-instruments end to end — lm-evaluation-harness 0.4.12 through the
-recorded in-process llama-cpp-python lane on the b10172 Vulkan
-build, the build behind every tier-1 and tier-2 number on this
-page. Full evaluation splits, no `--limit`, zero context
+instruments end to end — lm-evaluation-harness 0.4.12 running
+through the recorded in-process llama-cpp-python lane on the
+b10172 Vulkan build, the build behind every tier-1 and tier-2
+number on this page. Full evaluation splits, no `--limit`, zero context
 truncations, zero task failures, and both artifacts' SHA-256s,
 per-task versions, and per-item outputs in the raw JSON.
 
