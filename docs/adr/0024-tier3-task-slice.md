@@ -6,6 +6,12 @@
   lanes failed. The recorded lane is an in-process third path —
   see the first open question. The first slice runs launched the
   same day. The runner chains the baseline after the candidate.
+- **Note (2026-08-10):** both slices completed. Five tasks, five
+  statistical ties against the baseline, none past 0.8σ — the
+  slice certifies the candidate at equal size (the
+  [sixteenth data point](../explanation/evaluating-packed-models.md#the-sixteenth-data-point-five-tasks-five-ties)).
+  Measured cost: 5.70 h per artifact — see the second open
+  question.
 
 ## Context
 
@@ -133,15 +139,18 @@ quant-evaluation corpus.
   artifacts (`eval/tier3/llamacpp_lm.py`,
   `eval/tier3/run_tier3.py`) in the `lm-eval-venv` side venv.
   ADR-0005 keeps the harness out of the project env.
-- Measured hours per task on the reference box. The estimates
-  above are projections from tier-1 throughput, not measurements.
-  **Note (2026-08-09):** the first runs record wall-clock per task
-  (`eval/tier3/*/<task>.json`). Probe measurements: ARC-Challenge
-  25-shot scores at 3.7 requests/s, and GSM8K decodes at ~5 s per
-  item. The candidate's first task measured 0.32 h for the full
-  ARC-Challenge split. Projection for the full slice: 9–12 h per
-  artifact, narrowing the 8–14 h estimate in Consequences. The
-  remaining measured hours land with the results.
+- ~~Measured hours per task on the reference box. The estimates
+  above are projections from tier-1 throughput, not
+  measurements.~~ **Measured (2026-08-10): 5.70 h per 49B
+  artifact.** Both slices, within three minutes of each other.
+  Per task: HellaSwag 2.90 h, GSM8K 1.35 h, MMLU 1.06 h,
+  ARC-Challenge 0.32 h, Winogrande 0.10 h. The total lands under
+  the 8–14 h estimate in Consequences. The estimate priced MMLU
+  most wrong (3–5 h projected): the lane's KV-prefix reuse makes
+  the shared few-shot prefix nearly free, so HellaSwag's long
+  continuations are the real cost center. Two artifacts fit one
+  night. Wall-clock per task is recorded in
+  `eval/tier3/*/<task>.json`.
 - Whether instruct-tuned targets also get a chat-template variant
   of the slice. The fixed slice runs harness-default prompts. The
   packed-versus-baseline delta is the claim, and absolute scores
