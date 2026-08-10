@@ -145,6 +145,22 @@ way a second decision store would fork the truth.
   newly surfaced tickets or graduated fog.
 - A decision that invalidates existing tickets updates or closes
   them in the same session.
+- Sessions may run in parallel on different tickets. The chart
+  body has no lock. Re-read it immediately before writing. Re-read
+  after writing to confirm the prior content and the new line both
+  survived.
+- Parallel sessions share one checkout unless isolated. A session
+  that edits repo files enters its own git worktree first. Every
+  session stages exact paths, never the whole tree.
+- Background research agents never write the chart body. The
+  charting session folds their gist lines into Decisions so far.
+- A session that ends without resolving leaves a progress comment
+  on its ticket and unassigns itself. Assignment then signals a
+  live session or a crash. Every session claims as the same
+  account, so a dead claim hides the ticket from the claimable
+  set.
+- Any session may release a claim older than one day that has no
+  comment since assignment.
 
 ## Trust mapping
 

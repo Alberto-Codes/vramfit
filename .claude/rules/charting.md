@@ -27,6 +27,15 @@ and do not silently deviate.
   `## Decisions so far`.
 - Claim before work: self-assign the ticket as the session's first
   write. Open and unassigned means unclaimed.
+- Leave a progress comment on the ticket and unassign when the
+  session ends without resolving. Any session may release a claim
+  older than one day with no comment since assignment.
+- The chart body has no lock. Re-read it immediately before
+  writing and confirm the write survived.
+- Enter a git worktree before editing repo files. Stage exact
+  paths, never the whole tree.
+- Background agents never write the chart body. The charting
+  session folds research gists into Decisions so far.
 - Resolve at most one decision ticket per session. Exception:
   `chart:research` tickets fire as parallel background agents at
   charting time.
