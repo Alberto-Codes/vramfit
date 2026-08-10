@@ -1688,6 +1688,37 @@ sensitivity map lives only in the linked dataset repo — it describes
 the base model, not this pack, and the dataset copy is canonical.
 The card links it.
 
+### The guardrail-efficacy stance
+
+> **Decided 2026-08-10 (#86),** on the #71 license findings.
+
+The NVIDIA Open Model License terminates rights when a user reduces
+a Guardrail's efficacy. The #71 record quoted the clause without its
+carve-out. The full §2.1 text conditions termination on acting
+"without a substantially similar Guardrail appropriate for your use
+case", and it lists guardrails beside encryption, DRM, and
+authentication — anti-circumvention language, not a compression ban.
+
+Publication #1 takes the comply-and-disclose stance:
+
+- The pack modifies no Guardrail. Quantization compresses every
+  weight tensor with one uniform lossy procedure. The base model's
+  safety training ships intact at lower precision.
+- The published damage numbers are the compliance evidence, not a
+  liability. Tier 2 measures the output-distribution shift against
+  the f16 base, and tier 3 holds five statistical ties at equal
+  size. Both support the "substantially similar" carve-out.
+- The card states the limit plainly: damage measures general
+  distribution shift on WikiText-2, not guardrail behavior. The
+  card claims no separate guardrail measurement.
+- The card directs deployers to keep the application-layer
+  protections they would use with the base model.
+
+The card's "Guardrails and damage disclosure" section carries this
+stance. The rejected alternative was silence — community quant repos
+carry no guardrail language, but they publish no damage numbers
+either. Numbers without framing invite the hostile reading.
+
 ## Open questions
 
 - ~~Which lm-evaluation-harness tasks form the fixed slice, and at what

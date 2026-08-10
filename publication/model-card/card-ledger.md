@@ -89,4 +89,6 @@ recompute is not a recorded artifact. The flag stands.
   run-log names) are placeholders until the #82 dry run.
 - `license_link` URL copied from community convention — verify at #82.
 - Sensitivity-map dataset link is a placeholder until #85.
-- The guardrails section is empty until #86.
+- ~~The guardrails section is empty until #86.~~ Resolved 2026-08-10:
+  comply-and-disclose stance (#86). The section cites the tables and
+  adds no numbers, so it needs no ledger rows.
