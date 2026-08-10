@@ -140,7 +140,12 @@ Hard gates before any publication, with their current status:
    losses mapped the gap, the fifteenth data point's pipeline pack
    beats the imatrix Q3_K_S on full-window KL divergence at 7.8σ
    with the best nominal perplexity in the lane. The remaining
-   publication step is the task-eval tier.
+   publication step is the task-eval tier. **GO ruled 2026-08-10**
+   (#80): the tier-3 slice certified five statistical ties
+   (sixteenth data point), the negative-result branch has no
+   trigger, and publication #1 ships the model. The i-quant
+   comparison (#90) rides the card to answer the weak-baseline
+   objection.
 
 Conventions to settle at publication time: a `quantfit` HF tag, the
 budget in the repo name (e.g. `-fit24gib`), and which artifacts sit
