@@ -109,7 +109,9 @@ The solver allocated 82 layer groups:
 - The other 81 groups at 3-bit (Q3_K), including the token embedding
   and the output head.
 - 48 protected tensors hold `attn_v` above the group assignment:
-  47 floors at 5-bit (Q5_K), one at 4-bit (Q4_K, `blk.3`).
+  47 floors at 5-bit (Q5_K), one at 4-bit (Q4_K, `blk.3`). The card
+  uses the GGUF name `attn_v` throughout — the recipe records the same
+  tensors under their HF name, `self_attn.v_proj.weight`.
 - 4 imatrix exclusions: `blk.{1,2,3,5}.attn_v.weight` quantize without
   their importance-matrix rows. Under this imatrix those rows collapse
   the weighted fit — excluded, each tensor reconstructs 2.0–4.3× closer
@@ -133,47 +135,47 @@ models.
 |---|---|---|---|---|---|
 | `model.embed_tokens` | 3 | Q3_K | 453,718,426 | 0.0149 | — |
 | `model.layers.0` | 8 | Q8_0 | 537,447,629 | 0.0450 | — |
-| `model.layers.1` | 3 | Q3_K | 371,668,747 | 0.0294 | v_proj floor 5-bit (Q5_K), imatrix excluded |
-| `model.layers.2` | 3 | Q3_K | 371,668,747 | 0.0402 | v_proj floor 5-bit (Q5_K), imatrix excluded |
-| `model.layers.3` | 3 | Q3_K | 370,614,928 | 0.1383 | v_proj floor 4-bit (Q4_K), imatrix excluded |
-| `model.layers.4` | 3 | Q3_K | 371,668,747 | 0.0433 | v_proj floor 5-bit (Q5_K) |
-| `model.layers.5` | 3 | Q3_K | 371,668,747 | 0.0039 | v_proj floor 5-bit (Q5_K), imatrix excluded |
+| `model.layers.1` | 3 | Q3_K | 371,668,747 | 0.0294 | attn_v floor 5-bit (Q5_K), imatrix excluded |
+| `model.layers.2` | 3 | Q3_K | 371,668,747 | 0.0402 | attn_v floor 5-bit (Q5_K), imatrix excluded |
+| `model.layers.3` | 3 | Q3_K | 370,614,928 | 0.1383 | attn_v floor 4-bit (Q4_K), imatrix excluded |
+| `model.layers.4` | 3 | Q3_K | 371,668,747 | 0.0433 | attn_v floor 5-bit (Q5_K) |
+| `model.layers.5` | 3 | Q3_K | 371,668,747 | 0.0039 | attn_v floor 5-bit (Q5_K), imatrix excluded |
 | `model.layers.6` | 3 | Q3_K | 152,145,101 | 0.0009 | — |
 | `model.layers.7` | 3 | Q3_K | 152,145,101 | 0.0008 | — |
-| `model.layers.8` | 3 | Q3_K | 371,668,747 | 0.0022 | v_proj floor 5-bit (Q5_K) |
-| `model.layers.9` | 3 | Q3_K | 371,668,747 | 0.0014 | v_proj floor 5-bit (Q5_K) |
-| `model.layers.10` | 3 | Q3_K | 371,668,747 | 0.0008 | v_proj floor 5-bit (Q5_K) |
+| `model.layers.8` | 3 | Q3_K | 371,668,747 | 0.0022 | attn_v floor 5-bit (Q5_K) |
+| `model.layers.9` | 3 | Q3_K | 371,668,747 | 0.0014 | attn_v floor 5-bit (Q5_K) |
+| `model.layers.10` | 3 | Q3_K | 371,668,747 | 0.0008 | attn_v floor 5-bit (Q5_K) |
 | `model.layers.11` | 3 | Q3_K | 190,181,376 | 0.0005 | — |
-| `model.layers.12` | 3 | Q3_K | 371,668,747 | 0.0010 | v_proj floor 5-bit (Q5_K) |
-| `model.layers.13` | 3 | Q3_K | 371,668,747 | 0.0008 | v_proj floor 5-bit (Q5_K) |
-| `model.layers.14` | 3 | Q3_K | 371,668,747 | 0.0009 | v_proj floor 5-bit (Q5_K) |
-| `model.layers.15` | 3 | Q3_K | 371,668,747 | 0.0008 | v_proj floor 5-bit (Q5_K) |
-| `model.layers.16` | 3 | Q3_K | 371,668,747 | 0.0010 | v_proj floor 5-bit (Q5_K) |
-| `model.layers.17` | 3 | Q3_K | 371,668,747 | 0.0012 | v_proj floor 5-bit (Q5_K) |
-| `model.layers.18` | 3 | Q3_K | 371,668,747 | 0.0016 | v_proj floor 5-bit (Q5_K) |
-| `model.layers.19` | 3 | Q3_K | 371,668,747 | 0.0013 | v_proj floor 5-bit (Q5_K) |
-| `model.layers.20` | 3 | Q3_K | 371,668,747 | 0.0007 | v_proj floor 5-bit (Q5_K) |
-| `model.layers.21` | 3 | Q3_K | 371,668,747 | 0.0007 | v_proj floor 5-bit (Q5_K) |
-| `model.layers.22` | 3 | Q3_K | 371,668,747 | 0.0005 | v_proj floor 5-bit (Q5_K) |
-| `model.layers.23` | 3 | Q3_K | 371,668,747 | 0.0005 | v_proj floor 5-bit (Q5_K) |
-| `model.layers.24` | 3 | Q3_K | 371,668,747 | 0.0005 | v_proj floor 5-bit (Q5_K) |
-| `model.layers.25` | 3 | Q3_K | 371,668,747 | 0.0004 | v_proj floor 5-bit (Q5_K) |
-| `model.layers.26` | 3 | Q3_K | 371,668,747 | 0.0004 | v_proj floor 5-bit (Q5_K) |
-| `model.layers.27` | 3 | Q3_K | 371,668,747 | 0.0005 | v_proj floor 5-bit (Q5_K) |
-| `model.layers.28` | 3 | Q3_K | 371,668,747 | 0.0004 | v_proj floor 5-bit (Q5_K) |
-| `model.layers.29` | 3 | Q3_K | 371,668,747 | 0.0004 | v_proj floor 5-bit (Q5_K) |
-| `model.layers.30` | 3 | Q3_K | 371,668,747 | 0.0006 | v_proj floor 5-bit (Q5_K) |
-| `model.layers.31` | 3 | Q3_K | 371,668,747 | 0.0006 | v_proj floor 5-bit (Q5_K) |
-| `model.layers.32` | 3 | Q3_K | 371,668,747 | 0.0004 | v_proj floor 5-bit (Q5_K) |
-| `model.layers.33` | 3 | Q3_K | 371,668,747 | 0.0006 | v_proj floor 5-bit (Q5_K) |
-| `model.layers.34` | 3 | Q3_K | 371,668,747 | 0.0007 | v_proj floor 5-bit (Q5_K) |
-| `model.layers.35` | 3 | Q3_K | 371,668,747 | 0.0006 | v_proj floor 5-bit (Q5_K) |
-| `model.layers.36` | 3 | Q3_K | 371,668,747 | 0.0006 | v_proj floor 5-bit (Q5_K) |
-| `model.layers.37` | 3 | Q3_K | 371,668,747 | 0.0005 | v_proj floor 5-bit (Q5_K) |
-| `model.layers.38` | 3 | Q3_K | 371,668,747 | 0.0006 | v_proj floor 5-bit (Q5_K) |
-| `model.layers.39` | 3 | Q3_K | 371,668,747 | 0.0006 | v_proj floor 5-bit (Q5_K) |
-| `model.layers.40` | 3 | Q3_K | 371,668,747 | 0.0004 | v_proj floor 5-bit (Q5_K) |
-| `model.layers.41` | 3 | Q3_K | 371,668,747 | 0.0004 | v_proj floor 5-bit (Q5_K) |
+| `model.layers.12` | 3 | Q3_K | 371,668,747 | 0.0010 | attn_v floor 5-bit (Q5_K) |
+| `model.layers.13` | 3 | Q3_K | 371,668,747 | 0.0008 | attn_v floor 5-bit (Q5_K) |
+| `model.layers.14` | 3 | Q3_K | 371,668,747 | 0.0009 | attn_v floor 5-bit (Q5_K) |
+| `model.layers.15` | 3 | Q3_K | 371,668,747 | 0.0008 | attn_v floor 5-bit (Q5_K) |
+| `model.layers.16` | 3 | Q3_K | 371,668,747 | 0.0010 | attn_v floor 5-bit (Q5_K) |
+| `model.layers.17` | 3 | Q3_K | 371,668,747 | 0.0012 | attn_v floor 5-bit (Q5_K) |
+| `model.layers.18` | 3 | Q3_K | 371,668,747 | 0.0016 | attn_v floor 5-bit (Q5_K) |
+| `model.layers.19` | 3 | Q3_K | 371,668,747 | 0.0013 | attn_v floor 5-bit (Q5_K) |
+| `model.layers.20` | 3 | Q3_K | 371,668,747 | 0.0007 | attn_v floor 5-bit (Q5_K) |
+| `model.layers.21` | 3 | Q3_K | 371,668,747 | 0.0007 | attn_v floor 5-bit (Q5_K) |
+| `model.layers.22` | 3 | Q3_K | 371,668,747 | 0.0005 | attn_v floor 5-bit (Q5_K) |
+| `model.layers.23` | 3 | Q3_K | 371,668,747 | 0.0005 | attn_v floor 5-bit (Q5_K) |
+| `model.layers.24` | 3 | Q3_K | 371,668,747 | 0.0005 | attn_v floor 5-bit (Q5_K) |
+| `model.layers.25` | 3 | Q3_K | 371,668,747 | 0.0004 | attn_v floor 5-bit (Q5_K) |
+| `model.layers.26` | 3 | Q3_K | 371,668,747 | 0.0004 | attn_v floor 5-bit (Q5_K) |
+| `model.layers.27` | 3 | Q3_K | 371,668,747 | 0.0005 | attn_v floor 5-bit (Q5_K) |
+| `model.layers.28` | 3 | Q3_K | 371,668,747 | 0.0004 | attn_v floor 5-bit (Q5_K) |
+| `model.layers.29` | 3 | Q3_K | 371,668,747 | 0.0004 | attn_v floor 5-bit (Q5_K) |
+| `model.layers.30` | 3 | Q3_K | 371,668,747 | 0.0006 | attn_v floor 5-bit (Q5_K) |
+| `model.layers.31` | 3 | Q3_K | 371,668,747 | 0.0006 | attn_v floor 5-bit (Q5_K) |
+| `model.layers.32` | 3 | Q3_K | 371,668,747 | 0.0004 | attn_v floor 5-bit (Q5_K) |
+| `model.layers.33` | 3 | Q3_K | 371,668,747 | 0.0006 | attn_v floor 5-bit (Q5_K) |
+| `model.layers.34` | 3 | Q3_K | 371,668,747 | 0.0007 | attn_v floor 5-bit (Q5_K) |
+| `model.layers.35` | 3 | Q3_K | 371,668,747 | 0.0006 | attn_v floor 5-bit (Q5_K) |
+| `model.layers.36` | 3 | Q3_K | 371,668,747 | 0.0006 | attn_v floor 5-bit (Q5_K) |
+| `model.layers.37` | 3 | Q3_K | 371,668,747 | 0.0005 | attn_v floor 5-bit (Q5_K) |
+| `model.layers.38` | 3 | Q3_K | 371,668,747 | 0.0006 | attn_v floor 5-bit (Q5_K) |
+| `model.layers.39` | 3 | Q3_K | 371,668,747 | 0.0006 | attn_v floor 5-bit (Q5_K) |
+| `model.layers.40` | 3 | Q3_K | 371,668,747 | 0.0004 | attn_v floor 5-bit (Q5_K) |
+| `model.layers.41` | 3 | Q3_K | 371,668,747 | 0.0004 | attn_v floor 5-bit (Q5_K) |
 | `model.layers.42` | 3 | Q3_K | 76,072,551 | 0.0002 | — |
 | `model.layers.43` | 3 | Q3_K | 152,145,101 | 0.0003 | — |
 | `model.layers.44` | 3 | Q3_K | 152,145,101 | 0.0003 | — |
@@ -184,7 +186,7 @@ models.
 | `model.layers.49` | 3 | Q3_K | 76,072,551 | 0.0002 | — |
 | `model.layers.50` | 3 | Q3_K | 76,072,551 | 0.0002 | — |
 | `model.layers.51` | 3 | Q3_K | 76,072,551 | 0.0002 | — |
-| `model.layers.52` | 3 | Q3_K | 371,668,747 | 0.0005 | v_proj floor 5-bit (Q5_K) |
+| `model.layers.52` | 3 | Q3_K | 371,668,747 | 0.0005 | attn_v floor 5-bit (Q5_K) |
 | `model.layers.53` | 3 | Q3_K | 76,072,551 | 0.0002 | — |
 | `model.layers.54` | 3 | Q3_K | 59,771,290 | 0.0002 | — |
 | `model.layers.55` | 3 | Q3_K | 59,771,290 | 0.0002 | — |
@@ -203,15 +205,15 @@ models.
 | `model.layers.68` | 3 | Q3_K | 59,771,290 | 0.0002 | — |
 | `model.layers.69` | 3 | Q3_K | 29,885,645 | 0.0002 | — |
 | `model.layers.70` | 3 | Q3_K | 29,885,645 | 0.0003 | — |
-| `model.layers.71` | 3 | Q3_K | 371,668,747 | 0.0007 | v_proj floor 5-bit (Q5_K) |
-| `model.layers.72` | 3 | Q3_K | 371,668,747 | 0.0006 | v_proj floor 5-bit (Q5_K) |
-| `model.layers.73` | 3 | Q3_K | 371,668,747 | 0.0010 | v_proj floor 5-bit (Q5_K) |
-| `model.layers.74` | 3 | Q3_K | 371,668,747 | 0.0010 | v_proj floor 5-bit (Q5_K) |
-| `model.layers.75` | 3 | Q3_K | 371,668,747 | 0.0010 | v_proj floor 5-bit (Q5_K) |
-| `model.layers.76` | 3 | Q3_K | 371,668,747 | 0.0026 | v_proj floor 5-bit (Q5_K) |
-| `model.layers.77` | 3 | Q3_K | 371,668,747 | 0.0020 | v_proj floor 5-bit (Q5_K) |
-| `model.layers.78` | 3 | Q3_K | 371,668,747 | 0.0027 | v_proj floor 5-bit (Q5_K) |
-| `model.layers.79` | 3 | Q3_K | 371,668,747 | 0.0086 | v_proj floor 5-bit (Q5_K) |
+| `model.layers.71` | 3 | Q3_K | 371,668,747 | 0.0007 | attn_v floor 5-bit (Q5_K) |
+| `model.layers.72` | 3 | Q3_K | 371,668,747 | 0.0006 | attn_v floor 5-bit (Q5_K) |
+| `model.layers.73` | 3 | Q3_K | 371,668,747 | 0.0010 | attn_v floor 5-bit (Q5_K) |
+| `model.layers.74` | 3 | Q3_K | 371,668,747 | 0.0010 | attn_v floor 5-bit (Q5_K) |
+| `model.layers.75` | 3 | Q3_K | 371,668,747 | 0.0010 | attn_v floor 5-bit (Q5_K) |
+| `model.layers.76` | 3 | Q3_K | 371,668,747 | 0.0026 | attn_v floor 5-bit (Q5_K) |
+| `model.layers.77` | 3 | Q3_K | 371,668,747 | 0.0020 | attn_v floor 5-bit (Q5_K) |
+| `model.layers.78` | 3 | Q3_K | 371,668,747 | 0.0027 | attn_v floor 5-bit (Q5_K) |
+| `model.layers.79` | 3 | Q3_K | 371,668,747 | 0.0086 | attn_v floor 5-bit (Q5_K) |
 | `lm_head` | 3 | Q3_K | 453,718,426 | 0.0214 | — |
 
 </details>

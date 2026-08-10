@@ -4,9 +4,9 @@ Status: draft — companion to `README.md` (issue #81).
 
 ADR-0025 binds the rule: a card number without a sidecar entry is a
 defect. This ledger maps every number on the card to its source record
-on the reference box and to its sidecar destination. Paths are relative
-to `~/quantfit-runs/nemotron-49b-v1_5/`. Issue #65 settles the sidecar
-schema. Its ruling decides every row marked **pending #65**.
+on the reference box and to its sidecar destination. The run root is
+`~/quantfit-runs/nemotron-49b-v1_5/`, and every listed path is relative
+to that root. Issue #65 settles the sidecar schema. Its ruling decides every row marked **pending #65**.
 
 ADR-0025's consequences already commit the Q3_K_S baseline to a sidecar
 of its own (ADR-0024 decision 5: measured once, reused). For its rows,
