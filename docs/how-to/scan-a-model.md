@@ -56,6 +56,11 @@ The fingerprint records provenance, not content. It cannot detect new
 weights or edited calibration text behind an unchanged path — do not
 change either between a crash and its resume.
 
+Checkpoints written before the vramfit rename do not resume: the
+checkpoint schema bumped with the envelope key (#118). The scan
+rejects the old file — pass `--no-resume` to discard it and start
+over.
+
 ## Pricing cells the way the pack quantizes
 
 The default within-group method is round-to-nearest — fast, and

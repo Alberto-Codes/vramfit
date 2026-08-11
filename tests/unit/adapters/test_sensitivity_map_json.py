@@ -131,6 +131,13 @@ class TestSensitivityMap:
         with pytest.raises(ArtifactError, match="unsupported schema version 3"):
             map_from_dict(raw)
 
+    def test_pre_rename_envelope_key_rejected(self) -> None:
+        raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
+        raw["quantfit_schema"] = raw.pop("vramfit_schema")
+
+        with pytest.raises(ArtifactError, match='renamed to "vramfit_schema"'):
+            map_from_dict(raw)
+
     def test_non_integer_precision_key_rejected(self) -> None:
         raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
         raw["groups"][0]["sensitivity"]["4x"] = 0.5

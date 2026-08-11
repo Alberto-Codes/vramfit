@@ -74,6 +74,14 @@ def test_unsupported_schema_version_raises(tmp_path) -> None:
         JsonScanCheckpointFile(path).load(FP)
 
 
+def test_pre_rename_envelope_key_rejected(tmp_path) -> None:
+    path = tmp_path / "scan.checkpoint.json"
+    path.write_text(json.dumps({"quantfit_schema": 1, "fingerprint": FP}))
+
+    with pytest.raises(ArtifactError, match='renamed to "vramfit_schema"'):
+        JsonScanCheckpointFile(path).load(FP)
+
+
 def test_invalid_stored_damage_raises_with_json_path(tmp_path) -> None:
     path = tmp_path / "scan.checkpoint.json"
     path.write_text(

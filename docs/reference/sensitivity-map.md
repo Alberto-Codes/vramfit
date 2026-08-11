@@ -56,8 +56,9 @@ The sensitivity map is the output of `vramfit scan` and the input to
 below remain, the sub-4-bit pricing claims do not.
 
 - **`vramfit_schema`** — 2 since the envelope key renamed from
-  `quantfit_schema` with the tool (#118): the reader accepts only
-  the new key, so schema-1 maps need a re-scan or a key edit.
+  `quantfit_schema` with the tool (#118). The reader accepts only
+  the new key at version 2. A schema-1 map migrates with a key
+  rename plus a version bump, or a re-scan.
 - **`sensitivity`** — divergence of the perturbed model's output from the
   full-precision reference, measured per
   [ADR-0006](../adr/0006-sensitivity-metric.md) (mean final-logits KL).

@@ -5,7 +5,9 @@ measurement lands on disk immediately. The file carries the scan's
 fingerprint — loading or appending with a different fingerprint fails
 instead of mixing two scans' numbers. The checkpoint has its own
 schema version, so a breaking pipeline-artifact change cannot strand
-an in-flight scan. Writes go through the same atomic-replace path as
+an in-flight scan. The tool rename (#118) is the one exception: the
+loader rejects the pre-rename envelope key with a message that names
+the new key. Writes go through the same atomic-replace path as
 the artifact adapters, so a crash mid-write never corrupts the
 checkpoint.
 
@@ -42,6 +44,7 @@ from vramfit.adapters.outbound.json_common import (
     _get_list,
     _get_str,
     _load_json,
+    _reject_renamed_envelope_key,
     _require,
     _save_json,
 )
@@ -49,6 +52,8 @@ from vramfit.domain.scan import Measurement
 
 # The checkpoint versions independently of the pipeline artifacts: a
 # breaking recipe or map schema change must not strand in-flight scans.
+# The tool rename (#118) is the one coupled bump — every envelope key
+# renamed at once, so version-1 checkpoints do not resume.
 CHECKPOINT_SCHEMA_VERSION: Final[int] = 2
 
 
@@ -136,11 +141,13 @@ def _parse_checkpoint(data: object, fingerprint: str) -> tuple[Measurement, ...]
         The checkpointed measurements.
 
     Raises:
-        ArtifactError: If the checkpoint schema version is unsupported,
+        ArtifactError: If the checkpoint carries the pre-rename
+            envelope key (#118), the schema version is unsupported,
             a field is missing or mistyped, a damage value is invalid,
             or the stored fingerprint differs.
     """
     root = _get_dict(data, "$")
+    _reject_renamed_envelope_key(root, "$")
     version = _get_int(root, "vramfit_schema", "$")
     _require(
         version == CHECKPOINT_SCHEMA_VERSION,

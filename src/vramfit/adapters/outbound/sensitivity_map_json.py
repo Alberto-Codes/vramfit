@@ -81,7 +81,7 @@ def map_from_dict(data: object) -> SensitivityMap:
         Reject an unsupported schema version:
 
         ```python
-        map_from_dict({"vramfit_schema": 2})  # raises ArtifactError
+        map_from_dict({"vramfit_schema": 3})  # raises ArtifactError
         ```
     """
     root = _get_dict(data, "$")

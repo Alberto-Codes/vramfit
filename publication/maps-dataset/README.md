@@ -30,7 +30,8 @@ The packed model built from the sized no-2 map below ships as
 
 ## The map format
 
-Each map is one JSON file, `vramfit_schema` 1. The `scan` block
+Each map is one JSON file, `vramfit_schema` 2 (the envelope key
+renamed with the tool, #118). The `scan` block
 records the measurement frame: metric, calibration file, token count,
 candidate precisions, within-group method, and imatrix path. The
 three `rtn-block32` maps predate the last two fields — an absent

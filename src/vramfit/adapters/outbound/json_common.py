@@ -9,7 +9,9 @@ would poison solver comparisons downstream). The boolean extractor
 accepts only real booleans, and the string extractors reject the
 empty string. Schema versions advance
 per artifact (ADR-0013) — each adapter owns its version constant and
-passes it to `_check_schema_version`.
+passes it to `_check_schema_version`. Readers accept only the
+post-rename envelope key (#118): a document carrying
+``quantfit_schema`` fails with a message that names the new key.
 
 Examples:
     Report a validation failure with its JSON path:
@@ -258,6 +260,26 @@ def _get_float(obj: dict[str, Any], key: str, path: str) -> float:
     return _as_float(obj[key], f"{path}.{key}")
 
 
+def _reject_renamed_envelope_key(obj: dict[str, Any], path: str) -> None:
+    """Reject an artifact that carries the pre-rename envelope key.
+
+    Args:
+        obj: Top-level artifact object.
+        path: JSON path of the artifact root.
+
+    Raises:
+        ArtifactError: If the object carries ``quantfit_schema`` — the
+            key renamed to ``vramfit_schema`` with the tool (#118), and
+            readers accept only the new key.
+    """
+    _require(
+        "quantfit_schema" not in obj,
+        f"{path}.quantfit_schema",
+        'the envelope key renamed to "vramfit_schema" (#118) — '
+        "this vramfit reads only the new key",
+    )
+
+
 def _check_schema_version(obj: dict[str, Any], path: str, expected: int) -> None:
     """Validate the artifact's ``vramfit_schema`` envelope field.
 
@@ -272,8 +294,10 @@ def _check_schema_version(obj: dict[str, Any], path: str, expected: int) -> None
 
     Raises:
         ArtifactError: If the version is missing or unsupported — the
-            message names the version this vramfit reads.
+            message names the version this vramfit reads. A document
+            carrying the pre-rename key gets the rename message instead.
     """
+    _reject_renamed_envelope_key(obj, path)
     version = _get_int(obj, "vramfit_schema", path)
     _require(
         version == expected,

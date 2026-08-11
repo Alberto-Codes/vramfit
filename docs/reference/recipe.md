@@ -75,12 +75,12 @@ that produced it.
 below remain, the sub-4-bit pricing claims do not.
 
 - **`vramfit_schema`** — 6 since the envelope key renamed from
-  `quantfit_schema` with the tool (#118): the reader accepts only
-  the new key, so schema-5 recipes need a re-plan.
+  `quantfit_schema` with the tool (#118). The reader accepts only
+  the new key at version 6, so schema-5 recipes need a re-plan.
   5 stopped no-op protection pairs from resolving (issue #59): a
-  schema-4 reader rejects a protection
-  record with zero pairs, and a schema-4 recipe can carry no-op
-  pairs that falsely fail the reconstruction check — re-plan it.
+  schema-4 reader rejects a protection record with zero pairs, and
+  a schema-4 recipe can carry no-op pairs that falsely fail the
+  reconstruction check — re-plan it.
   4 added imatrix exclusions
   ([ADR-0023](../adr/0023-imatrix-exclusions.md)); 3 added protections
   ([ADR-0022](../adr/0022-within-layer-protections.md)). A reader that

@@ -333,7 +333,7 @@ notice files. Built with Llama.
   the pack events and the 48-tensor reconstruction check.
 - The evals sidecar
   (`Llama-3_3-Nemotron-Super-49B-v1_5-fit24gib.gguf.evals.json`,
-  ADR-0025 schema 1) records all three tiers. Baseline sidecars sit
+  ADR-0025 schema 2) records all three tiers. Baseline sidecars sit
   under `baselines/`.
 - Toolchain: llama.cpp b10172 quantizer, `convert_hf_to_gguf.py` for the
   f16 base, lm-evaluation-harness 0.4.12 with llama-cpp-python 0.3.34
