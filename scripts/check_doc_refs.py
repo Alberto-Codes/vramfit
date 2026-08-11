@@ -4,7 +4,7 @@ Refactors move modules — markdown and docstrings do not notice. This
 gate extracts every dotted ``vramfit.…`` reference from the living docs
 AND the Python sources (docstring cross-references rot too) and verifies
 each resolves to an importable module or an attribute of one. Decks
-(``docs/decks/``) are excluded — they are dated point-in-time artifacts.
+(``docs/decks/``) describe the present state, so the gate covers them.
 
 Examples:
     Run against the default doc set:
@@ -34,7 +34,6 @@ DEFAULT_DOC_GLOBS = (
     "src/**/*.py",
     "tests/**/*.py",
 )
-EXCLUDED_PARTS = ("decks",)
 
 
 def _resolves(ref: str) -> bool:
@@ -85,8 +84,6 @@ def main(argv: list[str]) -> int:
             files.extend(Path().glob(pattern))
     checked = 0
     for path in sorted(set(files)):
-        if any(part in EXCLUDED_PARTS for part in path.parts):
-            continue
         for ref in sorted(set(_REF.findall(path.read_text(encoding="utf-8")))):
             if ref.endswith(".git"):  # clone URLs, not module paths
                 continue

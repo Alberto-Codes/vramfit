@@ -407,6 +407,14 @@ change.
 
 ## Project
 
+**Deck**
+:   A Marp slide set that argues the project's present state to one
+    audience, exported to PDF as a release asset. Two decks exist: review
+    for stakeholders, deep dive for peer reviewers. A deck names a release
+    and carries no `status` field. Convention in
+    [decks](../decks/index.md). Not "milestone deck", "slide deck", or
+    "presentation".
+
 **North-star benchmark**
 :   The acceptance test from
     [ADR-0003](../adr/0003-north-star-benchmark.md), as amended by

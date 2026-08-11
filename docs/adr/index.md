@@ -14,6 +14,12 @@ ADR that supersedes the old one.
 > carry dates and keep quantfit. Undated pages, including the
 > glossary and README, rewrite when the rename executes (#120).
 
+> **Note 2026-08-11 (#124).** The deck clause above no longer applies.
+> Decks describe the present state and name a release. PR #130 deletes
+> the six quantfit-era deck sources. Releases attach deck PDFs from the
+> first release forward, and no release backfills PDFs. The
+> [deck conventions](../decks/index.md) record the replacement.
+
 ## Lifecycle
 
 | Status | Meaning |

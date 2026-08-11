@@ -1,8 +1,8 @@
-/* @theme quantfit */
+/* @theme vramfit */
 /* Circuit green on slate — solder mask and substrate.
    Signature: the precision ladder under every heading, four segments
    in width ratio 8:4:3:2 (the candidate bit-widths).
-   Build: marp --theme-set docs/decks/theme.css --pdf <deck>.md */
+   Build: marp --theme-set docs/decks/theme.css --pdf docs/decks/<deck>.md */
 
 @import 'default';
 
