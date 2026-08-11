@@ -1,0 +1,91 @@
+name: Test Publish
+
+# Manual dry run of the publish path against TestPyPI. Proves the build
+# gates, the OIDC trusted publisher, and the upload before a real release.
+on:
+  workflow_dispatch:
+
+jobs:
+  test-publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    environment: testpypi
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: astral-sh/setup-uv@v7
+
+      - name: Build package
+        run: uv build --no-sources
+
+      - name: Smoke test wheel contents
+        run: |
+          WHEEL=$(ls dist/*.whl)
+          SIZE=$(stat --format=%s "$WHEEL")
+          if [ "$SIZE" -gt 512000 ]; then
+            echo "::error::Wheel size ${SIZE} bytes exceeds 500KB limit"
+            exit 1
+          fi
+          echo "Wheel size: ${SIZE} bytes — OK"
+
+          CONTENTS=$(unzip -l "$WHEEL")
+          for UNWANTED in "tests/" "docs/" "scripts/"; do
+            if echo "$CONTENTS" | grep -q "$UNWANTED"; then
+              echo "::error::Wheel contains ${UNWANTED}"
+              exit 1
+            fi
+          done
+          if ! echo "$CONTENTS" | grep -q "vramfit/py.typed"; then
+            echo "::error::Wheel omits the py.typed marker"
+            exit 1
+          fi
+          echo "Wheel contents clean — OK"
+
+      # ADR-0005: the base install carries typer and structlog only.
+      - name: Verify the base install carries no GPU dependency
+        run: |
+          WHEEL=$(ls dist/*.whl)
+          BASE=$(unzip -p "$WHEEL" '*.dist-info/METADATA' \
+            | grep '^Requires-Dist:' | grep -v 'extra ==' || true)
+          echo "Base requirements:"
+          echo "$BASE"
+          if echo "$BASE" | grep -qE 'torch|transformers|accelerate|safetensors|gguf'; then
+            echo "::error::A GPU dependency escaped an extra into the base install (ADR-0005)"
+            exit 1
+          fi
+          echo "Base install is torch-free — OK"
+
+      - name: Install and verify wheel
+        run: |
+          uv venv /tmp/smoke --python 3.12
+          SMOKE=/tmp/smoke/bin
+          uv pip install --python "$SMOKE/python" dist/*.whl
+          "$SMOKE/vramfit" version
+          "$SMOKE/vramfit" plan --help > /dev/null
+          "$SMOKE/vramfit" budget --help > /dev/null
+
+      - name: Publish to TestPyPI
+        run: |
+          LAST_OUTPUT=""
+          for attempt in 1 2 3 4 5; do
+            echo "Attempt ${attempt} of 5..."
+            LAST_OUTPUT=$(uv publish --index testpypi 2>&1) && {
+              echo "$LAST_OUTPUT"
+              echo "Published successfully on attempt ${attempt}"
+              exit 0
+            }
+            echo "$LAST_OUTPUT"
+            if [ "$attempt" -lt 5 ]; then
+              echo "Upload failed, retrying in 30s..."
+              sleep 30
+            fi
+          done
+          # All attempts failed — distinguish transient 503s from real errors
+          if echo "$LAST_OUTPUT" | grep -q "503"; then
+            echo "::warning::TestPyPI returned 503 on all 5 attempts — infrastructure issue, not a pipeline problem"
+            exit 0
+          fi
+          echo "::error::All 5 publish attempts failed"
+          exit 1

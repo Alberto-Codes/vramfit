@@ -5,7 +5,8 @@ mixed-precision recipe under a VRAM budget, and packs the result for a
 target runtime.
 
 Attributes:
-    __version__ (str): The installed package version.
+    __version__ (str): The installed package version. release-please
+        rewrites this line on every release. Do not edit it by hand.
 
 Examples:
     Check the installed version:
@@ -23,4 +24,4 @@ See Also:
 
 from __future__ import annotations
 
-__version__ = "0.1.0"
+__version__ = "0.1.0"  # x-release-please-version
