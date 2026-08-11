@@ -7,14 +7,14 @@ import pytest
 from hypothesis import event, given
 from hypothesis import strategies as st
 
-from quantfit.adapters.outbound.sensitivity_map_json import map_from_dict
-from quantfit.domain.runtime import (
+from tests.strategies import raw_protected_maps, raw_sensitivity_maps
+from vramfit.adapters.outbound.sensitivity_map_json import map_from_dict
+from vramfit.domain.runtime import (
     EFFECTIVE_BITS,
     RUNTIME_CAPABILITIES,
     RuntimeCapabilityError,
 )
-from quantfit.domain.solver import InfeasibleBudgetError, group_bytes, solve
-from tests.strategies import raw_protected_maps, raw_sensitivity_maps
+from vramfit.domain.solver import InfeasibleBudgetError, group_bytes, solve
 
 overheads = st.floats(
     min_value=0.0, max_value=0.5, allow_nan=False, allow_infinity=False

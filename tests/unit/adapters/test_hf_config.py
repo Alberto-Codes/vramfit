@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from quantfit.adapters.outbound.hf_config import shape_from_config_json
+from vramfit.adapters.outbound.hf_config import shape_from_config_json
 
 
 @pytest.mark.unit

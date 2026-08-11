@@ -4,7 +4,7 @@ status: draft
 
 # How to run a sensitivity scan
 
-> **Status: draft** — `quantfit scan` is implemented and has produced
+> **Status: draft** — `vramfit scan` is implemented and has produced
 > full-size maps: Qwen2.5-3B (148 cells, ~1 h) and the 49B target
 > (328 cells, 3 h 42 m, offload-aware per
 > [ADR-0015](../adr/0015-offload-aware-scanning.md)).
@@ -21,13 +21,13 @@ The scan needs the GPU stack, which the base install does not carry
 (ADR-0005):
 
 ```bash
-uv pip install "quantfit[scan]"
+uv pip install "vramfit[scan]"
 ```
 
 ## Basic invocation
 
 ```bash
-uv run quantfit scan nvidia/Llama-3_3-Nemotron-Super-49B-v1_5 \
+uv run vramfit scan nvidia/Llama-3_3-Nemotron-Super-49B-v1_5 \
   --calibration calibration.txt \
   --precisions 8,4,3,2 \
   --max-tokens 32768 \
@@ -56,6 +56,11 @@ The fingerprint records provenance, not content. It cannot detect new
 weights or edited calibration text behind an unchanged path — do not
 change either between a crash and its resume.
 
+Checkpoints written before the vramfit rename do not resume: the
+checkpoint schema bumped with the envelope key (#118). The scan
+rejects the old file — pass `--no-resume` to discard it and start
+over.
+
 ## Pricing cells the way the pack quantizes
 
 The default within-group method is round-to-nearest — fast, and
@@ -72,7 +77,7 @@ remains available
 ([ADR-0018](../adr/0018-kquant-within-group-method.md)):
 
 ```bash
-uv run quantfit scan ./model --calibration calibration.txt \
+uv run vramfit scan ./model --calibration calibration.txt \
   --within-group kquant \
   --imatrix model.imatrix.gguf \
   --out sensitivity.json

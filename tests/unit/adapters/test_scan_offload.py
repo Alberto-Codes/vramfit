@@ -17,7 +17,7 @@ import pytest
 
 torch = pytest.importorskip("torch", reason="scan extra not installed")
 
-from quantfit.adapters.outbound.scan.offload import (
+from vramfit.adapters.outbound.scan.offload import (
     ShardReader,
     dedupe_aliased_groups,
     open_shard_reader,

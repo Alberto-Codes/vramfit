@@ -103,7 +103,7 @@ jobs:
           UV_PYTHON: ${{ matrix.python-version }}
       - run: >-
           uv run pytest -m "not gpu and not integration"
-          --cov=quantfit --cov-report=term-missing --tb=short
+          --cov=vramfit --cov-report=term-missing --tb=short
         env:
           UV_PYTHON: ${{ matrix.python-version }}
           HYPOTHESIS_PROFILE: thorough

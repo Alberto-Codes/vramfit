@@ -6,12 +6,12 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from quantfit.adapters.inbound import cli_pack, cli_pack_smoke
-from quantfit.adapters.inbound.cli import app
-from quantfit.adapters.outbound.recipe_json import save_recipe
-from quantfit.adapters.outbound.run_log_jsonl import read_run_log
-from quantfit.domain.model import Assignment, PlanMeta, Recipe
 from tests.fakes import MemoryRecipePacker, MemorySmokeTester
+from vramfit.adapters.inbound import cli_pack, cli_pack_smoke
+from vramfit.adapters.inbound.cli import app
+from vramfit.adapters.outbound.recipe_json import save_recipe
+from vramfit.adapters.outbound.run_log_jsonl import read_run_log
+from vramfit.domain.model import Assignment, PlanMeta, Recipe
 
 runner = CliRunner()
 

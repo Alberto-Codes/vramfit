@@ -17,9 +17,9 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from quantfit.adapters.inbound.cli import app
-from quantfit.adapters.outbound.hf_config import shape_from_config_json
-from quantfit.domain.budget import kv_bytes_per_token
+from vramfit.adapters.inbound.cli import app
+from vramfit.adapters.outbound.hf_config import shape_from_config_json
+from vramfit.domain.budget import kv_bytes_per_token
 
 pytestmark = pytest.mark.unit
 

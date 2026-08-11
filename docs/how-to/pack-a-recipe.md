@@ -4,7 +4,7 @@ status: draft
 
 # How to pack a recipe
 
-> **Status: draft** — `quantfit pack` is implemented for the GGUF
+> **Status: draft** — `vramfit pack` is implemented for the GGUF
 > backend, verified on Qwen2.5-3B, and packed the 49B target 169.7 MiB
 > under budget on the first try. The vLLM backend does not exist yet
 > (ADR-0004, ADR-0010).
@@ -17,7 +17,7 @@ can serve, with the type mapping from
 
 ## Prerequisites
 
-The pack step drives external tools — none ship with quantfit:
+The pack step drives external tools — none ship with vramfit:
 
 1. A llama.cpp checkout with built tools:
 
@@ -36,7 +36,7 @@ The pack step drives external tools — none ship with quantfit:
    provisions it (torch, transformers, sentencepiece):
 
    ```bash
-   uv pip install "quantfit[pack]"
+   uv pip install "vramfit[pack]"
    ```
 
    sentencepiece matters even for BPE models: the Qwen converter
@@ -46,7 +46,7 @@ The pack step drives external tools — none ship with quantfit:
 ## Basic invocation
 
 ```bash
-uv run quantfit pack recipe-4GiB.json \
+uv run vramfit pack recipe-4GiB.json \
   --llama-cpp ~/llama.cpp \
   --out qwen2.5-3b-recipe-4GiB.gguf \
   --threads 14
@@ -71,7 +71,7 @@ matrix once per (base GGUF, calibration text) pair with
 
 ```bash
 llama-imatrix -m model-f16.gguf -f calibration.txt -o model.imatrix.gguf
-uv run quantfit pack recipe.json \
+uv run vramfit pack recipe.json \
   --llama-cpp ~/llama.cpp \
   --imatrix model.imatrix.gguf \
   ...
@@ -92,7 +92,7 @@ exactly that on 2026-07-29
 anything downstream trusts it:
 
 ```bash
-uv run quantfit pack recipe.json \
+uv run vramfit pack recipe.json \
   --llama-cpp ~/llama.cpp \
   --smoke-text calibration.txt \
   ...

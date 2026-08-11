@@ -8,16 +8,16 @@ status: draft
 > and `validate` are implemented. `pack` covers the GGUF backend only
 > (ADR-0010).
 
-## `quantfit version`
+## `vramfit version`
 
 Implemented. Prints the installed package version.
 
 ```console
-$ quantfit version
-quantfit 0.1.0
+$ vramfit version
+vramfit 0.1.0
 ```
 
-## `quantfit budget`
+## `vramfit budget`
 
 Implemented. Prints the VRAM budget breakdown. The `--kv-headroom` value
 for `plan` is the sum of the KV-cache and runtime-overhead lines. The attention shape comes from
@@ -26,7 +26,7 @@ DeciLM NAS configs with skipped-attention blocks are handled) or the
 manual triple.
 
 ```
-quantfit budget
+vramfit budget
   --vram SIZE            Total VRAM  [default: 24GiB]
   --context INT          Context length in tokens  [default: 16384]
   --kv-dtype TEXT        fp16 | bf16 | fp8  [default: fp16]
@@ -42,7 +42,7 @@ Exits 1 when nothing is left for weights, and 2 on conflicting or missing
 shape sources.
 
 ```console
-$ quantfit budget --model-config config.json --vram 24GiB --kv-dtype fp8
+$ vramfit budget --model-config config.json --vram 24GiB --kv-dtype fp8
 attention layers      49  (KV 100352 bytes/token, fp8)
 VRAM total            24.00 GiB
 - KV cache            1.53 GiB  (16384 tokens x 1 seq)
@@ -50,12 +50,12 @@ VRAM total            24.00 GiB
 = weight budget       20.47 GiB
 ```
 
-## `quantfit plan`
+## `vramfit plan`
 
 Implemented. Solves a sensitivity map into a recipe under a VRAM budget.
 
 ```
-quantfit plan SENSITIVITY_MAP
+vramfit plan SENSITIVITY_MAP
   --vram SIZE            Hard VRAM ceiling (e.g. 24GiB)  [required]
   --kv-headroom SIZE     Reserved for KV cache + runtime  [default: 4GiB]
   --pin TEXT             Pin groups to a precision, repeatable (glob=bits)
@@ -115,14 +115,14 @@ the form `pattern=bits` with positive bits, unparseable sizes, a
 negative, NaN, or infinite `--format-overhead`, or a `--runtime`
 outside the capability table).
 
-## `quantfit scan`
+## `vramfit scan`
 
 Implemented. Measures per-group damage and writes a sensitivity map.
-Requires the scan extra (`uv pip install "quantfit[scan]"`) — without
+Requires the scan extra (`uv pip install "vramfit[scan]"`) — without
 it the command exits 1 with the install hint.
 
 ```
-quantfit scan MODEL
+vramfit scan MODEL
   --calibration PATH     Calibration text file (UTF-8)  [required]
   --out PATH             Output sensitivity map  [default: sensitivity.json]
   --precisions TEXT      Candidate bit-widths, strictly descending CSV,
@@ -197,7 +197,7 @@ the port does not cover, an `--imatrix` without `--within-group
 kquant` or naming a missing file, or a missing `--out` or `--runlog`
 directory.
 
-## `quantfit validate`
+## `vramfit validate`
 
 Implemented. Runs the whole-recipe validation pass (ADR-0006). The
 command quantizes every group to its assigned precision in one
@@ -214,7 +214,7 @@ Requires the scan extra — without it the command exits 1 with the
 install hint.
 
 ```
-quantfit validate RECIPE
+vramfit validate RECIPE
   --calibration PATH     Calibration text file (UTF-8)  [required]
   --model TEXT           Model id or checkpoint path
                          [default: the recipe's model_id]
@@ -258,7 +258,7 @@ measured_damage, gap, and ratio — or validation_halted (stage:
 meter_build, group_match, or measure).
 
 ```console
-$ quantfit validate recipe.json --calibration calib.txt --max-tokens 32768
+$ vramfit validate recipe.json --calibration calib.txt --max-tokens 32768
 validated 37 groups over 32768 tokens
 summed marginal damage (predicted)  0.066107
 whole-recipe damage (measured)      0.032240
@@ -275,7 +275,7 @@ recorded method, a `--within-group kquant` that meets recipe
 assignments the ported quantizers do not cover, or a missing
 `--runlog` directory.
 
-## `quantfit pack`
+## `vramfit pack`
 
 Implemented for the GGUF backend (ADR-0010, ADR-0012). Applies a
 recipe through llama.cpp's quantizer: one f16 base GGUF conversion
@@ -288,7 +288,7 @@ base type is the recipe's precision floor, applied with `--pure`, so
 no heuristic mixing leaks in.
 
 ```
-quantfit pack RECIPE
+vramfit pack RECIPE
   --llama-cpp PATH       llama.cpp checkout with convert_hf_to_gguf.py
                          and build/bin/llama-quantize  [required]
   --model PATH           Model checkpoint directory
@@ -297,7 +297,7 @@ quantfit pack RECIPE
   --base-gguf PATH       f16 base GGUF, reused when present
                          [default: <model name>-f16.gguf beside --out]
   --python-bin PATH      Interpreter for the convert script — install
-                         quantfit[pack] to provision it
+                         vramfit[pack] to provision it
                          [default: current]
   --threads INT          Thread count for the quantizer and the
                          smoke test  [default: 8]

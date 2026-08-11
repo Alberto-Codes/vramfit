@@ -1489,82 +1489,6 @@ wheels = [
 ]
 
 [[package]]
-name = "quantfit"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "structlog" },
-    { name = "typer" },
-]
-
-[package.optional-dependencies]
-docs = [
-    { name = "mkdocs" },
-    { name = "mkdocs-material" },
-    { name = "mkdocstrings", extra = ["python"] },
-]
-pack = [
-    { name = "accelerate" },
-    { name = "gguf" },
-    { name = "safetensors" },
-    { name = "sentencepiece" },
-    { name = "torch" },
-    { name = "transformers" },
-]
-scan = [
-    { name = "accelerate" },
-    { name = "gguf" },
-    { name = "safetensors" },
-    { name = "torch" },
-    { name = "transformers" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "docvet" },
-    { name = "hypothesis" },
-    { name = "import-linter" },
-    { name = "pytest" },
-    { name = "pytest-cov" },
-    { name = "pytest-mock" },
-    { name = "pytest-randomly" },
-    { name = "ruff" },
-    { name = "ty" },
-    { name = "uv-secure" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "accelerate", marker = "extra == 'scan'", specifier = ">=1.0" },
-    { name = "gguf", marker = "extra == 'scan'", specifier = ">=0.10" },
-    { name = "mkdocs", marker = "extra == 'docs'", specifier = ">=1.6,<2" },
-    { name = "mkdocs-material", marker = "extra == 'docs'", specifier = ">=9.6" },
-    { name = "mkdocstrings", extras = ["python"], marker = "extra == 'docs'", specifier = ">=1.0" },
-    { name = "quantfit", extras = ["scan"], marker = "extra == 'pack'" },
-    { name = "safetensors", marker = "extra == 'scan'", specifier = ">=0.4" },
-    { name = "sentencepiece", marker = "extra == 'pack'", specifier = ">=0.2" },
-    { name = "structlog", specifier = ">=24.1" },
-    { name = "torch", marker = "extra == 'scan'", specifier = ">=2.4" },
-    { name = "transformers", marker = "extra == 'scan'", specifier = ">=4.56" },
-    { name = "typer", specifier = ">=0.9" },
-]
-provides-extras = ["scan", "pack", "docs"]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "docvet", specifier = ">=1.15" },
-    { name = "hypothesis", specifier = ">=6.100" },
-    { name = "import-linter", specifier = ">=2.11" },
-    { name = "pytest", specifier = ">=9.0" },
-    { name = "pytest-cov", specifier = ">=7.0" },
-    { name = "pytest-mock", specifier = ">=3.15" },
-    { name = "pytest-randomly", specifier = ">=4.0" },
-    { name = "ruff", specifier = ">=0.11" },
-    { name = "ty", specifier = ">=0.0.1a33" },
-    { name = "uv-secure", specifier = ">=0.17.0" },
-]
-
-[[package]]
 name = "regex"
 version = "2026.7.19"
 source = { registry = "https://pypi.org/simple" }
@@ -2074,6 +1998,82 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/71/99/29318cedfc5583cf2d503f0eedb9c4e96829541c356ce5d2aacfe09ef67f/uv_secure-0.17.2.tar.gz", hash = "sha256:e394939e0872df392d8f650d15ac1571b9267fc2f3671a183aa73c0977f0f402", size = 47240, upload-time = "2026-04-18T08:45:38.185Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/eb/e0/917c79d13d7c34cd24e6b91ed76a1e580864790ebe50845dfe269bd29174/uv_secure-0.17.2-py3-none-any.whl", hash = "sha256:7d8e05eb2d80075458a5d575c65999edd94a3ca58c4d3e8e06172b295cb4ebe6", size = 54992, upload-time = "2026-04-18T08:45:39.338Z" },
+]
+
+[[package]]
+name = "vramfit"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "structlog" },
+    { name = "typer" },
+]
+
+[package.optional-dependencies]
+docs = [
+    { name = "mkdocs" },
+    { name = "mkdocs-material" },
+    { name = "mkdocstrings", extra = ["python"] },
+]
+pack = [
+    { name = "accelerate" },
+    { name = "gguf" },
+    { name = "safetensors" },
+    { name = "sentencepiece" },
+    { name = "torch" },
+    { name = "transformers" },
+]
+scan = [
+    { name = "accelerate" },
+    { name = "gguf" },
+    { name = "safetensors" },
+    { name = "torch" },
+    { name = "transformers" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "docvet" },
+    { name = "hypothesis" },
+    { name = "import-linter" },
+    { name = "pytest" },
+    { name = "pytest-cov" },
+    { name = "pytest-mock" },
+    { name = "pytest-randomly" },
+    { name = "ruff" },
+    { name = "ty" },
+    { name = "uv-secure" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "accelerate", marker = "extra == 'scan'", specifier = ">=1.0" },
+    { name = "gguf", marker = "extra == 'scan'", specifier = ">=0.10" },
+    { name = "mkdocs", marker = "extra == 'docs'", specifier = ">=1.6,<2" },
+    { name = "mkdocs-material", marker = "extra == 'docs'", specifier = ">=9.6" },
+    { name = "mkdocstrings", extras = ["python"], marker = "extra == 'docs'", specifier = ">=1.0" },
+    { name = "safetensors", marker = "extra == 'scan'", specifier = ">=0.4" },
+    { name = "sentencepiece", marker = "extra == 'pack'", specifier = ">=0.2" },
+    { name = "structlog", specifier = ">=24.1" },
+    { name = "torch", marker = "extra == 'scan'", specifier = ">=2.4" },
+    { name = "transformers", marker = "extra == 'scan'", specifier = ">=4.56" },
+    { name = "typer", specifier = ">=0.9" },
+    { name = "vramfit", extras = ["scan"], marker = "extra == 'pack'" },
+]
+provides-extras = ["scan", "pack", "docs"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "docvet", specifier = ">=1.15" },
+    { name = "hypothesis", specifier = ">=6.100" },
+    { name = "import-linter", specifier = ">=2.11" },
+    { name = "pytest", specifier = ">=9.0" },
+    { name = "pytest-cov", specifier = ">=7.0" },
+    { name = "pytest-mock", specifier = ">=3.15" },
+    { name = "pytest-randomly", specifier = ">=4.0" },
+    { name = "ruff", specifier = ">=0.11" },
+    { name = "ty", specifier = ">=0.0.1a33" },
+    { name = "uv-secure", specifier = ">=0.17.0" },
 ]
 
 [[package]]

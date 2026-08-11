@@ -16,19 +16,19 @@ torch = pytest.importorskip("torch", reason="scan extra not installed")
 
 from typer.testing import CliRunner
 
-from quantfit.adapters.inbound.cli import app
-from quantfit.adapters.outbound.scan.calibration import load_calibration
-from quantfit.adapters.outbound.scan.kl import (
+from tests.conftest import CALIBRATION_TEXT
+from vramfit.adapters.inbound.cli import app
+from vramfit.adapters.outbound.scan.calibration import load_calibration
+from vramfit.adapters.outbound.scan.kl import (
     mean_kl,
     reference_log_probs,
 )
-from quantfit.adapters.outbound.scan.quantize import (
+from vramfit.adapters.outbound.scan.quantize import (
     rtn_quantize_dequantize,
 )
-from quantfit.adapters.outbound.sensitivity_map_json import (
+from vramfit.adapters.outbound.sensitivity_map_json import (
     load_sensitivity_map,
 )
-from tests.conftest import CALIBRATION_TEXT
 
 pytestmark = [pytest.mark.integration, pytest.mark.slow]
 
@@ -162,7 +162,7 @@ class TestLoadCalibration:
 
 @pytest.fixture
 def tiny_meter(tiny_model_dir, tmp_path):
-    from quantfit.adapters.outbound.scan.meter import TorchDamageMeter
+    from vramfit.adapters.outbound.scan.meter import TorchDamageMeter
 
     calibration = tmp_path / "calib.txt"
     calibration.write_text(CALIBRATION_TEXT)
@@ -182,7 +182,7 @@ class TestTorchDamageMeter:
     def test_tensor_grouping_is_finer_than_layer_grouping(
         self, tiny_meter, tiny_model_dir, tmp_path
     ) -> None:
-        from quantfit.adapters.outbound.scan.meter import TorchDamageMeter
+        from vramfit.adapters.outbound.scan.meter import TorchDamageMeter
 
         calibration = tmp_path / "calib.txt"
         calibration.write_text(CALIBRATION_TEXT)
@@ -208,7 +208,7 @@ class TestTorchDamageMeter:
         # exact names (ADR-0012). If discovery ever renames them, the
         # flags disengage and the renamed group surfaces only later,
         # as a PackError for an unmapped group. This pins the drift.
-        from quantfit.adapters.outbound.gguf.types import (
+        from vramfit.adapters.outbound.gguf.types import (
             EMBEDDING_GROUP,
             OUTPUT_GROUP,
         )
@@ -219,7 +219,7 @@ class TestTorchDamageMeter:
         assert OUTPUT_GROUP in names
 
     def test_gpt2_style_names_group_by_layer(self) -> None:
-        from quantfit.adapters.outbound.scan.meter import _discover_groups
+        from vramfit.adapters.outbound.scan.meter import _discover_groups
 
         class Gpt2Like(torch.nn.Module):
             def __init__(self) -> None:
@@ -234,7 +234,7 @@ class TestTorchDamageMeter:
         assert set(groups) == {"transformer.h.0", "transformer.h.1"}
 
     def test_max_memory_maps_cap_and_cpu_for_auto_only(self) -> None:
-        from quantfit.adapters.outbound.scan.meter import _max_memory
+        from vramfit.adapters.outbound.scan.meter import _max_memory
 
         assert _max_memory("auto", 17 * 2**30) == {
             0: 17 * 2**30,
@@ -264,7 +264,7 @@ class TestTorchDamageMeter:
         # dispatch ever falls back to RTN silently, a kquant map
         # records rtn damages under the kquant-ref token — corrupted
         # provenance the golden fixtures cannot catch.
-        from quantfit.adapters.outbound.scan.meter import TorchDamageMeter
+        from vramfit.adapters.outbound.scan.meter import TorchDamageMeter
 
         calibration = tmp_path / "calib.txt"
         calibration.write_text(CALIBRATION_TEXT)
@@ -288,7 +288,7 @@ class TestTorchDamageMeter:
     ) -> None:
         # The method token is not the selector — accepting it would
         # silently measure RTN damages under the kquant-ref label.
-        from quantfit.adapters.outbound.scan.meter import TorchDamageMeter
+        from vramfit.adapters.outbound.scan.meter import TorchDamageMeter
 
         calibration = tmp_path / "calib.txt"
         calibration.write_text(CALIBRATION_TEXT)
@@ -310,7 +310,7 @@ class TestTorchDamageMeter:
         # end to end. A meter that drops the lookup would price
         # unassisted under the assisted label — corrupted provenance
         # the golden fixtures cannot catch.
-        from quantfit.adapters.outbound.scan.meter import TorchDamageMeter
+        from vramfit.adapters.outbound.scan.meter import TorchDamageMeter
 
         calibration = tmp_path / "calib.txt"
         calibration.write_text(CALIBRATION_TEXT)
@@ -342,7 +342,7 @@ class TestTorchDamageMeter:
     def test_imatrix_weights_with_rtn_are_refused_before_the_model_loads(
         self, tmp_path
     ) -> None:
-        from quantfit.adapters.outbound.scan.meter import TorchDamageMeter
+        from vramfit.adapters.outbound.scan.meter import TorchDamageMeter
 
         calibration = tmp_path / "calib.txt"
         calibration.write_text(CALIBRATION_TEXT)
@@ -361,7 +361,7 @@ class TestTorchDamageMeter:
     ) -> None:
         # An empty mapping prices every cell unassisted under the
         # assisted label — the caller must pass None deliberately.
-        from quantfit.adapters.outbound.scan.meter import TorchDamageMeter
+        from vramfit.adapters.outbound.scan.meter import TorchDamageMeter
 
         calibration = tmp_path / "calib.txt"
         calibration.write_text(CALIBRATION_TEXT)
@@ -381,7 +381,7 @@ class TestTorchDamageMeter:
     ) -> None:
         # A NaN weight would abort the scan at its first assisted
         # cell, hours in — construction must refuse it up front.
-        from quantfit.adapters.outbound.scan.meter import TorchDamageMeter
+        from vramfit.adapters.outbound.scan.meter import TorchDamageMeter
 
         calibration = tmp_path / "calib.txt"
         calibration.write_text(CALIBRATION_TEXT)
@@ -404,7 +404,7 @@ class TestTorchDamageMeter:
         # A (1, rows) tensor has the right numel — only a dim check
         # stops it passing construction and dying at the first
         # assisted cell.
-        from quantfit.adapters.outbound.scan.meter import TorchDamageMeter
+        from vramfit.adapters.outbound.scan.meter import TorchDamageMeter
 
         calibration = tmp_path / "calib.txt"
         calibration.write_text(CALIBRATION_TEXT)
@@ -427,7 +427,7 @@ class TestTorchDamageMeter:
         # tiny_model_dir rows are 32-wide — a covered parameter that
         # cannot split into 256-element super-blocks can never price
         # assisted, and the first assisted cell would abort mid-scan.
-        from quantfit.adapters.outbound.scan.meter import TorchDamageMeter
+        from vramfit.adapters.outbound.scan.meter import TorchDamageMeter
 
         calibration = tmp_path / "calib.txt"
         calibration.write_text(CALIBRATION_TEXT)
@@ -447,7 +447,7 @@ class TestTorchDamageMeter:
     def test_imatrix_weights_for_an_unknown_parameter_are_refused(
         self, tiny_model_dir, tmp_path
     ) -> None:
-        from quantfit.adapters.outbound.scan.meter import TorchDamageMeter
+        from vramfit.adapters.outbound.scan.meter import TorchDamageMeter
 
         calibration = tmp_path / "calib.txt"
         calibration.write_text(CALIBRATION_TEXT)
@@ -465,7 +465,7 @@ class TestTorchDamageMeter:
     def test_imatrix_weights_with_wrong_length_are_refused(
         self, tiny_model_dir, tmp_path
     ) -> None:
-        from quantfit.adapters.outbound.scan.meter import TorchDamageMeter
+        from vramfit.adapters.outbound.scan.meter import TorchDamageMeter
 
         calibration = tmp_path / "calib.txt"
         calibration.write_text(CALIBRATION_TEXT)
@@ -488,7 +488,7 @@ class TestTorchDamageMeter:
         # The full file-to-meter chain (ADR-0020): a real imatrix GGUF
         # covering one parameter must land as that parameter's column
         # weights, with the split reported for the run log.
-        from quantfit.adapters.outbound.scan.meter import TorchDamageMeter
+        from vramfit.adapters.outbound.scan.meter import TorchDamageMeter
 
         gguf = pytest.importorskip("gguf", reason="scan extra not installed")
         np = pytest.importorskip("numpy", reason="scan extra not installed")
@@ -531,7 +531,7 @@ class TestTorchDamageMeter:
         # the discovered parameters — the constructor's resolve call
         # must refuse, not price every cell unassisted under the
         # assisted label.
-        from quantfit.adapters.outbound.scan.meter import TorchDamageMeter
+        from vramfit.adapters.outbound.scan.meter import TorchDamageMeter
 
         gguf = pytest.importorskip("gguf", reason="scan extra not installed")
         np = pytest.importorskip("numpy", reason="scan extra not installed")
@@ -564,7 +564,7 @@ class TestTorchDamageMeter:
     def test_imatrix_path_with_weights_is_refused_before_the_model_loads(
         self, tmp_path
     ) -> None:
-        from quantfit.adapters.outbound.scan.meter import TorchDamageMeter
+        from vramfit.adapters.outbound.scan.meter import TorchDamageMeter
 
         calibration = tmp_path / "calib.txt"
         calibration.write_text(CALIBRATION_TEXT)
@@ -583,7 +583,7 @@ class TestTorchDamageMeter:
     def test_imatrix_path_with_rtn_is_refused_before_the_model_loads(
         self, tmp_path
     ) -> None:
-        from quantfit.adapters.outbound.scan.meter import TorchDamageMeter
+        from vramfit.adapters.outbound.scan.meter import TorchDamageMeter
 
         calibration = tmp_path / "calib.txt"
         calibration.write_text(CALIBRATION_TEXT)
@@ -603,7 +603,7 @@ class TestTorchDamageMeter:
         # The imatrix loads first — a bad file must refuse in
         # milliseconds, not after minutes of shard loading. The
         # nonexistent model proves the ordering.
-        from quantfit.adapters.outbound.scan.meter import TorchDamageMeter
+        from vramfit.adapters.outbound.scan.meter import TorchDamageMeter
 
         gguf = pytest.importorskip("gguf", reason="scan extra not installed")
         calibration = tmp_path / "calib.txt"
@@ -628,7 +628,7 @@ class TestTorchDamageMeter:
     def test_kquant_meter_refuses_uncovered_bits(
         self, tiny_model_dir, tmp_path
     ) -> None:
-        from quantfit.adapters.outbound.scan.meter import TorchDamageMeter
+        from vramfit.adapters.outbound.scan.meter import TorchDamageMeter
 
         calibration = tmp_path / "calib.txt"
         calibration.write_text(CALIBRATION_TEXT)
@@ -657,7 +657,7 @@ class TestTorchDamageMeter:
         # takes, untestable on the CPU-only contract leg.
         if not torch.cuda.is_available():
             pytest.skip("no CUDA device")
-        from quantfit.adapters.outbound.scan.meter import TorchDamageMeter
+        from vramfit.adapters.outbound.scan.meter import TorchDamageMeter
 
         calibration = tmp_path / "calib.txt"
         calibration.write_text(CALIBRATION_TEXT)
@@ -673,7 +673,7 @@ class TestTorchDamageMeter:
         assert meter.measure(group, 2) == before
 
     def test_layer_grouping_without_layer_structure_raises(self) -> None:
-        from quantfit.adapters.outbound.scan.meter import _discover_groups
+        from vramfit.adapters.outbound.scan.meter import _discover_groups
 
         class Flat(torch.nn.Module):
             def __init__(self) -> None:

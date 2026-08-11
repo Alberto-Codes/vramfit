@@ -4,14 +4,14 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from quantfit.domain.model import ScanMeta
-from quantfit.domain.scan import (
+from tests.strategies import precision_sets
+from vramfit.domain.model import ScanMeta
+from vramfit.domain.scan import (
     GroupSpec,
     Measurement,
     assemble_map,
     plan_measurements,
 )
-from tests.strategies import precision_sets
 
 pytestmark = pytest.mark.unit
 

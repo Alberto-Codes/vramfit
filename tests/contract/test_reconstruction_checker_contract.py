@@ -23,10 +23,10 @@ pytest.importorskip("gguf", reason="pack extra not installed")
 from gguf import GGMLQuantizationType, GGUFWriter
 from gguf.quants import dequantize, quantize
 
-from quantfit.adapters.outbound.gguf.reconstruction import GgufReconstructionChecker
-from quantfit.adapters.outbound.gguf.types import PackError
-from quantfit.ports.outbound import ReconstructionChecker
 from tests.fakes import MemoryReconstructionChecker
+from vramfit.adapters.outbound.gguf.reconstruction import GgufReconstructionChecker
+from vramfit.adapters.outbound.gguf.types import PackError
+from vramfit.ports.outbound import ReconstructionChecker
 
 pytestmark = pytest.mark.contract
 

@@ -3,13 +3,13 @@ from __future__ import annotations
 import pytest
 from typer.testing import CliRunner
 
-from quantfit.adapters.inbound import cli_scan
-from quantfit.adapters.inbound.cli import app
-from quantfit.adapters.outbound.scan_checkpoint_json import JsonScanCheckpointFile
-from quantfit.adapters.outbound.sensitivity_map_json import load_sensitivity_map
-from quantfit.domain.model import ScanMeta
-from quantfit.domain.scan import GroupSpec, Measurement, scan_fingerprint
 from tests.fakes import MemoryDamageMeter
+from vramfit.adapters.inbound import cli_scan
+from vramfit.adapters.inbound.cli import app
+from vramfit.adapters.outbound.scan_checkpoint_json import JsonScanCheckpointFile
+from vramfit.adapters.outbound.sensitivity_map_json import load_sensitivity_map
+from vramfit.domain.model import ScanMeta
+from vramfit.domain.scan import GroupSpec, Measurement, scan_fingerprint
 
 runner = CliRunner()
 
@@ -133,7 +133,7 @@ def test_missing_scan_extra_reports_install_hint(tmp_path, monkeypatch) -> None:
     result, _ = invoke_scan(tmp_path)
 
     assert result.exit_code == 1
-    assert "quantfit[scan]" in result.output
+    assert "vramfit[scan]" in result.output
 
 
 def test_backend_import_error_surfaces_as_itself(tmp_path, monkeypatch) -> None:
@@ -146,7 +146,7 @@ def test_backend_import_error_surfaces_as_itself(tmp_path, monkeypatch) -> None:
 
     assert result.exit_code == 1
     assert "SentencePiece" in result.output
-    assert "quantfit[scan]" not in result.output
+    assert "vramfit[scan]" not in result.output
 
 
 def test_meter_build_failure_reports_error(tmp_path, monkeypatch) -> None:
@@ -323,7 +323,7 @@ def test_assisted_checkpoint_refuses_an_unassisted_rerun(tmp_path, monkeypatch) 
 def test_assisted_scan_echoes_and_logs_the_coverage_split(
     tmp_path, monkeypatch
 ) -> None:
-    from quantfit.adapters.outbound.run_log_jsonl import read_run_log
+    from vramfit.adapters.outbound.run_log_jsonl import read_run_log
 
     class ImatrixAwareFake(MemoryDamageMeter):
         imatrix_covered_count = 1
@@ -387,7 +387,7 @@ def test_assisted_scan_without_a_coverage_split_warns(tmp_path, monkeypatch) -> 
 def test_meter_built_reports_null_imatrix_for_meters_without_the_notion(
     tmp_path, monkeypatch
 ) -> None:
-    from quantfit.adapters.outbound.run_log_jsonl import read_run_log
+    from vramfit.adapters.outbound.run_log_jsonl import read_run_log
 
     install_meter(
         monkeypatch, MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES), tokens=64)
@@ -578,7 +578,7 @@ def test_gpu_memory_without_auto_device_exits_with_usage_error(
 
 
 def test_scan_writes_a_run_log_with_the_full_event_story(tmp_path, monkeypatch) -> None:
-    from quantfit.adapters.outbound.run_log_jsonl import read_run_log
+    from vramfit.adapters.outbound.run_log_jsonl import read_run_log
 
     install_meter(
         monkeypatch, MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES), tokens=64)
@@ -595,13 +595,13 @@ def test_scan_writes_a_run_log_with_the_full_event_story(tmp_path, monkeypatch) 
     assert names[-1] == "scan_finished"
     cell = next(e for e in events if e["event"] == "cell_measured")
     assert {"group", "bits", "damage", "seconds", "rss_hwm_gb", "ts"} <= set(cell)
-    assert all(e["quantfit_runlog"] == 1 for e in events)
+    assert all(e["vramfit_runlog"] == 2 for e in events)
 
 
 def test_meter_built_reports_null_offload_for_meters_without_the_notion(
     tmp_path, monkeypatch
 ) -> None:
-    from quantfit.adapters.outbound.run_log_jsonl import read_run_log
+    from vramfit.adapters.outbound.run_log_jsonl import read_run_log
 
     install_meter(
         monkeypatch, MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES), tokens=64)
@@ -619,7 +619,7 @@ def test_meter_built_reports_null_offload_for_meters_without_the_notion(
 
 
 def test_meter_built_reports_the_offloaded_group_count(tmp_path, monkeypatch) -> None:
-    from quantfit.adapters.outbound.run_log_jsonl import read_run_log
+    from vramfit.adapters.outbound.run_log_jsonl import read_run_log
 
     class OffloadAwareFake(MemoryDamageMeter):
         offloaded_group_count = 1
@@ -636,7 +636,7 @@ def test_meter_built_reports_the_offloaded_group_count(tmp_path, monkeypatch) ->
 
 
 def test_halted_scan_logs_the_failing_cell(tmp_path, monkeypatch) -> None:
-    from quantfit.adapters.outbound.run_log_jsonl import read_run_log
+    from vramfit.adapters.outbound.run_log_jsonl import read_run_log
 
     damages = dict(DAMAGES)
     damages[("model.layers.1", 8)] = float("nan")
@@ -656,7 +656,7 @@ def test_halted_scan_logs_the_failing_cell(tmp_path, monkeypatch) -> None:
 
 
 def test_runlog_option_overrides_the_default_path(tmp_path, monkeypatch) -> None:
-    from quantfit.adapters.outbound.run_log_jsonl import read_run_log
+    from vramfit.adapters.outbound.run_log_jsonl import read_run_log
 
     install_meter(
         monkeypatch, MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES), tokens=64)
@@ -671,7 +671,7 @@ def test_runlog_option_overrides_the_default_path(tmp_path, monkeypatch) -> None
 
 
 def test_every_event_carries_one_run_id_per_invocation(tmp_path, monkeypatch) -> None:
-    from quantfit.adapters.outbound.run_log_jsonl import read_run_log
+    from vramfit.adapters.outbound.run_log_jsonl import read_run_log
 
     install_meter(
         monkeypatch, MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES), tokens=64)
@@ -691,7 +691,7 @@ def test_every_event_carries_one_run_id_per_invocation(tmp_path, monkeypatch) ->
 def test_run_log_failure_warns_once_and_the_scan_continues(
     tmp_path, monkeypatch
 ) -> None:
-    from quantfit.adapters.outbound.run_log_jsonl import JsonlRunLogFile
+    from vramfit.adapters.outbound.run_log_jsonl import JsonlRunLogFile
 
     install_meter(
         monkeypatch, MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES), tokens=64)

@@ -5,7 +5,7 @@ from dataclasses import replace
 
 import pytest
 
-from quantfit.adapters.outbound.gguf.types import (
+from vramfit.adapters.outbound.gguf.types import (
     BASE_FTYPE_BY_BITS,
     GGML_TYPE_BY_BITS,
     PackError,
@@ -19,10 +19,10 @@ from quantfit.adapters.outbound.gguf.types import (
     tensor_overrides,
     token_embedding_type,
 )
-from quantfit.domain.errors import QuantfitError
-from quantfit.domain.model import Assignment, PlanMeta, ProtectedTensor, Recipe
-from quantfit.domain.pack import TypeOverride
-from quantfit.domain.runtime import EFFECTIVE_BITS, LLAMA_CPP, RUNTIME_CAPABILITIES
+from vramfit.domain.errors import VramfitError
+from vramfit.domain.model import Assignment, PlanMeta, ProtectedTensor, Recipe
+from vramfit.domain.pack import TypeOverride
+from vramfit.domain.runtime import EFFECTIVE_BITS, LLAMA_CPP, RUNTIME_CAPABILITIES
 
 pytestmark = pytest.mark.unit
 
@@ -114,8 +114,8 @@ def test_check_runtime_rejects_a_foreign_runtime() -> None:
         check_runtime(recipe)
 
 
-def test_pack_error_inherits_the_quantfit_root() -> None:
-    assert issubclass(PackError, QuantfitError)
+def test_pack_error_inherits_the_vramfit_root() -> None:
+    assert issubclass(PackError, VramfitError)
     assert issubclass(PackError, RuntimeError)
 
 

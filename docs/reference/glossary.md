@@ -12,18 +12,18 @@ change.
 ## Pipeline artifacts
 
 **Sensitivity map**
-:   The JSON output of `quantfit scan`: per layer group, per candidate
+:   The JSON output of `vramfit scan`: per layer group, per candidate
     precision, the measured damage. Schema in
     [sensitivity map format](sensitivity-map.md). Not "scan results",
     "profile", or "analysis".
 
 **Recipe**
-:   The JSON output of `quantfit plan`: one precision assignment per layer
+:   The JSON output of `vramfit plan`: one precision assignment per layer
     group plus budget accounting. Schema in [recipe format](recipe.md). Not
     "config", "plan file", or "quant scheme".
 
 **Packed model**
-:   The output of `quantfit pack`: a checkpoint a target runtime can serve,
+:   The output of `vramfit pack`: a checkpoint a target runtime can serve,
     produced by applying a recipe. Not "quantized model" (ambiguous — every
     stage quantizes something).
 
@@ -97,7 +97,7 @@ change.
     or "weighted scanning".
 
 **Validation pass**
-:   The whole-recipe check of the additivity assumption (`quantfit
+:   The whole-recipe check of the additivity assumption (`vramfit
     validate`): quantize every group to its recipe-assigned precision in
     one pass through the scan's own quantization, then compare the
     measured damage against the recipe's summed marginal damages.
@@ -132,11 +132,11 @@ change.
 **Group spec**
 :   A discovered layer group before measurement: name, member tensors,
     and size at reference precision. Code type
-    `quantfit.domain.scan.GroupSpec`.
+    `vramfit.domain.scan.GroupSpec`.
 
 **Damage meter**
 :   The port that measures one group's damage at one precision
-    (`quantfit.ports.outbound.DamageMeter`). The torch adapter
+    (`vramfit.ports.outbound.DamageMeter`). The torch adapter
     implements it behind the `scan` extra.
 
 **Offloaded group**
@@ -222,7 +222,7 @@ change.
 **Runtime capability**
 :   The set of nominal precisions a target runtime can serve. The solver
     filters its candidate set through the capability table
-    (`quantfit.domain.runtime.RUNTIME_CAPABILITIES`) so a recipe never
+    (`vramfit.domain.runtime.RUNTIME_CAPABILITIES`) so a recipe never
     assigns a precision its target runtime lacks kernels for.
 
 **Trace**
@@ -234,7 +234,7 @@ change.
 :   Bits per weight a quantization type really stores, block scales
     included — `Q4_K` spends 4.5 effective bits on a nominal 4-bit
     assignment. Recorded per runtime in
-    `quantfit.domain.runtime.EFFECTIVE_BITS`
+    `vramfit.domain.runtime.EFFECTIVE_BITS`
     ([ADR-0014](../adr/0014-per-type-effective-bits.md)). The solver
     prices sizes at effective bits when the target runtime has a
     table.
@@ -265,7 +265,7 @@ change.
 :   One (tensor pattern → quantization type) pair driven into the
     runtime's quantizer. One per layer group plus one per protected
     tensor, protections first, first match wins (ADR-0022). Code
-    type `quantfit.domain.pack.TypeOverride`.
+    type `vramfit.domain.pack.TypeOverride`.
 
 **Pack result**
 :   The pack step's accounting record: real packed bytes plus the type
@@ -273,7 +273,7 @@ change.
     output-head flag types, the pattern overrides, the importance
     matrix path when one was used, and the imatrix coverage record
     (uncovered tensors, and the exclusions the recipe instructed).
-    Code type `quantfit.domain.pack.PackResult`.
+    Code type `vramfit.domain.pack.PackResult`.
 
 **Importance matrix** (short: **imatrix**)
 :   Per-weight activation statistics collected over a calibration run,
@@ -303,7 +303,7 @@ change.
     protected tensor quantizes without its imatrix row and takes
     the clean unweighted fit (`llama-quantize --exclude-weights`,
     5.8–14.7× cleaner on the collapsed rows). Marked per protected
-    tensor in the recipe by `quantfit plan --exclude-imatrix`
+    tensor in the recipe by `vramfit plan --exclude-imatrix`
     ([ADR-0023](../adr/0023-imatrix-exclusions.md)). Not "imatrix
     miss" — that names an unintentional coverage gap.
 
@@ -321,7 +321,7 @@ change.
     perplexity chunks through the target runtime, gated by a
     perplexity ceiling
     ([ADR-0017](../adr/0017-post-pack-smoke-test.md)). Enabled by
-    `quantfit pack --smoke-text`. Not "sanity check" or "quick eval" —
+    `vramfit pack --smoke-text`. Not "sanity check" or "quick eval" —
     the evaluation tiers are a different step.
 
 ## Evaluation
@@ -345,12 +345,12 @@ change.
 ## Architecture
 
 **Domain**
-:   The pure core (`quantfit.domain`): artifact types, budget math,
+:   The pure core (`vramfit.domain`): artifact types, budget math,
     solver. No IO, no frameworks — enforced by import-linter
     ([ADR-0008](../adr/0008-hexagonal-architecture.md)).
 
 **Port**
-:   A `typing.Protocol` in `quantfit.ports` naming a capability the
+:   A `typing.Protocol` in `vramfit.ports` naming a capability the
     application needs (e.g. `RecipeSink`). Outbound (driven) only today.
 
 **Adapter**
@@ -360,8 +360,8 @@ change.
 
 **Envelope**
 :   The serialization-level wrapper owned by the JSON adapters —
-    notably the `quantfit_schema` version field, which domain objects
-    never carry. Run logs carry `quantfit_runlog` instead, versioning
+    notably the `vramfit_schema` version field, which domain objects
+    never carry. Run logs carry `vramfit_runlog` instead, versioning
     one event line rather than a whole document.
 
 > **Ruled 2026-08-11 (#118).** Both envelope keys rename with the

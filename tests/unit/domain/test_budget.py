@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from quantfit.domain.budget import (
+from vramfit.domain.budget import (
     Budget,
     ModelShape,
     format_size,

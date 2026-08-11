@@ -23,14 +23,14 @@ import pytest
 torch = pytest.importorskip("torch", reason="scan extra not installed")
 np = pytest.importorskip("numpy", reason="scan extra not installed")
 
-from quantfit.adapters.outbound.scan import kquant
-from quantfit.adapters.outbound.scan.kquant import (
+from vramfit.adapters.outbound.scan import kquant
+from vramfit.adapters.outbound.scan.kquant import (
     _ROUND_TRIPS,
     KQUANT_BITS,
     kquant_quantize_dequantize,
 )
-from quantfit.adapters.outbound.scan.quantize import rtn_quantize_dequantize
-from quantfit.domain.scan import KQUANT_PRECISIONS
+from vramfit.adapters.outbound.scan.quantize import rtn_quantize_dequantize
+from vramfit.domain.scan import KQUANT_PRECISIONS
 
 pytestmark = pytest.mark.unit
 

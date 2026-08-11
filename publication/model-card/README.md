@@ -7,7 +7,7 @@ base_model_relation: quantized
 quantized_by: Alberto-Codes
 pipeline_tag: text-generation
 tags:
-  - quantfit
+  - vramfit
   - gguf
   - imatrix
 ---
@@ -40,7 +40,7 @@ this file (card-ledger.md) carries the upload file list.
 This repository carries one mixed-precision GGUF of
 [nvidia/Llama-3_3-Nemotron-Super-49B-v1_5](https://huggingface.co/nvidia/Llama-3_3-Nemotron-Super-49B-v1_5),
 solved to fit a 24 GiB VRAM budget.
-[quantfit](https://github.com/Alberto-Codes/quantfit) measured each layer
+[vramfit](https://github.com/Alberto-Codes/vramfit) measured each layer
 group's quantization damage — the shift in the model's output
 distribution when that group quantizes — then solved the bit allocation
 under the budget and packed through llama.cpp's quantizer. The
@@ -267,7 +267,7 @@ sidecar, and the run log beside the weights. One command reproduces the
 pack from the base checkpoint:
 
 ```
-uv run quantfit pack recipe.json --llama-cpp <llama.cpp checkout> \
+uv run vramfit pack recipe.json --llama-cpp <llama.cpp checkout> \
   --imatrix imatrix.gguf --out Llama-3_3-Nemotron-Super-49B-v1_5-fit24gib.gguf
 ```
 
@@ -283,7 +283,7 @@ reconstruction check itself. Expect all 48 protected tensors green.
 
 The recipe is not a magic constant. It records the full solve: the
 budget bytes, the 48 protections, the 4 exclusions, and the 162-step
-trace. To solve for a different budget, run `quantfit plan` against the
+trace. To solve for a different budget, run `vramfit plan` against the
 published sensitivity map with your own `--vram`. The map is right
 there:
 [Llama-3_3-Nemotron-Super-49B-v1_5-sensitivity-maps](https://huggingface.co/datasets/Alberto-Codes/Llama-3_3-Nemotron-Super-49B-v1_5-sensitivity-maps),
@@ -333,7 +333,7 @@ notice files. Built with Llama.
   the pack events and the 48-tensor reconstruction check.
 - The evals sidecar
   (`Llama-3_3-Nemotron-Super-49B-v1_5-fit24gib.gguf.evals.json`,
-  ADR-0025 schema 1) records all three tiers. Baseline sidecars sit
+  ADR-0025 schema 2) records all three tiers. Baseline sidecars sit
   under `baselines/`.
 - Toolchain: llama.cpp b10172 quantizer, `convert_hf_to_gguf.py` for the
   f16 base, lm-evaluation-harness 0.4.12 with llama-cpp-python 0.3.34

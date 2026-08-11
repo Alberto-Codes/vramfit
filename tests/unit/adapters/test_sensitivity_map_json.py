@@ -4,14 +4,14 @@ import json
 
 import pytest
 
-from quantfit.adapters.outbound.json_common import ArtifactError
-from quantfit.adapters.outbound.sensitivity_map_json import (
+from tests.unit.conftest import make_map
+from vramfit.adapters.outbound.json_common import ArtifactError
+from vramfit.adapters.outbound.sensitivity_map_json import (
     load_sensitivity_map,
     map_from_dict,
     map_to_dict,
     save_sensitivity_map,
 )
-from tests.unit.conftest import make_map
 
 
 @pytest.mark.unit
@@ -126,9 +126,16 @@ class TestSensitivityMap:
 
     def test_wrong_schema_version_rejected(self) -> None:
         raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
-        raw["quantfit_schema"] = 2
+        raw["vramfit_schema"] = 3
 
-        with pytest.raises(ArtifactError, match="unsupported schema version 2"):
+        with pytest.raises(ArtifactError, match="unsupported schema version 3"):
+            map_from_dict(raw)
+
+    def test_pre_rename_envelope_key_rejected(self) -> None:
+        raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
+        raw["quantfit_schema"] = raw.pop("vramfit_schema")
+
+        with pytest.raises(ArtifactError, match='renamed to "vramfit_schema"'):
             map_from_dict(raw)
 
     def test_non_integer_precision_key_rejected(self) -> None:
@@ -211,7 +218,7 @@ class TestSensitivityMap:
 
     def test_non_utf8_file_rejected(self, tmp_path) -> None:
         path = tmp_path / "map.json"
-        path.write_bytes(b'{"quantfit_schema": 1, "model_id": "\xff\xfe"}')
+        path.write_bytes(b'{"vramfit_schema": 2, "model_id": "\xff\xfe"}')
 
         with pytest.raises(ArtifactError, match="UTF-8"):
             load_sensitivity_map(path)

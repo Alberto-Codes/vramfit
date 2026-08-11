@@ -15,10 +15,10 @@ from pathlib import Path
 
 import pytest
 
-from quantfit.adapters.outbound.gguf.smoke import LlamaCppSmokeTester
-from quantfit.adapters.outbound.gguf.types import PackError
-from quantfit.ports.outbound import SmokeTester
 from tests.fakes import MemorySmokeTester
+from vramfit.adapters.outbound.gguf.smoke import LlamaCppSmokeTester
+from vramfit.adapters.outbound.gguf.types import PackError
+from vramfit.ports.outbound import SmokeTester
 
 pytestmark = pytest.mark.contract
 

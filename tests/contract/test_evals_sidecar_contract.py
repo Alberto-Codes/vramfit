@@ -15,12 +15,13 @@ from typing import Any
 
 import pytest
 
-from quantfit.adapters.outbound.evals_sidecar_json import (
+from tests.fakes import MemoryEvalsSidecarSink
+from vramfit.adapters.outbound.evals_sidecar_json import (
     EVALS_SIDECAR_SCHEMA_VERSION,
     JsonEvalsSidecarFile,
     sidecar_to_dict,
 )
-from quantfit.domain.evals import (
+from vramfit.domain.evals import (
     EvalsSidecar,
     EvalToolchain,
     EvaluatedArtifact,
@@ -30,8 +31,7 @@ from quantfit.domain.evals import (
     Tier3Result,
     Tier3Task,
 )
-from quantfit.ports.outbound import EvalsSidecarSink
-from tests.fakes import MemoryEvalsSidecarSink
+from vramfit.ports.outbound import EvalsSidecarSink
 
 
 def sample_sidecar() -> EvalsSidecar:
@@ -111,7 +111,7 @@ class TestEvalsSidecarSinkContract:
 
         sink.save(sample_sidecar())
 
-        assert readback()["quantfit_schema"] == EVALS_SIDECAR_SCHEMA_VERSION
+        assert readback()["vramfit_schema"] == EVALS_SIDECAR_SCHEMA_VERSION
 
     def test_absent_tiers_read_back_null(self, build, tmp_path) -> None:
         sink, readback = build(tmp_path)

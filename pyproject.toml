@@ -1,5 +1,5 @@
 [project]
-name = "quantfit"
+name = "vramfit"
 version = "0.1.0"
 description = "Selective per-layer quantization to fit large open models on a single GPU"
 readme = "README.md"
@@ -56,11 +56,11 @@ scan = [
     "transformers>=4.56",
 ]
 # The pack extra provisions the interpreter for llama.cpp's
-# convert_hf_to_gguf.py — quantfit never imports these itself
+# convert_hf_to_gguf.py — vramfit never imports these itself
 # (ADR-0012). sentencepiece is load-bearing: some converters (Qwen)
 # probe it first and only fall back to BPE on FileNotFoundError.
 pack = [
-    "quantfit[scan]",
+    "vramfit[scan]",
     "sentencepiece>=0.2",
 ]
 docs = [
@@ -70,13 +70,13 @@ docs = [
 ]
 
 [project.scripts]
-quantfit = "quantfit.adapters.inbound.cli:app"
+vramfit = "vramfit.adapters.inbound.cli:app"
 
 [project.urls]
-Homepage = "https://github.com/Alberto-Codes/quantfit"
-Source = "https://github.com/Alberto-Codes/quantfit"
-Issues = "https://github.com/Alberto-Codes/quantfit/issues"
-Changelog = "https://github.com/Alberto-Codes/quantfit/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/Alberto-Codes/vramfit"
+Source = "https://github.com/Alberto-Codes/vramfit"
+Issues = "https://github.com/Alberto-Codes/vramfit/issues"
+Changelog = "https://github.com/Alberto-Codes/vramfit/blob/main/CHANGELOG.md"
 
 [build-system]
 requires = ["uv_build>=0.11.20,<0.12.0"]
@@ -148,32 +148,32 @@ convention = "google"
     "PLR2004",  # magic values are the point of test assertions
     "PLC0415",  # torch-tier tests import the scan extra lazily to skip cleanly
 ]
-"src/quantfit/adapters/inbound/cli.py" = [
+"src/vramfit/adapters/inbound/cli.py" = [
     "PLR0913",  # typer commands take one arg per CLI option by design
     "PLR0917",
 ]
-"src/quantfit/adapters/inbound/cli_scan.py" = [
+"src/vramfit/adapters/inbound/cli_scan.py" = [
     "PLR0913",  # typer commands take one arg per CLI option by design
     "PLR0917",
 ]
-"src/quantfit/adapters/inbound/cli_pack.py" = [
+"src/vramfit/adapters/inbound/cli_pack.py" = [
     "PLR0913",  # typer commands take one arg per CLI option by design
     "PLR0917",
 ]
-"src/quantfit/adapters/inbound/cli_validate.py" = [
+"src/vramfit/adapters/inbound/cli_validate.py" = [
     "PLR0913",  # typer commands take one arg per CLI option by design
     "PLR0917",
 ]
-"src/quantfit/adapters/outbound/scan/meter.py" = [
+"src/vramfit/adapters/outbound/scan/meter.py" = [
     "PLR0913",  # the meter constructor mirrors the scan command's options
     "PLR0917",
 ]
-"src/quantfit/adapters/outbound/hf_config.py" = [
+"src/vramfit/adapters/outbound/hf_config.py" = [
     "TRY004",  # config validation raises ValueError by documented contract
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["quantfit"]
+known-first-party = ["vramfit"]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -202,8 +202,8 @@ include = ["src", "tests"]
 # type-checks strictly.
 [[tool.ty.overrides]]
 include = [
-    "src/quantfit/adapters/outbound/scan/**",
-    "src/quantfit/adapters/outbound/gguf/reconstruction.py",
+    "src/vramfit/adapters/outbound/scan/**",
+    "src/vramfit/adapters/outbound/gguf/reconstruction.py",
     "tests/conftest.py",
     "tests/contract/test_damage_meter_contract.py",
     "tests/contract/test_reconstruction_checker_contract.py",
@@ -243,7 +243,7 @@ addopts = [
 # Coverage
 # --------------------------------------------------------------------------- #
 [tool.coverage.run]
-source = ["quantfit"]
+source = ["vramfit"]
 # The torch adapter runs only where the scan extra is installed. The
 # hermetic suites prove its orchestration via verified fakes (ADR-0009)
 # and its own tests carry the integration/slow markers (CPU is enough).
@@ -257,7 +257,7 @@ show_missing = true
 # import-linter
 # --------------------------------------------------------------------------- #
 [tool.importlinter]
-root_package = "quantfit"
+root_package = "vramfit"
 include_external_packages = true
 exclude_type_checking_imports = true
 
@@ -268,10 +268,10 @@ exclude_type_checking_imports = true
 name = "Hexagonal layers"
 type = "layers"
 layers = [
-    "quantfit.adapters.inbound",
-    "quantfit.adapters.outbound",
-    "quantfit.ports",
-    "quantfit.domain",
+    "vramfit.adapters.inbound",
+    "vramfit.adapters.outbound",
+    "vramfit.ports",
+    "vramfit.domain",
 ]
 
 [[tool.importlinter.contracts]]
@@ -279,7 +279,7 @@ layers = [
 # and IO belong to adapters (ADR-0008).
 name = "Domain is IO-free"
 type = "forbidden"
-source_modules = ["quantfit.domain"]
+source_modules = ["vramfit.domain"]
 forbidden_modules = ["json", "pathlib", "os", "io", "typer", "logging", "structlog"]
 
 [[tool.importlinter.contracts]]
@@ -288,12 +288,12 @@ forbidden_modules = ["json", "pathlib", "os", "io", "typer", "logging", "structl
 # the CLI imports it lazily inside the scan command.
 name = "No heavy ML deps outside the scan adapter package"
 type = "forbidden"
-source_modules = ["quantfit"]
+source_modules = ["vramfit"]
 forbidden_modules = ["torch", "transformers", "accelerate", "safetensors", "vllm"]
 ignore_imports = [
-    "quantfit.adapters.outbound.scan.* -> torch",
-    "quantfit.adapters.outbound.scan.* -> transformers",
-    "quantfit.adapters.outbound.scan.* -> safetensors",
+    "vramfit.adapters.outbound.scan.* -> torch",
+    "vramfit.adapters.outbound.scan.* -> transformers",
+    "vramfit.adapters.outbound.scan.* -> safetensors",
 ]
 
 # --------------------------------------------------------------------------- #

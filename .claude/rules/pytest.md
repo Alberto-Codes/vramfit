@@ -29,7 +29,7 @@ Default run = `unit` + `contract` (hermetic, sub-second). See
   Protocol behavior including error types. **Every new port needs one.**
 - `integration` — real resources; must skip with an explicit reason
   when the resource is absent, never fail for absence.
-- `e2e` — the installed `quantfit` console script via subprocess.
+- `e2e` — the installed `vramfit` console script via subprocess.
 - `gpu` / `slow` — orthogonal axes; `gpu` tests skip cleanly without
   CUDA (CI has none).
 

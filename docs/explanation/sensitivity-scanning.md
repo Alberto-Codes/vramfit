@@ -39,7 +39,7 @@ approximately additive across groups. That assumption is known to leak:
 damage compounds through depth, and two individually-tolerant groups
 can be jointly fragile.
 
-The mitigation is implemented as `quantfit validate`: replay the exact
+The mitigation is implemented as `vramfit validate`: replay the exact
 recipe in one pass and compare against the sum of marginal predictions.
 Seven real measurements have come in, and both directions have
 appeared. Six were **sub-additive** — the safe direction: 2.05×

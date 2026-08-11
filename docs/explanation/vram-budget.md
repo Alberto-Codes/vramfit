@@ -4,8 +4,8 @@ status: stable
 
 # VRAM budget math
 
-> **Status: stable** — implemented in `quantfit.domain.budget` and computable via
-> `quantfit budget`; the worked example below uses the target model's real
+> **Status: stable** — implemented in `vramfit.domain.budget` and computable via
+> `vramfit budget`; the worked example below uses the target model's real
 > config. The runtime-overhead constant remains a planning figure until
 > measured under the serving runtime (llama.cpp per
 > [ADR-0010](../adr/0010-sub-4-bit-serving-path.md)) on the reference
@@ -54,7 +54,7 @@ Planning figure: **1.5–2 GiB** on a 24 GiB card until measured.
 
 ## Worked example: the north-star target
 
-Computed with `quantfit budget --model-config <nemotron config.json>` from
+Computed with `vramfit budget --model-config <nemotron config.json>` from
 the real checkpoint config: 80 blocks of which **49 have attention** (31 are
 NAS `no_op` blocks), GQA with 8 KV heads × head_dim 128 → **200,704 KV
 bytes/token at fp16, 100,352 at fp8**.

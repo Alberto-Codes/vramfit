@@ -1,10 +1,10 @@
-# Contributing to quantfit
+# Contributing to vramfit
 
-Thanks for your interest in contributing to quantfit! This guide covers everything you need to get started.
+Thanks for your interest in contributing to vramfit! This guide covers everything you need to get started.
 
 ## Reporting Issues
 
-Use the [Issues page](https://github.com/Alberto-Codes/quantfit/issues):
+Use the [Issues page](https://github.com/Alberto-Codes/vramfit/issues):
 
 - **Bug Report** -- reproduce steps, environment info (GPU, driver, CUDA version), and logs
 - **Feature Request** -- problem statement, proposed solution, acceptance criteria
@@ -22,11 +22,11 @@ Use the [Issues page](https://github.com/Alberto-Codes/quantfit/issues):
 ```bash
 # 1. Fork the repo on GitHub (click "Fork" button)
 # 2. Clone your fork
-git clone https://github.com/<your-username>/quantfit.git
-cd quantfit
+git clone https://github.com/<your-username>/vramfit.git
+cd vramfit
 
 # 3. Add the upstream remote
-git remote add upstream https://github.com/Alberto-Codes/quantfit.git
+git remote add upstream https://github.com/Alberto-Codes/vramfit.git
 
 # 4. Create a feature branch
 git checkout -b feat/<scope>-<description>
@@ -39,12 +39,12 @@ git checkout -b feat/<scope>-<description>
 uv sync --dev
 
 # Verify installation
-uv run quantfit --help
+uv run vramfit --help
 ```
 
 ## Pre-Commit Hooks
 
-quantfit uses pre-commit hooks to catch issues before they reach CI. Pre-commit is not a project dependency -- if you don't have it yet, see the [install guide](https://pre-commit.com/#install). Then activate the hooks:
+vramfit uses pre-commit hooks to catch issues before they reach CI. Pre-commit is not a project dependency -- if you don't have it yet, see the [install guide](https://pre-commit.com/#install). Then activate the hooks:
 
 ```bash
 pre-commit install
@@ -166,7 +166,7 @@ Do not add `Co-Authored-By` trailers to commits.
 
 ## CI Security Policy
 
-Dated note, 2026-08-10 (ticket [#76](https://github.com/Alberto-Codes/quantfit/issues/76)).
+Dated note, 2026-08-10 (ticket [#76](https://github.com/Alberto-Codes/vramfit/issues/76)).
 This section records the fork-PR policy and the repository settings that
 enforce it. Settings are not self-documenting, so this note is the record.
 The author of a change to a setting, a secret, or a workflow trigger must
@@ -188,7 +188,7 @@ Pending, blocked while the repository is private:
 - Fork-PR workflow runs require maintainer approval for **all outside
   collaborators**. GitHub hides this setting on private repositories.
   The maintainer sets it the day the repository goes public
-  ([#83](https://github.com/Alberto-Codes/quantfit/issues/83)).
+  ([#83](https://github.com/Alberto-Codes/vramfit/issues/83)).
 
 **Rules.**
 
@@ -219,7 +219,7 @@ fork-PR workflow run before it starts. **Open question:** the CodeQL
 upload from a fork PR is untested here. GitHub documents the fork-PR
 upload path as supported. The job stays skipped while the repository is
 private. One known blemish: `uv-secure` crashes intermittently in CI
-([#46](https://github.com/Alberto-Codes/quantfit/issues/46)). CI retries
+([#46](https://github.com/Alberto-Codes/vramfit/issues/46)). CI retries
 the crash exit code once. Flag a suspected #46 crash on the PR. Do not
 force-push to retrigger.
 
@@ -227,7 +227,7 @@ force-push to retrigger.
 
 CI runs `uv-secure` to scan for known vulnerabilities in the lockfile.
 For the intermittent crash in CI, see
-[#46](https://github.com/Alberto-Codes/quantfit/issues/46) in the CI
+[#46](https://github.com/Alberto-Codes/vramfit/issues/46) in the CI
 Security Policy section above. If it flags something:
 
 - **Fix exists?** Upgrade the package: `uv lock --upgrade-package <pkg>`. No suppression needed.

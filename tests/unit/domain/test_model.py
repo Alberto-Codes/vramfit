@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from quantfit.domain.model import (
+from vramfit.domain.model import (
     Assignment,
     LayerGroup,
     PlanMeta,

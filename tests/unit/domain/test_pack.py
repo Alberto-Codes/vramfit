@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from quantfit.domain.model import Assignment, PlanMeta, ProtectedTensor, Recipe
-from quantfit.domain.pack import (
+from vramfit.domain.model import Assignment, PlanMeta, ProtectedTensor, Recipe
+from vramfit.domain.pack import (
     PackResult,
     TypeOverride,
     collapsed_tensors,

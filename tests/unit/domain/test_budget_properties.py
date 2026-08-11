@@ -4,7 +4,7 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from quantfit.domain.budget import format_size, parse_size
+from vramfit.domain.budget import format_size, parse_size
 
 
 @pytest.mark.unit

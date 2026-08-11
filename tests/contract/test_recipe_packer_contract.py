@@ -19,12 +19,12 @@ from typing import Literal
 
 import pytest
 
-from quantfit.adapters.outbound.gguf.pack import LlamaCppPacker
-from quantfit.adapters.outbound.gguf.types import PackError
-from quantfit.domain.model import Assignment, PlanMeta, ProtectedTensor, Recipe
-from quantfit.domain.pack import TypeOverride
-from quantfit.ports.outbound import RecipePacker
 from tests.fakes import MemoryRecipePacker
+from vramfit.adapters.outbound.gguf.pack import LlamaCppPacker
+from vramfit.adapters.outbound.gguf.types import PackError
+from vramfit.domain.model import Assignment, PlanMeta, ProtectedTensor, Recipe
+from vramfit.domain.pack import TypeOverride
+from vramfit.ports.outbound import RecipePacker
 
 pytestmark = pytest.mark.contract
 

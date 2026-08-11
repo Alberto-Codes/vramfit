@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**quantfit** measures per-layer quantization sensitivity, solves for a
+**vramfit** measures per-layer quantization sensitivity, solves for a
 mixed-precision recipe under a VRAM budget, validates the recipe against
 the prediction, and packs the result for a target runtime. Acceptance test: Nemotron Super 49B serving on a 24 GiB RTX 4090
 ([ADR-0003](docs/adr/0003-north-star-benchmark.md)). Full pitch in
@@ -64,7 +64,7 @@ Hexagonal, mechanically enforced by import-linter (ADR-0008):
 `adapters/inbound` (CLI, composition root) → `adapters/outbound` (JSON
 artifacts, HF configs, the torch scan meter, the GGUF pack toolchain) →
 `ports` (Protocols) → `domain` (pure — no
-json/pathlib/os/io/typer/logging/structlog, enforced). The `quantfit_schema` envelope
+json/pathlib/os/io/typer/logging/structlog, enforced). The `vramfit_schema` envelope
 belongs to the JSON adapters, never to domain dataclasses. New external
 integrations (torch, llm-compressor, runtimes) are outbound adapters
 behind ports.
@@ -78,7 +78,7 @@ not excuse.
 
 ```bash
 uv sync --dev          # install with dev tools
-uv run quantfit --help # CLI
+uv run vramfit --help # CLI
 
 # Quality gates (all must pass before PR)
 uv run ruff check .
@@ -110,7 +110,7 @@ Pyramid per ADR-0009, rules in `.claude/rules/pytest.md`:
   torch/transformers land behind extras
   ([ADR-0005](docs/adr/0005-heavy-deps-as-extras.md)). The plan step must
   stay importable without torch.
-- Artifact schemas carry `quantfit_schema`; breaking changes bump it.
+- Artifact schemas carry `vramfit_schema`; breaking changes bump it.
 - `from __future__ import annotations` at the top of every file.
 - No relative imports; no `__main__.py`.
 

@@ -6,12 +6,12 @@ import json
 
 import pytest
 
-from quantfit.adapters.outbound.evals_sidecar_json import (
+from vramfit.adapters.outbound.evals_sidecar_json import (
     EVALS_SIDECAR_SCHEMA_VERSION,
     save_evals_sidecar,
     sidecar_to_dict,
 )
-from quantfit.domain.evals import (
+from vramfit.domain.evals import (
     EvalsSidecar,
     EvalToolchain,
     EvaluatedArtifact,
@@ -70,7 +70,7 @@ class TestSidecarToDict:
     def test_full_sidecar_serializes_every_block(self) -> None:
         data = sidecar_to_dict(full_sidecar())
 
-        assert data["quantfit_schema"] == EVALS_SIDECAR_SCHEMA_VERSION
+        assert data["vramfit_schema"] == EVALS_SIDECAR_SCHEMA_VERSION
         assert data["artifact"]["sha256"] == "ab" * 32
         assert data["tier1"]["ppl"] == 8.5168
         assert data["tier2"]["windows"][0]["same_top_pct"] == 82.917

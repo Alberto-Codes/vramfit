@@ -5,7 +5,7 @@ status: draft
 # Prior art and external references
 
 > **Status: draft** — annotated pointers, not endorsements. Each entry says
-> why it matters to quantfit; follow the link for the substance.
+> why it matters to vramfit; follow the link for the substance.
 
 ## Direct inspiration
 
@@ -20,7 +20,7 @@ status: draft
 
 **[GPTQ](https://arxiv.org/abs/2210.17323)**
 :   Calibration-aware post-training quantization via second-order weight
-    updates. A candidate within-group method — quantfit decides bits per
+    updates. A candidate within-group method — vramfit decides bits per
     group; GPTQ is one way to round within a group.
 
 **[AWQ](https://arxiv.org/abs/2306.00978)**
@@ -31,7 +31,7 @@ status: draft
 **[Is (Selective) Round-To-Nearest Quantization All You Need?](https://arxiv.org/abs/2505.15909)** (2025)
 :   Argues plain RTN with selective precision upgrades is a viable,
     cheaper alternative to calibration-based methods — external
-    support for quantfit's selective-assignment premise (ADR-0001)
+    support for vramfit's selective-assignment premise (ADR-0001)
     from the opposite direction. Added 2026-08-04, with a caveat
     from the seventh data point: at 2-bit, RTN *over-prices*
     in-frame damage 2.0–3.9× (1.05–1.7× at 3-bit) against the
@@ -48,7 +48,7 @@ status: draft
     dominates there: the first packed 49B recipe lost to an imatrix
     Q3_K_S, with ~81 % of the perplexity gap traced to the imatrix
     ([evaluating packed models](../explanation/evaluating-packed-models.md)).
-    `quantfit pack` consumes an importance matrix since
+    `vramfit pack` consumes an importance matrix since
     [ADR-0016](../adr/0016-imatrix-in-the-pack-path.md). The imatrix
     rematch narrowed the gap to 0.53–0.62 PPL, and the gating item
     moved to the scan-to-runtime frame transfer
@@ -65,7 +65,7 @@ status: draft
     code, and per-model evidence stay unpublished: a direct
     [transparency question](https://github.com/unslothai/unsloth/discussions/3523)
     closed with zero maintainer comments (re-checked 2026-07-31).
-    quantfit bets that a measured, *published* sensitivity map beats
+    vramfit bets that a measured, *published* sensitivity map beats
     this recipe class. The bet is now specifically about evidence,
     not about whether selective assignment works. See
     [the artifact ecosystem](../explanation/artifact-ecosystem.md).
@@ -83,7 +83,7 @@ status: draft
     which records KL-divergence contributions per candidate group
     between quant levels. Its `optimize.py` allocates bits from
     that measurement to a target *average* bits-per-weight. That is
-    a working measure-then-solve loop. quantfit bets on
+    a working measure-then-solve loop. vramfit bets on
     four differences. EXL3 is tied to its own CUDA runtime — vLLM
     declined integration
     ([vllm#19896](https://github.com/vllm-project/vllm/issues/19896)).
@@ -93,12 +93,12 @@ status: draft
     validation pass.
 
 **[Adaptive-Quantization](https://github.com/bigattichouse/Adaptive-Quantization)**
-:   A per-tensor GGUF recipe tool in quantfit's exact pack lane
+:   A per-tensor GGUF recipe tool in vramfit's exact pack lane
     (writes `--tensor-type` files for `llama-quantize`), surveyed
     2026-07-31. It profiles *weight reconstruction SNR* per tensor —
     layer-local error, the metric class
     [ADR-0006](../adr/0006-sensitivity-metric.md) rejected because
-    it ignores propagation. quantfit's validation measurements are
+    it ignores propagation. vramfit's validation measurements are
     evidence that propagation matters exactly where bit allocation
     matters most, and that the effect depends on which groups sit
     at 2-bit (ADR-0006, third and fourth measurements). Zero
@@ -110,7 +110,7 @@ status: draft
 :   vLLM's official companion for producing compressed-tensors checkpoints
     (GPTQ, AWQ, FP8/INT4 schemes, non-uniform per-layer configs). The
     candidate backend for a future ≥4-bit vLLM pack path — the shipped
-    `quantfit pack` drives llama.cpp instead (ADR-0012). quantfit's job
+    `vramfit pack` drives llama.cpp instead (ADR-0012). vramfit's job
     is deciding the recipe, a backend's is applying it.
 
 **[Minitron](https://arxiv.org/abs/2408.11796)** (NVIDIA)
@@ -124,7 +124,7 @@ Added 2026-07-31, after the third validation measurement found
 super-additive joint damage (×11.9) on a 2-bit-heavy recipe.
 
 **[CLADO](https://arxiv.org/abs/2307.05657)**
-:   Names quantfit's measured problem: sensitivity-based
+:   Names vramfit's measured problem: sensitivity-based
     mixed-precision methods assume per-layer errors are independent,
     and they are not. CLADO measures *pairwise* cross-layer error
     terms on a small calibration subset and solves the allocation as
@@ -145,7 +145,7 @@ super-additive joint damage (×11.9) on a 2-bit-heavy recipe.
     dependencies with Shapley values (SPQE). It then assigns 2 or
     4 bits per layer as a binary quadratic optimization under a
     memory constraint. Evaluated on Llama-3, Gemma-2, and Qwen-3
-    across three quantization backends. This is quantfit's 2-bit
+    across three quantization backends. This is vramfit's 2-bit
     membership problem (ADR-0006, fourth measurement) treated as
     the objective, on serving-class models. No shipped tool or
     artifact pipeline found. If the additive solve stays the
@@ -160,7 +160,7 @@ super-additive joint damage (×11.9) on a 2-bit-heavy recipe.
     target. Evaluated on Llama
     and Qwen at 8B–32B. Like CoopQ it solves under an explicit
     memory budget rather than an average bits-per-weight — that
-    narrows one line of quantfit's differentiation. What no
+    narrows one line of vramfit's differentiation. What no
     surveyed method ships remains the same: provenance-carrying
     artifacts for a specific card, a validation pass, and packed
     evidence.
@@ -170,7 +170,7 @@ super-additive joint damage (×11.9) on a 2-bit-heavy recipe.
     Sensitivity-driven bit allocation is an active research area.
     The published work targets research benchmarks — none of the
     surveyed methods ship budget-solved, provenance-carrying
-    artifacts for a specific card. The gap quantfit aims at is
+    artifacts for a specific card. The gap vramfit aims at is
     engineering-shaped, not algorithm-shaped.
 
 ## Target runtime
@@ -202,7 +202,7 @@ super-additive joint damage (×11.9) on a 2-bit-heavy recipe.
     strengthens the case for per-layer measurement. NVIDIA publishes an
     official [NVFP4 quant](https://huggingface.co/nvidia/Llama-3_3-Nemotron-Super-49B-v1_5-NVFP4)
     (~4-bit uniform, still over a 24 GiB card) — a quality baseline for
-    quantfit recipes to beat. Nemotron Nano is the "just run a smaller
+    vramfit recipes to beat. Nemotron Nano is the "just run a smaller
     model" baseline.
 
 ## Writing system
