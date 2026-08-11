@@ -147,7 +147,7 @@ run logs beside each map.
 
 ## License
 
-The measurement data (the maps and the run logs) is CC-BY-4.0.
+The maps and the run logs are CC-BY-4.0.
 `calibration.txt` is a Project Gutenberg ebook, public domain in the
 United States, distributed with its Project Gutenberg header intact.
 This dataset carries measurements of the base model, not the base

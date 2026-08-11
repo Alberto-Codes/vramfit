@@ -17,7 +17,7 @@ DRAFT — issue #81. All numbered dependencies are resolved. The card
 ships at upload (#83), which removes the DRAFT line below.
 
 Resolved 2026-08-10 (#85): the sensitivity-map dataset exists,
-private until ship. The link below is real. Card source:
+private until ship. The link below is real. Dataset card source:
 publication/maps-dataset/README.md.
 
 Resolved 2026-08-10 (#99): the derived tier-2 statistics now trace
