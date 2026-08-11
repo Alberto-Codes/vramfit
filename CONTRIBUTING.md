@@ -154,6 +154,13 @@ fix(plan): respect kv-headroom when solving the bit budget
 docs(pack): document vLLM checkpoint layout
 ```
 
+**Which types reach the changelog.** `feat`, `fix`, and `perf` appear in the
+release notes and cut a release. `docs`, `refactor`, `test`, `chore`, and `ci`
+are hidden and cut nothing. This repo writes docs ahead of code, so a
+documentation commit must not mark a release on its own. Describe user-facing
+documentation in the `feat` or `fix` commit that proves it. The lists live in
+[`release-please-config.json`](release-please-config.json).
+
 Do not add `Co-Authored-By` trailers to commits.
 
 ## Pull Request Process
