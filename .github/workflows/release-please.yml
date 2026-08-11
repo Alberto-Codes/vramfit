@@ -4,13 +4,18 @@ on:
   push:
     branches: [main]
 
+# Least-privilege: read-only by default. Each job escalates for itself.
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 jobs:
   release-please:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      HAS_PAT: ${{ secrets.RELEASE_PLEASE_TOKEN != '' }}
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
@@ -26,10 +31,22 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
+      # Without the PAT the action falls back to GITHUB_TOKEN. A tag pushed by
+      # GITHUB_TOKEN does not trigger publish.yml, so the release would look
+      # green and never reach PyPI. Fail loudly at the moment it matters.
+      - name: Fail a release cut without the PAT
+        if: steps.release.outputs.release_created == 'true' && env.HAS_PAT != 'true'
+        run: |
+          echo "::error::Released ${{ steps.release.outputs.tag_name }} with GITHUB_TOKEN. \
+          The tag will not trigger publish.yml. Set RELEASE_PLEASE_TOKEN, then push the tag by hand."
+          exit 1
+
   update-lockfile:
     needs: release-please
     if: needs.release-please.outputs.prs_created == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout release-please PR branch
         uses: actions/checkout@v6
@@ -51,6 +68,6 @@ jobs:
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
             git add uv.lock
-            git commit -m "chore: update uv.lock after version bump"
+            git commit -m "chore(config): update uv.lock after version bump"
             git push
           fi

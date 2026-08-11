@@ -8,7 +8,7 @@ on:
     tags:
       - "v*"
 
-# Least-privilege: read-only by default; the publish job escalates per-job.
+# Least-privilege: read-only by default. The publish job escalates for itself.
 permissions:
   contents: read
 
@@ -60,10 +60,16 @@ jobs:
       - name: Verify the base install carries no GPU dependency
         run: |
           WHEEL=$(ls dist/*.whl)
-          BASE=$(unzip -p "$WHEEL" '*.dist-info/METADATA' \
-            | grep '^Requires-Dist:' | grep -v 'extra ==' || true)
+          METADATA=$(unzip -p "$WHEEL" '*.dist-info/METADATA')
+          BASE=$(echo "$METADATA" | grep '^Requires-Dist:' | grep -v 'extra ==' || true)
           echo "Base requirements:"
           echo "$BASE"
+          # An empty result means the metadata never parsed. Without this the
+          # grep below passes on nothing and reports a torch-free build.
+          if [ -z "$BASE" ]; then
+            echo "::error::Read no unconditional Requires-Dist from the wheel metadata"
+            exit 1
+          fi
           if echo "$BASE" | grep -qE 'torch|transformers|accelerate|safetensors|gguf'; then
             echo "::error::A GPU dependency escaped an extra into the base install (ADR-0005)"
             exit 1

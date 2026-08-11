@@ -5,9 +5,14 @@ name: Test Publish
 on:
   workflow_dispatch:
 
+concurrency:
+  group: test-publish
+  cancel-in-progress: false # never cancel an in-flight upload
+
 jobs:
   test-publish:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
       id-token: write
@@ -47,10 +52,16 @@ jobs:
       - name: Verify the base install carries no GPU dependency
         run: |
           WHEEL=$(ls dist/*.whl)
-          BASE=$(unzip -p "$WHEEL" '*.dist-info/METADATA' \
-            | grep '^Requires-Dist:' | grep -v 'extra ==' || true)
+          METADATA=$(unzip -p "$WHEEL" '*.dist-info/METADATA')
+          BASE=$(echo "$METADATA" | grep '^Requires-Dist:' | grep -v 'extra ==' || true)
           echo "Base requirements:"
           echo "$BASE"
+          # An empty result means the metadata never parsed. Without this the
+          # grep below passes on nothing and reports a torch-free build.
+          if [ -z "$BASE" ]; then
+            echo "::error::Read no unconditional Requires-Dist from the wheel metadata"
+            exit 1
+          fi
           if echo "$BASE" | grep -qE 'torch|transformers|accelerate|safetensors|gguf'; then
             echo "::error::A GPU dependency escaped an extra into the base install (ADR-0005)"
             exit 1
@@ -66,24 +77,33 @@ jobs:
           "$SMOKE/vramfit" plan --help > /dev/null
           "$SMOKE/vramfit" budget --help > /dev/null
 
+      # --trusted-publishing always, not the default `automatic`. On a failed
+      # OIDC exchange `automatic` retries unauthenticated and reports 403.
+      # This workflow exists to prove the trusted publisher, so demand it.
       - name: Publish to TestPyPI
         run: |
-          LAST_OUTPUT=""
+          ALL_TRANSIENT=1
           for attempt in 1 2 3 4 5; do
             echo "Attempt ${attempt} of 5..."
-            LAST_OUTPUT=$(uv publish --index testpypi 2>&1) && {
-              echo "$LAST_OUTPUT"
+            if OUTPUT=$(uv publish --index testpypi --trusted-publishing always 2>&1); then
+              echo "$OUTPUT"
               echo "Published successfully on attempt ${attempt}"
               exit 0
-            }
-            echo "$LAST_OUTPUT"
+            fi
+            echo "$OUTPUT"
+            # Only a 503 counts as transient. One real error on any attempt
+            # denies the escape hatch below for the whole run. The pattern
+            # demands status context so a bare 503 in a byte count or a hash
+            # cannot pass a real failure off as infrastructure.
+            if ! echo "$OUTPUT" | grep -qiE 'service unavailable|(http|status)[^0-9]{0,8}503'; then
+              ALL_TRANSIENT=0
+            fi
             if [ "$attempt" -lt 5 ]; then
               echo "Upload failed, retrying in 30s..."
               sleep 30
             fi
           done
-          # All attempts failed — distinguish transient 503s from real errors
-          if echo "$LAST_OUTPUT" | grep -q "503"; then
+          if [ "$ALL_TRANSIENT" -eq 1 ]; then
             echo "::warning::TestPyPI returned 503 on all 5 attempts — infrastructure issue, not a pipeline problem"
             exit 0
           fi
