@@ -192,9 +192,10 @@ Pending, blocked while the repository is private:
 
 **Rules.**
 
-- Workflows must not use `pull_request_target`. That trigger runs
-  workflows against fork-PR contents with secrets and a write token
-  ([GitHub's secure-use reference](https://docs.github.com/en/actions/reference/security/secure-use)).
+- Workflows must not use `pull_request_target`. That trigger grants the
+  job the base repository's secrets and a write token. The bug lands
+  when such a job checks out fork-PR code
+  ([Securely using pull_request_target](https://docs.github.com/en/actions/reference/security/securely-using-pull_request_target)).
 - Workflows must not check out fork-PR code in a job that holds a secret
   or a write token. One recorded exception: the `codeql.yml` analyze job
   holds `security-events: write` and checks out PR code. GitHub caps
