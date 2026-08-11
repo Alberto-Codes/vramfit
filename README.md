@@ -78,9 +78,11 @@ Within-layer protections plus imatrix exclusions (ADR-0022,
 ADR-0023) closed the fit-collapse gap.
 
 The [evidence page](docs/explanation/evaluating-packed-models.md) records
-all sixteen data points. Current work: publication #1 — the certified
-pack, its model card, and the sensitivity-map dataset ship to
-Hugging Face (issue #70). See
+all sixteen data points. Publication #1 is live on Hugging Face: the
+[packed model](https://huggingface.co/Alberto-Codes/Llama-3_3-Nemotron-Super-49B-v1_5-fit24gib-GGUF)
+and the
+[sensitivity-map dataset](https://huggingface.co/datasets/Alberto-Codes/Llama-3_3-Nemotron-Super-49B-v1_5-sensitivity-maps).
+See
 [Issues](https://github.com/Alberto-Codes/quantfit/issues) for the roadmap.
 
 ## Requirements
