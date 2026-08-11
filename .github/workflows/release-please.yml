@@ -57,6 +57,10 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
 
+      # Pin the interpreter rather than trust the runner image, matching
+      # ci.yml.
+      - run: uv python install 3.12
+
       - name: Update uv.lock
         run: uv lock --upgrade-package vramfit
 
