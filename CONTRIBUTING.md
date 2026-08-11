@@ -143,6 +143,7 @@ type(scope): description
 | test | Adding or updating tests |
 | chore | Maintenance tasks |
 | perf | Performance improvements |
+| ci | Workflows and release machinery |
 
 **Scopes:** scan, plan, pack, cli, config, docs, arch, domain, ports, adapters
 
@@ -154,12 +155,16 @@ fix(plan): respect kv-headroom when solving the bit budget
 docs(pack): document vLLM checkpoint layout
 ```
 
-**Which types reach the changelog.** `feat`, `fix`, and `perf` appear in the
-release notes and cut a release. `docs`, `refactor`, `test`, `chore`, and `ci`
-are hidden and cut nothing. This repo writes docs ahead of code, so a
-documentation commit must not mark a release on its own. Describe user-facing
-documentation in the `feat` or `fix` commit that proves it. The lists live in
-[`release-please-config.json`](release-please-config.json).
+**Which types reach the changelog.** release-please lists `feat`, `fix`, and
+`perf` in the release notes. Those three types cut a release. It hides `docs`,
+`refactor`, `test`, `chore`, and `ci`, which cut no release on their own. Two
+markers override the hidden list. A `!` breaking marker and a `Release-As:`
+footer each force a release from any type. This repo writes docs ahead of
+code, so a documentation commit must not mark a release on its own. Describe
+user-facing documentation in the `feat` or `fix` commit that proves it.
+[`release-please-config.json`](release-please-config.json) holds the
+authoritative lists. A type absent from that file cuts no release and reaches
+no changelog.
 
 Do not add `Co-Authored-By` trailers to commits.
 
