@@ -8,11 +8,11 @@ measurements and strikethroughs. A full change of course gets a *new*
 ADR that supersedes the old one.
 
 > **Ruled 2026-08-11 (#119).** The tool renames from quantfit to
-> vramfit (chart #114). Records dated before 2026-08-11 keep the old
-> name. Dated bullets quote quantfit-era decisions verbatim. Records
+> vramfit (chart #114). Records dated before 2026-08-11 keep
+> quantfit. Dated bullets quote quantfit-era decisions verbatim. Records
 > dated on or after 2026-08-11 use vramfit. The decks in docs/decks
-> carry dates and keep the old name. Undated pages, including the
-> glossary and README, rewrite when the rename PR (#120) lands.
+> carry dates and keep quantfit. Undated pages, including the
+> glossary and README, rewrite when the rename executes (#120).
 
 ## Lifecycle
 
