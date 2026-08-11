@@ -169,8 +169,8 @@ Do not add `Co-Authored-By` trailers to commits.
 Dated note, 2026-08-10 (ticket [#76](https://github.com/Alberto-Codes/quantfit/issues/76)).
 This section records the fork-PR policy and the repository settings that
 enforce it. Settings are not self-documenting, so this note is the record.
-Amend it in the same PR that changes a setting, adds a secret, or adds a
-workflow trigger.
+The author of a change to a setting, a secret, or a workflow trigger must
+amend this note in the same PR.
 
 **What it governs.** Two workflows exist: `ci.yml` (`pull_request` and
 `push` on `main`) and `codeql.yml` (`pull_request`, `push`, and a weekly
@@ -178,39 +178,56 @@ workflow trigger.
 no Actions secrets, no Dependabot secrets, no environment secrets, and no
 variables.
 
-**Settings** (verified or set 2026-08-10):
+**Settings.** Verified 2026-08-10:
 
 - The default `GITHUB_TOKEN` is read-only.
 - Actions cannot create or approve pull requests.
+
+Pending, blocked while the repository is private:
+
 - Fork-PR workflow runs require maintainer approval for **all outside
-  collaborators**. GitHub hides this setting on private repositories, so
-  the maintainer sets it the day the repository goes public.
+  collaborators**. GitHub hides this setting on private repositories.
+  The maintainer sets it the day the repository goes public
+  ([#83](https://github.com/Alberto-Codes/quantfit/issues/83)).
 
-**Rules:**
+**Rules.**
 
-- Workflows must not use `pull_request_target`.
-- Workflows must not check out PR code in a job that holds a secret or a
-  write token.
-- A change that needs either must amend this note in the same PR.
+- Workflows must not use `pull_request_target`. That trigger runs
+  workflows against fork-PR contents with secrets and a write token
+  ([GitHub's secure-use reference](https://docs.github.com/en/actions/reference/security/secure-use)).
+- Workflows must not check out fork-PR code in a job that holds a secret
+  or a write token. One recorded exception: the `codeql.yml` analyze job
+  holds `security-events: write` and checks out PR code. GitHub caps
+  fork-PR tokens at read-only, so the write scope applies only to
+  same-repository runs.
+- The author of a workflow change that needs `pull_request_target` or an
+  elevated checkout must amend this note in the same PR.
 
 **Why.** The repository holds no secrets today, so a fork PR has nothing
 to steal. The remaining risk is untrusted code running on shared runners
-under the repository's identity -- compute abuse costs real Actions
-minutes. Approval-for-all closes that risk for one click per fork PR.
-The `pull_request_target` ban prevents the pwn-request bug class before
-it can land.
+under the repository's identity. Public repositories get free standard
+runners, so the exposure is runner abuse (cryptomining, egress), not a
+bill. Approval-for-all closes that risk at the cost of one click per
+fork PR. The `pull_request_target` ban prevents the bug class before it
+can land.
 
 **What fork contributors can expect.** GitHub gives fork PRs no secrets
-and a read-only token. Every CI job passes under those constraints, and
-that includes the CodeQL upload. A maintainer approves each workflow run
-before it starts. One known blemish: `uv-secure` crashes intermittently
-in CI ([#46](https://github.com/Alberto-Codes/quantfit/issues/46)). Only
-a maintainer can rerun a red pipeline, so flag a suspected #46 crash on
-the PR instead of force-pushing to retrigger.
+and a read-only token. Every job that runs today passes under those
+constraints. Once the repository is public, a maintainer approves each
+fork-PR workflow run before it starts. **Open question:** the CodeQL
+upload from a fork PR is untested here. GitHub documents the fork-PR
+upload path as supported. The job stays skipped while the repository is
+private. One known blemish: `uv-secure` crashes intermittently in CI
+([#46](https://github.com/Alberto-Codes/quantfit/issues/46)). CI retries
+the crash exit code once. Flag a suspected #46 crash on the PR. Do not
+force-push to retrigger.
 
 ## Dependency Vulnerabilities
 
-CI runs `uv-secure` to scan for known vulnerabilities in the lockfile. If it flags something:
+CI runs `uv-secure` to scan for known vulnerabilities in the lockfile.
+For the intermittent crash in CI, see
+[#46](https://github.com/Alberto-Codes/quantfit/issues/46) in the CI
+Security Policy section above. If it flags something:
 
 - **Fix exists?** Upgrade the package: `uv lock --upgrade-package <pkg>`. No suppression needed.
 - **No fix?** Add the specific GHSA/CVE ID to the ignore list in `pyproject.toml` with an inline comment (package, version, description, "No fix available"). `allow_unused_ignores = false` stays set so stale suppressions fail CI and get cleaned up.
