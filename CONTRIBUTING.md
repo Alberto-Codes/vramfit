@@ -164,6 +164,50 @@ Do not add `Co-Authored-By` trailers to commits.
 4. All CI checks must pass before review
 5. PRs are squash-merged to keep a linear history
 
+## CI Security Policy
+
+Dated note, 2026-08-10 (ticket [#76](https://github.com/Alberto-Codes/quantfit/issues/76)).
+This section records the fork-PR policy and the repository settings that
+enforce it. Settings are not self-documenting, so this note is the record.
+Amend it in the same PR that changes a setting, adds a secret, or adds a
+workflow trigger.
+
+**What it governs.** Two workflows exist: `ci.yml` (`pull_request` and
+`push` on `main`) and `codeql.yml` (`pull_request`, `push`, and a weekly
+`schedule`). Neither workflow references a secret. The repository defines
+no Actions secrets, no Dependabot secrets, no environment secrets, and no
+variables.
+
+**Settings** (verified or set 2026-08-10):
+
+- The default `GITHUB_TOKEN` is read-only.
+- Actions cannot create or approve pull requests.
+- Fork-PR workflow runs require maintainer approval for **all outside
+  collaborators**. GitHub hides this setting on private repositories, so
+  the maintainer sets it the day the repository goes public.
+
+**Rules:**
+
+- Workflows must not use `pull_request_target`.
+- Workflows must not check out PR code in a job that holds a secret or a
+  write token.
+- A change that needs either must amend this note in the same PR.
+
+**Why.** The repository holds no secrets today, so a fork PR has nothing
+to steal. The remaining risk is untrusted code running on shared runners
+under the repository's identity -- compute abuse costs real Actions
+minutes. Approval-for-all closes that risk for one click per fork PR.
+The `pull_request_target` ban prevents the pwn-request bug class before
+it can land.
+
+**What fork contributors can expect.** GitHub gives fork PRs no secrets
+and a read-only token. Every CI job passes under those constraints, and
+that includes the CodeQL upload. A maintainer approves each workflow run
+before it starts. One known blemish: `uv-secure` crashes intermittently
+in CI ([#46](https://github.com/Alberto-Codes/quantfit/issues/46)). Only
+a maintainer can rerun a red pipeline, so flag a suspected #46 crash on
+the PR instead of force-pushing to retrigger.
+
 ## Dependency Vulnerabilities
 
 CI runs `uv-secure` to scan for known vulnerabilities in the lockfile. If it flags something:
