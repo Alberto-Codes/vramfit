@@ -3,6 +3,7 @@ license: cc-by-4.0
 pretty_name: Llama-3_3-Nemotron-Super-49B-v1_5 sensitivity maps
 tags:
   - quantfit
+viewer: false
 ---
 
 <!--
@@ -24,7 +25,7 @@ distribution when that group alone quantizes — mean final-logits KL
 divergence against the bf16 reference. The maps describe the base
 model, not any quantized file. They contain no model weights.
 
-The pack solved from these maps ships as
+The packed model built from the sized no-2 map below ships as
 [Llama-3_3-Nemotron-Super-49B-v1_5-fit24gib-GGUF](https://huggingface.co/Alberto-Codes/Llama-3_3-Nemotron-Super-49B-v1_5-fit24gib-GGUF).
 
 ## The map format
@@ -32,12 +33,16 @@ The pack solved from these maps ships as
 Each map is one JSON file, `quantfit_schema` 1. The `scan` block
 records the measurement frame: metric, calibration file, token count,
 candidate precisions, within-group method, and imatrix path. The
+three `rtn-block32` maps predate the last two fields — an absent
+field reads as `rtn-block32` with no imatrix, per the format page.
+The
 `groups` list records 82 layer groups. Each group carries its member
 tensors, its bytes at reference precision, and its damage per
 precision. Annotated copies add `tensor_bytes`, the per-tensor size
 split. The
 [sensitivity map format](https://github.com/Alberto-Codes/quantfit/blob/main/docs/reference/sensitivity-map.md)
-page specifies every field.
+page specifies every field. The path fields record the reference
+box's absolute paths. The basenames match the files here.
 
 ## The five scans
 
@@ -51,7 +56,8 @@ Five scans measured the model, each inside its own measurement frame:
 | `sensitivity-64k-kquant.json` | 65,536 | `kquant-ref` | no | 2026-08-02 | 328 |
 | `sensitivity-64k-kquant-imx.json` | 65,536 | `kquant-imx` | yes | 2026-08-04 | 328 |
 
-Each scan covers 82 layer groups at candidate precisions
+`started_at` records the last resume of a halted scan. The run logs
+carry every earlier attempt. Each scan covers 82 layer groups at candidate precisions
 {8, 4, 3, 2} — 328 cells. `rtn-block32` quantizes a perturbed group
 with round-to-nearest in 32-element blocks. `kquant-ref` round-trips
 each cell through ported llama.cpp reference quantizers
@@ -59,7 +65,7 @@ each cell through ported llama.cpp reference quantizers
 `kquant-imx` weights the within-group fit with the pack's importance
 matrix
 ([ADR-0020](https://github.com/Alberto-Codes/quantfit/blob/main/docs/adr/0020-imatrix-assisted-pricing.md)).
-The imatrix itself publishes in the model repo as `imatrix.gguf`.
+The model repo publishes that imatrix as `imatrix.gguf`.
 
 ## Derived copies
 
@@ -73,7 +79,7 @@ Three files derive from `sensitivity-64k-kquant-imx.json`:
   not predict the packed artifact
   ([ADR-0021](https://github.com/Alberto-Codes/quantfit/blob/main/docs/adr/0021-runtime-frame-measurement.md)).
 - `sensitivity-64k-kquant-imx-no2-sized.json` applies both changes.
-  **The published recipe was solved from this file.**
+  **`quantfit plan` solved the published recipe from this file.**
 
 ## Do not compare damage across files
 
@@ -101,8 +107,10 @@ the 162-step trace.
 ## Run logs
 
 Each scan ships its run log, `<scan name>.runlog.jsonl` — structured
-JSONL, one `cell_measured` event per cell between `scan_started`,
-`meter_built`, and `scan_finished`. Every cell event records the
+JSONL, one `cell_measured` event per cell between the lifecycle
+events `scan_started`, `meter_built`, and `scan_finished`. A halted
+run also logs `scan_halted` and `resume_loaded`, and repeats the
+start events. Every cell event records the
 group, the bits, the measured damage, the wall-clock seconds, and the
 process memory high-water mark.
 
@@ -111,9 +119,9 @@ process memory high-water mark.
 `calibration.txt` is the complete Project Gutenberg ebook of *Pride
 and Prejudice*, unmodified, with the Project Gutenberg header and
 license text intact. Every scan names this file in
-`scan.calibration` and reads the token count its scan block records.
-The evaluation of the packed model used held-out WikiText-2 test
-text, never this file.
+`scan.calibration`. Each scan records the token count it read in
+`scan.calibration_tokens`. The evaluation tiers ran the packed model
+on held-out WikiText-2 test text, never on this file.
 
 ## Files and hashes
 
@@ -139,11 +147,13 @@ run logs beside each map.
 
 ## License
 
-The measurement data — the maps and the run logs — is CC-BY-4.0.
+The measurement data (the maps and the run logs) is CC-BY-4.0.
 `calibration.txt` is a Project Gutenberg ebook, public domain in the
 United States, distributed with its Project Gutenberg header intact.
 This dataset carries measurements of the base model, not the base
-model's weights. The base model's licenses govern the model repos.
+model's weights. The NVIDIA Open Model License and the Llama 3.3
+Community License govern the base model repo and the packed-model
+repo.
 
 ## Disagree with a number?
 
