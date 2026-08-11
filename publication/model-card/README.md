@@ -13,11 +13,12 @@ tags:
 ---
 
 <!--
-DRAFT — issue #81. All numbered dependencies are resolved. The card
-ships at upload (#83), which removes the DRAFT line below.
+Authored for issue #81. The card shipped on 2026-08-11 (#83).
+Upload this file verbatim — the published card and this source must
+match.
 
-Resolved 2026-08-10 (#85): the sensitivity-map dataset exists,
-private until ship. The link below is real. Dataset card source:
+Resolved 2026-08-10 (#85): the sensitivity-map dataset exists. The
+link below is real. Dataset card source:
 publication/maps-dataset/README.md.
 
 Resolved 2026-08-10 (#99): the derived tier-2 statistics now trace
@@ -34,8 +35,6 @@ this file (card-ledger.md) carries the upload file list.
 -->
 
 # Llama-3_3-Nemotron-Super-49B-v1_5-fit24gib-GGUF
-
-**DRAFT — do not ship. Issue #81. Remove this line at upload.**
 
 This repository carries one mixed-precision GGUF of
 [nvidia/Llama-3_3-Nemotron-Super-49B-v1_5](https://huggingface.co/nvidia/Llama-3_3-Nemotron-Super-49B-v1_5),
@@ -338,6 +337,14 @@ notice files. Built with Llama.
 - Toolchain: llama.cpp b10172 quantizer, `convert_hf_to_gguf.py` for the
   f16 base, lm-evaluation-harness 0.4.12 with llama-cpp-python 0.3.34
   for tier 3.
+- Every JSON artifact vramfit produced here carries the
+  `vramfit_schema` envelope key, and every run-log line carries
+  `vramfit_runlog`. Both keys renamed with the tool (#118). Task #121
+  re-uploaded those files on 2026-08-11. The key rename changed no
+  measurement. The weights and the imatrix did not change, so the
+  packed-file SHA-256 above still holds. A copy you downloaded before
+  2026-08-11 carries the old key, and vramfit rejects it. Download the
+  file again.
 
 Hashes prove identity, not quality. The evidence is the three tiers
 above, and every number on this card traces to the evals sidecar and the

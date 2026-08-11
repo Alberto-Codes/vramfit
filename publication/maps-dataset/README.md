@@ -9,9 +9,8 @@ viewer: false
 <!--
 Authored for issue #85. This file is the card of the dataset repo
 Alberto-Codes/Llama-3_3-Nemotron-Super-49B-v1_5-sensitivity-maps.
-The repo is private until ship (#83). The license choice
-(cc-by-4.0 for the measurement data) awaits maintainer
-confirmation before the flip — flagged on the #85 record.
+The repo went public on 2026-08-11 (#83) under cc-by-4.0. Upload this
+file verbatim — the published card and this source must match.
 -->
 
 # Llama-3_3-Nemotron-Super-49B-v1_5-sensitivity-maps
@@ -31,9 +30,9 @@ The packed model built from the sized no-2 map below ships as
 ## The map format
 
 Each map is one JSON file, `vramfit_schema` 2 (the envelope key
-renamed with the tool, #118). The `scan` block
-records the measurement frame: metric, calibration file, token count,
-candidate precisions, within-group method, and imatrix path. The
+renamed with the tool, #118). The `scan` block records the
+measurement frame: metric, calibration file, token count, candidate
+precisions, within-group method, and imatrix path. The
 three `rtn-block32` maps predate the last two fields — an absent
 field reads as `rtn-block32` with no imatrix, per the format page.
 The
@@ -109,7 +108,9 @@ the 162-step trace.
 
 Each scan ships its run log, `<scan name>.runlog.jsonl` — structured
 JSONL, one `cell_measured` event per cell between the lifecycle
-events `scan_started`, `meter_built`, and `scan_finished`. A halted
+events `scan_started`, `meter_built`, and `scan_finished`. Every
+line carries `vramfit_runlog` 2, the run-log envelope key that
+renamed with the tool (#118). A halted
 run also logs `scan_halted` and `resume_loaded`, and repeats the
 start events. Every cell event records the
 group, the bits, the measured damage, the wall-clock seconds, and the
@@ -128,20 +129,27 @@ on held-out WikiText-2 test text, never on this file.
 
 | File | SHA-256 |
 |---|---|
-| `sensitivity-8k.json` | `cfde5e56e746e85a541aa2419ba9eb646cb7f6a5851b25f4c64da0be401d9595` |
-| `sensitivity-8k.runlog.jsonl` | `55e3fca0495c6c2eceab140b8978f35499e789d5fb88861f3ba85358ff64bed7` |
-| `sensitivity-32k.json` | `56297986edf97ff270e719fa990f9d94076c16c79fd5f2c2b1abf3e399471ab8` |
-| `sensitivity-32k.runlog.jsonl` | `a5798fe33e7c5008ff5557f974e5e9b731d57952e37e76aa5e1964eba4df8f81` |
-| `sensitivity-64k.json` | `86b9c67c1f46343e3c65da859670f2e82b48bddb8b8623bc8f93790473661cad` |
-| `sensitivity-64k.runlog.jsonl` | `e6ef9acb89ba5e941c303e5669a2df769a6ccb34d9f9d2f1b620ec3ed3d2d20f` |
-| `sensitivity-64k-kquant.json` | `df0ecc92aae09c83e3f25ea611e9eae3c4e965c39e64eb5e1406adcbd5fff898` |
-| `sensitivity-64k-kquant.runlog.jsonl` | `6f2560ac06952790422bbac5fe85da42d568082b04c67d7cba83f5fee895b845` |
-| `sensitivity-64k-kquant-imx.json` | `b922131a67c8aee2e5ba0db4a0d35841b113fafad69634b59c306b3f2c7ef9ef` |
-| `sensitivity-64k-kquant-imx.runlog.jsonl` | `764218554c4b13345fe4f343d0e4011c39cf53ed965804d724f617a64a589cd5` |
-| `sensitivity-64k-kquant-imx-sized.json` | `9c8dccec604219d21279db2be62e39f157ab8a73311cd8ad103c06f9da98cde1` |
-| `sensitivity-64k-kquant-imx-no2.json` | `f11b2ad01701837203f7a714bc0007caee42a728de6e7ddf76098243bd48a0fe` |
-| `sensitivity-64k-kquant-imx-no2-sized.json` | `8f1abcf2c0a38bf50103858fb39f1d2e331f5e340699ea11438c79763adcef62` |
+| `sensitivity-8k.json` | `802d6a6189912b624e670e416c8acf57a479a0ecc5c2900a7dbd84dde29ea71e` |
+| `sensitivity-8k.runlog.jsonl` | `9750e9f6b3561d62e6541bea7e5535d07335debae95693fc009e7bead866027a` |
+| `sensitivity-32k.json` | `ddb39f1684c427927f2d693c3f043c518bcc7bf24e9636103ccc306c70197ec6` |
+| `sensitivity-32k.runlog.jsonl` | `113259fc0fae646929bdf8ac7fb4dabb77563d0530b243b6d3f0dda140b0097b` |
+| `sensitivity-64k.json` | `9c810fea55c84e80202b32321ab4df1fc4dbd4736aad2e081e6746e6622bf7dc` |
+| `sensitivity-64k.runlog.jsonl` | `e20c1a935580ded5a9e486e1deb0f2d2c8eb6bf98b019122337f96ac55297140` |
+| `sensitivity-64k-kquant.json` | `b69d13aa5bf5eccc27c387b4978b5d34de1721e06e0e1609b314e6d13e6a1a33` |
+| `sensitivity-64k-kquant.runlog.jsonl` | `aed1b245d3b92c69dba6c6abf4d7eea829f38adda5e03a7b1103f91cc4109e10` |
+| `sensitivity-64k-kquant-imx.json` | `35ca616e3f00d23f8f680450a476658edfeee1679a8e0e2593b5dbb3f22d507c` |
+| `sensitivity-64k-kquant-imx.runlog.jsonl` | `475292803a7ff6828887f51eccc34e463a1f3ab28edbb527e1a0cafc2e60fc52` |
+| `sensitivity-64k-kquant-imx-sized.json` | `bc7e8bec5d4662d62608699b665525d1ad14e7308182ac1700574dc8d376631c` |
+| `sensitivity-64k-kquant-imx-no2.json` | `86b4e14f68edae3c82ab7fd49a2e806d3856b72d4b4feff53c0cfcaf0e10fdbe` |
+| `sensitivity-64k-kquant-imx-no2-sized.json` | `3f0a914cc3b0889aa94fe2621f195fd398758c913d221eb4f5af19a7a08b6c36` |
 | `calibration.txt` | `74f2665d6e6925fc2c17dec644bec9e87df478a0f1836822125e8acbb3777806` |
+
+Task #121 re-uploaded every map and run log on 2026-08-11. The
+hashes above are the post-rename values. The key rename changed no
+measurement. Every damage number, token count, and timestamp is the
+value the scan recorded. `calibration.txt` did not change. A copy you
+downloaded before 2026-08-11 carries the old key, and vramfit rejects
+it. Download the file again.
 
 Hashes prove identity, not quality. The measurement evidence is the
 run logs beside each map.
