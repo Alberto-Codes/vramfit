@@ -18,7 +18,7 @@ torch = pytest.importorskip("torch", reason="scan extra not installed")
 gguf = pytest.importorskip("gguf", reason="scan extra not installed")
 np = pytest.importorskip("numpy", reason="scan extra not installed")
 
-from quantfit.adapters.outbound.scan.imatrix import (
+from vramfit.adapters.outbound.scan.imatrix import (
     assisted_weights_for_params,
     gguf_tensor_name,
     load_imatrix,

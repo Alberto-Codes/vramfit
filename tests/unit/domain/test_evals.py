@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from quantfit.domain.evals import (
+from vramfit.domain.evals import (
     EvalsSidecar,
     EvalToolchain,
     EvaluatedArtifact,

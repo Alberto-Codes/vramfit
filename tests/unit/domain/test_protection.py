@@ -4,8 +4,8 @@ from typing import ClassVar
 
 import pytest
 
-from quantfit.domain.model import LayerGroup, ProtectedTensor, ScanMeta, SensitivityMap
-from quantfit.domain.protection import (
+from vramfit.domain.model import LayerGroup, ProtectedTensor, ScanMeta, SensitivityMap
+from vramfit.domain.protection import (
     ProtectionError,
     expand_exclusions,
     expand_protections,

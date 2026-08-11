@@ -31,7 +31,7 @@ exllamav3 persists per-group KL to a reusable file (the strongest
 exception — see [prior art](../reference/prior-art.md)), but it is
 runtime-locked and carries no provenance; the rest consume a
 sensitivity proxy internally and discard it. None carries a
-portable recipe with recorded provenance. quantfit's differentiated assets
+portable recipe with recorded provenance. vramfit's differentiated assets
 (fuller argument in
 [why selective quantization](why-selective-quantization.md)):
 
@@ -69,10 +69,10 @@ other tools *consuming* sensitivity maps — even tools that never run
 our scanner. Concrete implications:
 
 - Treat the map schema as a public spec (it is already versioned via
-  `quantfit_schema`).
+  `vramfit_schema`).
 - Ship a converter from any sensitivity map to `llama-quantize
   --tensor-type` flags, so llama.cpp users benefit without adopting
-  quantfit.
+  vramfit.
 - Publish maps for models we did not pack. The map is the product.
 
 ## Phased socialization plan
@@ -83,9 +83,9 @@ Each phase is cheap and gated on the one before it. Do not reorder.
    Nothing else starts until this exists.
 2. **Ride existing rails** — sensitivity maps as Hugging Face datasets,
    packed models as ordinary model repos whose cards embed the damage
-   curves and recipe. A `quantfit-maps` git registry where submission is
+   curves and recipe. A `vramfit-maps` git registry where submission is
    a PR and CI validates schema, fingerprint, and provenance.
-3. **The browser demo** — `quantfit plan` is torch-free pure Python, so
+3. **The browser demo** — `vramfit plan` is torch-free pure Python, so
    a Hugging Face Space can re-solve recipes live against published
    maps (VRAM slider, watch assignments move).
 4. **Verification as ritual** — the per-cell checkpoint design lets
@@ -124,12 +124,12 @@ remains the gate for everything *else* in the phase list.
 
 Hard gates before any publication, with their current status:
 
-1. `quantfit pack` exists (the GGUF backend of
+1. `vramfit pack` exists (the GGUF backend of
    [ADR-0010](../adr/0010-sub-4-bit-serving-path.md)). **Satisfied** —
    it packed the 49B, 169.7 MiB under budget, first try.
 2. The whole-recipe validation pass exists — publishing a recipe whose
    additivity assumption was never checked is the exact sin the
-   project criticizes. **Satisfied** — `quantfit validate` has seven
+   project criticizes. **Satisfied** — `vramfit validate` has seven
    measurements across both directions, including the
    super-additive one that stopped a bad recipe before packing.
 3. The packed model measurably beats the size-matched heuristic GGUF,
@@ -147,7 +147,7 @@ Hard gates before any publication, with their current status:
    comparison (#90) rides the card to answer the weak-baseline
    objection.
 
-Conventions to settle at publication time: a `quantfit` HF tag, the
+Conventions to settle at publication time: a `vramfit` HF tag, the
 budget in the repo name (e.g. `-fit24gib`), and which artifacts sit
 beside the weights in the repo.
 

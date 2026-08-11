@@ -1,6 +1,6 @@
-# Copilot instructions for quantfit
+# Copilot instructions for vramfit
 
-quantfit measures per-layer quantization sensitivity of LLMs (`scan`),
+vramfit measures per-layer quantization sensitivity of LLMs (`scan`),
 solves mixed-precision recipes under a VRAM budget (`plan`), measures
 whole-recipe damage against the prediction (`validate`), and packs GGUF
 models for llama.cpp (`pack`, ADR-0010/0012). All four pipeline commands plus

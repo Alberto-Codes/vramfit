@@ -4,8 +4,8 @@ import math
 
 import pytest
 
-from quantfit.domain.model import Assignment, PlanMeta, Recipe
-from quantfit.domain.validation import (
+from vramfit.domain.model import Assignment, PlanMeta, Recipe
+from vramfit.domain.validation import (
     ValidationResult,
     summed_marginal_damage,
     validation_result,

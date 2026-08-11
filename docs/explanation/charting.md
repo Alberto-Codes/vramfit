@@ -38,7 +38,7 @@ frontier one session at a time. Most of that transfers directly.
 
 One rule inverts. Wayfinder makes the ticket canonical: "a decision
 lives in exactly one place — its ticket." Here the ticket is **never**
-canonical. quantfit already has a decision store with a real
+canonical. vramfit already has a decision store with a real
 lifecycle, and a second store would fork the truth. So:
 
 > **A decision ticket never stores a decision. It closes with a

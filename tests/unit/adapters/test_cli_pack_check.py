@@ -1,4 +1,4 @@
-"""The reconstruction gate of ``quantfit pack`` (ADR-0022).
+"""The reconstruction gate of ``vramfit pack`` (ADR-0022).
 
 Drives the command with the verified fakes: the packer seam packs
 nothing real, and the checker seam returns configured measurements
@@ -14,17 +14,17 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from quantfit.adapters.inbound import cli_pack, cli_pack_check
-from quantfit.adapters.inbound.cli import app
-from quantfit.adapters.outbound.recipe_json import save_recipe
-from quantfit.adapters.outbound.run_log_jsonl import read_run_log
-from quantfit.domain.model import (
+from tests.fakes import MemoryRecipePacker, MemoryReconstructionChecker
+from vramfit.adapters.inbound import cli_pack, cli_pack_check
+from vramfit.adapters.inbound.cli import app
+from vramfit.adapters.outbound.recipe_json import save_recipe
+from vramfit.adapters.outbound.run_log_jsonl import read_run_log
+from vramfit.domain.model import (
     Assignment,
     PlanMeta,
     ProtectedTensor,
     Recipe,
 )
-from tests.fakes import MemoryRecipePacker, MemoryReconstructionChecker
 
 pytestmark = pytest.mark.unit
 

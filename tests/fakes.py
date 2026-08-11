@@ -4,7 +4,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Literal
 
-from quantfit.adapters.outbound.gguf.types import (
+from vramfit.adapters.outbound.gguf.types import (
     PackError,
     base_type,
     check_runtime,
@@ -14,12 +14,12 @@ from quantfit.adapters.outbound.gguf.types import (
     tensor_overrides,
     token_embedding_type,
 )
-from quantfit.adapters.outbound.json_common import ArtifactError
-from quantfit.domain.budget import ModelShape
-from quantfit.domain.evals import EvalsSidecar
-from quantfit.domain.model import Recipe, SensitivityMap
-from quantfit.domain.pack import PackResult
-from quantfit.domain.scan import GroupSpec, Measurement
+from vramfit.adapters.outbound.json_common import ArtifactError
+from vramfit.domain.budget import ModelShape
+from vramfit.domain.evals import EvalsSidecar
+from vramfit.domain.model import Recipe, SensitivityMap
+from vramfit.domain.pack import PackResult
+from vramfit.domain.scan import GroupSpec, Measurement
 
 
 @dataclass

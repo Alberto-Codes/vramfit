@@ -1,7 +1,7 @@
-"""Docs-reference gate: dotted ``quantfit.*`` paths in docs must exist.
+"""Docs-reference gate: dotted ``vramfit.*`` paths in docs must exist.
 
 Refactors move modules — markdown and docstrings do not notice. This
-gate extracts every dotted ``quantfit.…`` reference from the living docs
+gate extracts every dotted ``vramfit.…`` reference from the living docs
 AND the Python sources (docstring cross-references rot too) and verifies
 each resolves to an importable module or an attribute of one. Decks
 (``docs/decks/``) are excluded — they are dated point-in-time artifacts.
@@ -23,7 +23,7 @@ import re
 import sys
 from pathlib import Path
 
-_REF = re.compile(r"\bquantfit(?:\.[A-Za-z_][A-Za-z0-9_]*)+\b")
+_REF = re.compile(r"\bvramfit(?:\.[A-Za-z_][A-Za-z0-9_]*)+\b")
 
 DEFAULT_DOC_GLOBS = (
     "README.md",
@@ -41,8 +41,8 @@ def _resolves(ref: str) -> bool:
     """Report whether a dotted reference names a module or attribute.
 
     Args:
-        ref: Dotted path, e.g. ``quantfit.domain.solver`` or
-            ``quantfit.domain.solver.solve``.
+        ref: Dotted path, e.g. ``vramfit.domain.solver`` or
+            ``vramfit.domain.solver.solve``.
 
     Returns:
         True when the path imports as a module, or its last component is
@@ -62,7 +62,7 @@ def _resolves(ref: str) -> bool:
 
 
 def main(argv: list[str]) -> int:
-    """Check every dotted quantfit reference in the doc set.
+    """Check every dotted vramfit reference in the doc set.
 
     Args:
         argv: Optional explicit file paths; defaults to the doc globs.

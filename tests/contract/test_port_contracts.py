@@ -14,28 +14,6 @@ from typing import Any
 
 import pytest
 
-from quantfit.adapters.outbound.hf_config import HfConfigFile
-from quantfit.adapters.outbound.json_common import ArtifactError
-from quantfit.adapters.outbound.recipe_json import JsonRecipeFile, load_recipe
-from quantfit.adapters.outbound.run_log_jsonl import JsonlRunLogFile, read_run_log
-from quantfit.adapters.outbound.scan_checkpoint_json import JsonScanCheckpointFile
-from quantfit.adapters.outbound.sensitivity_map_json import (
-    JsonSensitivityMapFile,
-    load_sensitivity_map,
-    map_from_dict,
-    save_sensitivity_map,
-)
-from quantfit.domain.budget import ModelShape
-from quantfit.domain.model import Recipe, ScanMeta, SensitivityMap
-from quantfit.domain.scan import Measurement, scan_fingerprint
-from quantfit.domain.solver import solve
-from quantfit.ports.outbound import (
-    ModelShapeSource,
-    RecipeSink,
-    ScanCheckpointStore,
-    SensitivityMapSink,
-    SensitivityMapSource,
-)
 from tests.fakes import (
     MemoryModelShapeSource,
     MemoryRecipeSink,
@@ -45,6 +23,28 @@ from tests.fakes import (
     MemorySensitivityMapSource,
 )
 from tests.unit.conftest import make_map
+from vramfit.adapters.outbound.hf_config import HfConfigFile
+from vramfit.adapters.outbound.json_common import ArtifactError
+from vramfit.adapters.outbound.recipe_json import JsonRecipeFile, load_recipe
+from vramfit.adapters.outbound.run_log_jsonl import JsonlRunLogFile, read_run_log
+from vramfit.adapters.outbound.scan_checkpoint_json import JsonScanCheckpointFile
+from vramfit.adapters.outbound.sensitivity_map_json import (
+    JsonSensitivityMapFile,
+    load_sensitivity_map,
+    map_from_dict,
+    save_sensitivity_map,
+)
+from vramfit.domain.budget import ModelShape
+from vramfit.domain.model import Recipe, ScanMeta, SensitivityMap
+from vramfit.domain.scan import Measurement, scan_fingerprint
+from vramfit.domain.solver import solve
+from vramfit.ports.outbound import (
+    ModelShapeSource,
+    RecipeSink,
+    ScanCheckpointStore,
+    SensitivityMapSink,
+    SensitivityMapSource,
+)
 
 
 def sample_map() -> SensitivityMap:
@@ -354,7 +354,7 @@ def _real_run_log(tmp_path: Path):
     return sink, lambda: [
         (
             e["event"],
-            {k: v for k, v in e.items() if k not in ("event", "ts", "quantfit_runlog")},
+            {k: v for k, v in e.items() if k not in ("event", "ts", "vramfit_runlog")},
         )
         for e in read_run_log(path)
     ]

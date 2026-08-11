@@ -4,8 +4,8 @@ from typing import Any
 
 import pytest
 
-from quantfit.domain.model import ScanMeta
-from quantfit.domain.scan import (
+from vramfit.domain.model import ScanMeta
+from vramfit.domain.scan import (
     GroupSpec,
     Measurement,
     assemble_map,

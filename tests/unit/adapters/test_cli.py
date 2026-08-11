@@ -5,11 +5,11 @@ import json
 import pytest
 from typer.testing import CliRunner
 
-from quantfit import __version__
-from quantfit.adapters.inbound.cli import app
-from quantfit.adapters.outbound.recipe_json import load_recipe
-from quantfit.domain.solver import DEFAULT_FORMAT_OVERHEAD, DEFAULT_RESIDUAL_OVERHEAD
 from tests.unit.conftest import make_map
+from vramfit import __version__
+from vramfit.adapters.inbound.cli import app
+from vramfit.adapters.outbound.recipe_json import load_recipe
+from vramfit.domain.solver import DEFAULT_FORMAT_OVERHEAD, DEFAULT_RESIDUAL_OVERHEAD
 
 runner = CliRunner()
 
@@ -21,7 +21,7 @@ def test_version_command_prints_package_version() -> None:
     result = runner.invoke(app, ["version"])
 
     assert result.exit_code == 0
-    assert result.output == f"quantfit {__version__}\n"
+    assert result.output == f"vramfit {__version__}\n"
 
 
 @pytest.mark.unit
@@ -325,7 +325,7 @@ class TestPlanCommand:
 
     def test_invalid_map_exits_one_with_artifact_error(self, tmp_path) -> None:
         path = tmp_path / "bad.json"
-        path.write_text('{"quantfit_schema": 99}')
+        path.write_text('{"vramfit_schema": 99}')
 
         result = runner.invoke(
             app, ["plan", str(path), "--vram", "200000", "--kv-headroom", "1000"]

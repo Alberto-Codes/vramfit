@@ -1,4 +1,4 @@
-# quantfit documentation
+# vramfit documentation
 
 Documentation follows the [Diátaxis](https://diataxis.fr/) framework: four
 sections with four distinct jobs.

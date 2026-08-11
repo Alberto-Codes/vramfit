@@ -2,19 +2,19 @@ from __future__ import annotations
 
 import pytest
 
-from quantfit.adapters.outbound.json_common import ArtifactError
-from quantfit.adapters.outbound.recipe_json import (
+from vramfit.adapters.outbound.json_common import ArtifactError
+from vramfit.adapters.outbound.recipe_json import (
     load_recipe,
     recipe_from_dict,
     recipe_to_dict,
     save_recipe,
 )
-from quantfit.domain.model import Assignment, PlanMeta, TraceStep
+from vramfit.domain.model import Assignment, PlanMeta, TraceStep
 
 
 def make_recipe_dict() -> dict:
     return {
-        "quantfit_schema": 5,
+        "vramfit_schema": 6,
         "model_id": "test/model",
         "runtime": "llama.cpp",
         "plan": {
@@ -183,7 +183,7 @@ class TestRecipe:
 
     def test_version_one_recipe_rejected(self) -> None:
         raw = make_recipe_dict()
-        raw["quantfit_schema"] = 1
+        raw["vramfit_schema"] = 1
 
         with pytest.raises(ArtifactError, match="unsupported schema version 1"):
             recipe_from_dict(raw)
@@ -284,9 +284,9 @@ class TestProtections:
 
     def test_old_schema_version_rejected(self) -> None:
         raw = make_recipe_dict()
-        raw["quantfit_schema"] = 3
+        raw["vramfit_schema"] = 3
 
-        with pytest.raises(ArtifactError, match="version 5"):
+        with pytest.raises(ArtifactError, match="version 6"):
             recipe_from_dict(raw)
 
     def test_missing_protections_field_rejected(self) -> None:

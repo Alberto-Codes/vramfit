@@ -6,13 +6,13 @@ import pytest
 from hypothesis import assume, given
 from hypothesis import strategies as st
 
-from quantfit.adapters.outbound.recipe_json import recipe_from_dict, recipe_to_dict
-from quantfit.adapters.outbound.sensitivity_map_json import (
+from tests.strategies import raw_protected_maps, raw_sensitivity_maps
+from vramfit.adapters.outbound.recipe_json import recipe_from_dict, recipe_to_dict
+from vramfit.adapters.outbound.sensitivity_map_json import (
     map_from_dict,
     map_to_dict,
 )
-from quantfit.domain.solver import group_bytes, solve
-from tests.strategies import raw_protected_maps, raw_sensitivity_maps
+from vramfit.domain.solver import group_bytes, solve
 
 
 @pytest.mark.unit

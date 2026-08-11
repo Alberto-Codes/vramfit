@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from quantfit.adapters.outbound.run_log_jsonl import (
+from vramfit.adapters.outbound.run_log_jsonl import (
     RUNLOG_VERSION,
     JsonlRunLogFile,
     read_run_log,
@@ -18,7 +18,7 @@ def test_every_line_carries_the_envelope_and_timestamp(tmp_path) -> None:
 
     (event,) = read_run_log(path)
     assert event["event"] == "scan_started"
-    assert event["quantfit_runlog"] == RUNLOG_VERSION
+    assert event["vramfit_runlog"] == RUNLOG_VERSION
     assert event["model"] == "m"
     assert event["ts"].endswith("Z") or "+" in event["ts"]
 
@@ -79,7 +79,7 @@ def test_reader_drops_a_torn_final_line(tmp_path) -> None:
 
 def test_reader_raises_on_a_torn_middle_line(tmp_path) -> None:
     path = tmp_path / "x.jsonl"
-    path.write_text('{"broken\n{"event": "scan_finished", "quantfit_runlog": 1}\n')
+    path.write_text('{"broken\n{"event": "scan_finished", "vramfit_runlog": 2}\n')
 
     with pytest.raises(ValueError):
         read_run_log(path)

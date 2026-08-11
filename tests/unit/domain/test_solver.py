@@ -5,10 +5,11 @@ from typing import Any
 
 import pytest
 
-from quantfit.adapters.outbound.sensitivity_map_json import map_from_dict
-from quantfit.domain.budget import format_size
-from quantfit.domain.model import SensitivityMap
-from quantfit.domain.solver import (
+from tests.unit.conftest import make_map
+from vramfit.adapters.outbound.sensitivity_map_json import map_from_dict
+from vramfit.domain.budget import format_size
+from vramfit.domain.model import SensitivityMap
+from vramfit.domain.solver import (
     DEFAULT_FORMAT_OVERHEAD,
     DEFAULT_RESIDUAL_OVERHEAD,
     SOLVER_NAME,
@@ -17,7 +18,6 @@ from quantfit.domain.solver import (
     group_bytes,
     solve,
 )
-from tests.unit.conftest import make_map
 
 CONVEX_CURVE = {8: 0.001, 4: 0.010, 3: 0.100, 2: 1.000}
 
@@ -516,7 +516,7 @@ def make_protected_map(
     v_bytes: int = 200,
     rest_bytes: int = 800,
 ) -> SensitivityMap:
-    from quantfit.domain.model import LayerGroup, ScanMeta
+    from vramfit.domain.model import LayerGroup, ScanMeta
 
     curve = curve or CONVEX_CURVE
 
@@ -602,7 +602,7 @@ class TestSolveWithProtections:
     def test_exclusion_riding_only_dropped_pairs_rejected(self) -> None:
         # Budget fits at 8-bit, so every floor-5 pair drops — nothing
         # survives for the exclusion to ride (issue #59).
-        from quantfit.domain.protection import ProtectionError
+        from vramfit.domain.protection import ProtectionError
 
         map_ = make_protected_map()
 
@@ -708,7 +708,7 @@ class TestSolveWithProtections:
         assert recipe.assignments[0].bytes == 425 + 107
 
     def test_unservable_floor_rejected(self) -> None:
-        from quantfit.domain.protection import ProtectionError
+        from vramfit.domain.protection import ProtectionError
 
         with pytest.raises(ProtectionError, match="cannot serve"):
             solve_simple(

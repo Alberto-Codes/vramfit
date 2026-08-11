@@ -5,8 +5,8 @@ from typing import cast
 
 import pytest
 
-from quantfit.domain.errors import QuantfitError
-from quantfit.domain.runtime import (
+from vramfit.domain.errors import VramfitError
+from vramfit.domain.runtime import (
     EFFECTIVE_BITS,
     RUNTIME_CAPABILITIES,
     RuntimeCapabilityError,
@@ -42,8 +42,8 @@ class TestServeablePrecisions:
         with pytest.raises(RuntimeCapabilityError, match="serves none"):
             servable_precisions((3, 2), "vllm")
 
-    def test_capability_error_inherits_the_quantfit_root(self) -> None:
-        assert issubclass(RuntimeCapabilityError, QuantfitError)
+    def test_capability_error_inherits_the_vramfit_root(self) -> None:
+        assert issubclass(RuntimeCapabilityError, VramfitError)
         assert issubclass(RuntimeCapabilityError, ValueError)
 
     def test_capability_table_is_read_only(self) -> None:

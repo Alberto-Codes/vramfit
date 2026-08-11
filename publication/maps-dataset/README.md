@@ -2,7 +2,7 @@
 license: cc-by-4.0
 pretty_name: Llama-3_3-Nemotron-Super-49B-v1_5 sensitivity maps
 tags:
-  - quantfit
+  - vramfit
 viewer: false
 ---
 
@@ -18,7 +18,7 @@ confirmation before the flip — flagged on the #85 record.
 
 This dataset carries the per-layer quantization sensitivity maps of
 [nvidia/Llama-3_3-Nemotron-Super-49B-v1_5](https://huggingface.co/nvidia/Llama-3_3-Nemotron-Super-49B-v1_5).
-[quantfit](https://github.com/Alberto-Codes/quantfit) measured them.
+[vramfit](https://github.com/Alberto-Codes/vramfit) measured them.
 A sensitivity map records one damage number per layer group and
 candidate precision. Damage is the shift in the model's output
 distribution when that group alone quantizes — mean final-logits KL
@@ -30,7 +30,7 @@ The packed model built from the sized no-2 map below ships as
 
 ## The map format
 
-Each map is one JSON file, `quantfit_schema` 1. The `scan` block
+Each map is one JSON file, `vramfit_schema` 1. The `scan` block
 records the measurement frame: metric, calibration file, token count,
 candidate precisions, within-group method, and imatrix path. The
 three `rtn-block32` maps predate the last two fields — an absent
@@ -40,7 +40,7 @@ The
 tensors, its bytes at reference precision, and its damage per
 precision. Annotated copies add `tensor_bytes`, the per-tensor size
 split. The
-[sensitivity map format](https://github.com/Alberto-Codes/quantfit/blob/main/docs/reference/sensitivity-map.md)
+[sensitivity map format](https://github.com/Alberto-Codes/vramfit/blob/main/docs/reference/sensitivity-map.md)
 page specifies every field. The path fields record the reference
 box's absolute paths. The basenames match the files here.
 
@@ -61,10 +61,10 @@ carry every earlier attempt. Each scan covers 82 layer groups at candidate preci
 {8, 4, 3, 2} — 328 cells. `rtn-block32` quantizes a perturbed group
 with round-to-nearest in 32-element blocks. `kquant-ref` round-trips
 each cell through ported llama.cpp reference quantizers
-([ADR-0018](https://github.com/Alberto-Codes/quantfit/blob/main/docs/adr/0018-kquant-within-group-method.md)).
+([ADR-0018](https://github.com/Alberto-Codes/vramfit/blob/main/docs/adr/0018-kquant-within-group-method.md)).
 `kquant-imx` weights the within-group fit with the pack's importance
 matrix
-([ADR-0020](https://github.com/Alberto-Codes/quantfit/blob/main/docs/adr/0020-imatrix-assisted-pricing.md)).
+([ADR-0020](https://github.com/Alberto-Codes/vramfit/blob/main/docs/adr/0020-imatrix-assisted-pricing.md)).
 The model repo publishes that imatrix as `imatrix.gguf`.
 
 ## Derived copies
@@ -73,13 +73,13 @@ Three files derive from `sensitivity-64k-kquant-imx.json`:
 
 - `sensitivity-64k-kquant-imx-sized.json` adds `tensor_bytes` to
   every group, read from the checkpoint's safetensors headers.
-  `quantfit plan --protect` requires the field.
+  `vramfit plan --protect` requires the field.
 - `sensitivity-64k-kquant-imx-no2.json` removes the 2-bit column and
   marks itself derived in a `derived` field. In-frame 2-bit prices do
   not predict the packed artifact
-  ([ADR-0021](https://github.com/Alberto-Codes/quantfit/blob/main/docs/adr/0021-runtime-frame-measurement.md)).
+  ([ADR-0021](https://github.com/Alberto-Codes/vramfit/blob/main/docs/adr/0021-runtime-frame-measurement.md)).
 - `sensitivity-64k-kquant-imx-no2-sized.json` applies both changes.
-  **`quantfit plan` solved the published recipe from this file.**
+  **`vramfit plan` solved the published recipe from this file.**
 
 ## Do not compare damage across files
 
@@ -92,11 +92,11 @@ quality at a fixed model and budget, never by raw damage.
 
 ## Solve a recipe
 
-`quantfit plan` is pure Python and imports no torch. Solve your own
+`vramfit plan` is pure Python and imports no torch. Solve your own
 budget against the sized no-2 map:
 
 ```
-uv run quantfit plan sensitivity-64k-kquant-imx-no2-sized.json --vram 24GiB
+uv run vramfit plan sensitivity-64k-kquant-imx-no2-sized.json --vram 24GiB
 ```
 
 The published recipe used this map with explicit protections and
@@ -158,6 +158,6 @@ repo.
 ## Disagree with a number?
 
 Re-run the scan. The
-[quantfit repository](https://github.com/Alberto-Codes/quantfit)
+[vramfit repository](https://github.com/Alberto-Codes/vramfit)
 documents the scan command, the meter, and the offload settings the
 run logs record. A map you measure yourself beats one you argue with.

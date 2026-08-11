@@ -24,10 +24,10 @@ The scan step needs the GPU stack, which lives behind an extra
 (ADR-0005):
 
 ```bash
-git clone https://github.com/Alberto-Codes/quantfit.git
-cd quantfit
+git clone https://github.com/Alberto-Codes/vramfit.git
+cd vramfit
 uv sync --extra scan
-uv run quantfit version
+uv run vramfit version
 ```
 
 ## 2. Scan a small model
@@ -37,7 +37,7 @@ The scan measures damage on some text — give it a calibration file:
 ```bash
 printf 'The quick brown fox jumps over the lazy dog. %.0s' {1..200} > calibration.txt
 
-uv run quantfit scan HuggingFaceTB/SmolLM2-135M \
+uv run vramfit scan HuggingFaceTB/SmolLM2-135M \
   --calibration calibration.txt \
   --max-tokens 2048 \
   --out sensitivity.json
@@ -56,7 +56,7 @@ interruption and it resumes.
 Pick a deliberately tight VRAM budget so the solver has real work to do:
 
 ```bash
-uv run quantfit plan sensitivity.json --vram 256MiB --kv-headroom 64MiB --out recipe.json
+uv run vramfit plan sensitivity.json --vram 256MiB --kv-headroom 64MiB --out recipe.json
 ```
 
 The output [recipe](../reference/recipe.md) lists every layer group and
@@ -70,7 +70,7 @@ The validation pass replays the whole recipe in one pass and reports
 the measured damage next to the solver's prediction (ADR-0006):
 
 ```bash
-uv run quantfit validate recipe.json --calibration calibration.txt --max-tokens 2048
+uv run vramfit validate recipe.json --calibration calibration.txt --max-tokens 2048
 ```
 
 Compare the measured number against the prediction. Six of seven
@@ -86,7 +86,7 @@ llama.cpp checkout with built tools and the `pack` extra
 (`uv sync --extra scan --extra pack`):
 
 ```bash
-uv run quantfit pack recipe.json --llama-cpp ~/llama.cpp --out packed.gguf
+uv run vramfit pack recipe.json --llama-cpp ~/llama.cpp --out packed.gguf
 ```
 
 Pack converts the checkpoint to an f16 base GGUF once, drives

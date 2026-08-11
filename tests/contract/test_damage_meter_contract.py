@@ -12,10 +12,10 @@ import math
 
 import pytest
 
-from quantfit.domain.scan import GroupSpec
-from quantfit.ports.outbound import DamageMeter
 from tests.conftest import CALIBRATION_TEXT
 from tests.fakes import MemoryDamageMeter
+from vramfit.domain.scan import GroupSpec
+from vramfit.ports.outbound import DamageMeter
 
 pytestmark = pytest.mark.contract
 
@@ -55,7 +55,7 @@ def meter(request, tmp_path) -> DamageMeter:
         # weights map (ADR-0015) — same behavior, different devices.
         return request.getfixturevalue("offloaded_contract_meter")
     tiny = request.getfixturevalue("tiny_model_dir")
-    from quantfit.adapters.outbound.scan.meter import TorchDamageMeter
+    from vramfit.adapters.outbound.scan.meter import TorchDamageMeter
 
     calibration = tmp_path / "calib.txt"
     calibration.write_text(CALIBRATION_TEXT)
@@ -72,8 +72,8 @@ def offloaded_contract_meter(offload_model_dir, tmp_path_factory) -> DamageMeter
     torch = pytest.importorskip("torch", reason="scan extra not installed")
     if not torch.cuda.is_available():
         pytest.skip("no CUDA device")
-    from quantfit.adapters.outbound.scan.meter import TorchDamageMeter
     from tests.conftest import OFFLOAD_GPU_CAP
+    from vramfit.adapters.outbound.scan.meter import TorchDamageMeter
 
     calibration = tmp_path_factory.mktemp("contract-calib") / "calib.txt"
     calibration.write_text(CALIBRATION_TEXT)

@@ -4,10 +4,10 @@ import json
 
 import pytest
 
-from quantfit.adapters.outbound.json_common import ArtifactError
-from quantfit.adapters.outbound.scan_checkpoint_json import JsonScanCheckpointFile
-from quantfit.domain.model import ScanMeta
-from quantfit.domain.scan import Measurement, scan_fingerprint
+from vramfit.adapters.outbound.json_common import ArtifactError
+from vramfit.adapters.outbound.scan_checkpoint_json import JsonScanCheckpointFile
+from vramfit.domain.model import ScanMeta
+from vramfit.domain.scan import Measurement, scan_fingerprint
 
 pytestmark = pytest.mark.unit
 
@@ -68,7 +68,7 @@ def test_corrupt_json_raises_artifact_error(tmp_path) -> None:
 
 def test_unsupported_schema_version_raises(tmp_path) -> None:
     path = tmp_path / "scan.checkpoint.json"
-    path.write_text(json.dumps({"quantfit_schema": 99, "fingerprint": FP}))
+    path.write_text(json.dumps({"vramfit_schema": 99, "fingerprint": FP}))
 
     with pytest.raises(ArtifactError, match="unsupported schema version"):
         JsonScanCheckpointFile(path).load(FP)
@@ -79,7 +79,7 @@ def test_invalid_stored_damage_raises_with_json_path(tmp_path) -> None:
     path.write_text(
         json.dumps(
             {
-                "quantfit_schema": 1,
+                "vramfit_schema": 2,
                 "fingerprint": FP,
                 "measurements": [{"group": "g0", "bits": 8, "damage": -0.5}],
             }

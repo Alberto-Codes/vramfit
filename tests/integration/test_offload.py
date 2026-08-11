@@ -19,9 +19,9 @@ torch = pytest.importorskip("torch", reason="scan extra not installed")
 
 from typer.testing import CliRunner
 
-from quantfit.adapters.inbound.cli import app
-from quantfit.adapters.outbound.sensitivity_map_json import load_sensitivity_map
 from tests.conftest import CALIBRATION_TEXT, OFFLOAD_GPU_CAP
+from vramfit.adapters.inbound.cli import app
+from vramfit.adapters.outbound.sensitivity_map_json import load_sensitivity_map
 
 pytestmark = [pytest.mark.integration, pytest.mark.slow]
 
@@ -33,7 +33,7 @@ def offload_meter(offload_model_dir, tmp_path_factory):
     """A meter over the offload-scale checkpoint, capped to force dispatch."""
     if not torch.cuda.is_available():
         pytest.skip("no CUDA device")
-    from quantfit.adapters.outbound.scan.meter import TorchDamageMeter
+    from vramfit.adapters.outbound.scan.meter import TorchDamageMeter
 
     calibration = tmp_path_factory.mktemp("offload-calib") / "calib.txt"
     calibration.write_text(CALIBRATION_TEXT)
@@ -127,7 +127,7 @@ class TestOffloadedMeter:
         # group with no resident member to hide behind.
         groups = _two_distinct_offloaded_groups(offload_meter)
         capped = {group: offload_meter.measure(group, 2) for group in groups}
-        from quantfit.adapters.outbound.scan.meter import TorchDamageMeter
+        from vramfit.adapters.outbound.scan.meter import TorchDamageMeter
 
         calibration = tmp_path / "calib.txt"
         calibration.write_text(CALIBRATION_TEXT)

@@ -4,19 +4,19 @@ status: stable
 
 # Recipe format
 
-> **Status: stable** — implemented in `quantfit.adapters.outbound.recipe_json`.
+> **Status: stable** — implemented in `vramfit.adapters.outbound.recipe_json`.
 > The loader enforces the structural rules below (required fields, types,
 > positive sizes, unique groups), and real recipes carried the full 49B
 > loop. Cross-artifact claims — map order, trace
-> consistency — are properties of `quantfit plan`, not of loading.
+> consistency — are properties of `vramfit plan`, not of loading.
 
-The recipe is the output of `quantfit plan` and the input to `quantfit pack`:
+The recipe is the output of `vramfit plan` and the input to `vramfit pack`:
 JSON, one precision assignment per layer group, plus the budget accounting
 that produced it.
 
 ```json
 {
-  "quantfit_schema": 5,
+  "vramfit_schema": 6,
   "model_id": "nvidia/Llama-3_3-Nemotron-Super-49B-v1_5",
   "runtime": "llama.cpp",
   "within_group": "kquant-imx",
@@ -74,8 +74,11 @@ that produced it.
 [ADR-0020](../adr/0020-imatrix-assisted-pricing.md): the fields
 below remain, the sub-4-bit pricing claims do not.
 
-- **`quantfit_schema`** — 5 since no-op protection pairs stopped
-  resolving (issue #59): a schema-4 reader rejects a protection
+- **`vramfit_schema`** — 6 since the envelope key renamed from
+  `quantfit_schema` with the tool (#118): the reader accepts only
+  the new key, so schema-5 recipes need a re-plan.
+  5 stopped no-op protection pairs from resolving (issue #59): a
+  schema-4 reader rejects a protection
   record with zero pairs, and a schema-4 recipe can carry no-op
   pairs that falsely fail the reconstruction check — re-plan it.
   4 added imatrix exclusions
@@ -84,22 +87,22 @@ below remain, the sub-4-bit pricing claims do not.
   dropped either record would silently pack a
   different artifact than the recipe intends — ADR-0013 ruled that
   case breaking. Schema versions advance per artifact — the
-  sensitivity map stays at 1.
+  sensitivity map sits at 2.
 - **`runtime`** — the target runtime the plan was made for, or null for
-  an unconstrained plan. `quantfit plan` always sets it. The solver
+  an unconstrained plan. `vramfit plan` always sets it. The solver
   filtered its candidates to this runtime's capability, and pack
   backends refuse a recipe recorded for a runtime they do not serve.
 - **`within_group`** — the within-group method token of the map that
   priced the recipe ([ADR-0019](../adr/0019-kquant-priced-maps.md)),
-  or null when the provenance is unknown. `quantfit plan` copies it
-  from the map. `quantfit validate` resolves its frame from this
+  or null when the provenance is unknown. `vramfit plan` copies it
+  from the map. `vramfit validate` resolves its frame from this
   field and refuses flags that contradict it. The loader accepts an
   absent field as null — recipes written before the field existed do
   not record their map's method.
 - **`imatrix`** — the imatrix path of the map that priced the recipe
   ([ADR-0020](../adr/0020-imatrix-assisted-pricing.md)), or null.
   Pairs with the `kquant-imx` token, like the map's `scan.imatrix`.
-  `quantfit validate` and `quantfit pack` warn when their
+  `vramfit validate` and `vramfit pack` warn when their
   `--imatrix` names a different file — a different file breaks the
   frame the map priced. The loader accepts an absent field as null.
 - **`assignments`** — every group from the sensitivity map appears exactly
@@ -111,7 +114,7 @@ below remain, the sub-4-bit pricing claims do not.
   carries the measured 8-bit damage.
 - **`predicted_damage`** — sum of per-group damage at the chosen precisions.
   A *prediction* from marginal measurements, not a guarantee —
-  `quantfit validate` measures the whole recipe against it
+  `vramfit validate` measures the whole recipe against it
   ([ADR-0006](../adr/0006-sensitivity-metric.md)).
 - **`solver`** — which strategy produced the recipe (see
   [ADR-0007](../adr/0007-recipe-solver-strategy.md)). Recorded so recipes are
@@ -134,7 +137,7 @@ below remain, the sub-4-bit pricing claims do not.
   the tensor's group assignment, and its precision is the floor
   (issue #59). A floor the assignment already meets resolves to no
   pair — it would quantize identically to the unprotected reference
-  and falsely fail the reconstruction check. `quantfit pack` drives
+  and falsely fail the reconstruction check. `vramfit pack` drives
   these pairs, never the raw patterns. A recipe can record
   `protections` whose pairs all dropped as no-ops.
   `exclude_imatrix` marks the pairs the exclusion globs resolved

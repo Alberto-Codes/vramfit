@@ -68,7 +68,7 @@ status: draft
 > these evaluations live in [the artifact ecosystem](artifact-ecosystem.md)
 > and issue #11.
 
-Scanning and planning happen inside quantfit's own frame: damage,
+Scanning and planning happen inside vramfit's own frame: damage,
 measured per cell, on our calibration set. The moment a packed model
 exists, that frame is no longer enough. A skeptical downloader does
 not care what our meter says — they care whether the model still
@@ -81,7 +81,7 @@ The community standard is `llama-perplexity` over the WikiText-2 test
 set (`wiki.test.raw`): run the packed model across held-out text and
 score how surprised it is by each real next token. Lower is better.
 Every k-quant comparison table on Hugging Face model cards quotes this
-number, which is exactly why we must too — it makes a quantfit packed
+number, which is exactly why we must too — it makes a vramfit packed
 model comparable against every heuristic GGUF ever published, on their
 home turf. Cost: minutes for a 3B on the reference box, CPU or GPU.
 
@@ -102,7 +102,7 @@ Here is the part that matters strategically: **this is the same
 divergence family the damage metric already uses**
 ([ADR-0006](../adr/0006-sensitivity-metric.md)). The scan measures
 KL per (group × precision) cell under marginal perturbation. The
-whole-recipe validation pass (`quantfit validate`, ADR-0006) then
+whole-recipe validation pass (`vramfit validate`, ADR-0006) then
 replays the exact recipe through the scan's own quantization and
 compares against the summed marginal damages — that pre-pack check
 is what isolates the additivity assumption leaking. Tier 2 complements it from the
@@ -132,7 +132,7 @@ our own machinery.
 It is the expensive tier — measured at 5.70 h per 49B artifact on
 the reference box (the sixteenth data point), and scores carry
 enough noise that small deltas mean nothing. Reserve it for the head-to-head
-that matters: quantfit's packed model versus the size-matched
+that matters: vramfit's packed model versus the size-matched
 heuristic GGUF ([ADR-0010](../adr/0010-sub-4-bit-serving-path.md)
 names IQ3-class baselines for the 49B). A small, fixed slice of tasks,
 reported honestly with the noise acknowledged, beats a sprawling suite
@@ -144,7 +144,7 @@ an evals sidecar ([ADR-0025](../adr/0025-evals-sidecar.md)).
 
 Both tiers ran on 2026-07-28 against the first packed model:
 Qwen2.5-3B under a 4 GiB VRAM budget (2 GiB weight budget), packed
-from the measured sensitivity map by `quantfit pack`
+from the measured sensitivity map by `vramfit pack`
 ([ADR-0012](../adr/0012-gguf-type-mapping.md)). Tier 1 is the full
 WikiText-2 test set. Tier 2 is whole-model KL against the f16
 reference over the first 100 chunks (51,200 tokens). All runs on the
@@ -153,7 +153,7 @@ reference box (llama.cpp b10172, Vulkan).
 | Model | File size | Fits 2.00 GiB budget | PPL ↓ | Mean KLD ↓ | Same top token ↑ |
 |-------|-----------|----------------------|-------|------------|------------------|
 | f16 reference | 5.75 GiB | no | 8.422 ± 0.057 | — | — |
-| **quantfit recipe** (7×8-bit incl. embed, 30×4-bit)* | 1.98 GiB | **yes** (17 MiB under) | **8.661 ± 0.058** | **0.0382** | **90.5 %** |
+| **vramfit recipe** (7×8-bit incl. embed, 30×4-bit)* | 1.98 GiB | **yes** (17 MiB under) | **8.661 ± 0.058** | **0.0382** | **90.5 %** |
 | Q4_K_M heuristic | 1.80 GiB | yes | 8.790 ± 0.060 | 0.0494 | 88.9 % |
 | Q5_K_S heuristic | 2.02 GiB | no (21 MiB over) | 8.520 ± 0.057 | 0.0161 | 93.3 % |
 
@@ -178,7 +178,7 @@ Reading it honestly, in both directions:
 
 The size lesson from the same run: the first pack of this recipe,
 planned with the default 5 % format overhead, came out 56 MiB over
-budget and `quantfit pack` refused it — GGUF's effective bits exceed
+budget and `vramfit pack` refused it — GGUF's effective bits exceed
 nominal bits (ADR-0012). Re-planning at 10 % produced the table's
 artifact on the first try.
 
@@ -199,8 +199,8 @@ Vulkan.
 | Model | File size | Fits 2.00 GiB budget | PPL ↓ | Mean KLD ↓ | Same top token ↑ |
 |-------|-----------|----------------------|-------|------------|------------------|
 | f16 reference | 5.75 GiB | no | 8.422 ± 0.057 | — | — |
-| **quantfit 6/5/4 mix** (3×6-bit incl. embed, 29×5-bit, 5×4-bit) | **1.995 GiB** | **yes** (5.3 MiB under) | **8.534 ± 0.057** | **0.0180** | **93.3 %** |
-| quantfit {8, 4} recipe (first data point) | 1.983 GiB | yes | 8.661 ± 0.058 | 0.0382 | 90.5 % |
+| **vramfit 6/5/4 mix** (3×6-bit incl. embed, 29×5-bit, 5×4-bit) | **1.995 GiB** | **yes** (5.3 MiB under) | **8.534 ± 0.057** | **0.0180** | **93.3 %** |
+| vramfit {8, 4} recipe (first data point) | 1.983 GiB | yes | 8.661 ± 0.058 | 0.0382 | 90.5 % |
 | Q4_K_M heuristic | 1.80 GiB | yes | 8.790 ± 0.060 | 0.0494 | 88.9 % |
 | Q5_K_S heuristic | 2.02 GiB | no (21 MiB over) | 8.520 ± 0.057 | 0.0161 | 93.3 % |
 
@@ -223,7 +223,7 @@ Reading it honestly, in both directions:
 
 The size lesson repeated, with sharper teeth: planned at the 10 %
 overhead that fit the {8, 4} recipe with 17 MiB to spare, the
-5-bit-dominant mix packed 4.5 MiB **over** budget and `quantfit
+5-bit-dominant mix packed 4.5 MiB **over** budget and `vramfit
 pack` refused it. Re-planning at 10.5 % fit with 5.3 MiB to spare.
 The mechanism: one scalar `format_overhead` has to match the
 mix-weighted drift of whatever types the solver happens to pick.
@@ -252,7 +252,7 @@ the table above stands for it.
 
 The three-leg story above — cell damage *predicts*, the validation
 pass *checks the prediction*, packed-model KL *confirms the
-artifact* — ran without its middle leg until `quantfit validate`
+artifact* — ran without its middle leg until `vramfit validate`
 existed. On 2026-07-28 the pass ran for the first time, against the
 same 6/5/4 mix the second data point evaluates: all 37 assignments
 replayed through the scan's own quantization in one pass, over the
@@ -320,7 +320,7 @@ f16 reference measures PPL 8.228 ± 0.141 on those 100 chunks.
 | Model | File size | Fits 20.47 GiB budget | imatrix | PPL ↓ | Mean KLD ↓ | Same top token ↑ |
 |-------|-----------|----------------------|---------|-------|------------|------------------|
 | f16 reference | 93 GiB | no | — | 8.228 ± 0.141* | — | — |
-| **quantfit recipe** (8/4/3/2 mix) | **20.30 GiB** | **yes** (169.7 MiB under) | no | 9.917 ± 0.075 | 0.3748 | 75.4 % |
+| **vramfit recipe** (8/4/3/2 mix) | **20.30 GiB** | **yes** (169.7 MiB under) | no | 9.917 ± 0.075 | 0.3748 | 75.4 % |
 | Q3_K_S heuristic (bartowski) | 20.45 GiB | yes (21.7 MiB under) | yes | **8.532 ± 0.064** | **0.1584** | **83.8 %** |
 | IQ3_M heuristic (bartowski) | 21.10 GiB | no (648 MiB over) | yes | 8.300 ± 0.060 | 0.1633 | 84.1 % |
 | control Q3_K_S (ours, same f16 base) | 20.45 GiB | yes | no | 9.655 ± 0.073 | 0.3451 | 76.9 % |
@@ -369,7 +369,7 @@ Reading it honestly, in both directions:
 To isolate the 2-bit contribution, the same map was re-planned with
 its 2-bit cells removed. The solver produced a near-uniform 3-bit
 recipe (79 groups at 3-bit, layers 0–2 at 4-bit, 20.24 GiB,
-predicted damage 1.44) and `quantfit pack` packed it cleanly. The
+predicted damage 1.44) and `vramfit pack` packed it cleanly. The
 artifact is **destroyed**: PPL ~10⁶, same-top-token 0.3 %, on both
 the Vulkan and CPU backends. A second variant with the output head
 at Q6_K instead of Q3_K is equally destroyed, which rules the
@@ -435,10 +435,10 @@ packed numbers below confirm the warning was real.
 
 | Model | Size | imatrix | PPL ↓ | Mean KLD ↓ | Same top ↑ |
 |-------|------|---------|-------|------------|------------|
-| quantfit 8k map | 20.30 GiB | no | 9.917 ± 0.075 | 0.3748 | 75.4 % |
-| **quantfit 8k map** | **20.30 GiB** | **yes** | **9.061 ± 0.067** | **0.2701** | **79.2 %** |
-| quantfit 32k map | 19.99 GiB | no | 10.483 ± 0.081 | 0.4288 | 73.8 % |
-| quantfit 32k map | 19.99 GiB | yes | 10.412 ± 0.082 | 0.4708 | 77.0 % |
+| vramfit 8k map | 20.30 GiB | no | 9.917 ± 0.075 | 0.3748 | 75.4 % |
+| **vramfit 8k map** | **20.30 GiB** | **yes** | **9.061 ± 0.067** | **0.2701** | **79.2 %** |
+| vramfit 32k map | 19.99 GiB | no | 10.483 ± 0.081 | 0.4288 | 73.8 % |
+| vramfit 32k map | 19.99 GiB | yes | 10.412 ± 0.082 | 0.4708 | 77.0 % |
 | Q3_K_S heuristic (bartowski) | 20.45 GiB | yes | **8.532 ± 0.064** | **0.1584** | **83.8 %** |
 | control Q3_K_S (ours) | 20.45 GiB | no | 9.655 ± 0.073 | 0.3451 | 76.9 % |
 
@@ -527,8 +527,8 @@ solve-again signal, not a pack input.
 
 | Model | Size | PPL ↓ | Mean KLD ↓ | Same top ↑ |
 |-------|------|-------|------------|------------|
-| quantfit 64k map + imatrix | 20.32 GiB | 9.156 ± 0.068 | 0.2653 | 80.1 % |
-| quantfit 8k map + imatrix | 20.30 GiB | 9.061 ± 0.067 | 0.2701 | 79.2 % |
+| vramfit 64k map + imatrix | 20.32 GiB | 9.156 ± 0.068 | 0.2653 | 80.1 % |
+| vramfit 8k map + imatrix | 20.30 GiB | 9.061 ± 0.067 | 0.2701 | 79.2 % |
 | Q3_K_S heuristic (bartowski) | 20.45 GiB | **8.532 ± 0.064** | **0.1584** | **83.8 %** |
 
 Reading it honestly, in both directions:
@@ -669,8 +669,8 @@ not membership count, drives additivity.
 
 | Model | Size | PPL ↓ | Mean KLD ↓ | Same top ↑ |
 |-------|------|-------|------------|------------|
-| quantfit kquant map + imatrix | 20.21 GiB | 9.251 ± 0.069 | 0.3056 | 77.8 % |
-| quantfit RTN 64k map + imatrix | 20.32 GiB | 9.156 ± 0.068 | 0.2653 | 80.1 % |
+| vramfit kquant map + imatrix | 20.21 GiB | 9.251 ± 0.069 | 0.3056 | 77.8 % |
+| vramfit RTN 64k map + imatrix | 20.32 GiB | 9.156 ± 0.068 | 0.2653 | 80.1 % |
 | Q3_K_S heuristic (bartowski) | 20.45 GiB | **8.532 ± 0.064** | **0.1584** | **83.8 %** |
 
 Reading it honestly: matching the pack's super-block structure made
@@ -722,8 +722,8 @@ could show up in the tiers.
 | Model (calibration text) | PPL ↓ | Mean KLD ↓ |
 |--------------------------|-------|------------|
 | f16 base | 8.170 | — |
-| quantfit RTN 64k map + imatrix | 8.829 | 0.5611 |
-| quantfit kquant map + imatrix | 8.673 | 0.6114 |
+| vramfit RTN 64k map + imatrix | 8.829 | 0.5611 |
+| vramfit kquant map + imatrix | 8.673 | 0.6114 |
 | Q3_K_S heuristic (bartowski) | 7.758 | **0.4538** |
 
 By PPL the ordering *does* flip: the kquant recipe wins in-set and
@@ -831,13 +831,13 @@ measures, it is not the thing the runtime punishes.
 
 | Model | Size | PPL ↓ | Mean KLD ↓ | Same top ↑ |
 |-------|------|-------|------------|------------|
-| quantfit assisted map + imatrix | 20.37 GiB | 9.607 ± 0.072 | 0.3437 | 76.3 % |
-| quantfit kquant map + imatrix | 20.21 GiB | 9.251 ± 0.069 | 0.3056 | 77.8 % |
-| quantfit RTN 64k map + imatrix | 20.32 GiB | 9.156 ± 0.068 | 0.2653 | 80.1 % |
+| vramfit assisted map + imatrix | 20.37 GiB | 9.607 ± 0.072 | 0.3437 | 76.3 % |
+| vramfit kquant map + imatrix | 20.21 GiB | 9.251 ± 0.069 | 0.3056 | 77.8 % |
+| vramfit RTN 64k map + imatrix | 20.32 GiB | 9.156 ± 0.068 | 0.2653 | 80.1 % |
 | Q3_K_S heuristic (bartowski) | 20.45 GiB | **8.532 ± 0.064** | **0.1584** | **83.8 %** |
 
 The baseline gap widened from 0.62 to 0.72 to 1.08 PPL across the
-three quantfit artifacts. Imatrix-blind pricing is eliminated as
+three vramfit artifacts. Imatrix-blind pricing is eliminated as
 the frame leak: pricing *with* the pack's imatrix made the packed
 result worse. The elimination ledger now reads granularity (~14 %
 ceiling, the seventh data point), super-block structure (the
@@ -910,10 +910,10 @@ recur. Then:
 
 | Model | Size | PPL ↓ | Mean KLD ↓ | Same top ↑ |
 |-------|------|-------|------------|------------|
-| quantfit no-2 (assisted map) | 20.37 GiB | 8.597 ± 0.064 | 0.1703 | 82.7 % |
-| quantfit assisted map + imatrix | 20.37 GiB | 9.607 ± 0.072 | 0.3437 | 76.3 % |
-| quantfit kquant map + imatrix | 20.21 GiB | 9.251 ± 0.069 | 0.3056 | 77.8 % |
-| quantfit RTN 64k map + imatrix | 20.32 GiB | 9.156 ± 0.068 | 0.2653 | 80.1 % |
+| vramfit no-2 (assisted map) | 20.37 GiB | 8.597 ± 0.064 | 0.1703 | 82.7 % |
+| vramfit assisted map + imatrix | 20.37 GiB | 9.607 ± 0.072 | 0.3437 | 76.3 % |
+| vramfit kquant map + imatrix | 20.21 GiB | 9.251 ± 0.069 | 0.3056 | 77.8 % |
+| vramfit RTN 64k map + imatrix | 20.32 GiB | 9.156 ± 0.068 | 0.2653 | 80.1 % |
 | Q3_K_S heuristic (bartowski) | 20.45 GiB | **8.532 ± 0.064** | **0.1584** | **83.8 %** |
 
 The PPL gap to the baseline is 0.065 — inside one standard error
@@ -1007,14 +1007,14 @@ the f16 base:
 | Model | Size | Fits 20.47 GiB budget | PPL ↓ | Mean KLD ↓ | Same top ↑ |
 |-------|------|----------------------|-------|------------|------------|
 | **G1** = no-2 + `attn_v`@`q5_k` ×44 | 20.46 GiB | **yes** (11.3 MiB under) | 8.650 ± 0.064 | **0.1512** | 83.8 % |
-| quantfit no-2 (eleventh data point) | 20.37 GiB | yes | 8.597 ± 0.064 | 0.1703 | 82.7 % |
+| vramfit no-2 (eleventh data point) | 20.37 GiB | yes | 8.597 ± 0.064 | 0.1703 | 82.7 % |
 | Q3_K_S heuristic (bartowski) | 20.45 GiB | yes | **8.532 ± 0.064** | 0.1584 | **83.8 %** |
 | G2 diagnostic = G1 + output@`q6_k` | 20.84 GiB | no (380 MiB over) | 8.620 ± 0.065 | 0.1368 | 85.5 % |
 
 Bold marks the best in-budget value — G2's better fidelity numbers
 do not compete, because G2 does not fit.
 
-G1 is the first in-budget quantfit artifact to beat the baseline on
+G1 is the first in-budget vramfit artifact to beat the baseline on
 mean KLD — 0.1512 against 0.1584, 4.5 % lower, outside the combined
 error bars — and it matches the baseline's top-token agreement
 (83.81 % against 83.85 %). It loses full-set perplexity, 8.650
@@ -1457,7 +1457,7 @@ new is the finding below.
 Against the baseline the verdict is unambiguous, and stronger
 than any before it: the CLI pack is better on 369 of 564 chunks
 (65 %), the mean gap is 0.0086, and a paired per-chunk test
-puts the difference at 7.8σ — the first time a quantfit
+puts the difference at 7.8σ — the first time a vramfit
 artifact beats the size-matched heuristic beyond argument on
 the window this page says rules.
 
@@ -1610,7 +1610,7 @@ annotated in ADR-0024's open questions.
 
 Hashes answer a different question and must not be confused with
 quality. Hugging Face stores SHA-256 per file, and GGUF embeds
-metadata in-file — those prove *this is the exact file*. quantfit's
+metadata in-file — those prove *this is the exact file*. vramfit's
 fingerprint proves less: it ties a scan checkpoint to that scan's
 recorded provenance, not to content (swapping weights under an
 unchanged path defeats it — content evidence is an open item in
@@ -1668,7 +1668,7 @@ prefix.
 
 The `fit24gib` marker names the VRAM budget the recipe was solved
 for. It sits in the slot single-quant repos give the scheme
-(`<Model>-Q4_K_M-GGUF`) — a quantfit pack has no single scheme, and
+(`<Model>-Q4_K_M-GGUF`) — a vramfit pack has no single scheme, and
 the budget is the claim. No surveyed repo encodes a budget in its
 name (#72). The novelty is deliberate: fit-to-budget is the
 differentiator, and the name should carry it.
@@ -1681,7 +1681,7 @@ convention:
 - `base_model: nvidia/Llama-3_3-Nemotron-Super-49B-v1_5`,
   `base_model_relation: quantized`.
 - `quantized_by: Alberto-Codes`, `pipeline_tag: text-generation`.
-- Tags: `quantfit` (tool tag, precedent: `unsloth`, `gguf-my-repo`),
+- Tags: `vramfit` (tool tag, precedent: `unsloth`, `gguf-my-repo`),
   `gguf`, `imatrix`.
 - No `library_name` — post-2024 GGUF-only repos get no
   auto-detection either way. Revisit only if the "Use this model"

@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import pytest
 
-from quantfit.adapters.inbound.cli_scan import ScanExtraMissingError
-from quantfit.adapters.outbound.json_common import ArtifactError
-from quantfit.domain.errors import QuantfitError
-from quantfit.domain.solver import InfeasibleBudgetError, PinError
+from vramfit.adapters.inbound.cli_scan import ScanExtraMissingError
+from vramfit.adapters.outbound.json_common import ArtifactError
+from vramfit.domain.errors import VramfitError
+from vramfit.domain.solver import InfeasibleBudgetError, PinError
 
 pytestmark = pytest.mark.unit
 
@@ -20,8 +20,8 @@ pytestmark = pytest.mark.unit
     ],
     ids=["pin", "infeasible", "artifact", "extra-missing"],
 )
-def test_every_quantfit_exception_inherits_the_root_and_its_legacy_base(
+def test_every_vramfit_exception_inherits_the_root_and_its_legacy_base(
     exc: type[BaseException], legacy_base: type[BaseException]
 ) -> None:
-    assert issubclass(exc, QuantfitError)
+    assert issubclass(exc, VramfitError)
     assert issubclass(exc, legacy_base)

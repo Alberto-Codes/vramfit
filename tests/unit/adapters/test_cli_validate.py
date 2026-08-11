@@ -5,13 +5,13 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from quantfit.adapters.inbound import cli_validate
-from quantfit.adapters.inbound.cli import app
-from quantfit.adapters.outbound.recipe_json import save_recipe
-from quantfit.adapters.outbound.run_log_jsonl import read_run_log
-from quantfit.domain.model import Assignment, PlanMeta, Recipe
-from quantfit.domain.scan import GroupSpec
 from tests.fakes import MemoryDamageMeter
+from vramfit.adapters.inbound import cli_validate
+from vramfit.adapters.inbound.cli import app
+from vramfit.adapters.outbound.recipe_json import save_recipe
+from vramfit.adapters.outbound.run_log_jsonl import read_run_log
+from vramfit.domain.model import Assignment, PlanMeta, Recipe
+from vramfit.domain.scan import GroupSpec
 
 runner = CliRunner()
 

@@ -8,7 +8,7 @@ status: draft
 > and validate milestones. The mechanical enforcement (import-linter
 > contracts) is real, and every stage below is landed code.
 
-Two architectures coexist in quantfit, at different scales. The big one
+Two architectures coexist in vramfit, at different scales. The big one
 is the pipeline: separate processes connected by versioned JSON files. The
 small one is hexagonal layering inside each process. The big one does
 the heavy lifting.
@@ -19,13 +19,13 @@ the heavy lifting.
 flowchart LR
     W[("model<br/>weights")] --> SCAN
     C[("calibration<br/>text")] --> SCAN
-    SCAN["quantfit scan"] -->|writes| MAP[/"sensitivity.json"/]
-    MAP -->|reads| PLAN["quantfit plan"]
+    SCAN["vramfit scan"] -->|writes| MAP[/"sensitivity.json"/]
+    MAP -->|reads| PLAN["vramfit plan"]
     PLAN -->|writes| RECIPE[/"recipe.json"/]
-    RECIPE -->|reads| VAL["quantfit validate"]
+    RECIPE -->|reads| VAL["vramfit validate"]
     W --> VAL
     VAL -->|reports| GAP["measured vs<br/>predicted damage"]
-    RECIPE -->|reads| PACK["quantfit pack"]
+    RECIPE -->|reads| PACK["vramfit pack"]
     W --> PACK
     PACK -->|writes| OUT[("packed<br/>model (GGUF)")]
     SCAN -.->|checkpoints| CKPT[/"sensitivity.checkpoint.json"/]
@@ -39,7 +39,7 @@ whole recipe through the scan's meter and reports the additivity gap
 ([ADR-0006](../adr/0006-sensitivity-metric.md)).
 
 Each stage is a separate process run. The artifacts between them carry a
-`quantfit_schema` version and survive machine and language boundaries —
+`vramfit_schema` version and survive machine and language boundaries —
 they are the strongest seams in the system
 ([ADR-0008](../adr/0008-hexagonal-architecture.md)). Consequences:
 
@@ -134,7 +134,7 @@ The split of responsibilities:
 The base install carries typer and structlog only
 ([ADR-0005](../adr/0005-heavy-deps-as-extras.md), as amended by
 [ADR-0011](../adr/0011-run-logs-and-error-root.md)). torch, transformers,
-and accelerate arrive with `quantfit[scan]` and are imported in exactly
+and accelerate arrive with `vramfit[scan]` and are imported in exactly
 one package, lazily. This is not only install hygiene: it forces the
 solver and the artifacts to stay pure, which is what makes the pipeline
 diagram above true. Every gate that guards it (import-linter, a ty

@@ -9,21 +9,21 @@ import subprocess
 
 import pytest
 
-from quantfit.adapters.outbound.recipe_json import load_recipe
 from tests.unit.conftest import make_map
+from vramfit.adapters.outbound.recipe_json import load_recipe
 
-QUANTFIT = shutil.which("quantfit")
+VRAMFIT = shutil.which("vramfit")
 
 pytestmark = [
     pytest.mark.e2e,
-    pytest.mark.skipif(QUANTFIT is None, reason="quantfit console script not on PATH"),
+    pytest.mark.skipif(VRAMFIT is None, reason="vramfit console script not on PATH"),
 ]
 
 
 def run(*args: str) -> subprocess.CompletedProcess[str]:
-    assert QUANTFIT is not None
+    assert VRAMFIT is not None
     return subprocess.run(  # noqa: S603 - fixed executable, test-controlled args
-        [QUANTFIT, *args], capture_output=True, text=True, timeout=60, check=False
+        [VRAMFIT, *args], capture_output=True, text=True, timeout=60, check=False
     )
 
 
@@ -87,14 +87,14 @@ def test_scan_without_the_extra_reports_the_install_hint(tmp_path) -> None:
     result = run("scan", "some/model", "--calibration", str(calibration))
 
     assert result.returncode == 1
-    assert "quantfit[scan]" in result.stderr + result.stdout
+    assert "vramfit[scan]" in result.stderr + result.stdout
 
 
 def test_validate_without_the_extra_reports_the_install_hint(tmp_path) -> None:
     if importlib.util.find_spec("torch") is not None:
         pytest.skip("scan extra installed — the ImportError path cannot trigger")
-    from quantfit.adapters.outbound.recipe_json import save_recipe
-    from quantfit.domain.model import Assignment, PlanMeta, Recipe
+    from vramfit.adapters.outbound.recipe_json import save_recipe
+    from vramfit.domain.model import Assignment, PlanMeta, Recipe
 
     recipe_path = tmp_path / "recipe.json"
     save_recipe(
@@ -128,13 +128,13 @@ def test_validate_without_the_extra_reports_the_install_hint(tmp_path) -> None:
     result = run("validate", str(recipe_path), "--calibration", str(calibration))
 
     assert result.returncode == 1
-    assert "quantfit[scan]" in result.stderr + result.stdout
+    assert "vramfit[scan]" in result.stderr + result.stdout
 
 
 def test_pack_flow_with_stub_toolchain_produces_the_packed_file(tmp_path) -> None:
-    from quantfit.adapters.outbound.recipe_json import save_recipe
-    from quantfit.adapters.outbound.run_log_jsonl import read_run_log
-    from quantfit.domain.model import Assignment, PlanMeta, Recipe
+    from vramfit.adapters.outbound.recipe_json import save_recipe
+    from vramfit.adapters.outbound.run_log_jsonl import read_run_log
+    from vramfit.domain.model import Assignment, PlanMeta, Recipe
 
     checkout = tmp_path / "llama.cpp"
     (checkout / "build" / "bin").mkdir(parents=True)

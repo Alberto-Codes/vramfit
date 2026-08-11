@@ -4,11 +4,11 @@ status: draft
 
 # How to fit a model to a VRAM budget
 
-> **Status: draft** — `quantfit plan` and `quantfit budget` are implemented
+> **Status: draft** — `vramfit plan` and `vramfit budget` are implemented
 > and tested, and a planned 49B recipe packed to 20.30 GiB against a
 > 20.47 GiB weight budget and served
 > ([evidence](../explanation/evaluating-packed-models.md)). Run
-> `quantfit validate` between plan and pack — it measures the whole
+> `vramfit validate` between plan and pack — it measures the whole
 > recipe against the prediction.
 
 ## Goal
@@ -31,7 +31,7 @@ fp16 KV the budget drops to 18.94 GiB.
 ## Basic invocation
 
 ```bash
-uv run quantfit plan sensitivity.json \
+uv run vramfit plan sensitivity.json \
   --vram 24GiB \
   --kv-headroom 4GiB \
   --out recipe.json

@@ -23,8 +23,8 @@ import pytest
 torch = pytest.importorskip("torch", reason="scan extra not installed")
 np = pytest.importorskip("numpy", reason="scan extra not installed")
 
-from quantfit.adapters.outbound.scan.kquant import kquant_quantize_dequantize
-from quantfit.adapters.outbound.scan.kquant_assisted import (
+from vramfit.adapters.outbound.scan.kquant import kquant_quantize_dequantize
+from vramfit.adapters.outbound.scan.kquant_assisted import (
     ASSISTED_BITS,
     kquant_assisted_quantize_dequantize,
 )
@@ -161,7 +161,7 @@ class TestRoundTripProperties:
         # that restarted the tiling period would fit every later
         # block against the wrong columns. Chunk 7 puts slice
         # boundaries mid-row (period 2), chunk 8 divides evenly.
-        from quantfit.adapters.outbound.scan import kquant_assisted
+        from vramfit.adapters.outbound.scan import kquant_assisted
 
         torch.manual_seed(0)
         w = torch.randn(8, 512)

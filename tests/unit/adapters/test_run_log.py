@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from quantfit.adapters.inbound.run_log import SafeRunLog
+from vramfit.adapters.inbound.run_log import SafeRunLog
 
 pytestmark = pytest.mark.unit
 

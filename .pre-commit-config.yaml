@@ -51,7 +51,7 @@ repos:
         entry: >-
           env HYPOTHESIS_PROFILE=thorough
           uv run pytest -m "not gpu and not integration"
-          --cov=quantfit --tb=short -q
+          --cov=vramfit --tb=short -q
         language: system
         pass_filenames: false
         always_run: true

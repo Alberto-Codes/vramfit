@@ -78,7 +78,7 @@ Four findings, in order of how much they matter to the solver:
 
 ### What the solver did with it
 
-The same day, `quantfit plan` solved this map at four weight budgets.
+The same day, `vramfit plan` solved this map at four weight budgets.
 The recipe adapts exactly where the map says to spend:
 
 | Weight budget | Recipe mix | Predicted damage |
@@ -152,7 +152,7 @@ against the Qwen findings above:
 
 ### What the solver did with it
 
-`quantfit plan` solved this map for llama.cpp at the real deployment
+`vramfit plan` solved this map for llama.cpp at the real deployment
 budget: 24 GiB card, 16k context at fp8 KV plus runtime overhead
 reserved (3.53 GiB), 20.47 GiB left for weights — ~3.5 effective
 bits/parameter against a model that is ~93 GB at bf16
@@ -260,10 +260,10 @@ approach is right — and it means the honest claim is a differentiated
   same concept [ADR-0014](../adr/0014-per-type-effective-bits.md) reached
   independently), targeting NVIDIA's serving stack.
 - **AWQ / GPTQ** — calibration-aware weight quantization within a uniform
-  target precision; quantfit's selectivity operates a level above (which
+  target precision; vramfit's selectivity operates a level above (which
   precision per group), and can use these as the within-group method.
 
-### Where quantfit stands in that field
+### Where vramfit stands in that field
 
 Four edges survive contact with the landscape, and they compound:
 
@@ -273,7 +273,7 @@ Four edges survive contact with the landscape, and they compound:
    exllamav3, whose measurement pass records per-group KL to a
    reusable file ([prior art](../reference/prior-art.md), surveyed
    2026-07-31) — runtime-locked, without recorded provenance.
-   quantfit's damage is end-to-end KL at the final logits, and the
+   vramfit's damage is end-to-end KL at the final logits, and the
    measurement *is* the product: a versioned, resumable,
    provenance-carrying sensitivity map, with run logs beside it
    ([ADR-0011](../adr/0011-run-logs-and-error-root.md)).

@@ -2,7 +2,7 @@
 [![docs vetted](https://img.shields.io/badge/docs%20vetted-docvet-purple)](https://github.com/Alberto-Codes/docvet)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-# quantfit
+# vramfit
 
 Selective per-layer quantization to fit large open models on a single GPU.
 
@@ -18,7 +18,7 @@ because some parts of a transformer get badly stupid when you crush them.
 **The insight.** Not all layers are equally fragile. Some tolerate 2–3 bits
 with barely a ripple; others (attention projections, first/last blocks) fall
 apart below 6–8 bits. Most published quantized models pick precision by crude
-heuristic. `quantfit` *measures* which layers are which, then solves for the
+heuristic. `vramfit` *measures* which layers are which, then solves for the
 best mixed-precision recipe that fits a *specific* model into a *specific*
 VRAM budget:
 
@@ -83,7 +83,7 @@ all sixteen data points. Publication #1 is live on Hugging Face: the
 and the
 [sensitivity-map dataset](https://huggingface.co/datasets/Alberto-Codes/Llama-3_3-Nemotron-Super-49B-v1_5-sensitivity-maps).
 See
-[Issues](https://github.com/Alberto-Codes/quantfit/issues) for the roadmap.
+[Issues](https://github.com/Alberto-Codes/vramfit/issues) for the roadmap.
 
 ## Requirements
 
@@ -94,8 +94,8 @@ See
 ## Installation
 
 ```bash
-git clone https://github.com/Alberto-Codes/quantfit.git
-cd quantfit
+git clone https://github.com/Alberto-Codes/vramfit.git
+cd vramfit
 uv sync
 ```
 
@@ -103,13 +103,13 @@ uv sync
 
 ```bash
 # Show the CLI
-uv run quantfit --help
+uv run vramfit --help
 
 # The pipeline (heavy steps need the extras: uv sync --extra scan --extra pack)
-quantfit scan MODEL --calibration calib.txt --out sensitivity.json
-quantfit plan sensitivity.json --vram 24GiB --out recipe.json
-quantfit validate recipe.json --calibration calib.txt
-quantfit pack recipe.json --llama-cpp ~/llama.cpp --out packed.gguf
+vramfit scan MODEL --calibration calib.txt --out sensitivity.json
+vramfit plan sensitivity.json --vram 24GiB --out recipe.json
+vramfit validate recipe.json --calibration calib.txt
+vramfit pack recipe.json --llama-cpp ~/llama.cpp --out packed.gguf
 ```
 
 ## Development
