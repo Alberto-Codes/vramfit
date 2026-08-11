@@ -145,6 +145,11 @@ way a second decision store would fork the truth.
   newly surfaced tickets or graduated fog.
 - A decision that invalidates existing tickets updates or closes
   them in the same session.
+- Land every deferral in the tracker before the session ends.
+  Route it to a new ticket, a plain issue, or a comment on the
+  owning ticket. An open question that lives only in prose is
+  untracked. (Added 2026-08-11: chart #70 dropped two deferrals
+  framed as open questions.)
 - Sessions may run in parallel on different tickets. The chart
   body has no lock. Re-read it immediately before writing. Re-read
   after writing to confirm the prior content and the new line both

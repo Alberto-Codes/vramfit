@@ -53,3 +53,7 @@ and do not silently deviate.
 - After resolving, surface any new tickets. Graduate sharpened fog
   out of `## Fog`. Update or close tickets the decision
   invalidated.
+- Land every deferral in the tracker before the session ends.
+  Route it to a new ticket, a plain issue, or a comment on the
+  owning ticket. An open question that lives only in prose is
+  untracked.
