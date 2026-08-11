@@ -64,6 +64,9 @@ status: draft
 > ([the sixteenth data point](#the-sixteenth-data-point-five-tasks-five-ties)).
 > Results ship as an evals sidecar
 > ([ADR-0025](../adr/0025-evals-sidecar.md)).
+> On 2026-08-11 a 25-point conversational probe **could not tell the
+> two artifacts apart** — that tie is the argument for measuring
+> ([the seventeenth data point](#the-seventeenth-data-point-the-probe-that-could-not-tell-them-apart)).
 > The publication gates that consume
 > these evaluations live in [the artifact ecosystem](artifact-ecosystem.md)
 > and issue #11.
@@ -1608,21 +1611,21 @@ annotated in ADR-0024's open questions.
 
 ## The seventeenth data point: the probe that could not tell them apart
 
-This one measures the reader, not the artifact. It ran 2026-08-11,
-after the rename and the v0.1.0 release, to answer a question the
-writeup has to answer: can a person tell the publication candidate
-from the standing baseline by talking to both?
+This one measures what conversation can reveal, not the artifact. It
+ran 2026-08-11, after the rename and the v0.1.0 release, to answer a
+question the writeup has to answer: can a person tell the publication
+candidate from the standing baseline by talking to both?
 
 The answer is no, and the run says so with a tie.
 
 Both artifacts served from the same b10172 Vulkan build behind every
 other number on this page, loaded one at a time through `llama-server`
 at `-ngl 99 -c 8192`, full offload on the reference 4090. Fifteen
-probes went to each, decoded greedily — temperature 0, top-k 1, fixed
-seed — so nothing here is sampling luck. The probes split into three
+prompts went to each, decoded greedily — temperature 0, top-k 1, fixed
+seed — so nothing here is sampling luck. The prompts split into three
 categories, scored 25 points total.
 
-| Category | Probes | Points | Candidate | Baseline Q3_K_S |
+| Category | Prompts | Points | Candidate | Baseline Q3_K_S |
 |---|---|---|---|---|
 | Factual recall (JSON, 3 fields each) | 5 | 15 | 11 | 11 |
 | Acronym expansion | 5 | 5 | 5 | 4 |
@@ -1630,56 +1633,72 @@ categories, scored 25 points total.
 | **Total** | **15** | **25** | **19** | **19** |
 
 **The two artifacts do not merely tie — they agree.** On factual
-recall they scored the same 11 of 15 by making the *same* mistakes:
-both dated Mistral 7B to 2022, Qwen2.5 to 2023, and Gemma 2 to 2023,
-each one year early. Both named the parameter count correctly on all
+recall they scored the same 11 of 15 points by dropping the *same four
+fields*. Three are release years, each one year early: Mistral 7B to
+2022, Qwen2.5 to 2023, Gemma 2 to 2023. The fourth is Qwen2.5's
+developer, where both named the model family instead of Alibaba — the
+candidate said "QwenAI", the baseline said "Qwen". That is the only
+prompt in the category where their answers differ at all, and both
+answers are wrong. Both named the parameter count correctly on all
 five models. On code, both wrote `merge_intervals` with the same
 shallow copy and then mutated the caller's inner lists through it —
-the same defect, on the same line, from the same reasoning. Two
-quantizations that agree on three wrong years and one wrong line are
-not showing their own damage. They are showing the model underneath.
+the same defect, reached by the same reasoning. Two quantizations that
+agree on four wrong fields and one wrong mechanism are not showing
+their own damage. The likeliest reading is the model underneath —
+untested, and the missing control is named below.
 
-The two points that did differ went one each way, and both look like
-coin flips rather than capability. The baseline expanded RoPE as
+The two *scored* points that separated them went one each way. Neither
+is sampling noise, because greedy decoding makes both reproducible.
+But five prompts per category cannot separate a real difference from
+which five prompts got chosen. The baseline expanded RoPE as
 "Relative Position Encoding" instead of Rotary Position Embedding.
 The candidate wrote `dict_keys + dict_keys` in `parse_size`, a Python
 2 habit that raises `TypeError` on contact. Neither failure has a
-family. Neither repeats.
+family in this set, though five prompts per category cannot rule one
+out.
 
 **What this data point may not claim.** It is not a tier and does not
 join the publication procedure. Twenty-five points cannot resolve the
 gap tier 2 measured — a 7.8σ full-window KLD win is a statement about
-how closely the packed artifact tracks the f16 original's output
-distribution, and a distribution is not a thing fifteen questions
-sample. The categories were also chosen adversarially: each one is a
-place where a first informal pass at temperature 0.6 had suggested the
+how much more closely the packed artifact tracks the f16 original's
+output distribution than the baseline does, and a distribution is not
+a thing fifteen questions sample. The categories were also chosen
+adversarially: each one is a place where an earlier informal pass at
+temperature 0.6, whose replies nobody recorded, had suggested the
 baseline led. Under greedy decoding and a tightened prompt, that lead
 did not survive. That is the finding — the apparent gap was noise, and
-one sample per prompt had produced it.
+one sample per prompt had produced it. The selection cuts both ways:
+because the categories are the ones where the baseline had appeared to
+lead, the tie says nothing about categories nobody probed.
 
-**Why record a tie.** Because the writeup (issue #84) has to explain
-why this project built an eval harness at all, and this is the
-cleanest available answer. At equal size, the candidate's advantage is
+**What this changes.** The writeup (issue #84) has to explain why this
+project built an eval harness at all, and this is the cleanest
+available answer. At equal size, the candidate's advantage is
 invisible to conversation. A reader who downloads both and chats with
 them will find nothing, conclude the recipe bought nothing, and be
-wrong. Tier 2 sees the difference because it measures the whole output
-distribution against the f16 reference. Tier 3 certifies that the
-difference costs no capability. Neither result is reachable by reading
-answers and forming an impression, which is precisely the ecosystem
-habit the scoreboard exists to replace.
+wrong about what was measured. Tier 2 sees the difference because it
+measures the whole output distribution against the f16 reference.
+Tier 3 certifies that the difference costs no capability. Neither
+result is reachable by reading answers and forming an impression,
+which is precisely the ecosystem habit the scoreboard exists to
+replace.
 
 One control this run did not have: the f16 original never answered the
-same fifteen probes. That would test the inference above — that the
-shared wrong years come from the base model rather than from either
-quantization — and it remains unverified. The f16 is 99.7 GB and does
-not fit the 24 GiB card, so the check needs a CPU or offload lane and
-its own night.
+same fifteen prompts. That would test the inference above — that the
+shared wrong fields come from the base model rather than from either
+quantization — and it remains unverified (issue #143). The f16 is
+92.9 GiB and does not fit the 24 GiB card, so the check needs a CPU or
+offload lane and its own night.
 
-Raw receipts: `eval/probe-2026-08-11/` holds the probe set and ground
+Raw receipts: `eval/probe-2026-08-11/` holds the prompt set and ground
 truth (`prompts.py`), the runner (`run_batch.py`), the scorer with its
 executed test suite (`score.py`), both artifacts' full replies with
-per-probe token counts and wall-clock (`out-candidate.json`,
-`out-baseline.json`), and the scored output (`score.console.log`).
+per-prompt token counts and wall-clock (`out-candidate.json`,
+`out-baseline.json`), the scored output (`score.console.log`), both
+`llama-server` logs, the served artifacts' paths and SHA-256s
+(`artifacts.json` — the candidate's `48271199…0122` is the published
+file), and `SHA256SUMS` over the set. The unrecorded earlier pass left
+only its runner (`informal-pass-runner.sh`).
 
 ## Provenance is not evidence
 
@@ -1885,9 +1904,9 @@ either. Numbers without framing invite the hostile reading.
   hand layout turned out to carry a knife edge (chunk 137) that
   the sibling does not.
 - Whether the f16 original answers the seventeenth data point's
-  fifteen probes the way both quantizations did. The candidate and
-  the baseline returned the same three wrong release years and the
-  same shallow-copy defect, which reads as inherited from the base
-  model rather than caused by either pack. Nothing has tested that
-  reading. The f16 is 99.7 GB and does not fit the 24 GiB card, so
-  the control needs a CPU or offload lane.
+  fifteen prompts the way both quantizations did (issue #143). The
+  candidate and the baseline dropped the same four factual fields and
+  wrote the same shallow-copy defect, which reads as inherited from
+  the base model rather than caused by either pack. Nothing has tested
+  that reading. The f16 is 92.9 GiB and does not fit the 24 GiB card,
+  so the control needs a CPU or offload lane.
