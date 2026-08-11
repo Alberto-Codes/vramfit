@@ -2,6 +2,10 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-28 (accepted 2026-07-28)
+- **Amendment (2026-08-11):** decision 2's `quantfit_runlog` key
+  becomes `vramfit_runlog` when the tool renames to vramfit (#118,
+  chart #114). The run-log version bumps with it. The rename
+  executes in #120.
 
 ## Context
 

@@ -364,6 +364,15 @@ change.
     never carry. Run logs carry `quantfit_runlog` instead, versioning
     one event line rather than a whole document.
 
+> **Ruled 2026-08-11 (#118).** Both envelope keys rename with the
+> tool when quantfit becomes vramfit (chart #114). `quantfit_schema`
+> becomes `vramfit_schema`, and `quantfit_runlog` becomes
+> `vramfit_runlog`. The key rename is a breaking change. Every
+> schema version bumps, including the run-log version. The rename
+> PR (#120) reads only the new keys: one term per concept. The
+> re-upload task (#121) then edits the published HF files in place,
+> re-hashes, and re-uploads them.
+
 ## Planning
 
 **Chart**
