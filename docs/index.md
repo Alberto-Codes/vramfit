@@ -29,9 +29,10 @@ under the title:
 | `draft` | Partially backed by working code or real measurements; details may still shift. |
 | `stable` | Verified against the current state of `main`. |
 
-Milestone decks under `docs/decks/` are dated point-in-time
-snapshots. They carry no status field and do not track current
-code.
+Every deck under `docs/decks/` describes the present state. A deck names
+a release instead of a date and carries no status field. The
+[deck conventions](decks/index.md) page carries a status like any other
+page.
 
 The rule of thumb: a `sketch` page records what we *think we know* — it is a
 design artifact, not a promise. Pages are promoted (`sketch → draft → stable`)
