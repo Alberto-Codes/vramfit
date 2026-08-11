@@ -7,6 +7,14 @@ in the header, and open questions stay live — they accrete
 measurements and strikethroughs. A full change of course gets a *new*
 ADR that supersedes the old one.
 
+> **Ruled 2026-08-11 (#119).** The tool renames from quantfit to
+> vramfit (chart #114). Records dated before 2026-08-11 keep the old
+> name. An Accepted body is immutable, and dated bullets quote
+> quantfit-era decisions verbatim. Records dated on or after
+> 2026-08-11 use vramfit. The compiled decks in docs/decks are dated
+> artifacts and keep the old name. Living pages, including the
+> glossary and README, rewrite when #120 executes.
+
 ## Lifecycle
 
 | Status | Meaning |
