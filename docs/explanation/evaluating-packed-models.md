@@ -1620,9 +1620,9 @@ The answer is no, and the run says so with a tie.
 
 Both artifacts served from the same b10172 Vulkan build behind every
 other number on this page, loaded one at a time through `llama-server`
-at `-ngl 99 -c 8192`, full offload on the reference 4090. Fifteen
-prompts went to each, decoded greedily — temperature 0, top-k 1, fixed
-seed — so nothing here is sampling luck. The prompts split into three
+at `-ngl 99 -c 8192`, full offload on the reference box. Fifteen
+prompts went to each, decoded greedily — temperature 0, top-k 1, seed
+1234 — so nothing here is sampling luck. The prompts split into three
 categories, scored 25 points total.
 
 | Category | Prompts | Points | Candidate | Baseline Q3_K_S |
