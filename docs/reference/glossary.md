@@ -364,6 +364,15 @@ change.
     never carry. Run logs carry `quantfit_runlog` instead, versioning
     one event line rather than a whole document.
 
+    Ruled 2026-08-11
+    ([#118](https://github.com/Alberto-Codes/quantfit/issues/118)):
+    both envelope keys rename with the tool. `quantfit_schema`
+    becomes `vramfit_schema`, and `quantfit_runlog` becomes
+    `vramfit_runlog`. The key rename is a breaking change, so every
+    artifact schema bumps. Sessions edit the published HF files in
+    place, re-hash, and re-upload them (#121). No reader accepts the
+    old keys: one term per concept.
+
 ## Planning
 
 **Chart**
