@@ -1,0 +1,153 @@
+name: Publish to PyPI
+
+# Triggered when release-please (or a manual tag push) creates a version tag.
+# Requires RELEASE_PLEASE_TOKEN (PAT with repo scope) in release-please.yml —
+# tags created by GITHUB_TOKEN do NOT trigger other workflows.
+on:
+  push:
+    tags:
+      - "v*"
+
+# Least-privilege: read-only by default. The publish job escalates for itself.
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-${{ github.ref_name }}
+  cancel-in-progress: false # never cancel an in-flight publish
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Build — produce sdist + wheel, validate contents, smoke test install.
+  # ---------------------------------------------------------------------------
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      # Pin the interpreter rather than trust the runner image, matching
+      # ci.yml. The wheel is py3-none-any, so this fixes the build
+      # environment, not the artifact.
+      - run: uv python install 3.12
+
+      - name: Build package
+        run: uv build --no-sources
+
+      - name: Smoke test wheel contents
+        run: |
+          WHEEL=$(ls dist/*.whl)
+          SIZE=$(stat --format=%s "$WHEEL")
+          if [ "$SIZE" -gt 512000 ]; then
+            echo "::error::Wheel size ${SIZE} bytes exceeds 500KB limit"
+            exit 1
+          fi
+          echo "Wheel size: ${SIZE} bytes — OK"
+
+          CONTENTS=$(unzip -l "$WHEEL")
+          for UNWANTED in "tests/" "docs/" "scripts/"; do
+            if echo "$CONTENTS" | grep -q "$UNWANTED"; then
+              echo "::error::Wheel contains ${UNWANTED}"
+              exit 1
+            fi
+          done
+          if ! echo "$CONTENTS" | grep -q "vramfit/py.typed"; then
+            echo "::error::Wheel omits the py.typed marker"
+            exit 1
+          fi
+          echo "Wheel contents clean — OK"
+
+      # ADR-0005: the base install carries typer and structlog only. The GPU
+      # stack lives behind the scan and pack extras.
+      - name: Verify the base install carries no GPU dependency
+        run: |
+          WHEEL=$(ls dist/*.whl)
+          METADATA=$(unzip -p "$WHEEL" '*.dist-info/METADATA')
+          BASE=$(echo "$METADATA" | grep '^Requires-Dist:' | grep -v 'extra ==' || true)
+          echo "Base requirements:"
+          echo "$BASE"
+          # An empty result means the metadata never parsed. Without this the
+          # grep below passes on nothing and reports a torch-free build.
+          if [ -z "$BASE" ]; then
+            echo "::error::Read no unconditional Requires-Dist from the wheel metadata"
+            exit 1
+          fi
+          if echo "$BASE" | grep -qE 'torch|transformers|accelerate|safetensors|gguf'; then
+            echo "::error::A GPU dependency escaped an extra into the base install (ADR-0005)"
+            exit 1
+          fi
+          echo "Base install is torch-free — OK"
+
+      - name: Verify version matches tag
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          TOML_VERSION=$(grep '^version' pyproject.toml | head -1 | sed 's/.*"\(.*\)"/\1/')
+          if [ "$TAG_VERSION" != "$TOML_VERSION" ]; then
+            echo "::error::Tag version ${TAG_VERSION} does not match pyproject.toml version ${TOML_VERSION}"
+            exit 1
+          fi
+          echo "Version ${TAG_VERSION} matches — OK"
+
+      - name: Install and verify wheel
+        run: |
+          uv venv /tmp/smoke --python 3.12
+          SMOKE=/tmp/smoke/bin
+          uv pip install --python "$SMOKE/python" dist/*.whl
+          INSTALLED=$("$SMOKE/vramfit" version)
+          echo "Installed version: $INSTALLED"
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if [[ "$INSTALLED" != *"$TAG_VERSION"* ]]; then
+            echo "::error::Installed version '$INSTALLED' doesn't contain tag version '$TAG_VERSION'"
+            exit 1
+          fi
+          echo "Version match — OK"
+          # The plan step stays importable without torch (ADR-0005). This venv
+          # holds the base install only, so the help text proves it.
+          "$SMOKE/vramfit" plan --help > /dev/null
+          "$SMOKE/vramfit" budget --help > /dev/null
+          echo "CLI entry point — OK"
+
+      - name: Upload dist artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+      - run: uv cache prune --ci
+        if: always()
+        continue-on-error: true
+
+  # ---------------------------------------------------------------------------
+  # Publish to PyPI — production release.
+  # Uses OIDC trusted publishing (no stored tokens).
+  # ---------------------------------------------------------------------------
+  publish-pypi:
+    needs: [build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: pypi
+    permissions:
+      id-token: write
+      contents: read
+      attestations: write
+    steps:
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: false
+          ignore-empty-workdir: true
+      - name: Download dist artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to PyPI
+        run: uv publish --trusted-publishing always --check-url https://pypi.org/simple/
+
+      - name: Attest build provenance
+        uses: astral-sh/attest-action@v0.0.5
+        with:
+          paths: dist/*
