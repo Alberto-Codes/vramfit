@@ -126,7 +126,12 @@ are the record.
   above.**
 - ~~`license_link` URL.~~ **Verified 2026-08-10 (#82): HTTP 200, no
   redirect.**
-- Sensitivity-map dataset link is a placeholder until #85.
+- ~~Sensitivity-map dataset link is a placeholder until #85.~~
+  **Resolved 2026-08-10 (#85): the dataset repo
+  `Alberto-Codes/Llama-3_3-Nemotron-Super-49B-v1_5-sensitivity-maps`
+  exists, private until ship. The card links it. File list and
+  SHA-256s live in the dataset card
+  (`publication/maps-dataset/README.md`) and on the #85 record.**
 - ~~The guardrails section is empty until #86.~~ Resolved 2026-08-10:
   comply-and-disclose stance (#86). The section cites the tables and
   adds no numbers, so it needs no ledger rows.
