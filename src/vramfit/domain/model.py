@@ -174,9 +174,11 @@ class ImatrixCountSummary:
 
     Attributes:
         minimum (int): The group's smallest imatrix count.
-        median (float): The middle count. An even member count
-            averages the two middle values, so the field is a float
-            even though every count is an integer.
+        median (float): The middle count, always a float. An even
+            member count averages the two middle values, so the
+            field cannot be an integer. An odd one lands on a whole
+            number, and construction casts it so the artifact writes
+            one type for every group.
         maximum (int): The group's largest imatrix count.
         covered (int): How many of the group's members the imatrix
             covers, which is how many counts the other three reduce.
@@ -202,7 +204,13 @@ class ImatrixCountSummary:
     covered: int
 
     def __post_init__(self) -> None:
-        """Enforce the invariants the four numbers must satisfy.
+        """Coerce the median to a float and enforce the invariants.
+
+        The median is stored as a float however it arrives. An odd
+        member count has a whole number in the middle, so a caller
+        that computes one hands over an ``int`` — and the artifact
+        would then write ``18114`` for one group and ``18114.5`` for
+        the next. Equality hides it, because ``18114 == 18114.0``.
 
         Raises:
             ValueError: If any count is negative, ``median`` is not
@@ -217,6 +225,7 @@ class ImatrixCountSummary:
             raise ValueError("minimum must not be negative")
         if not math.isfinite(self.median):
             raise ValueError("median must be finite")
+        object.__setattr__(self, "median", float(self.median))
         if not self.minimum <= self.median <= self.maximum:
             raise ValueError("minimum, median, and maximum must be ordered")
         if self.covered <= 0:

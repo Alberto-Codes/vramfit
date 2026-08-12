@@ -461,6 +461,18 @@ class TestImatrixCounts:
         with pytest.raises(ArtifactError, match="covered"):
             map_from_dict(raw)
 
+    def test_the_written_median_is_always_a_float(self) -> None:
+        # An odd member count puts a whole number in the middle. The
+        # artifact must not write 18114 for one group and 18114.5
+        # for the next — a reader cannot tell the two apart by type.
+        raw = self.make_counted_dict()
+        raw["groups"][0]["imatrix_counts"]["median"] = 18_114
+
+        written = map_to_dict(map_from_dict(raw))["groups"][0]["imatrix_counts"]
+
+        assert isinstance(written["median"], float)
+        assert '"median": 18114.0' in json.dumps(written, indent=2)
+
     def test_covered_records_how_many_counts_reduced(self) -> None:
         # 3 counts of a 128-expert stack must not read like a small
         # stack covered whole.

@@ -178,6 +178,23 @@ class TestImatrixCountSummary:
             192_191,
         )
 
+    @pytest.mark.parametrize(
+        "counts",
+        [[426, 18_114, 192_191], [4, 2], [421_370]],
+        ids=["odd", "even", "one"],
+    )
+    def test_median_is_a_float_whatever_the_member_count(self, counts) -> None:
+        # An odd member count has a whole number in the middle, and
+        # statistics.median hands back the int. The artifact would
+        # then write 18114 for one group and 18114.5 for the next.
+        # Equality hides it: 18114 == 18114.0.
+        assert isinstance(ImatrixCountSummary.from_counts(counts).median, float)
+
+    def test_an_integer_median_is_stored_as_a_float(self) -> None:
+        assert isinstance(
+            ImatrixCountSummary(minimum=1, median=2, maximum=3, covered=3).median, float
+        )
+
     def test_from_counts_sizes_the_summary_by_its_members(self) -> None:
         # 3 counts of a 128-expert stack must not read like a small
         # stack covered whole.
