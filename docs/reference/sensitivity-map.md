@@ -59,10 +59,17 @@ below remain, the sub-4-bit pricing claims do not.
   `quantfit_schema` with the tool (#118). The reader accepts only
   the new key at version 2. A schema-1 map migrates with a key
   rename plus a version bump, or a re-scan. The #134 ruling froze
-  the 49B run root as a pre-rename archive, so migrate a copy and
-  leave the archive alone. A load check read all nine of its
-  schema-1 maps on 2026-08-11: 82 groups each
+  the 49B run root as a pre-rename archive. Migrate a copy. Never
+  edit the archive. A #134 load check read all nine of its schema-1
+  maps on 2026-08-11: 82 groups each
   ([card ledger](../../publication/model-card/card-ledger.md)).
+
+  A scan checkpoint carries the same envelope and migrates the same
+  way, at its own version 2. The reader then compares `fingerprint`
+  against the running scan. That fingerprint stores the model,
+  calibration, and imatrix paths as the invocation spelled them, so
+  a resume must reproduce the original command line. A rename of any
+  of those paths invalidates every checkpoint that names them.
 - **`sensitivity`** — divergence of the perturbed model's output from the
   full-precision reference, measured per
   [ADR-0006](../adr/0006-sensitivity-metric.md) (mean final-logits KL).

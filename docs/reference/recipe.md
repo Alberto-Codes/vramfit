@@ -76,11 +76,12 @@ below remain, the sub-4-bit pricing claims do not.
 
 - **`vramfit_schema`** — 6 since the envelope key renamed from
   `quantfit_schema` with the tool (#118). The reader accepts only
-  the new key at version 6, so schema-5 recipes need a re-plan.
+  the new key at version 6.
   5 stopped no-op protection pairs from resolving (issue #59): a
   schema-4 reader rejects a protection record with zero pairs, and
   a schema-4 recipe can carry no-op pairs that falsely fail the
-  reconstruction check — re-plan it.
+  reconstruction check. Re-plan such a recipe unless it carries no
+  no-op pair. See **Migrating an old recipe** below.
   4 added imatrix exclusions
   ([ADR-0023](../adr/0023-imatrix-exclusions.md)); 3 added protections
   ([ADR-0022](../adr/0022-within-layer-protections.md)). A reader that
@@ -88,15 +89,6 @@ below remain, the sub-4-bit pricing claims do not.
   different artifact than the recipe intends — ADR-0013 ruled that
   case breaking. Schema versions advance per artifact — the
   sensitivity map sits at 2.
-- **Migrating an old recipe.** The #134 ruling measured the schema-4
-  case. A schema-4 recipe that carries no no-op protection pair
-  stamps to version 6 and loads, so it needs no re-plan.
-  `recipe-g1c-replication.json` in the 49B run root qualifies: it
-  protects 48 tensors at 5 bits inside 3-bit groups. A schema-2
-  recipe never qualifies. It predates `protections` and fails with
-  `$.plan: missing required field "protections"`. Re-plan that one.
-  The [card ledger](../../publication/model-card/card-ledger.md)
-  carries the ruling and the archive rule.
 - **`runtime`** — the target runtime the plan was made for, or null for
   an unconstrained plan. `vramfit plan` always sets it. The solver
   filtered its candidates to this runtime's capability, and pack
@@ -162,3 +154,21 @@ below remain, the sub-4-bit pricing claims do not.
   starting state (all groups at highest precision, pinned groups at their
   pin) reproduces the assignments exactly. This is the human-readable
   answer to "why did this group end up at 4-bit?".
+
+## Migrating an old recipe
+
+Migrate a copy. Never edit the original.
+
+Version 6 differs from 5 by the envelope key alone. Rename the key,
+then stamp version 6. A schema-5 recipe always migrates this way.
+
+A schema-4 recipe migrates the same way when its protections resolve
+to real pairs. Re-plan a schema-4 recipe that carries a no-op pair,
+because version 5 stopped those pairs from resolving (issue #59).
+
+A schema-2 recipe never migrates. It predates `protections`, so a
+stamped copy fails with `$.plan: missing required field
+"protections"`. Re-plan it.
+
+The [card ledger](../../publication/model-card/card-ledger.md)
+records the 49B case that #134 measured.
