@@ -237,7 +237,7 @@ gh issue close <n>
   automated first (`.claude/skills/chart-triage/`), proven by
   repetition inside chart #70. Full charting automation still
   waits for the second or third chart.
-- **CLAUDE.md pointer.** Resolved 2026-08-12: this page reached `draft`
-  and CLAUDE.md gained a `## Charting` section pointing here. Original
-  note: add one when this page reaches `draft`, not
-  before — the trust rules forbid building on a sketch.
+- **CLAUDE.md pointer.** Add one when this page reaches `draft`, not
+  before — the trust rules forbid building on a sketch. Resolved
+  2026-08-12: this page reached `draft`, and CLAUDE.md gained a
+  `## Charting` section pointing here.

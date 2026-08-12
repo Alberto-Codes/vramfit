@@ -117,8 +117,8 @@ Pyramid per ADR-0009, rules in `.claude/rules/pytest.md`:
 ## Charting: work bigger than one session
 
 Efforts that span many sessions get a **chart** — one GitHub issue,
-label `chart`, that indexes the route. Decision tickets hang off it as
-sub-issues. The convention lives in
+label `chart`, that indexes the route. Decision, task, and research
+tickets attach to it as sub-issues. The convention lives in
 [docs/explanation/charting.md](docs/explanation/charting.md), and
 `.claude/rules/charting.md` enforces the load-bearing rules.
 
@@ -128,7 +128,7 @@ amendment, a scoreboard data point, or a docs change. The chart indexes.
 The records carry the truth.
 
 Read the convention page before charting or working a chart ticket.
-Ignore both files in every other session.
+Ignore the rules file in every other session.
 
 ## Branching & Commits
 

@@ -14,7 +14,8 @@ Read that page before charting or working a ticket. The page is the
 source. This file only enforces the load-bearing rules.
 
 Chart #70 was the proving run. It reached its Destination and closed
-on 2026-08-12, and every rule below survived it. When a rule fights
+on 2026-08-12. The rules below carry its findings, several written
+mid-run after the convention failed. When a rule fights
 reality, flag the conflict to the maintainer. Do not silently obey
 and do not silently deviate.
 

@@ -1,10 +1,10 @@
 ---
-status: stable
+status: draft
 ---
 
 # Evaluating packed models: the endgame scoreboard
 
-> **Status: stable** — tiers 1 and 2 ran for real on 2026-07-28,
+> **Status: draft** — tiers 1 and 2 ran for real on 2026-07-28,
 > against the first packed model and again against the
 > runtime-capability mix (Qwen2.5-3B, see
 > [the first data point](#the-first-data-point) and
@@ -70,8 +70,10 @@ status: stable
 > The publication gates that consume
 > these evaluations live in [the artifact ecosystem](artifact-ecosystem.md)
 > and issue #11.
-> Promoted to `stable` 2026-08-12: publication #1 shipped on this
-> evidence, and the public writeup cites this page as its record.
+> Note 2026-08-12: publication #1 shipped on this evidence, and the
+> public writeup cites this page as its record. The page stays
+> `draft` — the f16 control below (#143) is open, and no `stable`
+> page in this repo carries an open question.
 
 Scanning and planning happen inside vramfit's own frame: damage,
 measured per cell, on our calibration set. The moment a packed model
