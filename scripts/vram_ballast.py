@@ -1,16 +1,18 @@
-r"""Hold a CUDA ballast allocation so a run sees a smaller VRAM budget.
+r"""Hold a CUDA ballast allocation so a run sees less free VRAM.
 
 The RTX 4090 carries no hardware memory partition, so the 12 GiB serve
 test runs on a full 24 GiB card under a ballast process (#164). One
 process holds an allocation, and every other process sees the remainder.
-A CUDA allocation lowers the Vulkan heap budget too, because both
-backends draw on one physical pool.
+A CUDA allocation lowers the Vulkan heap too, because both backends draw
+on one physical pool.
 
 The script calls the CUDA driver through ``ctypes``. It needs no torch.
-ADR-0005 keeps torch behind the ``scan`` extra, and the serve test must
-not pull the heavy stack into a path that does not need it. The script
-imports the standard library only, so it runs under any Python 3.12 or
-newer interpreter, inside the project venv or outside it.
+ADR-0005 keeps torch behind the ``scan`` extra, so the project venv
+carries no torch, and the #164 snippet cannot run there without
+installing that extra. The serve test proves a pack fits and generates.
+It has no reason to pull the training stack in. This script imports the
+standard library only, so it runs under any Python 3.12 or newer
+interpreter, inside the project venv or outside it.
 
 The ballast is sized from **free** memory, never from total. The script
 creates its CUDA context first and measures free memory after that, so
@@ -23,15 +25,21 @@ The cap sets **visible free VRAM**, which is not the weight budget of
 KV cache and runtime overhead. A 12288 MiB cap holds a smaller weight
 budget inside it.
 
+The printed number is device-wide free VRAM, measured from the ballast's
+own context. A Vulkan runtime such as llama.cpp sees all of it. A CUDA
+child pays its own context cost out of it first, and measured 11894 MiB
+under a 12286 MiB cap.
+
 Examples:
     Cap a llama.cpp device query at 12 GiB:
 
     ```console
     $ python3 scripts/vram_ballast.py --target-mib 12288 -- \\
-        ~/quantfit-runs/llama-vulkan/llama-cli --list-devices
-    ballast: device 0 free 22504 MiB, held 10216 MiB, visible 12286 MiB
+        llama-cli --list-devices
+    ballast: device 0 free 22351 MiB, held 10063 MiB, visible 12287 MiB
     Available devices:
-      Vulkan0: NVIDIA GeForce RTX 4090 (24564 MiB, 12286 MiB free)
+      Vulkan0: NVIDIA GeForce RTX 4090 (24564 MiB, 12287 MiB free)
+      Vulkan1: AMD Ryzen 7 7800X3D … (64471 MiB, 64436 MiB free)
     ```
 
     Hold the cap for a manual run, then release it with Ctrl-C:
@@ -39,11 +47,6 @@ Examples:
     ```console
     $ python3 scripts/vram_ballast.py --target-mib 12288
     ```
-
-Note:
-    Send the signal to this script, not to a launcher that wraps it.
-    ``uv run`` does not forward SIGTERM to the interpreter it starts, so
-    a hold started that way outlives the signal and keeps the ballast.
 """
 
 from __future__ import annotations
