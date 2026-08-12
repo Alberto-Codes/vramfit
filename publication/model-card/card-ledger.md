@@ -137,6 +137,68 @@ sidecar `artifact.sha256` values match the download receipts in
 2026-08-10. No re-hash is possible without a re-download — the receipts
 are the record.
 
+## The run root is a frozen archive (#134, 2026-08-11)
+
+The run root does not re-key. It stays a pre-rename archive, and a
+reader migrates a copy on load. The files keep their pre-rename keys
+and their pre-rename hashes, so the "Local source" column above stays
+true.
+
+The reason is the schema version, not the key. Every run-root artifact
+predates the rename by several schema generations:
+
+| Artifact | Run-root version | Reader version |
+|---|---|---|
+| Sensitivity map (5 files) | 1 | 2 |
+| Scan checkpoint (5 files) | 1 | 2 |
+| Recipe (7 files) | 2 | 6 |
+| Recipe `recipe-g1c-replication.json` | 4 | 6 |
+| Evals sidecar (5 files) | 1 | 2 |
+| Analysis artifact | 1 | 2 |
+
+A key rename alone repairs nothing. Measured on 2026-08-11: a re-keyed
+`recipe-g1c-replication.json` fails with `unsupported schema version 4
+— this vramfit reads version 6`, and a re-keyed schema-1 map fails with
+`unsupported schema version 1 — this vramfit reads version 2`. The
+rejection moves from the key to the version. The session still cannot
+re-plan, and the ledger loses the hashes that tie each published file
+to its source.
+
+### How a reader migrates a copy
+
+Edit a copy. Never the archive.
+
+- **Sensitivity maps.** Rename the key and stamp version 2, per
+  [the map format page](../../docs/reference/sensitivity-map.md).
+  Verified 2026-08-11: all five maps load, 82 groups each.
+- **`recipe-g1c-replication.json`.** Rename the key and stamp version
+  6. Verified 2026-08-11: it loads. The stamp is honest because the
+  recipe carries 48 protected tensors and no no-op protection pair —
+  the schema-5 condition the [recipe page](../../docs/reference/recipe.md)
+  names. Prefer the published copy: the Hub already serves this file
+  migrated, as `recipe.json` at
+  `75f36c1835c9f768ef03da3160db9a44d95205b8da8f18d966c6f60dcf92b9b6`.
+  Its content matches the local source at every field except the
+  envelope.
+- **The seven schema-2 recipes.** These do not migrate. They predate
+  `plan.protections` ([ADR-0022](../../docs/adr/0022-within-layer-protections.md)),
+  so a stamped copy fails with `$.plan: missing required field
+  "protections"`. A version stamp would claim a field the run never
+  recorded. Re-plan instead.
+- **Sidecars, the analysis artifact, and the run logs.** No migration
+  is needed. `evals_sidecar_json` and `run_log_jsonl` write only —
+  vramfit has no loader for either, so these files never reach the
+  envelope check. `eval/analysis/make-paired-analysis.py` is a
+  standalone generator in the run root, not a vramfit reader. Its
+  output keeps reproducing `38032b73…`, and the published
+  `90d0b813…` stays the migrated copy.
+
+The envelope-key guard in
+`vramfit.adapters.outbound.json_common` stays. The archive is its
+subject: 29 files on the reference box carry `quantfit_schema`
+permanently, and a session that points a reader at one gets a message
+naming the rename and #118 instead of a bare missing-field error.
+
 ## Other open flags
 
 - ~~Repo identity: v1 vs v1_5.~~ **Resolved 2026-08-10 (#82): the
