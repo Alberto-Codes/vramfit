@@ -15,8 +15,13 @@ newer interpreter, inside the project venv or outside it.
 The ballast is sized from **free** memory, never from total. The script
 creates its CUDA context first and measures free memory after that, so
 the context's own cost comes out of the ballast. The driver rounds the
-allocation up, which leaves the budget 1 to 2 MiB under the target. The
-printed budget is the measured number, not the requested one.
+allocation up, which leaves 1 to 2 MiB less visible than the target. The
+printed number is the measured one, not the requested one.
+
+The cap sets **visible free VRAM**, which is not the weight budget of
+``docs/reference/glossary.md``. Visible free VRAM still has to cover the
+KV cache and runtime overhead. A 12288 MiB cap holds a smaller weight
+budget inside it.
 
 Examples:
     Cap a llama.cpp device query at 12 GiB:
@@ -24,7 +29,7 @@ Examples:
     ```console
     $ python3 scripts/vram_ballast.py --target-mib 12288 -- \\
         ~/quantfit-runs/llama-vulkan/llama-cli --list-devices
-    ballast: device 0 free 22504 MiB, held 10216 MiB, budget 12286 MiB
+    ballast: device 0 free 22504 MiB, held 10216 MiB, visible 12286 MiB
     Available devices:
       Vulkan0: NVIDIA GeForce RTX 4090 (24564 MiB, 12286 MiB free)
     ```
@@ -65,7 +70,7 @@ class CudaDriverError(RuntimeError):
 class CudaBallast:
     """A CUDA context that holds one allocation until it is released.
 
-    The class binds the six driver entry points the ballast needs. Every
+    The class binds the driver entry points the ballast needs. Every
     binding declares ``argtypes``, because a byte count above 2 GiB
     truncates through the default ``c_int`` marshalling.
     """
@@ -188,13 +193,29 @@ class CudaBallast:
         self._pointer = pointer
 
     def release(self) -> None:
-        """Free the allocation and destroy the context. Safe to repeat."""
+        """Free the allocation and destroy the context. Safe to repeat.
+
+        Release runs on the way out of a failed run, so it reports a
+        driver failure to stderr rather than raise over the original
+        error. A failed free leaves the card short, and the operator
+        needs to read that in the run log.
+        """
         if self._pointer is not None:
-            self._lib.cuMemFree_v2(self._pointer)
+            self._report(self._lib.cuMemFree_v2(self._pointer), "cuMemFree")
             self._pointer = None
         if self._context is not None:
-            self._lib.cuCtxDestroy_v2(self._context)
+            self._report(self._lib.cuCtxDestroy_v2(self._context), "cuCtxDestroy")
             self._context = None
+
+    def _report(self, result: int, call: str) -> None:
+        """Print a driver failure to stderr without raising."""
+        if result == CUDA_SUCCESS:
+            return
+        print(
+            f"error: {call} failed with CUresult {result} — the card may "
+            "still hold the ballast",
+            file=sys.stderr,
+        )
 
 
 def size_ballast(free_bytes: int, target_bytes: int) -> int:
@@ -202,7 +223,7 @@ def size_ballast(free_bytes: int, target_bytes: int) -> int:
 
     Args:
         free_bytes: Free device memory, measured after the context exists.
-        target_bytes: The budget the run must see.
+        target_bytes: The free VRAM the run must see.
 
     Returns:
         The ballast size in bytes.
@@ -225,38 +246,79 @@ def size_ballast(free_bytes: int, target_bytes: int) -> int:
 def run_command(command: list[str]) -> int:
     """Run the capped command and forward the watched signals to it.
 
+    The handlers install before the child starts. A signal that arrives
+    in between has no child to reach, so the handler records it and the
+    function delivers it once the child exists. Installing the handlers
+    after the child would leave a window where the default disposition
+    kills this process and orphans an uncapped child.
+
     Args:
         command: The argument vector to execute.
 
     Returns:
-        The child's exit code, or 127 when the command does not exist.
+        The child's wait status as a shell reports it: its exit code,
+        128 plus the signal number when a signal killed it, or 127 when
+        the command does not exist.
     """
-    try:
-        child = subprocess.Popen(command)  # noqa: S603 — the caller names the command
-    except (OSError, ValueError) as exc:
-        print(f"error: cannot run {command[0]}: {exc}", file=sys.stderr)
-        return EXIT_COMMAND_NOT_FOUND
+    child: subprocess.Popen[bytes] | None = None
+    pending: int | None = None
 
     def forward(number: int, _frame: object) -> None:
-        child.send_signal(number)
+        nonlocal pending
+        if child is None:
+            pending = number
+        else:
+            child.send_signal(number)
 
     previous = {number: signal.signal(number, forward) for number in _WATCHED_SIGNALS}
     try:
-        return child.wait()
+        try:
+            child = subprocess.Popen(command)  # noqa: S603 — the caller names it
+        except (OSError, ValueError) as exc:
+            print(f"error: cannot run {command[0]}: {exc}", file=sys.stderr)
+            return EXIT_COMMAND_NOT_FOUND
+        if pending is not None:
+            child.send_signal(pending)
+        return exit_status(child.wait())
     finally:
         for number, handler in previous.items():
             signal.signal(number, handler)
 
 
+def exit_status(wait_result: int) -> int:
+    """Convert a ``Popen.wait`` result to a shell exit status.
+
+    ``wait`` returns the negated signal number when a signal killed the
+    child. Passing that to ``SystemExit`` masks it to 241 for SIGTERM,
+    where a shell reports 143. The harness runs under ``systemd-run``,
+    which reads this status to decide why a unit failed.
+
+    Args:
+        wait_result: The value ``Popen.wait`` returned.
+
+    Returns:
+        The exit code, or 128 plus the signal number.
+    """
+    return 128 - wait_result if wait_result < 0 else wait_result
+
+
 def wait_for_signal() -> int:
     """Hold the ballast until SIGINT or SIGTERM arrives.
+
+    The mask is restored before returning. Release runs after this
+    function, and ``cuCtxDestroy`` can stall while another process is
+    busy on the device. A leftover mask would swallow the operator's
+    second Ctrl-C and leave SIGKILL as the only way out.
 
     Returns:
         Zero. The signal is the intended way to end a manual hold.
     """
     watched = set(_WATCHED_SIGNALS)
-    signal.pthread_sigmask(signal.SIG_BLOCK, watched)
-    caught = signal.sigwait(watched)
+    previous = signal.pthread_sigmask(signal.SIG_BLOCK, watched)
+    try:
+        caught = signal.sigwait(watched)
+    finally:
+        signal.pthread_sigmask(signal.SIG_SETMASK, previous)
     print(f"ballast: caught {signal.Signals(caught).name}, releasing", flush=True)
     return 0
 
@@ -272,13 +334,13 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     """
     parser = argparse.ArgumentParser(
         prog="vram_ballast.py",
-        description="Hold a CUDA ballast so a run sees a smaller VRAM budget.",
+        description="Hold a CUDA ballast so a run sees less free VRAM.",
     )
     parser.add_argument(
         "--target-mib",
         type=int,
         default=DEFAULT_TARGET_MIB,
-        help="Budget the run must see, in MiB (default: %(default)s).",
+        help="Free VRAM the run must see, in MiB (default: %(default)s).",
     )
     parser.add_argument(
         "--device",
@@ -321,11 +383,19 @@ def main(argv: list[str] | None = None) -> int:
         except ValueError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1
-        ballast.hold(held)
-        budget, _ = ballast.memory_info()
+        try:
+            ballast.hold(held)
+        except CudaDriverError as exc:
+            print(
+                f"error: cannot hold {held // MIB} MiB of {free // MIB} MiB "
+                f"free: {exc}",
+                file=sys.stderr,
+            )
+            return 1
+        visible, _ = ballast.memory_info()
         print(
             f"ballast: device {args.device} free {free // MIB} MiB, "
-            f"held {held // MIB} MiB, budget {budget // MIB} MiB",
+            f"held {held // MIB} MiB, visible {visible // MIB} MiB",
             flush=True,
         )
         return run_command(args.command) if args.command else wait_for_signal()
