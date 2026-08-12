@@ -6,88 +6,121 @@
   stack's damage by routing frequency, and no packed data point tests
   it. ADR-0019 and ADR-0020 waited under the same bar and both lost
   packed. Decisions 1, 3, 4, and 5 are Accepted. Do not build
-  decision 2 against this record.
+  decision 2 against this record. The 2026-08-12 amendment fixes the
+  clause's reach: frequency ranks experts inside a layer, and never
+  one layer against another.
 - **Extends:** [ADR-0023](0023-imatrix-exclusions.md) decisions 1 and
   4. The amendment bullet lands there when this record is accepted.
 - **Note:** [ADR-0020](0020-imatrix-assisted-pricing.md) is superseded.
   This record does not amend it. ADR-0021 decision 1 keeps ADR-0020's
   port in the codebase, and decision 3 below cites it on that basis.
 
-- **Amendment (2026-08-12, issue #167):** #167 asked whether a
-  converter that splits a layer's experts into two stacks pays for
-  itself. This amendment corrects decision 2's premise, records the
-  measurement, and holds the build.
+- **Amendment (2026-08-12, issue #167):** decision 2 weights an expert's
+  damage by routing frequency. It never said whether that weight ranks
+  one layer against another. #167 asked whether a converter that splits
+  a layer's experts into two expert stacks pays for itself, and the
+  question turned on that reach. Maintainer ruling (2026-08-12):
+  **vramfit builds no split until #178 reports a measured damage
+  number, and any split lands upstream before vramfit packs against
+  it.**
 
-    **Every MoE layer draws the same total routing.** Each of the 23
-    layers counts exactly 2,528,256. Top-6-of-128 routing fires 6
-    experts per token in every layer, so the totals match by
-    construction. Measured 2026-08-12 from the same published
-    imatrix, by the method this record describes. Frequency alone
-    therefore cannot rank one layer against another. Decision 2 keeps
-    its lever, because an expert's damage varies with its count, and
-    that correlation still reorders the 46 stacks. The lever acts
-    through the correlation, never through a layer total.
+    Decision 2's reach stops at the layer boundary. Each of the 23 MoE
+    layers counts exactly 2,528,256 expert firings. Top-6-of-128
+    routing fires 6 experts per token in every layer, so the totals
+    match by construction. Measured 2026-08-12 from bartowski's
+    published GGUF imatrix, by the range-request method in Context
+    below. Frequency alone therefore ranks experts inside a layer. It
+    never ranks one layer against another. Decision 2 keeps a
+    bit-allocation lever on one assumption: an expert's damage varies
+    with its count. Under that assumption a weighted price still
+    reorders the 46 expert stacks. #178 tests the assumption.
 
-    **A split raises the lever 1.74 times.** The 10.5 GiB budget puts
-    18.5 % of expert parameters at `MXFP4`. Without a split those
-    bits reach 18.5 % of routing mass. A per-layer split at the same
-    budget reaches 32.2 % on average, at a 23.5 % floor and a 41.3 %
-    peak. Read the other way, a split needs 9.0 % at `MXFP4` to reach
-    the same mass. That is 2.43 bits per weight, which returns
-    0.65 GiB of the 10.5 GiB budget. Under decision 2's own model the
-    damage cut runs from 8 % to 15 %, across assumed `MXFP4`-to-`Q2_0`
-    damage ratios of 0.5 down to 0.1.
+    A split reaches 1.73 times the routing mass at the same budget.
+    The 10.5 GiB budget puts 18.5 % of expert parameters at `MXFP4`.
+    Without a split those bits reach 18.5 % of routing mass. A
+    per-layer split at the same budget reaches 31.9 %, at a 23.2 %
+    floor and a 41.0 % peak. Read the other way, a split needs 9.0 %
+    at `MXFP4` for the same routing mass. The expert average then
+    falls to 2.43 bits per weight, which returns 0.65 GiB of the
+    10.5 GiB budget.
 
-    **That number is a model output, not a measurement.** It applies
-    decision 2, which stays Proposed. #178 carries the measurement.
+    Those ratios are derived, not measured. The counts are measured.
+    The ratios apply an assumed top-k allocation to them. The damage
+    cut that follows runs from 7.5 % to 14.8 %, across assumed
+    `MXFP4`-to-`Q2_0` damage ratios of 0.5 down to 0.1. That cut is a
+    model output. It applies decision 2, which stays Proposed. #178
+    carries the measurement.
 
-    **Stock llama.cpp quantizes a split file and refuses to serve
-    it.** `llama_model_quantize_impl` calls `load_hparams` and
-    `load_stats` only (`src/llama-quant.cpp:871-908`, checkout
-    `e9fa078`). It validates no tensor set, so `--tensor-type` reaches
-    the new names. Inference builds a fixed tensor list in
-    `nemotron-h`'s `load_arch_tensors`. The extra tensors leave
-    `n_created` below `n_tensors`, and `done_getting_tensors` throws
-    (`src/llama-model-loader.cpp:1315`, called at
-    `src/llama-model.cpp:1514`). A split forks the model definition.
-    It never forks the GGUF format.
+    Stock llama.cpp quantizes a split file and refuses to serve it.
+    `llama_model_quantize_impl` calls `load_hparams` and `load_stats`
+    only (`src/llama-quant.cpp:871-908`, checkout `e9fa078`). It
+    validates no tensor set, so `--tensor-type` reaches the new names.
+    Inference builds a fixed tensor list in `nemotron-h`'s
+    `load_arch_tensors` (`src/models/nemotron-h.cpp:33`). The extra
+    tensors leave `n_created` below `n_tensors`, and
+    `done_getting_tensors` throws (`src/llama-model-loader.cpp:1315`,
+    called at `src/llama-model.cpp:1514`). A split forks the model
+    definition. It never forks the GGUF format.
 
-    **llama.cpp already carries a two-stack layer.** GroveMoE declares
-    `ffn_up_chexps`, `ffn_gate_chexps`, and `ffn_down_chexps`, then
-    calls `build_moe_ffn` twice against one `probs`
-    (`src/models/grovemoe.cpp`). `build_moe_ffn` accepts `probs_in`
-    and `selected_experts_in` for that purpose. A graph change to
-    `src/models/nemotron-h.cpp` copies a working pattern.
+    A split also splits its imatrix, or it loses the assistance this
+    record prices. `llama-quantize` throws when an imatrix entry's
+    size does not match `ne[0]*ne[2]` (`src/llama-quant.cpp:1211`), so
+    a stock imatrix aborts a same-named stack. Under a new name the
+    lookup logs "did not find weights" at INFO level, then quantizes
+    with no imatrix at all (`src/llama-quant.cpp:1198`). `Q2_0` and
+    `MXFP4` both return false from `tensor_requires_imatrix`
+    (`src/llama-quant.cpp:780-799`), so nothing stops the silent case.
 
-    **A split costs about 2.5 times the expert traffic per token.**
-    `ggml_mul_mat_id` gathers `n_expert_used` rows per call and
-    carries no per-token mask. A token's 6 selections fall across both
-    stacks, so both calls size at 6. Decode then reads 6 rows at
-    4.25 bits plus 6 rows at 2.25 bits. Today it reads 6 rows at the
-    layer's single width, which averages 2.62 bits. The #164 pass bar
-    states no throughput clause, so this cost fails no gate. GroveMoE
-    pays the same shape upstream.
+    llama.cpp already carries a two-stack layer. GroveMoE declares
+    `ffn_up_chexps`, `ffn_gate_chexps`, and `ffn_down_chexps`
+    (`src/models/grovemoe.cpp:57-59`). It then calls `build_moe_ffn`
+    twice against one `probs` (`:136-148` and `:153-164`). A graph
+    change to `src/models/nemotron-h.cpp` copies that pattern.
+    GroveMoE's second stack is no partition of its first. It holds
+    fewer and narrower chunk experts, so it prices differently.
 
-    **A split opens no new width.** The cut runs along `ne[2]`. Row
-    length stays 2688 and 1856, so the k-quant family stays
-    unreachable. A split buys targeting inside the existing palette.
+    A split costs about 2.5 times the expert traffic per decoded
+    token. `ggml_mul_mat_id` gathers `n_expert_used` rows per call and
+    carries no per-token mask (`ggml/src/ggml.c:3329-3354`). No
+    backend skips a gather by routing weight. Each backend skips only
+    an expert that no token selects. A token's 6 selections fall
+    across both stacks, so both calls size at 6. Decode then reads 6
+    rows at 4.25 bits plus 6 rows at 2.25 bits. Today it reads 6 rows
+    at a model-wide average of 2.62 bits. Prefill pays nothing,
+    because it reads every expert once at 2.43 bits per weight. The
+    #164 pass bar states no throughput clause, so this cost fails no
+    gate.
 
-    **Two stacks is the right count.** The frequency distribution is
-    not bimodal. A 2-means fit on log counts puts the smaller cluster
-    at 38 to 64 of 128 experts. The centroid gap measures 1.8 to 2.9
-    within-cluster standard deviations. That is the shape of one
-    heavy-tailed mode. The split point is a budget parameter, not a
-    cluster boundary. One budget constraint gives an optimum that uses
-    at most two widths, and the chosen experts form a top-k prefix by
-    frequency. A third stack pays only when per-expert damage varies
-    apart from frequency, which no measurement reports.
+    A split opens no new width. The cut runs along `ne[2]`. Row length
+    stays 2688 and 1856, so `tensor_type_fallback` keeps the k-quant
+    family unreachable (`src/llama-quant.cpp:373-420`). A split
+    targets experts inside the existing palette. vramfit calls
+    upstream `convert_hf_to_gguf.py`, so a split patches the converter
+    as well as the graph.
 
-    **Ruling.** vramfit builds no split until #178 reports a measured
-    damage number. ADR-0019 and ADR-0020 both built on a modeled prior
-    and both lost packed. If #178 upholds decision 2, the split lands
-    upstream before vramfit packs against it. #166 chose llama.cpp
-    because it is the finest-grained target available, and a private
-    fork forfeits that property.
+    Two is the right expert-stack count, measured and not proved. An
+    earlier draft argued that one budget constraint admits at most two
+    widths. That argument is false. Each expert takes the width that
+    minimizes its own frequency-weighted damage plus a price on bits,
+    so the chosen widths spread across the palette. Under a halving
+    damage curve at this budget, the unrestricted optimum on `blk.20`
+    uses 4 widths, and 2 of them cover 1 expert each. Restricting a
+    layer to two widths costs at most 1.1 % of the achievable damage
+    cut. Measured 2026-08-12 across three damage curves on all 23
+    layers. Width also stays monotone in frequency, so each stack
+    holds one contiguous frequency band.
+
+    The frequency distribution is not bimodal. Its bimodality
+    coefficient runs from 0.19 to 0.38 on log counts, under a 0.555
+    threshold. An exhaustive 2-means fit puts the smaller cluster at 6
+    to 64 of 128 experts. The centroid gap measures 2.0 to 4.2 pooled
+    within-cluster standard deviations. A 2-means fit always returns
+    two clusters, so read that gap against a unimodal null near 2.7.
+    The split point is a budget parameter, not a cluster boundary.
+
+    ADR-0019 and ADR-0020 both built on a modeled prior, and both lost
+    packed. #166 chose llama.cpp because it is the finest-grained
+    target available. A private fork forfeits that property.
 
 ## Context
 
@@ -191,14 +224,17 @@ fit the packer does not ship. ADR-0021 recorded that failure.
   a per-expert decomposition that does not exist. The chart ruled a
   full per-expert scan out of scope, so the mechanism must come from
   somewhere cheaper.
-- Does a split of a layer's experts into two stacks pay for itself?
-  The 2026-08-12 measurement reports 1.74 times the routing mass at
-  the same budget. It reports no damage number. #167 carries the
-  question and waits on #178.
+- Does a split of a layer's experts into two expert stacks pay for
+  itself? The 2026-08-12 measurement reports 1.73 times the routing
+  mass at the same budget. It reports no damage number. #167 carries
+  the question and waits on #178.
 - What does a two-stack pack cost at decode? The amendment derives
-  about 2.5 times the expert traffic per token from
+  about 2.5 times the expert traffic per decoded token from
   `ggml_mul_mat_id`'s row count. No run measures it. #167 carries the
   item.
+- Does per-expert damage vary apart from routing frequency? Decision 2
+  assumes the two move together. A third expert stack pays only when
+  they separate. #167 carries the test.
 - What count floor makes a statistic worthless? The measurement bounds
   the question from one side only. It shows 426 samples is the
   thinnest this model and corpus produce. It does not show 426 is

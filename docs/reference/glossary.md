@@ -59,6 +59,14 @@ change.
     stack (see **Fit collapse**) and the serving stack (see **Target
     runtime**). Not "expert group" or "fused experts".
 
+**Routing mass**
+:   The share of a layer's imatrix counts held by the experts a recipe
+    assigns one precision. It measures what a bit budget reaches, not
+    how many experts it covers. On Nemotron 3.5 Lightning 30B-A3B, a
+    budget that puts 18.5 % of expert parameters at the wider type
+    reaches 18.5 % of routing mass without a split, and 31.9 % with
+    one (#167). Not "routing share" or "expert mass".
+
 **Sensitivity**
 :   A group's measured fragility: how much damage quantizing *it alone* to a
     given precision causes. The property the scan measures.
