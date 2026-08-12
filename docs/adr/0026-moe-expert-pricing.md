@@ -253,10 +253,10 @@ fit the packer does not ship. ADR-0021 recorded that failure.
 - Decision 1 needs no new machinery. The loader already implements it.
 - Decisions 4 and 5 add fields to the map and to the pack report.
   Decision 2 adds the frequency term.
-- Decision 2 needs the per-expert rows the loader currently flattens.
-  `load_imatrix` reshapes a stack's weights to one vector, and
-  `resolve_assisted_weights` matches by a single row length. Reading a
-  fused stack against 128 HF parameters is unbuilt.
+- Decision 2 needs the per-expert rows of a fused stack. #187 built the
+  read on 2026-08-12. `load_imatrix` now reshapes a stack's sums per
+  matrix, and `resolve_imatrix_counts` serves the counts. The clause
+  still waits on #178 for its data point.
 - **ADR-0023 cannot reach inside a stack.** `--exclude-weights` matches
   by substring against imatrix entry names
   (`tools/quantize/quantize.cpp:274`), and a fused expert stack is one
