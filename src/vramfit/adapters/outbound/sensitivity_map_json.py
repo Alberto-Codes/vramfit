@@ -92,7 +92,8 @@ def map_from_dict(data: object) -> SensitivityMap:
             nor a version in `MAP_SCHEMA_ALSO_READS`, or
             any field is missing, mistyped, or violates a schema rule
             (duplicate group names, unknown ``group_by``, sensitivity
-            keys not matching ``scan.precisions``, and so on).
+            keys not matching ``scan.precisions``, a group carrying
+            imatrix counts on an unassisted map, and so on).
 
     Examples:
         Reject an unsupported schema version:
@@ -123,6 +124,15 @@ def map_from_dict(data: object) -> SensitivityMap:
             f"$.groups[{i}].name",
             f'duplicate group name "{group.name}"',
         )
+        # Only an assisted scan reads counts, so a group that carries
+        # them on an unassisted map contradicts its own provenance —
+        # the same class of refusal the imatrix/method pairing makes
+        # (ADR-0020, ADR-0026 decision 4).
+        _require(
+            not (group.imatrix_counts is not None and scan.imatrix is None),
+            f"$.groups[{i}].imatrix_counts",
+            "imatrix counts require the scan's imatrix provenance (ADR-0026)",
+        )
         seen.add(group.name)
         groups.append(group)
     return SensitivityMap(model_id=model_id, scan=scan, groups=tuple(groups))
@@ -143,7 +153,8 @@ def map_to_dict(map_: SensitivityMap) -> dict[str, Any]:
         unassisted (ADR-0020). Per-tensor sizes are written only
         when known — an absent field means unknown, never zero
         (ADR-0022). A group's imatrix count summary follows the same
-        rule (ADR-0026 decision 4).
+        rule, carrying ``min``, ``median``, ``max``, and how many
+        members it reduced (ADR-0026 decision 4).
     """
     return {
         "vramfit_schema": MAP_SCHEMA_VERSION,
@@ -184,6 +195,7 @@ def map_to_dict(map_: SensitivityMap) -> dict[str, Any]:
                             "min": g.imatrix_counts.minimum,
                             "median": g.imatrix_counts.median,
                             "max": g.imatrix_counts.maximum,
+                            "covered": g.imatrix_counts.covered,
                         }
                     }
                     if g.imatrix_counts is not None
@@ -391,10 +403,10 @@ def _parse_imatrix_counts(obj: dict[str, Any], path: str) -> ImatrixCountSummary
 
     Raises:
         ArtifactError: If the field is present and any of ``min``,
-            ``median``, or ``max`` is missing, mistyped, negative, or
-            out of order. The writer never emits an explicit null, so
-            one is a hand-edit and is rejected rather than read as
-            absent.
+            ``median``, ``max``, or ``covered`` is missing, mistyped,
+            negative, or out of order. The writer never emits an
+            explicit null, so one is a hand-edit and is rejected
+            rather than read as absent.
     """
     if "imatrix_counts" not in obj:
         return None
@@ -402,15 +414,19 @@ def _parse_imatrix_counts(obj: dict[str, Any], path: str) -> ImatrixCountSummary
     counts = _get_dict(obj["imatrix_counts"], field_path)
     minimum = _get_int(counts, "min", field_path)
     maximum = _get_int(counts, "max", field_path)
+    covered = _get_int(counts, "covered", field_path)
     _require("median" in counts, field_path, 'missing required field "median"')
     median = _as_float(counts["median"], f"{field_path}.median")
     _require(minimum >= 0, f"{field_path}.min", "must not be negative")
+    _require(covered > 0, f"{field_path}.covered", "must be positive")
     _require(
         minimum <= median <= maximum,
         field_path,
         f"min {minimum}, median {median}, and max {maximum} must be ordered",
     )
-    return ImatrixCountSummary(minimum=minimum, median=median, maximum=maximum)
+    return ImatrixCountSummary(
+        minimum=minimum, median=median, maximum=maximum, covered=covered
+    )
 
 
 def _parse_layer_group(

@@ -57,7 +57,7 @@ def raw_protected_maps(draw: st.DrawFn) -> tuple[dict[str, Any], int]:
 def raw_imatrix_counts(draw: st.DrawFn) -> dict[str, Any]:
     """Draw an ordered ``imatrix_counts`` object (ADR-0026 decision 4).
 
-    The three values are drawn then sorted, so the strategy explores
+    The three counts are drawn then sorted, so the strategy explores
     equal and separated counts without ever building an out-of-order
     summary the loader must reject.
     """
@@ -68,16 +68,23 @@ def raw_imatrix_counts(draw: st.DrawFn) -> dict[str, Any]:
             )
         )
     )
-    return {"min": counts[0], "median": float(counts[1]), "max": counts[2]}
+    return {
+        "min": counts[0],
+        "median": float(counts[1]),
+        "max": counts[2],
+        "covered": draw(st.integers(min_value=1, max_value=128)),
+    }
 
 
 @st.composite
 def raw_sensitivity_maps(draw: st.DrawFn) -> dict[str, Any]:
     """Draw a valid raw sensitivity-map dict of 1-8 heterogeneous groups.
 
-    Some groups carry an ``imatrix_counts`` summary and some do not,
-    which is the real shape of an assisted map — the imatrix covers
-    no embedding (ADR-0026 decision 4).
+    Half the draws are assisted maps. On those, some groups carry an
+    ``imatrix_counts`` summary and some do not, which is the real
+    shape — the imatrix covers no embedding (ADR-0026 decision 4). An
+    unassisted map never carries one, because the loader refuses that
+    contradiction.
     """
     precisions = draw(precision_sets())
     # Mix discrete and continuous damages so equal-ratio ties actually
@@ -93,14 +100,20 @@ def raw_sensitivity_maps(draw: st.DrawFn) -> dict[str, Any]:
         st.integers(min_value=1, max_value=10_000_000),
     )
     n_groups = draw(st.integers(min_value=1, max_value=8))
+    assisted = draw(st.booleans())
     groups = []
     counts: list[dict[str, Any] | None] = []
     for i in range(n_groups):
         bytes_fp16 = draw(sizes)
         curve = {bits: draw(damage) for bits in precisions}
         groups.append((f"model.layers.{i}.g", bytes_fp16, curve))
-        counts.append(draw(st.one_of(st.none(), raw_imatrix_counts())))
+        counts.append(
+            draw(st.one_of(st.none(), raw_imatrix_counts())) if assisted else None
+        )
     raw = make_map(groups, precisions=precisions)
+    if assisted:
+        raw["scan"]["within_group"] = "kquant-imx"
+        raw["scan"]["imatrix"] = "model.imatrix.gguf"
     for entry, summary in zip(raw["groups"], counts, strict=True):
         if summary is not None:
             entry["imatrix_counts"] = summary

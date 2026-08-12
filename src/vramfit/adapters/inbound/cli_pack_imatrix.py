@@ -10,7 +10,10 @@ instructed (ADR-0023), the tensors it did not cover (ADR-0016), and
 the routed experts it covers at a count of zero (ADR-0026 decision
 5). The three are separate cases. An exclusion is intentional, an
 uncovered tensor is a whole-tensor gap, and a zero-count expert
-sits inside a stack the matrix does cover.
+sits inside a stack the matrix does cover. The zero-count line
+names the first `_ECHO_LIMIT` experts and counts the rest, because
+a bad corpus can starve thousands of the MoE target's 2,944 cells.
+The run log carries every pair.
 
 Every report warns and none refuses. A pack that ignores its own
 provenance still produces a file, and the operator decides what
@@ -33,11 +36,16 @@ See Also:
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Final
 
 import typer
 
 from vramfit.domain.model import Recipe
 from vramfit.domain.pack import PackResult
+
+# How many zero-count experts the console names before it counts the
+# rest. The run log carries every one.
+_ECHO_LIMIT: Final[int] = 10
 
 
 def _warn_imatrix_provenance(recipe: Recipe, imatrix: Path | None) -> None:
@@ -81,6 +89,9 @@ def _warn_imatrix_provenance(recipe: Recipe, imatrix: Path | None) -> None:
 def _report_imatrix_effects(result: PackResult) -> None:
     """Echo what the imatrix did and did not reach.
 
+    Three separate records, one line each. The zero-count line takes
+    a prefix of the experts and counts the remainder.
+
     Args:
         result: The pack step's accounting record.
     """
@@ -97,16 +108,21 @@ def _report_imatrix_effects(result: PackResult) -> None:
             "these tensors quantized unassisted (token_embd is expected)",
             err=True,
         )
-    if result.imatrix_zero_count_experts:
+    starved = result.imatrix_zero_count_experts
+    if starved:
         # A stack the matrix covers, an expert inside it the router
         # never fired. The quantizer emits no warning for this, so
         # this line is the only report (ADR-0026 decision 5).
-        experts = ", ".join(
-            f"{e.stack}[{e.expert}]" for e in result.imatrix_zero_count_experts
-        )
+        # A bad corpus can starve thousands of the target's 2,944
+        # cells, so the console takes a prefix and the run log keeps
+        # every pair.
+        experts = ", ".join(f"{e.stack}[{e.expert}]" for e in starved[:_ECHO_LIMIT])
+        rest = len(starved) - _ECHO_LIMIT
         typer.echo(
-            f"warning: the importance matrix fired no token through: "
-            f"{experts} — these experts quantized unassisted inside a "
-            "covered stack (ADR-0026)",
+            f"warning: the importance matrix fired no token through "
+            f"{len(starved)} experts: {experts}"
+            + (f", and {rest} more" if rest > 0 else "")
+            + " — these experts quantized unassisted inside a covered "
+            "stack (ADR-0026). The run log names them all.",
             err=True,
         )

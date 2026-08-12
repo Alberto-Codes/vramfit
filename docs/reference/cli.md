@@ -184,8 +184,8 @@ expected miss). A covered tensor whose rows do not divide into
 the scan. A scan is only comparable to a pack that consumes the
 same imatrix file — the CLI resolves the path, and the map records
 the resolved spelling. Each covered group also gets an
-`imatrix_counts` summary in the map — `min`, `median`, and `max`
-over its members' counts
+`imatrix_counts` summary in the map — `min`, `median`, `max`, and
+`covered` over its members' counts
 ([ADR-0026](../adr/0026-moe-expert-pricing.md) decision 4). The
 numbers are provenance and nothing prices against them. They read
 through their own resolver, which applies no super-block gate, so
@@ -363,9 +363,17 @@ because its expert stack is present. The warning names each one as
 `<stack>[<index>]`, and `model_packed` records the pairs. This is a
 third case: `--exclude-weights` names an intentional miss, an
 uncovered tensor names a whole-tensor gap, and a zero-count expert
-sits inside a stack the matrix does cover. An unreadable matrix
-fails the pack in milliseconds, before the quantize stage. Reading
-the counts needs gguf-py, which the `pack` extra provisions.
+sits inside a stack the matrix does cover. The console names the
+first 10 and counts the rest — the run log carries every pair.
+
+The read refuses a file it cannot vouch for: one that is no
+imatrix, one that holds no counts, one carrying an unknown tensor
+suffix, and one whose counts are negative or not finite. Each would
+otherwise report every expert healthy. The pack fails in
+milliseconds, before the quantize stage. Reading the counts needs
+gguf-py, which the `pack` extra provisions — so `--imatrix` now
+requires that extra, where before the path only reached a
+subprocess.
 
 With `--smoke-text` the command runs the smoke test: `--smoke-chunks` perplexity chunks through
 `build/bin/llama-perplexity`, gated by the `--smoke-threshold`

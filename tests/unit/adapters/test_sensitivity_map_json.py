@@ -365,6 +365,8 @@ class TestTensorBytes:
 @pytest.mark.unit
 class TestImatrixCounts:
     def make_counted_dict(self) -> dict:
+        # Only an assisted scan reads counts, so the map has to claim
+        # the assisted method and name its imatrix (ADR-0020).
         raw = make_map(
             [
                 (
@@ -374,10 +376,13 @@ class TestImatrixCounts:
                 )
             ]
         )
+        raw["scan"]["within_group"] = "kquant-imx"
+        raw["scan"]["imatrix"] = "model.imatrix.gguf"
         raw["groups"][0]["imatrix_counts"] = {
             "min": 426,
             "median": 18_114.0,
             "max": 192_191,
+            "covered": 128,
         }
         return raw
 
@@ -389,7 +394,7 @@ class TestImatrixCounts:
 
         assert again == map_
         assert map_.groups[0].imatrix_counts == ImatrixCountSummary(
-            minimum=426, median=18_114.0, maximum=192_191
+            minimum=426, median=18_114.0, maximum=192_191, covered=128
         )
 
     def test_absent_imatrix_counts_loads_none(self) -> None:
@@ -419,12 +424,53 @@ class TestImatrixCounts:
     def test_zero_minimum_loads(self) -> None:
         # Zero is a real count, not a missing one (ADR-0026).
         raw = self.make_counted_dict()
-        raw["groups"][0]["imatrix_counts"] = {"min": 0, "median": 5.0, "max": 10}
+        raw["groups"][0]["imatrix_counts"] = {
+            "min": 0,
+            "median": 5.0,
+            "max": 10,
+            "covered": 3,
+        }
 
         summary = map_from_dict(raw).groups[0].imatrix_counts
 
         assert summary is not None
         assert summary.minimum == 0
+
+    def test_counts_on_an_unassisted_map_rejected(self) -> None:
+        # Only an assisted scan reads counts. A map that claims none
+        # and carries them contradicts its own provenance.
+        raw = self.make_counted_dict()
+        raw["scan"]["within_group"] = "rtn-block32"
+        raw["scan"]["imatrix"] = None
+
+        with pytest.raises(ArtifactError, match="require the scan's imatrix"):
+            map_from_dict(raw)
+
+    def test_missing_covered_rejected(self) -> None:
+        raw = self.make_counted_dict()
+        del raw["groups"][0]["imatrix_counts"]["covered"]
+
+        with pytest.raises(ArtifactError, match="covered"):
+            map_from_dict(raw)
+
+    def test_non_positive_covered_rejected(self) -> None:
+        # A summary that reduces no member is not a distribution.
+        raw = self.make_counted_dict()
+        raw["groups"][0]["imatrix_counts"]["covered"] = 0
+
+        with pytest.raises(ArtifactError, match="covered"):
+            map_from_dict(raw)
+
+    def test_covered_records_how_many_counts_reduced(self) -> None:
+        # 3 counts of a 128-expert stack must not read like a small
+        # stack covered whole.
+        raw = self.make_counted_dict()
+        raw["groups"][0]["imatrix_counts"]["covered"] = 3
+
+        summary = map_from_dict(raw).groups[0].imatrix_counts
+
+        assert summary is not None
+        assert summary.covered == 3
 
     def test_negative_minimum_rejected(self) -> None:
         raw = self.make_counted_dict()

@@ -141,26 +141,33 @@ class TestLayerGroupTensorBytes:
 
 class TestImatrixCountSummary:
     def test_ordered_values_construct(self) -> None:
-        summary = ImatrixCountSummary(minimum=426, median=18_114.0, maximum=192_191)
+        summary = ImatrixCountSummary(
+            minimum=426, median=18_114.0, maximum=192_191, covered=128
+        )
 
         assert summary.maximum == 192_191
 
     def test_negative_minimum_rejected(self) -> None:
         # A count is a chunk tally, so it is never negative.
         with pytest.raises(ValueError, match="minimum must not be negative"):
-            ImatrixCountSummary(minimum=-1, median=0.0, maximum=1)
+            ImatrixCountSummary(minimum=-1, median=0.0, maximum=1, covered=1)
 
     def test_median_below_minimum_rejected(self) -> None:
         with pytest.raises(ValueError, match="ordered"):
-            ImatrixCountSummary(minimum=10, median=5.0, maximum=20)
+            ImatrixCountSummary(minimum=10, median=5.0, maximum=20, covered=3)
 
     def test_median_above_maximum_rejected(self) -> None:
         with pytest.raises(ValueError, match="ordered"):
-            ImatrixCountSummary(minimum=1, median=30.0, maximum=20)
+            ImatrixCountSummary(minimum=1, median=30.0, maximum=20, covered=3)
 
     def test_non_finite_median_rejected(self) -> None:
         with pytest.raises(ValueError, match="median must be finite"):
-            ImatrixCountSummary(minimum=0, median=math.nan, maximum=1)
+            ImatrixCountSummary(minimum=0, median=math.nan, maximum=1, covered=2)
+
+    def test_non_positive_covered_rejected(self) -> None:
+        # A summary that reduces no member is not a distribution.
+        with pytest.raises(ValueError, match="covered must be positive"):
+            ImatrixCountSummary(minimum=0, median=1.0, maximum=2, covered=0)
 
     def test_from_counts_reduces_to_three_numbers(self) -> None:
         summary = ImatrixCountSummary.from_counts([192_191, 426, 18_114])
@@ -170,6 +177,11 @@ class TestImatrixCountSummary:
             18_114,
             192_191,
         )
+
+    def test_from_counts_sizes_the_summary_by_its_members(self) -> None:
+        # 3 counts of a 128-expert stack must not read like a small
+        # stack covered whole.
+        assert ImatrixCountSummary.from_counts([1, 2, 3]).covered == 3
 
     def test_from_counts_averages_the_two_middle_values(self) -> None:
         # An even member count has no single middle expert.
@@ -204,7 +216,9 @@ class TestLayerGroupImatrixCounts:
         assert self.make_group(None).imatrix_counts is None
 
     def test_present_summary_rides_on_the_group(self) -> None:
-        summary = ImatrixCountSummary(minimum=426, median=18_114.0, maximum=192_191)
+        summary = ImatrixCountSummary(
+            minimum=426, median=18_114.0, maximum=192_191, covered=128
+        )
 
         assert self.make_group(summary).imatrix_counts == summary
 

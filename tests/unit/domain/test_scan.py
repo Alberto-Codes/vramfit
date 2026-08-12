@@ -235,7 +235,9 @@ class TestAssembleMap:
 
     def test_imatrix_count_summary_rides_into_the_map(self) -> None:
         # ADR-0026 decision 4: the meter reduces, the map carries.
-        summary = ImatrixCountSummary(minimum=426, median=18_114.0, maximum=192_191)
+        summary = ImatrixCountSummary(
+            minimum=426, median=18_114.0, maximum=192_191, covered=128
+        )
         specs = (
             GroupSpec(
                 name="g0", tensors=("g0.w",), bytes_fp16=1000, imatrix_counts=summary

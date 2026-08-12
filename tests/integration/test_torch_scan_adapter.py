@@ -665,6 +665,8 @@ class TestTorchDamageMeter:
         assert covered.imatrix_counts.minimum == 426
         assert covered.imatrix_counts.median == 426
         assert covered.imatrix_counts.maximum == 426
+        # One dense tensor, so the summary reduces one count.
+        assert covered.imatrix_counts.covered == 1
         # A group the matrix does not name carries no summary. An
         # absent field means unknown, never a count of zero.
         assert specs["model.embed_tokens"].imatrix_counts is None

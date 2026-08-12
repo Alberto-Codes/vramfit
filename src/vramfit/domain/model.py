@@ -178,6 +178,11 @@ class ImatrixCountSummary:
             averages the two middle values, so the field is a float
             even though every count is an integer.
         maximum (int): The group's largest imatrix count.
+        covered (int): How many of the group's members the imatrix
+            covers, which is how many counts the other three reduce.
+            A summary the reader cannot size is weak evidence — 3
+            counts of a 128-expert stack read exactly like a small
+            stack covered whole.
 
     Examples:
         Summarize one expert stack's routing distribution:
@@ -187,22 +192,26 @@ class ImatrixCountSummary:
 
         summary = ImatrixCountSummary.from_counts([426, 18_114, 192_191])
         assert summary.median == 18_114
+        assert summary.covered == 3
         ```
     """
 
     minimum: int
     median: float
     maximum: int
+    covered: int
 
     def __post_init__(self) -> None:
-        """Enforce the ordering the three numbers must satisfy.
+        """Enforce the invariants the four numbers must satisfy.
 
         Raises:
-            ValueError: If any value is negative, ``median`` is not
-                finite, or the three do not run
-                ``minimum <= median <= maximum``. A count is a chunk
-                tally, so it is never negative, and a summary that
-                contradicts its own order records a broken reduction.
+            ValueError: If any count is negative, ``median`` is not
+                finite, the three counts do not run
+                ``minimum <= median <= maximum``, or ``covered`` is
+                not positive. A count is a chunk tally, so it is
+                never negative. A summary that contradicts its own
+                order records a broken reduction, and one that
+                reduces no member is not a distribution.
         """
         if self.minimum < 0:
             raise ValueError("minimum must not be negative")
@@ -210,16 +219,19 @@ class ImatrixCountSummary:
             raise ValueError("median must be finite")
         if not self.minimum <= self.median <= self.maximum:
             raise ValueError("minimum, median, and maximum must be ordered")
+        if self.covered <= 0:
+            raise ValueError("covered must be positive")
 
     @classmethod
     def from_counts(cls, counts: Iterable[int]) -> ImatrixCountSummary:
         """Reduce a group's imatrix counts to a summary.
 
         Args:
-            counts: One imatrix count per group member.
+            counts: One imatrix count per covered group member.
 
         Returns:
-            The summary over those counts.
+            The summary over those counts, sized by how many there
+            were.
 
         Raises:
             ValueError: If ``counts`` is empty. An empty group has no
@@ -239,6 +251,7 @@ class ImatrixCountSummary:
             minimum=values[0],
             median=statistics.median(values),
             maximum=values[-1],
+            covered=len(values),
         )
 
 

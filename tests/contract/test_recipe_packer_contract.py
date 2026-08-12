@@ -463,8 +463,8 @@ class TestRecipePackerContract:
     def test_pack_with_imatrix_and_no_starved_expert_reports_none(
         self, build, tmp_path
     ) -> None:
-        # The measured case on the real target and corpus: 0
-        # uncovered experts across 2,944 cells (issue #162).
+        # The measured case on the real target and corpus: 0 cells
+        # of 2,944 carry a zero count (issue #162).
         packer: RecipePacker = build(tmp_path, with_imatrix=True)
         packer.convert()
 
@@ -621,6 +621,34 @@ class TestLlamaCppCommandLines:
             r"blk\.1\.ffn_up_exps\.=q2_k",
             r"blk\.1\.=q8_0",
         ]
+
+    def test_unreadable_imatrix_halts_before_the_quantizer_runs(self, tmp_path) -> None:
+        # A failed count read must reach the caller, never collapse
+        # into an empty report — that is what a healthy matrix gives
+        # (ADR-0026 decision 5). It must also refuse before the
+        # quantize stage, not after a half-hour of work.
+        source = MemoryImatrixCounts(unreadable=True)
+        packer = LlamaCppPacker(
+            model_dir=tmp_path / "model",
+            base_gguf=tmp_path / "base.gguf",
+            out_path=tmp_path / "out.gguf",
+            convert_script=_write_stub(tmp_path / "convert.py", _CONVERT_STUB),
+            quantize_bin=_write_stub(tmp_path / "llama-quantize", _FAILING_STUB),
+            python_bin=Path(sys.executable),
+            threads=1,
+            imatrix=tmp_path / "imatrix.gguf",
+            imatrix_counts=source,
+        )
+        (tmp_path / "model").mkdir(exist_ok=True)
+        (tmp_path / "base.gguf").write_bytes(b"G" * BASE_BYTES)
+
+        with pytest.raises(PackError, match="cannot read the imatrix"):
+            packer.pack(sample_pack_recipe())
+
+        assert source.calls == 1
+        # The quantize stub always fails. A different message would
+        # mean the read ran after it.
+        assert not (tmp_path / "out.gguf").exists()
 
     def test_quantize_argv_with_imatrix_carries_the_flag(self, tmp_path) -> None:
         packer = _real_packer(tmp_path, with_imatrix=True)

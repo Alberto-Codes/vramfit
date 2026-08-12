@@ -252,7 +252,10 @@ class LlamaCppPacker:
             excluded: Tensors the recipe excludes (ADR-0023). An
                 exclusion on a stack drops all its rows, so its
                 experts are intentional misses and stay out of this
-                report.
+                report. No exclusion names an expert stack today —
+                `imatrix_exclusion_names` maps through the dense
+                projection table — so this filter is defense against
+                a wider table, not a live path.
 
         Returns:
             The zero-count experts, sorted by stack then expert
@@ -263,9 +266,23 @@ class LlamaCppPacker:
         """
         if self.imatrix is None:
             return ()
-        source = self.imatrix_counts or GgufImatrixCounts(self.imatrix)
+        # `is None`, not truthiness: a source that defines __bool__ or
+        # __len__ would otherwise fall back to the gguf-py reader and
+        # read a file the caller meant to replace.
+        source = (
+            GgufImatrixCounts(self.imatrix)
+            if self.imatrix_counts is None
+            else self.imatrix_counts
+        )
+        # Sorted here too. The port promises sorted output, and this
+        # method must not inherit an implementation's ordering.
         return tuple(
-            expert
-            for expert in source.zero_count_experts()
-            if expert.stack not in excluded
+            sorted(
+                (
+                    expert
+                    for expert in source.zero_count_experts()
+                    if expert.stack not in excluded
+                ),
+                key=lambda expert: (expert.stack, expert.expert),
+            )
         )

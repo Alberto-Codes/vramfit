@@ -362,11 +362,11 @@ class ImatrixCountSource(Protocol):
     port and not a scrape of the quantizer's output.
 
     The port stays separate from `RecipePacker` for two reasons. The
-    read touches a file the packer only forwards to a subprocess, and
-    the scan's own count reader keys on Hugging Face parameter names
+    read touches a file the packer only forwards to a subprocess.
+    The scan's own count reader keys on Hugging Face parameter names
     while the pack path holds GGUF names. The gguf-py adapter
-    implements it in milliseconds — the counts of a 5,957-tensor
-    matrix are about 24 KB.
+    implements it in milliseconds — the 185 entries of the MoE
+    target's published matrix hold 6,027 counts, about 24 KB.
 
     Examples:
         The pack step drives the port like this:

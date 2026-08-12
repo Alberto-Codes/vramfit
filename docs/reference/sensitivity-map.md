@@ -42,11 +42,31 @@ The sensitivity map is the output of `vramfit scan` and the input to
         "k_proj": 10000000,
         "v_proj": 10000000,
         "o_proj": 40000000
-      },
+      }
+    }
+  ]
+}
+```
+
+The map above is unassisted, so no group carries `imatrix_counts`.
+An assisted scan names its imatrix and records one summary per
+covered group. Over a fused expert stack the counts are that
+stack's routing distribution:
+
+```json
+{
+  "scan": {
+    "within_group": "kquant-imx",
+    "imatrix": "model.imatrix.gguf"
+  },
+  "groups": [
+    {
+      "name": "backbone.layers.20.mixer.experts.up_proj",
       "imatrix_counts": {
         "min": 426,
         "median": 18114.0,
-        "max": 192191
+        "max": 192191,
+        "covered": 128
       }
     }
   ]
@@ -104,23 +124,28 @@ below remain, the sub-4-bit pricing claims do not.
   checkpoint's safetensors headers — a JSON parse, no torch — and
   writes an annotated map copy.
 - **`imatrix_counts`** — the group's imatrix counts, reduced to
-  `min`, `median`, and `max`
+  `min`, `median`, `max`, and `covered`
   ([ADR-0026](../adr/0026-moe-expert-pricing.md) decision 4). Over a
-  fused expert stack these three numbers are the routing
-  distribution across its experts. They are provenance. Nothing
-  prices against them, and no gate reads them. The field is
-  additive and informational, so it forced no schema bump: a reader
-  that drops it loses provenance and no assignment. An absent field
-  means unknown — an unassisted scan, a map written before the
-  field existed, or a group the imatrix does not cover. An explicit
-  null is rejected, because the writer never emits one. A present
-  field must run `min <= median <= max` with a non-negative `min`.
-  `median` is a float: an even member count averages the two middle
-  counts. A scan records the field when `--imatrix` names the
-  matrix it resolves weights from. The counts read through
-  `resolve_imatrix_counts`, which applies no super-block gate — an
-  expert stack whose rows refuse a k-quant fit still reports its
-  distribution (#177).
+  fused expert stack the counts are the routing distribution across
+  its experts. They are provenance. Nothing prices against them, and
+  no gate reads them. The field is additive and informational, so it
+  forced no schema bump: a reader that drops it loses provenance and
+  no assignment. An absent field means unknown — an unassisted scan,
+  a map written before the field existed, or a group the imatrix
+  does not cover. An explicit null is rejected, because the writer
+  never emits one. A present field must run `min <= median <= max`
+  with a non-negative `min` and a positive `covered`. `median` is a
+  float: an even member count averages the two middle counts.
+  `covered` is how many members the summary reduces, which may be
+  fewer than the group holds — 3 counts of a 128-expert stack must
+  not read like a small stack covered whole. A group may carry the
+  field only on a map that names `scan.imatrix`: only an assisted
+  scan reads counts, so the pair is a provenance invariant the
+  loader enforces. The counts read through `resolve_imatrix_counts`,
+  which applies no super-block gate — an expert stack whose rows
+  refuse a k-quant fit prices unassisted and still reports its
+  distribution (#177), so the field's presence does not imply the
+  group priced assisted.
 - **`scan.within_group`** — the within-group method token
   ([ADR-0018](../adr/0018-kquant-within-group-method.md)):
   `rtn-block32` (round-to-nearest, the v1 default), `kquant-ref`

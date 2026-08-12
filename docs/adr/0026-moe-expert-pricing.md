@@ -255,13 +255,36 @@ fit the packer does not ship. ADR-0021 recorded that failure.
   adds the frequency term and stays unbuilt.
 
     Decision 4 lands as `imatrix_counts` on a map group: `min`,
-    `median`, and `max`. The scan reads each member's count through
-    `resolve_imatrix_counts` and reduces it. The field is additive
-    and optional, so ADR-0013's silent-drop test does not fire — a
-    reader that drops it loses provenance and no assignment — and
-    `vramfit_schema` holds at 3. An absent field means unknown, and
-    the writer never emits a null. `median` is a float, because an
-    even member count averages the two middle counts.
+    `median`, `max`, and `covered`. The scan reads each member's
+    count through `resolve_imatrix_counts` and reduces it. The field
+    is additive and optional, so ADR-0013's silent-drop test does not
+    fire — a reader that drops it loses provenance and no
+    assignment — and `vramfit_schema` holds at 3. An absent field
+    means unknown, and the writer never emits a null. `median` is a
+    float, because an even member count averages the two middle
+    counts. A group may carry the field only on a map that names
+    `scan.imatrix`, because only an assisted scan reads counts.
+
+    The build widens the clause at three points, and the record
+    follows the build.
+
+    First, **every covered group gets a summary, not only a fused
+    stack.** The clause named the stack because that is the case it
+    was written for. A dense group collapses to one count three
+    times over, and a `layer`-keyed group summarizes its members. No
+    reading of the clause excluded them, and excluding them would
+    have meant a rule with no purpose.
+
+    Second, **a partly covered group summarizes the members it does
+    cover.** Dropping a 128-expert stack's whole distribution over
+    one missing member serves nobody.
+
+    Third, and because of the second, **the summary carries
+    `covered`**, the number of members it reduces. Three counts of a
+    128-expert stack must not read like a small stack covered whole.
+    The clause asked for three numbers. A distribution a reader
+    cannot size is weak evidence, and decision 4 exists to supply
+    evidence.
 
     Decision 5 lands as `imatrix_zero_count_experts` on the pack
     result, holding `(stack, expert)` pairs. It sits beside
@@ -270,10 +293,30 @@ fit the packer does not ship. ADR-0021 recorded that failure.
     experts are intentional misses and stay out. The pack reads the
     matrix through a new `ImatrixCountSource` port, not through the
     scan's reader: the pack path holds GGUF names rather than
-    Hugging Face ones, and the base install carries no torch
-    (ADR-0005). The gguf-py adapter reads only the `.counts`
-    tensors, about 24 KB on this model. It runs before the
-    quantizer, so an unreadable matrix refuses in milliseconds.
+    Hugging Face ones, and `resolve_imatrix_counts` sits in a module
+    that imports torch (ADR-0005). The gguf-py adapter reads only
+    the `.counts` tensors, about 24 KB on this model. It runs before
+    the quantizer, so an unreadable matrix refuses in milliseconds.
+
+    **The pack path gains a hard gguf-py requirement.** A pack that
+    names an imatrix now reads it, where before it only handed the
+    path to a subprocess. The `pack` extra already provisions
+    gguf-py. A pack without `--imatrix` touches neither.
+
+    The reader refuses a file it cannot vouch for: one that is no
+    imatrix, one that holds no counts, one that carries an unknown
+    tensor suffix, and one whose counts are negative or not finite.
+    Each would otherwise return the empty tuple, which is exactly
+    what a healthy matrix returns. A silent read failure and a clean
+    bill of health must not look alike.
+
+    **A dense entry at a count of zero is a fourth case, and nothing
+    reports it.** `imatrix_uncovered` scrapes the quantizer's "did
+    not find weights", which fires only on an absent entry. A dense
+    entry present at zero takes the unassisted fit unannounced.
+    Decision 5 names an expert inside a covered stack, so this
+    reader skips it. Every token hits every dense tensor, so
+    `llama-imatrix` is unlikely to write one. It stays open.
 
     No zero-count expert exists on this model and this corpus, so
     the port's contract suite writes its own starved matrices. That

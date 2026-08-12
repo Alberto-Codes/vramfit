@@ -329,7 +329,10 @@ class TorchDamageMeter:
             when it covers none of them (ADR-0026 decision 4). A
             partly covered group summarizes the members it does
             cover — the alternative drops a 128-expert stack's whole
-            distribution over one missing member.
+            distribution over one missing member. The summary's
+            ``covered`` field carries how many members that was, so a
+            reader can size the distribution rather than assume it
+            spans the group.
         """
         counts = [
             self._imatrix_counts[name]

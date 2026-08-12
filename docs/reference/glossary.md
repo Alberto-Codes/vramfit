@@ -300,9 +300,9 @@ change.
 :   The pack step's accounting record: real packed bytes plus the type
     mapping driven into the quantizer — base type, embedding and
     output-head flag types, the pattern overrides, the importance
-    matrix path when one was used, and the imatrix coverage record
-    (uncovered tensors, the exclusions the recipe instructed, and
-    the **zero-count experts**). Code type
+    matrix path when one was used, the imatrix coverage record
+    (uncovered tensors, and the exclusions the recipe instructed),
+    and the **zero-count experts** beside it. Code type
     `vramfit.domain.pack.PackResult`.
 
 **Importance matrix** (short: **imatrix**)
@@ -332,8 +332,9 @@ change.
 
 **Imatrix count summary**
 :   One layer group's **imatrix counts** reduced to a minimum, a
-    median, and a maximum. An assisted **sensitivity map** records
-    one per covered group, in `imatrix_counts`
+    median, a maximum, and the number of members reduced. An
+    assisted **sensitivity map** records one per covered group, in
+    `imatrix_counts`
     ([ADR-0026](../adr/0026-moe-expert-pricing.md) decision 4). It is
     provenance and never a gate — nothing prices against it. Over a
     fused **expert stack** it records the routing distribution the
@@ -349,9 +350,10 @@ change.
     covered. The pack path reports it by stack and expert index
     ([ADR-0026](../adr/0026-moe-expert-pricing.md) decision 5). Code
     type `vramfit.domain.pack.ZeroCountExpert`. Not an "imatrix
-    miss" — that names a whole tensor the matrix does not hold. None
-    exists on Nemotron 3.5 Lightning 30B-A3B under the published
-    822-chunk imatrix (issue #162).
+    miss" — that names a whole tensor the matrix does not hold, and
+    not "uncovered" for the same reason. None exists on Nemotron 3.5
+    Lightning 30B-A3B under the published 822-chunk imatrix: 0 cells
+    of 2,944 carry a zero count (issue #162).
 
 **Fit collapse**
 :   A quantizer failure mode under a fixed imatrix: an imatrix row
