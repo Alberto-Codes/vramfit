@@ -60,7 +60,7 @@ release backfills PDFs for an earlier version.
 
 - Decks describe the present state. The per-pull-request deck format
   ends.
-- PR #130 deletes the six quantfit-era deck sources. Git never tracked
+- PR #130 deletes the six pre-rename deck sources. Git never tracked
   their PDFs. Their measurements already live in the ADRs and the
   explanation pages.
 - Releases attach deck PDFs from the first release forward.

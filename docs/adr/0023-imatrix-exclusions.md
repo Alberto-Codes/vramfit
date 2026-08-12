@@ -87,7 +87,7 @@ uses for genuine coverage gaps.
 - The fit-collapse revision loop shortens: the gate's refusal is a
   copy-paste re-plan instead of a forfeited promotion.
 - Schema 4 breaks version-3 readers — the loader reads exactly one
-  version per quantfit, as with the 2→3 bump.
+  version per vramfit, as with the 2→3 bump.
 - An exclusion is user-directed, like the protection it rides. The
   gate proposes; the user disposes.
 - The exclusion list is a pack-layout fact, not a universal one:

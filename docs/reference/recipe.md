@@ -74,9 +74,8 @@ that produced it.
 [ADR-0020](../adr/0020-imatrix-assisted-pricing.md): the fields
 below remain, the sub-4-bit pricing claims do not.
 
-- **`vramfit_schema`** — 6 since the envelope key renamed from
-  `quantfit_schema` with the tool (#118). The reader accepts only
-  the new key at version 6.
+- **`vramfit_schema`** — 6 since the envelope key renamed with the
+  tool (#118). The reader accepts only the new key at version 6.
   5 stopped no-op protection pairs from resolving (issue #59): a
   schema-4 reader rejects a protection record with zero pairs, and
   a schema-4 recipe can carry no-op pairs that falsely fail the

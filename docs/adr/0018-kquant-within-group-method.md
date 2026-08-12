@@ -51,7 +51,8 @@ compounds on wrong marginals.
    checkpoints never mix methods (ADR-0006's rule, mechanized). The
    sensitivity map records the method in a new optional
    `scan.within_group` field. Absent means `rtn-block32`. The field
-   is additive — `quantfit_schema` stays at 1.
+   is additive — `vramfit_schema` stays at 1. (Since bumped to 2 with
+   the rename, #118.)
 4. **The port verifies against the C reference.** A local harness
    drives `ggml_quantize_chunk` through ctypes and records small
    golden fixtures (random, outlier-heavy, constant, zero, and

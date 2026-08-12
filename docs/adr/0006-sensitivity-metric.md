@@ -69,7 +69,7 @@ Points fixed at acceptance (2026-07-28):
   second 2026-07-29 amendment). The task-eval leg (tier 3) stays
   open.
 - How large a marginal-vs-whole-recipe gap invalidates a scan? The
-  validation pass exists (`quantfit validate`). First measurement
+  validation pass exists (`vramfit validate`). First measurement
   (2026-07-28, Qwen2.5-3B, the 6/5/4 mix, 32,768 tokens): measured
   0.0322 against predicted 0.0661 — the marginal damages are
   sub-additive by 2.05x. Second measurement (2026-07-29, Nemotron

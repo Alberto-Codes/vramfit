@@ -27,7 +27,7 @@ time.
 
 1. **A capability table maps runtime names to servable nominal
    precisions.** It lives in the domain
-   (`quantfit.domain.runtime.RUNTIME_CAPABILITIES`):
+   (`vramfit.domain.runtime.RUNTIME_CAPABILITIES`):
 
    | Runtime | Servable precisions |
    |---------|---------------------|
@@ -40,14 +40,14 @@ time.
    takes an optional `runtime`. When given, the candidate set is the
    scanned precisions intersected with the runtime's capability,
    order preserved. An unknown runtime, or an empty intersection,
-   raises `RuntimeCapabilityError` under the `QuantfitError` root.
+   raises `RuntimeCapabilityError` under the `VramfitError` root.
    Pins are validated against the filtered set. When absent, the
    solver behaves as before — the domain accepts unconstrained
    plans. The narrowing is never silent: the CLI reports the dropped
    precisions, and an infeasible budget names the precisions the
    runtime removed from the floor.
 3. **The recipe records the runtime.** A new top-level `runtime`
-   field, string or null. `quantfit plan` always sets it
+   field, string or null. `vramfit plan` always sets it
    (`--runtime`, default `llama.cpp`), so real artifacts always
    carry it. The recipe schema version bumps to 2 — a version-1
    reader would silently drop the constraint. (Since bumped to 3,
@@ -56,7 +56,7 @@ time.
    enforces the cross-field invariant for runtimes it knows: an
    assignment precision the recorded runtime cannot serve is a
    schema violation. An unknown runtime name loads untouched, so a
-   newer quantfit's recipe stays readable and pack backends judge
+   newer vramfit's recipe stays readable and pack backends judge
    it at use.
 4. **Pack backends reject foreign runtimes.** The GGUF backend
    refuses a recipe whose `runtime` is neither null nor `llama.cpp`.

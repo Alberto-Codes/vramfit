@@ -55,10 +55,10 @@ The sensitivity map is the output of `vramfit scan` and the input to
 [ADR-0020](../adr/0020-imatrix-assisted-pricing.md): the fields
 below remain, the sub-4-bit pricing claims do not.
 
-- **`vramfit_schema`** — 2 since the envelope key renamed from
-  `quantfit_schema` with the tool (#118). The reader accepts only
-  the new key at version 2. A schema-1 map migrates with a key
-  rename plus a version bump, or a re-scan. The #134 ruling froze
+- **`vramfit_schema`** — 2 since the envelope key renamed with the
+  tool (#118). The reader accepts only the new key at version 2. A
+  schema-1 map migrates with a key rename plus a version bump, or a
+  re-scan. The #134 ruling froze
   the 49B run root as a pre-rename archive. Migrate a copy. Never
   edit the archive. A #134 load check read all nine of its schema-1
   maps on 2026-08-11: 82 groups each

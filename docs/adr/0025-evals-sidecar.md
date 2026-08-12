@@ -4,7 +4,7 @@
 - **Date:** 2026-08-09
 - **Note (2026-08-10):** the open items below are settled, and the
   writer landed (issue #65). Decision 5 is superseded: the writer
-  lives at `quantfit.adapters.outbound.evals_sidecar_json`. Schema
+  lives at `vramfit.adapters.outbound.evals_sidecar_json`. Schema
   version 1 carries aggregates only, each tier block is optional,
   and the card joins sidecar pairs at render time. The baseline set grew: the #90 i-quant
   comparison put three more baselines on the card, so decision 4
@@ -15,7 +15,7 @@
   cross-artifact derivation lands as its own analysis artifact,
   never in a sidecar. Decision 4 extends: a derived card number
   traces to its analysis artifact instead. The analysis artifact
-  carries the `quantfit_schema` envelope, the method, the input log
+  carries the `vramfit_schema` envelope, the method, the input log
   hashes, the results, and the derived per-chunk KLD pairs. The
   pairs let a reader recompute every derived card number without
   the unpublished logs. This narrows the aggregates-only decision's
@@ -24,15 +24,13 @@
   generator sits beside it in the run archive.
   Publication #1 carries one: `analysis/kld564-paired-q3ks.json`,
   the paired candidate-vs-Q3_K_S comparison.
-- **Amendment (2026-08-11):** the `quantfit_schema` envelope key
-  became `vramfit_schema` with the rename to vramfit (#118, chart
-  #114). The sidecar schema version bumped to 2 with it. The
-  rename executed in #120. This record keeps every dated word
-  (#119). Throughout it, read `quantfit_schema` as
-  `vramfit_schema`. Read every sidecar schema version 1 as 2. The
-  example block therefore emits `"vramfit_schema": 2`. #121
-  re-uploaded the five published sidecars at that key and
-  version.
+- **Amendment (2026-08-11):** the tool renamed to vramfit (#118,
+  chart #114). The sidecar envelope key renamed with it, and the
+  sidecar schema version bumped to 2. The rename executed in #120.
+  This record keeps its dated version numbers. Read every dated
+  sidecar schema version 1 below as 2. The example block shows the
+  live version. #121 re-uploaded the five published sidecars at that
+  key and version.
 
 ## Context
 
@@ -58,7 +56,7 @@ and versioned. The evidence deserves the same treatment.
 
 1. **Evaluation results become a versioned artifact: the evals
    sidecar.** One JSON document per evaluated packed model,
-   carrying the `quantfit_schema` envelope, published beside the
+   carrying the `vramfit_schema` envelope, published beside the
    weights.
 2. **The sidecar records all three tiers.** Per tier: metric
    values with standard errors, the dataset or task list, few-shot
@@ -83,7 +81,7 @@ and versioned. The evidence deserves the same treatment.
   documents.
 - When the writer lands, it is an outbound adapter behind a port
   with a verified-fake contract suite (ADR-0009). The schema then
-  joins the `quantfit_schema` versioning rule: breaking changes
+  joins the `vramfit_schema` versioning rule: breaking changes
   bump it.
 - One more artifact rides every publication. The upload checklist
   grows by one file.
@@ -91,11 +89,12 @@ and versioned. The evidence deserves the same treatment.
 ## Open questions
 
 - ~~The schema shape.~~ **Decided (2026-08-10, issue #65): schema
-  version 1, committed with the writer.**
+  version 1, committed with the writer.** (Since bumped to 2 with the
+  rename, #118. The block below shows the live version.)
 
   ```json
   {
-    "quantfit_schema": 1,
+    "vramfit_schema": 2,
     "artifact": {"file": "…", "sha256": "…", "size_bytes": 0},
     "toolchain": {"llama_cpp_build": "…", "lm_eval": "…",
                   "llama_cpp_python": "…", "lane": "…"},
@@ -144,10 +143,11 @@ and versioned. The evidence deserves the same treatment.
   render-time join.** One sidecar describes one artifact. A
   baseline re-run replaces one file and never edits the
   candidate's — the diff-cleanly consequence above requires this.
-- Whether the planned `quantfit` HF tag points at the sidecar
+- Whether the `vramfit` HF tag points at the sidecar
   (the [artifact ecosystem's](../explanation/artifact-ecosystem.md)
   conventions-to-settle list). The #79 conventions record adopts
-  the tag but names no target.
+  the tag but names no target. The tag shipped on the model card
+  at the rename (#121). Its target stays unsettled.
 - ~~Where the sidecar sits in the published repo.~~ **Decided
   (2026-08-10):** the pack's sidecar publishes beside its weight
   file as `<artifact-file>.evals.json`, in the model repo the

@@ -37,7 +37,7 @@ precision. Add the exact DP solver later behind `--solver exact` as a check
 on greedy's gap. Record the solver name in the recipe (`plan.solver`) for
 reproducibility either way.
 
-Specifics fixed at implementation (`quantfit.domain.solver` — implemented 2026-07-27, path per ADR-0008):
+Specifics fixed at implementation (`vramfit.domain.solver` — implemented 2026-07-27, path per ADR-0008):
 
 - Moves consider **all** lower candidate precisions, not just the next step
   down, so non-convex damage curves get direct multi-step jumps.

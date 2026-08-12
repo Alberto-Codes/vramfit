@@ -26,7 +26,7 @@
 
 The twelfth data point (in
 [evaluating packed models](../explanation/evaluating-packed-models.md))
-crossed a line no quantfit artifact had crossed. Probe G1 held
+crossed a line no vramfit artifact had crossed. Probe G1 held
 `attn_v` at `Q5_K` on 44 layers of the no-2 recipe's pack layout.
 It beat the baseline's mean KLD in budget: 0.1512 against 0.1584,
 4.5 % lower, outside the combined error bars. The maintainer drove

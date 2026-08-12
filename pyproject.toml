@@ -206,6 +206,11 @@ min-coverage = 100.0
 [tool.ty.src]
 include = ["src", "tests"]
 
+# `scripts/` holds the gate scripts. They form no package, so name the
+# directory a search path to let their tests import them.
+[tool.ty.environment]
+extra-paths = ["scripts"]
+
 # The scan adapter and its torch-tier tests import torch and
 # transformers, which CI and torch-less dev boxes do not install
 # (ADR-0005). The reconstruction adapter and its contract suite
@@ -231,6 +236,10 @@ unresolved-import = "ignore"
 # --------------------------------------------------------------------------- #
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# `scripts/` holds the gate scripts. They form no package, so put the
+# directory on the import path for their tests, matching
+# `[tool.ty.environment] extra-paths`.
+pythonpath = ["scripts"]
 markers = [
     "unit: Unit tests (fast, isolated, no GPU); includes hypothesis properties",
     "contract: Verified-fake port suites — real and fake adapters proven equivalent",

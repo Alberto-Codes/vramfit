@@ -2,10 +2,9 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-28 (accepted 2026-07-28)
-- **Amendment (2026-08-11):** decision 2's `quantfit_runlog` key
-  becomes `vramfit_runlog` when the tool renames to vramfit (#118,
-  chart #114). The run-log version bumps with it. The rename
-  executes in #120.
+- **Amendment (2026-08-11):** the tool renamed to vramfit (#118,
+  chart #114). Decision 2's run-log envelope key renamed with it,
+  and the run-log version bumped. The rename executed in #120.
 
 ## Context
 
@@ -33,8 +32,8 @@ The human channel works: `typer.echo` progress lines and clean
    per line. The CLI writes it beside the run's artifacts as
    `<stem>.runlog.jsonl`.
 2. **The run log is an artifact.** Every line carries a
-   `quantfit_runlog` version field — deliberately distinct from
-   `quantfit_schema`, which versions whole artifact documents where
+   `vramfit_runlog` version field — deliberately distinct from
+   `vramfit_schema`, which versions whole artifact documents where
    this versions one event line. The adapter names events in the past
    tense: `scan_started`, `meter_built`, `resume_loaded`,
    `cell_measured`, `scan_finished`, `scan_halted`. `cell_measured`
@@ -52,13 +51,13 @@ The human channel works: `typer.echo` progress lines and clean
    stdlib `json` emitter avoids the dependency but loses processor
    pipelines, and the maintainer standardizes on structlog.
 4. **The domain stays log-free.** The import-linter forbidden list for
-   `quantfit.domain` gains `logging` and `structlog`. The run log is
+   `vramfit.domain` gains `logging` and `structlog`. The run log is
    an adapter concern.
-5. **One error root.** The domain defines `QuantfitError`. Every
-   quantfit exception inherits it while keeping its current base for
-   compatibility (e.g. `ArtifactError(QuantfitError, ValueError)`).
+5. **One error root.** The domain defines `VramfitError`. Every
+   vramfit exception inherits it while keeping its current base for
+   compatibility (e.g. `ArtifactError(VramfitError, ValueError)`).
    Adapters translate foreign exceptions (torch, transformers, OS)
-   into `QuantfitError` subclasses at the port boundary. The CLI
+   into `VramfitError` subclasses at the port boundary. The CLI
    converges its handlers on the root over time — the full collapse
    of per-command catch clauses is an open question below.
 
@@ -72,7 +71,7 @@ The human channel works: `typer.echo` progress lines and clean
   the meter, invisible to the CLI. A dedicated event needs a port
   change, and the first `cell_measured` absorbs its seconds today.
 - Full collapse of the CLI's per-command handlers onto the
-  `QuantfitError` root (the scan paths converge first).
+  `VramfitError` root (the scan paths converge first).
 - Translation of the torch meter's foreign RuntimeErrors, and its own
   stdlib raises, under the root.
 - Whether run logs join the provenance story for third-party map

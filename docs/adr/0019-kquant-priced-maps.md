@@ -81,7 +81,7 @@ model's failure mode (ADR-0006, fourth measurement).
   2.0x** (measured 0.0610 against predicted 0.1221, ADR-0006 fifth
   measurement). The breadth was wider than the recipe that went
   super-additive 11.9x on RTN prices. The pass must run with the
-  map's method — `quantfit validate --within-group kquant`. The
+  map's method — `vramfit validate --within-group kquant`. The
   recipe does not record its map's method, so the pairing is the
   caller's duty today. **Closed (2026-08-04):** the recipe now
   records its map's `within_group` token, `validate` resolves the

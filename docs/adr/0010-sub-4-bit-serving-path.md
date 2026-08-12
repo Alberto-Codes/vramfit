@@ -73,7 +73,7 @@ from measurement.
    Sensitivity is a property of the model, not of a runtime. The scan
    simulates quantization (quantize–dequantize, bf16 compute) and needs
    no runtime kernel, so this set is safe under every resolution path.
-2. **The benchmark serves through llama.cpp.** `quantfit pack` grows a
+2. **The benchmark serves through llama.cpp.** `vramfit pack` grows a
    GGUF backend, promoted from "planned second" (ADR-0004) to first in
    line. This amends the serving-runtime clause of ADR-0003.
 3. **The benchmark claim sharpens to quality at equal size.** The

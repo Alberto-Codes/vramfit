@@ -195,6 +195,17 @@ class TestRecipe:
         with pytest.raises(ArtifactError, match='renamed to "vramfit_schema"'):
             recipe_from_dict(raw)
 
+    def test_pre_rename_envelope_key_current_version_omits_migration_advice(
+        self,
+    ) -> None:
+        raw = make_recipe_dict()
+        raw["quantfit_schema"] = raw.pop("vramfit_schema")
+
+        with pytest.raises(ArtifactError) as excinfo:
+            recipe_from_dict(raw)
+
+        assert "A key rename alone" not in excinfo.value.message
+
     def test_missing_assignment_field_rejected(self) -> None:
         raw = make_recipe_dict()
         del raw["assignments"][0]["bits"]

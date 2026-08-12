@@ -91,7 +91,7 @@ Launch 49B scans at a 15 GiB cap with the default allocator.
 - Damage numbers for offloaded groups are exact, not approximate:
   the perturbed CPU tensor is byte-identical to what the hook ships
   to the GPU each forward.
-- `quantfit validate` at 49B scale requires the model as a local
+- `vramfit validate` at 49B scale requires the model as a local
   safetensors directory. Hub-cached models with offloaded groups can
   scan but not validate. The refusal message names the fix.
 - The scan's host-RAM floor at 49B scale is the offloaded weights
