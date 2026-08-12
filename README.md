@@ -54,7 +54,7 @@ The full pipeline is implemented: `scan`, `plan`, `validate`, `pack`, plus
 `budget` for the VRAM arithmetic. Pack quantizes with an importance matrix
 (ADR-0016), guards protected packs with a per-tensor reconstruction
 check (ADR-0022), and smoke-tests every artifact before trusting it
-(ADR-0017). Sixteen data points span 2026-07-28 to 2026-08-10.
+(ADR-0017). Seventeen data points span 2026-07-28 to 2026-08-11.
 Every packed model fits the card first try.
 
 The pipeline **wins the head-to-head on the ruling window**. On
@@ -78,7 +78,7 @@ Within-layer protections plus imatrix exclusions (ADR-0022,
 ADR-0023) closed the fit-collapse gap.
 
 The [evidence page](docs/explanation/evaluating-packed-models.md) records
-all sixteen data points. Publication #1 is live on Hugging Face: the
+all seventeen data points. Publication #1 is live on Hugging Face: the
 [packed model](https://huggingface.co/Alberto-Codes/Llama-3_3-Nemotron-Super-49B-v1_5-fit24gib-GGUF)
 and the
 [sensitivity-map dataset](https://huggingface.co/datasets/Alberto-Codes/Llama-3_3-Nemotron-Super-49B-v1_5-sensitivity-maps).
