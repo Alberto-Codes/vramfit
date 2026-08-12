@@ -1,14 +1,17 @@
 ---
-status: sketch
+status: draft
 ---
 
 # The artifact ecosystem: how this work could outlive the tool
 
-> **Status: sketch** — strategy thinking recorded 2026-07-28, before the
+> **Status: draft** — strategy thinking recorded 2026-07-28, before the
 > 49B benchmark ran. The benchmark ran 2026-07-29 and **lost** — see
 > [the fourth data point](evaluating-packed-models.md) and the gate
-> notes below. Nothing else here is committed work. The triggers that
-> would activate each phase are tracked in issue #11.
+> notes below.
+> Promoted to `draft` 2026-08-12: the publication gates on this page
+> ran for real. Gate 3 ruled GO on #80, and publication #1 shipped
+> through the procedure. The phases beyond publication remain
+> uncommitted, and their triggers stay tracked in issue #11.
 
 ## The honest competitive picture
 

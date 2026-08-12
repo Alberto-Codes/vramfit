@@ -114,6 +114,22 @@ Pyramid per ADR-0009, rules in `.claude/rules/pytest.md`:
 - `from __future__ import annotations` at the top of every file.
 - No relative imports; no `__main__.py`.
 
+## Charting: work bigger than one session
+
+Efforts that span many sessions get a **chart** — one GitHub issue,
+label `chart`, that indexes the route. Decision tickets hang off it as
+sub-issues. The convention lives in
+[docs/explanation/charting.md](docs/explanation/charting.md), and
+`.claude/rules/charting.md` enforces the load-bearing rules.
+
+One inversion matters here: **a decision ticket never stores a
+decision.** It closes with a pointer to the record — an ADR, an
+amendment, a scoreboard data point, or a docs change. The chart indexes.
+The records carry the truth.
+
+Read the convention page before charting or working a chart ticket.
+Ignore both files in every other session.
+
 ## Branching & Commits
 
 - Single default branch `main`; feature branches `feat/<scope>-<description>`
