@@ -78,6 +78,13 @@ repos:
         pass_filenames: false
         always_run: true
 
+      - id: banned-terms
+        name: pre-rename tool name stays out of the tree
+        entry: uv run python scripts/check_banned_terms.py
+        language: system
+        pass_filenames: false
+        always_run: true
+
       - id: docvet
         name: docvet check
         entry: uv run docvet check --staged

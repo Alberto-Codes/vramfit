@@ -144,10 +144,12 @@ def _parse_checkpoint(data: object, fingerprint: str) -> tuple[Measurement, ...]
         ArtifactError: If the checkpoint carries the pre-rename
             envelope key (#118), the schema version is unsupported,
             a field is missing or mistyped, a damage value is invalid,
-            or the stored fingerprint differs.
+            or the stored fingerprint differs. The pre-rename message
+            names `CHECKPOINT_SCHEMA_VERSION` too, because an archived
+            checkpoint fails the version next (#154).
     """
     root = _get_dict(data, "$")
-    _reject_renamed_envelope_key(root, "$")
+    _reject_renamed_envelope_key(root, "$", CHECKPOINT_SCHEMA_VERSION)
     version = _get_int(root, "vramfit_schema", "$")
     _require(
         version == CHECKPOINT_SCHEMA_VERSION,

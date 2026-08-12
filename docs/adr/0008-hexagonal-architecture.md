@@ -21,17 +21,17 @@ convention in Python service codebases:
 
 | Layer | Contents | May import |
 |-------|----------|------------|
-| `quantfit.adapters.inbound` | Typer CLI (driving adapter, composition root) | everything below |
-| `quantfit.adapters.outbound` | JSON artifact files, HF config parsing | ports, domain |
-| `quantfit.ports` | `Protocol` definitions (outbound only today) | domain |
-| `quantfit.domain` | model dataclasses, solver, budget math | domain only |
+| `vramfit.adapters.inbound` | Typer CLI (driving adapter, composition root) | everything below |
+| `vramfit.adapters.outbound` | JSON artifact files, HF config parsing | ports, domain |
+| `vramfit.ports` | `Protocol` definitions (outbound only today) | domain |
+| `vramfit.domain` | model dataclasses, solver, budget math | domain only |
 
 Rules with teeth (the import-linter lookup map, in `pyproject.toml`):
 
 1. **"Hexagonal layers"** — the table above, as a layers contract.
 2. **"Domain is IO-free"** — the domain may not import `json`,
    `pathlib`, `os`, `io`, or `typer`. Serialization and file access are
-   adapter concerns; consequently the `quantfit_schema` version field is
+   adapter concerns; consequently the `vramfit_schema` version field is
    an **envelope owned by the JSON adapters**, not a domain field.
 3. **"No heavy ML deps"** — carried over from ADR-0005.
 

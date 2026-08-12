@@ -25,7 +25,7 @@ tooling live.
 
 ## Decision
 
-`quantfit pack` targets **vLLM (compressed-tensors format) first**. GGUF
+`vramfit pack` targets **vLLM (compressed-tensors format) first**. GGUF
 export is planned second — it reaches the llama.cpp audience that made
 antirez-style selective GGUFs popular — and the recipe format stays
 runtime-neutral so a pack backend is additive.
@@ -42,10 +42,10 @@ runtime-neutral so a pack backend is additive.
   candidate-precision set for vLLM recipes is effectively {8, 4-int, 4-fp}
   until that changes. Sub-4-bit recipes run through the GGUF backend
   (shipped, ADR-0012).
-- `quantfit pack` should drive [llm-compressor](https://github.com/vllm-project/llm-compressor)
+- `vramfit pack` should drive [llm-compressor](https://github.com/vllm-project/llm-compressor)
   rather than reimplement checkpoint writing.
 - **Open tension with ADR-0003:** the north-star budget forces ~3.3–3.5
-  average bits/parameter (measured via `quantfit budget` with the real
+  average bits/parameter (measured via `vramfit budget` with the real
   config: 18.94 GiB weight budget at fp16 KV, 20.47 GiB at fp8 KV),
   below vLLM's 4-bit kernel floor. Resolution paths, in
   rough order of preference: (a) the scan + budget math turns out friendlier

@@ -86,6 +86,7 @@ uv run ty check                      # Type checking
 uv run pytest -m "not gpu and not integration"  # Tests (CI enforces 90% coverage)
 uv run lint-imports                  # Hex layers + domain purity
 uv run python scripts/check_loc.py src  # File size cap (300/320 code lines)
+uv run python scripts/check_banned_terms.py  # Pre-rename tool name (#154)
 uv run docvet check --all            # Docstring quality
 ```
 

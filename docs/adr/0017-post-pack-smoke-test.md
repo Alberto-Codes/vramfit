@@ -21,7 +21,7 @@ payload finite
 The scan-frame damage model predicted 1.44 for it. Nothing between
 `plan` and the evaluation tier catches this class. ADR-0012's second
 amendment records the requirement and leaves the placement open:
-inside `quantfit pack` behind a flag, or first step of the
+inside `vramfit pack` behind a flag, or first step of the
 evaluation tier. Issue #36 tracks it.
 
 Two facts size the gate:
@@ -34,7 +34,7 @@ Two facts size the gate:
 
 ## Decision
 
-1. **The smoke test lives inside `quantfit pack`.** The pack step is
+1. **The smoke test lives inside `vramfit pack`.** The pack step is
    the last stage that owns the artifact. Placed in the evaluation
    tier, `pack` could still exit 0 on a destroyed file, and every
    downstream consumer would have to know that. The gate belongs to

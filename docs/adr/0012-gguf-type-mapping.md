@@ -110,7 +110,7 @@ scan does not produce one today. K-quants need no extra input.
   package — the adapter drives them as subprocesses, and the base
   install stays torch-free (ADR-0005). The `pack` extra provisions
   the convert interpreter (torch, transformers, sentencepiece)
-  without adding a single import to quantfit.
+  without adding a single import to vramfit.
 
 ## Open questions
 
@@ -133,8 +133,8 @@ scan does not produce one today. K-quants need no extra input.
 - Whether pack should verify the base GGUF matches the recipe's
   `model_id` (today the caller vouches for the pairing).
 - ~~Where the post-pack smoke test lives (second 2026-07-29 amendment):
-  inside `quantfit pack` behind a flag, or as the first step of the
+  inside `vramfit pack` behind a flag, or as the first step of the
   evaluation tier. The destroyed-artifact evidence is in
   [evaluating packed models](../explanation/evaluating-packed-models.md).~~
   Resolved by [ADR-0017](0017-post-pack-smoke-test.md): inside
-  `quantfit pack`, behind `--smoke-text`.
+  `vramfit pack`, behind `--smoke-text`.

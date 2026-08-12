@@ -37,7 +37,7 @@ Qwen2.5-3B packs) shows the real cost has two parts:
 ## Decision
 
 1. **The domain records effective bits per runtime.**
-   `quantfit.domain.runtime.EFFECTIVE_BITS` maps a runtime name to a
+   `vramfit.domain.runtime.EFFECTIVE_BITS` maps a runtime name to a
    nominal-bits → effective-bits table:
 
    | Nominal bits | llama.cpp type | Effective bits/weight |
@@ -72,7 +72,7 @@ Qwen2.5-3B packs) shows the real cost has two parts:
 4. **The recipe schema does not change.** `plan.format_overhead`
    keeps its name, type, and role — the fraction used for size
    predictions. The assignments' `bytes` values embed the size
-   model, and the recorded `runtime` plus the quantfit version name
+   model, and the recorded `runtime` plus the vramfit version name
    the table that produced them. Schema stays at version 2 as of
    this record. (Since bumped to 3, 4, then 5 — ADR-0022, ADR-0023,
    issue #59.)

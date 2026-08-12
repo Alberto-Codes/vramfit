@@ -25,6 +25,6 @@ independently re-runnable; each artifact is inspectable and shareable.
 - Artifacts double as publishable outputs — a sensitivity map for a popular
   model is useful to people who never run `scan`.
 - Two file-format contracts must be versioned and kept stable
-  (`quantfit_schema` field); format churn breaks downstream stages.
+  (`vramfit_schema` field); format churn breaks downstream stages.
 - No single "just do it" command for now; a convenience wrapper can compose
   the three later without changing the architecture.

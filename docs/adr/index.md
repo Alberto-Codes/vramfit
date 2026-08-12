@@ -7,18 +7,21 @@ in the header, and open questions stay live — they accrete
 measurements and strikethroughs. A full change of course gets a *new*
 ADR that supersedes the old one.
 
-> **Ruled 2026-08-11 (#119).** The tool renames from quantfit to
-> vramfit (chart #114). Records dated before 2026-08-11 keep
-> quantfit. Dated bullets quote quantfit-era decisions verbatim. Records
-> dated on or after 2026-08-11 use vramfit. The decks in docs/decks
-> carry dates and keep quantfit. Undated pages, including the
-> glossary and README, rewrite when the rename executes (#120).
+> **Ruled 2026-08-11 (#119), narrowed 2026-08-12 (#154).** The tool
+> renamed to vramfit (chart #114). #119 let records dated before
+> 2026-08-11 keep the pre-rename name. #154 narrows that rule. Every
+> record keeps its dates, decisions, and numbers. The name alone
+> reads vramfit throughout. Module paths, CLI invocations, extras,
+> and envelope keys therefore carry the live spelling, so
+> `scripts/check_doc_refs.py` can see them. A rename is not a
+> revision, so the substitution does not breach the immutability rule
+> above. `scripts/check_banned_terms.py` gates the result.
 
-> **Note 2026-08-11 (#124).** The deck clause above no longer applies.
-> Decks describe the present state and name a release. PR #130 deletes
-> the six quantfit-era deck sources. Releases attach deck PDFs from the
-> first release forward, and no release backfills PDFs. The
-> [deck conventions](../decks/index.md) record the replacement.
+> **Note 2026-08-11 (#124).** The deck clause of #119 no longer
+> applies. Decks describe the present state and name a release. PR
+> #130 deletes the six pre-rename deck sources. Releases attach deck
+> PDFs from the first release forward, and no release backfills PDFs.
+> The [deck conventions](../decks/index.md) record the replacement.
 
 ## Lifecycle
 

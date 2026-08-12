@@ -39,20 +39,20 @@ b10172):
 - The f16 base GGUF of the 49B target (93 GB) is on disk, kept for
   this.
 - ADR-0010 recorded a design intent: the scan emits the matrix as a
-  calibration byproduct. That requires quantfit to write llama.cpp's
+  calibration byproduct. That requires vramfit to write llama.cpp's
   imatrix format from the torch frame — a real subproject, not a
   flag.
 
 ## Decision
 
-1. **`quantfit pack` accepts `--imatrix <file>` and forwards it to
+1. **`vramfit pack` accepts `--imatrix <file>` and forwards it to
    `llama-quantize --imatrix`.** The type tables (ADR-0012) and the
    effective-bits table (ADR-0014) do not change. The matrix changes
    how values round inside each block, not the block layout or the
    size. `PackResult` and the `model_packed` event record the path —
    an imatrix-assisted artifact must say so in its provenance.
 2. **v1 generates the matrix with `llama-imatrix` against the kept
-   f16 base GGUF.** Generation stays outside `quantfit pack`: it is
+   f16 base GGUF.** Generation stays outside `vramfit pack`: it is
    a GPU-scale forward pass with its own runtime flags, and the pack
    step must stay a CPU subprocess driver. The scan-emits-it design
    intent stays open below.

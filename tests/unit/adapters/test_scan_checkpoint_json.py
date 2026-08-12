@@ -82,6 +82,31 @@ def test_pre_rename_envelope_key_rejected(tmp_path) -> None:
         JsonScanCheckpointFile(path).load(FP)
 
 
+def test_pre_rename_envelope_key_older_version_names_both_blockers(tmp_path) -> None:
+    path = tmp_path / "scan.checkpoint.json"
+    path.write_text(json.dumps({"quantfit_schema": 1, "fingerprint": FP}))
+
+    with pytest.raises(ArtifactError) as excinfo:
+        JsonScanCheckpointFile(path).load(FP)
+
+    message = excinfo.value.message
+    assert "new key at version 2" in message
+    assert "declares version 1" in message
+    assert "A key rename alone does not make it load." in message
+
+
+def test_pre_rename_envelope_key_unreadable_version_names_only_the_key(
+    tmp_path,
+) -> None:
+    path = tmp_path / "scan.checkpoint.json"
+    path.write_text(json.dumps({"quantfit_schema": "one", "fingerprint": FP}))
+
+    with pytest.raises(ArtifactError) as excinfo:
+        JsonScanCheckpointFile(path).load(FP)
+
+    assert "declares version" not in excinfo.value.message
+
+
 def test_invalid_stored_damage_raises_with_json_path(tmp_path) -> None:
     path = tmp_path / "scan.checkpoint.json"
     path.write_text(

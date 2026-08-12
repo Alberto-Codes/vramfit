@@ -11,7 +11,8 @@ empty string. Schema versions advance
 per artifact (ADR-0013) — each adapter owns its version constant and
 passes it to `_check_schema_version`. Readers accept only the
 post-rename envelope key (#118): a document carrying
-``quantfit_schema`` fails with a message that names the new key.
+``quantfit_schema`` fails with a message that names the new key and
+the version this reader accepts (#154).
 
 Examples:
     Report a validation failure with its JSON path:
@@ -260,23 +261,54 @@ def _get_float(obj: dict[str, Any], key: str, path: str) -> float:
     return _as_float(obj[key], f"{path}.{key}")
 
 
-def _reject_renamed_envelope_key(obj: dict[str, Any], path: str) -> None:
+def _pre_rename_version(obj: dict[str, Any]) -> int | None:
+    """Read the schema version a pre-rename artifact declares.
+
+    Args:
+        obj: Top-level artifact object.
+
+    Returns:
+        The declared version, or None when the key is absent or its
+        value is not an integer. JSON booleans are Python integers and
+        do not count.
+    """
+    value = obj.get("quantfit_schema")
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value
+
+
+def _reject_renamed_envelope_key(obj: dict[str, Any], path: str, expected: int) -> None:
     """Reject an artifact that carries the pre-rename envelope key.
+
+    The message names both blockers, not just the first (#154). Every
+    artifact in the frozen run root (#134) predates the rename by one
+    to four schema versions. A reader who renames the key alone fails
+    again on the version, so the message states the version too.
 
     Args:
         obj: Top-level artifact object.
         path: JSON path of the artifact root.
+        expected: The schema version this artifact's adapter reads.
 
     Raises:
-        ArtifactError: If the object carries ``quantfit_schema`` — the
-            key renamed to ``vramfit_schema`` with the tool (#118), and
-            readers accept only the new key.
+        ArtifactError: If the object carries ``quantfit_schema``, the
+            key renamed to ``vramfit_schema`` with the tool (#118).
     """
+    if "quantfit_schema" not in obj:
+        return
+    found = _pre_rename_version(obj)
+    detail = ""
+    if found is not None and found != expected:
+        detail = (
+            f" The document declares version {found}. "
+            "A key rename alone does not make it load."
+        )
     _require(
-        "quantfit_schema" not in obj,
+        False,
         f"{path}.quantfit_schema",
-        'the envelope key renamed to "vramfit_schema" (#118) — '
-        "this vramfit reads only the new key",
+        'the envelope key renamed to "vramfit_schema" (#118). '
+        f"This vramfit reads only the new key at version {expected}.{detail}",
     )
 
 
@@ -295,9 +327,11 @@ def _check_schema_version(obj: dict[str, Any], path: str, expected: int) -> None
     Raises:
         ArtifactError: If the version is missing or unsupported — the
             message names the version this vramfit reads. A document
-            carrying the pre-rename key gets the rename message instead.
+            carrying the pre-rename key gets the rename message
+            instead, which names ``expected`` as well as the key
+            (#154).
     """
-    _reject_renamed_envelope_key(obj, path)
+    _reject_renamed_envelope_key(obj, path, expected)
     version = _get_int(obj, "vramfit_schema", path)
     _require(
         version == expected,

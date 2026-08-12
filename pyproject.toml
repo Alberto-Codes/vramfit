@@ -206,6 +206,11 @@ min-coverage = 100.0
 [tool.ty.src]
 include = ["src", "tests"]
 
+# `scripts/` holds the gate scripts. They form no package, so name the
+# directory a search path to let their tests import them.
+[tool.ty.environment]
+extra-paths = ["scripts"]
+
 # The scan adapter and its torch-tier tests import torch and
 # transformers, which CI and torch-less dev boxes do not install
 # (ADR-0005). The reconstruction adapter and its contract suite

@@ -73,4 +73,4 @@ a llama.cpp checkout with built tools, which you supply with
   solves on a copy of the sensitivity map with the 2-bit column removed
   ([ADR-0021](https://github.com/Alberto-Codes/vramfit/blob/main/docs/adr/0021-runtime-frame-measurement.md)).
 * Artifacts carry the `vramfit_schema` envelope key. Readers reject the
-  pre-rename key by name, so a quantfit-era artifact does not load.
+  pre-rename key by name, so a pre-rename artifact does not load.
