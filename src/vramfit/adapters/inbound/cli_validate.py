@@ -259,7 +259,7 @@ def validate(
         int, typer.Option(min=2, help="Calibration token budget.")
     ] = 131072,
     group_by: Annotated[
-        str, typer.Option(help="Grouping granularity: layer or tensor.")
+        str, typer.Option(help="Grouping granularity: layer, tensor, or stack.")
     ] = "layer",
     device: Annotated[
         str, typer.Option(help="Device map: auto, cpu, or cuda.")
@@ -320,6 +320,9 @@ def validate(
     ADR-0006 until measured gaps exist. With offloaded groups the
     pass restores originals from the model's safetensors shards, so
     the model must be a local safetensors directory (ADR-0015).
+    Pass the ``--group-by`` the scan used. A recipe priced on a
+    ``stack``-keyed map names groups the other granularities never
+    produce, so a mismatch surfaces as an unknown group.
 
     Raises:
         typer.BadParameter: If ``--group-by``, ``--within-group``, or
@@ -342,9 +345,9 @@ def validate(
         $ vramfit validate recipe.json --calibration calib.txt --max-tokens 32768
         ```
     """
-    if group_by not in ("layer", "tensor"):
+    if group_by not in ("layer", "tensor", "stack"):
         raise typer.BadParameter(
-            f'--group-by: expected "layer" or "tensor", got "{group_by}"'
+            f'--group-by: expected "layer", "tensor", or "stack", got "{group_by}"'
         )
     gpu_memory_bytes = parse_gpu_memory(gpu_memory, device)
 

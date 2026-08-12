@@ -47,7 +47,15 @@ change.
 **Layer group** (short: **group**)
 :   The unit of scanning and precision assignment — a named set of tensors
     quantized together (e.g. one layer's attention projections). Granularity
-    set by `--group-by`.
+    set by `--group-by`: `layer`, `stack`, or `tensor`.
+
+**Expert stack** (short: **stack**)
+:   One mixture-of-experts projection's experts, addressed as a single
+    unit. llama.cpp fuses them into one tensor that carries one
+    quantization type, so a pack assigns one precision to the whole
+    stack (#159). The `stack` value of `--group-by` keys the
+    sensitivity map on this unit (#161). Not "expert group" or
+    "fused experts".
 
 **Sensitivity**
 :   A group's measured fragility: how much damage quantizing *it alone* to a

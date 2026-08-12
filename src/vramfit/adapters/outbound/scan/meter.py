@@ -11,6 +11,10 @@ vocabulary) so the reference model runs exactly once.
 Only floating-point tensors with 2+ dimensions join layer groups —
 norms and biases stay at reference precision and are not scanned.
 Tied names that alias one storage collapse to one group.
+``group_by`` decides the rest: ``layer`` collapses each decoder layer,
+``tensor`` keeps every weight apart, and ``stack`` keeps every weight
+apart except a mixture-of-experts layer's routed experts, which fuse
+into one group per projection — the unit a pack addresses (#161).
 A measurement that fails to restore the model poisons the meter: it
 refuses further cells rather than measure against corrupt weights.
 Groups that ``auto`` sharding offloaded to host RAM perturb through
@@ -85,6 +89,12 @@ from vramfit.domain.scan import GroupSpec
 # Decoder-layer prefixes across common naming families: llama-style
 # ".layers.N.", GPT-2-style ".h.N.", and ".blocks.N.".
 _LAYER_PREFIX = re.compile(r"^(.*\.(?:layers|h|blocks)\.\d+)\.")
+# The routed-expert index inside a mixture-of-experts parameter name.
+# Matches the Mixtral family (".block_sparse_moe.experts.N.w1") and the
+# Qwen, DeepSeek, and Nemotron family (".mlp.experts.N.up_proj").
+# `stack` grouping removes the index, which fuses one projection's
+# experts into the single unit a pack addresses (#159, #161).
+_EXPERT_INDEX = re.compile(r"\.experts\.\d+\.")
 
 
 class TorchDamageMeter:
@@ -132,7 +142,7 @@ class TorchDamageMeter:
         model_id: str,
         calibration_path: Path,
         max_tokens: int,
-        group_by: Literal["layer", "tensor"] = "layer",
+        group_by: Literal["layer", "tensor", "stack"] = "layer",
         device: str = "auto",
         trust_remote_code: bool = False,
         block_size: int = DEFAULT_BLOCK_SIZE,
@@ -152,7 +162,8 @@ class TorchDamageMeter:
             calibration_path: UTF-8 calibration text file.
             max_tokens: Upper bound on calibration tokens.
             group_by: Grouping granularity — one group per decoder
-                layer, or one per tensor.
+                layer, one per tensor, or one per pack-addressable
+                stack.
             device: transformers ``device_map`` value (``auto``,
                 ``cpu``, or ``cuda``).
             trust_remote_code: Allow model repos with custom modeling
@@ -623,14 +634,18 @@ def _max_memory(device: str, max_gpu_memory: int | None) -> dict[int | str, int]
 
 
 def _discover_groups(
-    model: torch.nn.Module, group_by: Literal["layer", "tensor"]
+    model: torch.nn.Module, group_by: Literal["layer", "tensor", "stack"]
 ) -> dict[str, list[str]]:
     """Group the model's quantizable parameters.
 
     Args:
         model: The loaded model.
         group_by: ``layer`` collapses each decoder layer into one
-            group. ``tensor`` keeps every weight separate.
+            group. ``tensor`` keeps every weight separate. ``stack``
+            keeps every weight separate except a mixture-of-experts
+            layer's routed experts, which collapse to one group per
+            projection. On a dense model ``stack`` matches ``tensor``,
+            because a pack addresses each of its weights on its own.
 
     Returns:
         Ordered mapping of group name to member parameter names. Only
@@ -648,6 +663,8 @@ def _discover_groups(
             continue
         if group_by == "tensor":
             key = name.removesuffix(".weight")
+        elif group_by == "stack":
+            key = _EXPERT_INDEX.sub(".experts.", name).removesuffix(".weight")
         else:
             match = _LAYER_PREFIX.match(name)
             layer_matches += bool(match)

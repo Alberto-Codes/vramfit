@@ -7,6 +7,19 @@
   stay a pack concern is revised — the domain now records effective
   bits per runtime, and the solver prices sizes from them. The
   capability table and everything else stand.
+- **Amendment (2026-08-11, issue #161):** decision 3 states that
+  schema versions advance per artifact. It implied one readable
+  version per adapter, which the loader enforced by equality. That
+  rule is now narrower: **an adapter reads one version unless the
+  bump only widened what a document may say.** The sensitivity map
+  writes 3 and reads 2 and 3, because version 3 only added the
+  `stack` value to `group_by`. Every version-2 map is already a
+  valid version-3 document, and the published maps dataset ships
+  version 2. Adapters name the older versions through
+  `_check_schema_version(also_reads=...)`, which defaults to empty —
+  a widening is stated, never assumed. A bump that changes a
+  field's meaning still reads one version. Read decision 3's "the
+  sensitivity map stays at 1" as version 3.
 
 ## Context
 

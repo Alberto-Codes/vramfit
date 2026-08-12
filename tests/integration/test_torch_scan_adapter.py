@@ -35,6 +35,34 @@ pytestmark = [pytest.mark.integration, pytest.mark.slow]
 runner = CliRunner()
 
 
+class _MoeLike(torch.nn.Module):
+    """One mixture-of-experts layer, named like the Nemotron family.
+
+    Routed experts carry an index that `stack` grouping collapses. The
+    shared expert and the attention projection carry none, so they stay
+    separate. Sizes are irrelevant — only the parameter names matter.
+    """
+
+    def __init__(self, experts: int) -> None:
+        super().__init__()
+
+        def expert() -> torch.nn.Module:
+            part = torch.nn.Module()
+            part.up_proj = torch.nn.Linear(4, 4)
+            part.down_proj = torch.nn.Linear(4, 4)
+            return part
+
+        layer = torch.nn.Module()
+        layer.mlp = torch.nn.Module()
+        layer.mlp.experts = torch.nn.ModuleList([expert() for _ in range(experts)])
+        layer.mlp.shared_expert = torch.nn.Module()
+        layer.mlp.shared_expert.up_proj = torch.nn.Linear(4, 4)
+        layer.self_attn = torch.nn.Module()
+        layer.self_attn.q_proj = torch.nn.Linear(4, 4)
+        self.model = torch.nn.Module()
+        self.model.layers = torch.nn.ModuleList([layer])
+
+
 class TestRtnQuantize:
     def test_8bit_roundtrip_is_near_lossless(self) -> None:
         torch.manual_seed(0)
@@ -232,6 +260,50 @@ class TestTorchDamageMeter:
         groups = _discover_groups(Gpt2Like(), "layer")
 
         assert set(groups) == {"transformer.h.0", "transformer.h.1"}
+
+    def test_moe_names_group_by_stack_fuses_one_projection(self) -> None:
+        # llama.cpp gives one quantization type per fused expert stack
+        # (#159), so the map keys on that unit (#161). Discovery must
+        # collapse the expert index and nothing else.
+        from vramfit.adapters.outbound.scan.meter import _discover_groups
+
+        groups = _discover_groups(_MoeLike(experts=4), "stack")
+
+        assert set(groups) == {
+            "model.layers.0.mlp.experts.up_proj",
+            "model.layers.0.mlp.experts.down_proj",
+            "model.layers.0.mlp.shared_expert.up_proj",
+            "model.layers.0.self_attn.q_proj",
+        }
+        assert len(groups["model.layers.0.mlp.experts.up_proj"]) == 4
+
+    def test_stack_grouping_is_coarser_than_tensor_grouping_on_moe(self) -> None:
+        from vramfit.adapters.outbound.scan.meter import _discover_groups
+
+        model = _MoeLike(experts=4)
+
+        by_stack = _discover_groups(model, "stack")
+        by_tensor = _discover_groups(model, "tensor")
+
+        assert len(by_stack) == 4
+        assert len(by_tensor) == 10
+
+    def test_stack_grouping_matches_tensor_grouping_on_a_dense_model(self) -> None:
+        # A dense model has no expert index to collapse. A pack
+        # addresses each of its weights alone, so the two agree.
+        from vramfit.adapters.outbound.scan.meter import _discover_groups
+
+        class DenseLike(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.model = torch.nn.Module()
+                self.model.layers = torch.nn.ModuleList(
+                    [torch.nn.Linear(4, 4) for _ in range(2)]
+                )
+
+        model = DenseLike()
+
+        assert _discover_groups(model, "stack") == _discover_groups(model, "tensor")
 
     def test_max_memory_maps_cap_and_cpu_for_auto_only(self) -> None:
         from vramfit.adapters.outbound.scan.meter import _max_memory

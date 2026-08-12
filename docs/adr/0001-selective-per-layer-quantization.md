@@ -11,6 +11,28 @@
   ([ADR-0012](0012-gguf-type-mapping.md) open questions). *How to
   round* is not separable from the outcome at 3-bit scale.
 
+- **Amendment (2026-08-11, issue #161):** the decision below says
+  "per-layer-group". It never said what a group is on a
+  mixture-of-experts model, because the first targets were dense.
+  Ruling: **the group is the unit a pack can address.** The
+  sensitivity map gains a `stack` value for `--group-by`, which
+  collapses one projection's routed experts into one group and keeps
+  every other weight separate. On a dense model `stack` matches
+  `tensor`, so this record's original claim is unchanged there.
+
+    Two measurements forced it. llama.cpp fuses each layer's experts
+    into one tensor carrying one quantization type, which gives 46
+    addressable expert slots on Nemotron 3.5 Lightning 30B-A3B
+    (#159). vLLM, TensorRT-LLM, and SGLang each resolve one algorithm
+    per mixture-of-experts module, which gives 23 (#166). No runtime
+    serves a per-expert precision. A key finer than the stack prices
+    distinctions no pack can express, and a key coarser than it —
+    the layer — cannot price `ffn_up_exps` against `ffn_down_exps`,
+    which differ in shape and therefore in available precisions.
+
+    The sensitivity-map schema bumped to 3 for the new value. Readers
+    accept 2 and 3, because version 3 only widened the enum.
+
 ## Context
 
 Models worth running (Nemotron Super 49B class) exceed a 24 GiB card at any

@@ -97,7 +97,7 @@ def _build_meter(
     model: str,
     calibration: Path,
     max_tokens: int,
-    group_by: Literal["layer", "tensor"],
+    group_by: Literal["layer", "tensor", "stack"],
     device: str,
     trust_remote_code: bool,
     gpu_memory: int | None,
@@ -115,7 +115,8 @@ def _build_meter(
         model: Hugging Face model id or local checkpoint path.
         calibration: UTF-8 calibration text file.
         max_tokens: Upper bound on calibration tokens.
-        group_by: Grouping granularity.
+        group_by: Grouping granularity — ``layer``, ``tensor``, or
+            ``stack``.
         device: transformers ``device_map`` value.
         trust_remote_code: Allow repos with custom modeling code.
         gpu_memory: Byte cap on GPU 0 model shards under ``auto``
@@ -268,7 +269,7 @@ def scan(
         str, typer.Option(help="Candidate precisions, descending CSV.")
     ] = "8,4,3,2",
     group_by: Annotated[
-        str, typer.Option(help="Grouping granularity: layer or tensor.")
+        str, typer.Option(help="Grouping granularity: layer, tensor, or stack.")
     ] = "layer",
     max_tokens: Annotated[
         int, typer.Option(min=2, help="Calibration token budget.")
@@ -334,6 +335,10 @@ def scan(
     records how many parameters the imatrix covers. The map, the
     fingerprint, and the run log all record the method as its token
     (``rtn-block32``, ``kquant-ref``, or ``kquant-imx``).
+    ``--group-by`` sets the map key. ``stack`` keys on the unit a
+    pack addresses (#161): it collapses a mixture-of-experts layer's
+    routed experts into one group per projection, and keeps every
+    other weight separate. On a dense model it matches ``tensor``.
 
     Raises:
         typer.BadParameter: If ``--precisions``, ``--group-by``,
@@ -356,9 +361,9 @@ def scan(
         ```
     """
     parsed_precisions = _parse_precisions(precisions)
-    if group_by not in ("layer", "tensor"):
+    if group_by not in ("layer", "tensor", "stack"):
         raise typer.BadParameter(
-            f'--group-by: expected "layer" or "tensor", got "{group_by}"'
+            f'--group-by: expected "layer", "tensor", or "stack", got "{group_by}"'
         )
     parsed_within_group, method_token = _parse_within_group(
         within_group, parsed_precisions, imatrix
