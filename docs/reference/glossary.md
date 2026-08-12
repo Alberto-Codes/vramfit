@@ -178,6 +178,17 @@ change.
     overhead. What the solver packs against. Math in
     [VRAM budget math](../explanation/vram-budget.md).
 
+**Ballast**
+:   A CUDA allocation one process holds for a run's duration, so every
+    other process on the card sees less free VRAM. It makes a 24 GiB
+    card serve a test at a smaller size. `scripts/vram_ballast.py`
+    holds it ([#164](https://github.com/Alberto-Codes/vramfit/issues/164)).
+
+**Visible free VRAM**
+:   Free VRAM a runtime reports under a ballast. It is what the ballast
+    caps, and it is not the weight budget — the KV cache and runtime
+    overhead still come out of it.
+
 **KV headroom**
 :   VRAM reserved for the KV cache (and growth) at the planned context
     length and concurrency. CLI flag `--kv-headroom`.
