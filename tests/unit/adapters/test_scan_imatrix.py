@@ -116,13 +116,44 @@ class TestGgufTensorName:
             # Mixtral spells its expert projections w1/w2/w3. The
             # table omits them rather than guess the mapping.
             "model.layers.0.block_sparse_moe.experts.4.w1.weight",
-            # A shared expert carries no index and is not one row of
-            # an expert stack.
-            "backbone.layers.3.mixer.shared_experts.up_proj.weight",
+            "backbone.layers.3.mixer.unknown_proj.weight",
         ],
     )
     def test_unmapped_names_return_none(self, param: str) -> None:
         assert gguf_tensor_name(param) is None
+
+    @pytest.mark.parametrize(
+        ("param", "expected"),
+        [
+            ("backbone.layers.0.mixer.in_proj.weight", "blk.0.ssm_in.weight"),
+            ("backbone.layers.51.mixer.out_proj.weight", "blk.51.ssm_out.weight"),
+            ("backbone.layers.5.mixer.q_proj.weight", "blk.5.attn_q.weight"),
+            ("backbone.layers.5.mixer.k_proj.weight", "blk.5.attn_k.weight"),
+            ("backbone.layers.5.mixer.v_proj.weight", "blk.5.attn_v.weight"),
+            ("backbone.layers.5.mixer.o_proj.weight", "blk.5.attn_output.weight"),
+            ("backbone.layers.3.mixer.gate.weight", "blk.3.ffn_gate_inp.weight"),
+            (
+                "backbone.layers.3.mixer.shared_experts.up_proj.weight",
+                "blk.3.ffn_up_shexp.weight",
+            ),
+            (
+                "backbone.layers.3.mixer.shared_experts.down_proj.weight",
+                "blk.3.ffn_down_shexp.weight",
+            ),
+        ],
+    )
+    def test_nemotron_h_dense_names_map(self, param: str, expected: str) -> None:
+        # Nemotron-H spells attention, Mamba-2, the router, and the
+        # shared expert under one "mixer." module (#186). No
+        # llama-family name reaches any of them.
+        assert gguf_tensor_name(param) == expected
+
+    def test_the_router_bias_is_not_a_weight(self) -> None:
+        # "mixer.gate" maps, and the router carries a second tensor
+        # beside its weight. Only the weight is a matrix.
+        bias = "backbone.layers.3.mixer.gate.e_score_correction_bias"
+
+        assert gguf_tensor_name(bias) is None
 
     @pytest.mark.parametrize(
         "param",
@@ -428,6 +459,108 @@ class TestAssistedWeightsForParams:
 
         assert set(covered) == {"model.layers.0.self_attn.k_proj.weight"}
         assert uncovered == ("model.layers.0.self_attn.q_proj.weight",)
+
+
+# Nemotron 3.5 Lightning's dense column widths, read from the
+# checkpoint's own config.json. A column width is the parameter's
+# input dimension, which is shape[-1] of an HF linear weight.
+MAMBA_INNER = 4096  # mamba_num_heads 64 x mamba_head_dim 64
+ATTN_INNER = 4096  # num_attention_heads 32 x head_dim 128
+SHARED_EXPERT = 3712  # moe_shared_expert_intermediate_size
+# Every dense stem the model carries, with its HF module suffix and
+# its column width. 23 layers are Mamba-2, 23 are MoE, and 6 are
+# attention (#160).
+DENSE_STEMS = (
+    ("ssm_in", "mixer.in_proj", HIDDEN, 23),
+    ("ssm_out", "mixer.out_proj", MAMBA_INNER, 23),
+    ("ffn_gate_inp", "mixer.gate", HIDDEN, 23),
+    ("ffn_up_shexp", "mixer.shared_experts.up_proj", HIDDEN, 23),
+    ("ffn_down_shexp", "mixer.shared_experts.down_proj", SHARED_EXPERT, 23),
+    ("attn_q", "mixer.q_proj", HIDDEN, 6),
+    ("attn_k", "mixer.k_proj", HIDDEN, 6),
+    ("attn_v", "mixer.v_proj", HIDDEN, 6),
+    ("attn_output", "mixer.o_proj", ATTN_INNER, 6),
+)
+
+
+def _write_dense_imatrix(path: Path, layers: int) -> tuple[Path, dict[str, tuple]]:
+    """Write this model's dense entries, and the shapes they price.
+
+    Layer indices are arbitrary here. Name resolution reads the index
+    and never the layer's type, so the counts are what matter.
+    """
+    tensors: dict[str, np.ndarray] = {}
+    shapes: dict[str, tuple[int, int]] = {}
+    for stem, suffix, columns, present in DENSE_STEMS:
+        for layer in range(min(layers, present)):
+            tensors[f"blk.{layer}.{stem}.weight.in_sum2"] = np.ones(columns)
+            tensors[f"blk.{layer}.{stem}.weight.counts"] = np.array([2.0])
+            shapes[f"backbone.layers.{layer}.{suffix}.weight"] = (8, columns)
+    return _write_imatrix(path, tensors), shapes
+
+
+class TestNemotronHDenseCoverage:
+    def test_only_the_four_thousand_ninety_six_wide_stems_price_assisted(
+        self, tmp_path
+    ) -> None:
+        # Every dense stem now maps, so the super-block gate is the
+        # only remaining bar (ADR-0020). 2688 and 3712 both leave 128
+        # over 256, so only the two 4096-wide stems clear it.
+        path, shapes = _write_dense_imatrix(tmp_path / "im.gguf", layers=1)
+
+        covered, uncovered = assisted_weights_for_params(path, shapes)
+
+        assert set(covered) == {
+            "backbone.layers.0.mixer.out_proj.weight",
+            "backbone.layers.0.mixer.o_proj.weight",
+        }
+        assert len(uncovered) == 7
+
+    def test_twenty_nine_of_the_hundred_thirty_nine_dense_entries_price_assisted(
+        self, tmp_path
+    ) -> None:
+        # The whole-model count: 23 ssm_out plus 6 attn_output (#186).
+        path, shapes = _write_dense_imatrix(tmp_path / "im.gguf", layers=52)
+
+        covered, uncovered = assisted_weights_for_params(path, shapes)
+
+        assert len(shapes) == 139
+        assert len(covered) == 29
+        assert len(uncovered) == 110
+
+    def test_a_misaligned_stem_reports_the_gate_not_a_missing_name(
+        self, tmp_path
+    ) -> None:
+        # The diagnosis this ticket changes. Every dense name now
+        # maps, so a stem that covers nothing blames the super-block
+        # gate rather than the name table.
+        path, shapes = _write_dense_imatrix(tmp_path / "im.gguf", layers=52)
+        in_proj = {n: s for n, s in shapes.items() if n.endswith("in_proj.weight")}
+
+        with pytest.raises(ValueError) as refusal:
+            assisted_weights_for_params(path, in_proj)
+
+        assert "0 names have no GGUF mapping" in str(refusal.value)
+        assert "23 have rows that do not divide" in str(refusal.value)
+
+    def test_the_router_reports_a_chunk_tally_not_a_routing_frequency(
+        self, tmp_path
+    ) -> None:
+        # The router is one of the 139 dense entries, so it maps. Its
+        # count is the calibration chunk tally for the router matmul.
+        # It is not a routing frequency: the glossary defines that for
+        # a routed expert, and ADR-0026 decisions 4 and 5 read only
+        # expert-stack rows. A caller that took min/median/max over a
+        # layer's counts would fold this number into the distribution
+        # as a phantom expert. #193 carries the guard.
+        path, _ = _write_dense_imatrix(tmp_path / "im.gguf", layers=1)
+        router = "backbone.layers.0.mixer.gate.weight"
+        expert = "backbone.layers.0.mixer.experts.0.up_proj.weight"
+
+        counts, uncovered = resolve_imatrix_counts(load_imatrix(path), [router, expert])
+
+        assert counts == {router: 2}
+        assert uncovered == (expert,)
 
 
 def _write_stack(path: Path, columns: int, experts: int = EXPERTS) -> Path:

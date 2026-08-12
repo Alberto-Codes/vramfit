@@ -4,9 +4,12 @@ Reads the GGUF imatrix artifact that ``llama-imatrix`` writes and
 turns it into per-parameter column weights the meter can consume.
 The weight formula is ``in_sum2 / counts`` per column — the load
 formula in ``llama-quantize`` (``load_imatrix``, checkout e9fa078).
-GGUF tensor names map back to HF parameter names through the same
-fixed table ``convert_hf_to_gguf.py`` applies to llama-family
-models. A parameter without imatrix coverage is reported, not
+GGUF tensor names map back to HF parameter names through a fixed
+table. Each row copies a name ``gguf.TensorNameMap`` carries, and
+the table covers the llama family and Nemotron-H-MoE (#186).
+Nemotron-H spells attention, Mamba-2, the router, and the shared
+expert under one ``mixer.`` module, so no llama-family name reaches
+its dense tensors. A parameter without imatrix coverage is reported, not
 defaulted — the caller decides, and the meter prices uncovered
 tensors unassisted, exactly as ``llama-quantize`` treats a NULL
 imatrix row. ``token_embd`` is never covered. The module also owns
@@ -55,8 +58,12 @@ from gguf import GGUFReader
 
 from vramfit.adapters.outbound.scan.kquant import SUPER_BLOCK
 
-# HF module suffix -> GGUF tensor stem, llama-family naming.
+# HF module suffix -> GGUF tensor stem. Each entry copies a name
+# ``gguf.TensorNameMap`` already carries, and
+# tests/unit/adapters/test_imatrix_names.py pins every row against
+# that map.
 _SUFFIX_TO_GGUF = {
+    # llama-family naming.
     "self_attn.q_proj": "attn_q",
     "self_attn.k_proj": "attn_k",
     "self_attn.v_proj": "attn_v",
@@ -64,6 +71,25 @@ _SUFFIX_TO_GGUF = {
     "mlp.gate_proj": "ffn_gate",
     "mlp.up_proj": "ffn_up",
     "mlp.down_proj": "ffn_down",
+    # Nemotron-H naming (#186). This family spells attention, Mamba-2,
+    # the router, and the shared expert under one "mixer." module. A
+    # layer is attention or Mamba-2 or MoE, never two at once. So these
+    # suffixes never collide inside one layer.
+    #
+    # These 9 rows cover the MoE variant's dense set, which is what
+    # Nemotron 3.5 Lightning holds. A dense-MLP Nemotron-H also spells
+    # "mixer.up_proj" and "mixer.down_proj", and Nemotron 3 Super adds
+    # "mixer.fc1_latent_proj" and "mixer.fc2_latent_proj". No target
+    # needs them yet, so they stay out until a checkpoint proves them.
+    "mixer.q_proj": "attn_q",
+    "mixer.k_proj": "attn_k",
+    "mixer.v_proj": "attn_v",
+    "mixer.o_proj": "attn_output",
+    "mixer.in_proj": "ssm_in",
+    "mixer.out_proj": "ssm_out",
+    "mixer.gate": "ffn_gate_inp",
+    "mixer.shared_experts.up_proj": "ffn_up_shexp",
+    "mixer.shared_experts.down_proj": "ffn_down_shexp",
 }
 # A routed expert's projection -> its GGUF expert-stack stem. The
 # module path in front of ".experts.N." varies by family. The
@@ -86,6 +112,14 @@ _DIRECT_TO_GGUF = {
 # purpose. A prefix wildcard would map a vision tower's "layers.5"
 # onto the decoder's "blk.5" and price it against the wrong columns.
 # Add a root here when a family needs one.
+#
+# The closed alternation also keeps the "mixer." suffixes safe. Three
+# families spell one of them for a different tensor. phi2 roots at
+# "transformer.h.N." and jina at "encoder.layers.N.", and both read
+# "mixer.out_proj" as the attention output. plamo2 roots at a doubled
+# "model.layers.layers.N." and reads "mixer.in_proj" as the SSM input.
+# All three roots fail this pattern, so no name here maps to two
+# meanings. Check that again before adding a root.
 _LAYER_PARAM = re.compile(r"^(?:model|backbone)\.layers\.(\d+)\.(.+)\.weight$")
 # The routed-expert index, spelled between ".experts." and the
 # projection by every family the domain groups (#160, #161).
