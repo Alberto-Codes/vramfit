@@ -70,6 +70,10 @@ status: draft
 > The publication gates that consume
 > these evaluations live in [the artifact ecosystem](artifact-ecosystem.md)
 > and issue #11.
+> Note 2026-08-12: publication #1 shipped on this evidence, and the
+> public writeup cites this page as its record. The page stays
+> `draft` — the f16 control below (#143) is open, and no `stable`
+> page in this repo carries an open question.
 
 Scanning and planning happen inside vramfit's own frame: damage,
 measured per cell, on our calibration set. The moment a packed model

@@ -5,7 +5,7 @@ description: Triage a chart's claimable set and emit next-session prompts. Use w
 
 # Chart triage
 
-Status: sketch — this skill shares the charting page's status and
+Status: draft — this skill shares the charting page's status and
 promotes or demotes with it. The convention lives in
 [docs/explanation/charting.md](../../../docs/explanation/charting.md).
 Read that page before the first triage in a session.

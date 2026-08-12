@@ -1,13 +1,16 @@
 ---
-status: sketch
+status: draft
 ---
 
 # Charting: planning work bigger than one session
 
-> **Status: sketch** — process design recorded 2026-08-09. The first
+> **Status: draft** — process design recorded 2026-08-09. The first
 > chart is #70 (go-public), created 2026-08-09 from the #66/#67/#11/#68
-> cluster. The sections below fold in findings from that run. Promote
-> this page when the chart reaches its destination.
+> cluster. The sections below fold in findings from that run.
+> Promoted to `draft` 2026-08-12: chart #70 reached its Destination
+> and closed, which is the condition this page set for itself. It
+> stays below `stable` because one completed chart is one sample —
+> the automation question below waits for a second or third.
 
 ## The gap this closes
 
@@ -225,7 +228,9 @@ gh issue close <n>
   findings grow large.
 - **First chart.** Resolved 2026-08-09: chart #70 indexes the
   go-public effort. The fold rules, the research-record rule, and
-  the claimable-set caveat above came from that run.
+  the claimable-set caveat above came from that run. Chart #70 closed
+  at its Destination on 2026-08-12, with twenty recorded decisions and
+  an empty `## Fog`.
 - **Automation.** The convention runs by hand first. A repo skill
   (`.claude/skills/`) is worth writing only after two or three
   charts prove the shape. Partially resolved 2026-08-10: triage
@@ -233,4 +238,6 @@ gh issue close <n>
   repetition inside chart #70. Full charting automation still
   waits for the second or third chart.
 - **CLAUDE.md pointer.** Add one when this page reaches `draft`, not
-  before — the trust rules forbid building on a sketch.
+  before — the trust rules forbid building on a sketch. Resolved
+  2026-08-12: this page reached `draft`, and CLAUDE.md gained a
+  `## Charting` section pointing here.
