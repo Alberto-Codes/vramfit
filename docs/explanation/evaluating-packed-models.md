@@ -1,10 +1,10 @@
 ---
-status: draft
+status: stable
 ---
 
 # Evaluating packed models: the endgame scoreboard
 
-> **Status: draft** — tiers 1 and 2 ran for real on 2026-07-28,
+> **Status: stable** — tiers 1 and 2 ran for real on 2026-07-28,
 > against the first packed model and again against the
 > runtime-capability mix (Qwen2.5-3B, see
 > [the first data point](#the-first-data-point) and
@@ -65,15 +65,20 @@ status: draft
 > Results ship as an evals sidecar
 > ([ADR-0025](../adr/0025-evals-sidecar.md)).
 > On 2026-08-11 a 25-point conversational probe **could not tell the
-> two artifacts apart** — that tie is an argument for measuring
+> two packs apart** — that tie is an argument for measuring
 > ([the seventeenth data point](#the-seventeenth-data-point-the-probe-that-could-not-tell-them-apart)).
+> The f16 original answered the same fifteen prompts later that day and
+> **failed the same way**, which places the shared failures in the
+> base model rather than in either pack (issue #143). The control ran
+> hours after the public writeup published, which named the gap —
+> issue #174 carries that post's correction.
 > The publication gates that consume
 > these evaluations live in [the artifact ecosystem](artifact-ecosystem.md)
 > and issue #11.
 > Note 2026-08-12: publication #1 shipped on this evidence, and the
-> public writeup cites this page as its record. The page stays
-> `draft` — the f16 control below (#143) is open, and no `stable`
-> page in this repo carries an open question.
+> public writeup cites this page as its record. The page is now
+> `stable` — the f16 control closed the last open question, and the
+> record carries none.
 
 Scanning and planning happen inside vramfit's own frame: damage,
 measured per cell, on our calibration set. The moment a packed model
@@ -1622,21 +1627,24 @@ candidate from the standing baseline by talking to both?
 
 The answer is no, and the run says so with a tie.
 
-Both artifacts served from the b10172 Vulkan build, the build behind
+Both packs served from the b10172 Vulkan build, the build behind
 every tier-1 and tier-2 number on this page, loaded one at a time
 through `llama-server` at `-ngl 99 -c 8192` — every layer on the GPU,
 on the reference box. Fifteen prompts went to each, decoded greedily —
 temperature 0, top-k 1, seed 1234 — so nothing here is decoding luck.
-The prompts split into three categories, scored 25 points total.
+The f16 original answered the same fifteen prompts on the same night,
+through the same build and the same sampler, on the split lane
+described below. The prompts split into three categories, scored 25
+points total.
 
-| Category | Prompts | Points | Candidate | Baseline Q3_K_S |
-|---|---|---|---|---|
-| Factual recall (JSON, 3 fields each) | 5 | 15 | 11 | 11 |
-| Acronym expansion | 5 | 5 | 5 | 4 |
-| Code, executed against fixed tests | 5 | 5 | 3 | 4 |
-| **Total** | **15** | **25** | **19** | **19** |
+| Category | Prompts | Points | f16 original | Candidate | Baseline Q3_K_S |
+|---|---|---|---|---|---|
+| Factual recall (JSON, 3 fields each) | 5 | 15 | 11 | 11 | 11 |
+| Acronym expansion | 5 | 5 | 5 | 5 | 4 |
+| Code, executed against fixed tests | 5 | 5 | 4 | 3 | 4 |
+| **Total** | **15** | **25** | **20** | **19** | **19** |
 
-**The two artifacts do not merely tie — they agree.** On factual
+**The two packs do not merely tie — they agree.** On factual
 recall they scored the same 11 of 15 points by dropping the *same four
 fields*. Three are release years, each one year early: Mistral 7B to
 2022, Qwen2.5 to 2023, Gemma 2 to 2023. The fourth is Qwen2.5's
@@ -1648,8 +1656,8 @@ five models. On code, both wrote `merge_intervals` with the same
 shallow copy and then mutated the caller's inner lists through it —
 the same defect, reached by the same reasoning. Two quantizations that
 agree on four wrong fields and one wrong mechanism are not showing
-their own damage. The likeliest reading is the model underneath —
-untested, and the missing control is named below.
+their own damage. The likeliest reading is the model underneath, and
+the control below confirms it.
 
 The two *scored* points that separated them went one each way, and
 greedy decoding makes both reproducible. The baseline expanded RoPE as
@@ -1675,12 +1683,40 @@ one. The selection cuts both ways: because the categories are the ones
 where the baseline had appeared to lead, the tie says nothing about
 categories nobody probed.
 
-One control this run did not have: the f16 original never answered the
-same fifteen prompts. That would test the reading above — that the
-shared wrong fields come from the base model rather than from either
-quantization — and it remains unverified (issue #143). The f16 is
-92.9 GiB and does not fit the 24 GiB card, so the check needs a CPU or
-split-GPU lane and its own night.
+**The control ran, and it agrees too.** The f16 original answered the
+same fifteen prompts later the same day (issue #143), decoded greedily
+at the same settings through the same b10172 build. It could not serve
+at `-ngl 99` — 92.9 GiB does not fit a 24 GiB card — so it ran a split
+lane, 14 layers on the GPU and the rest on the CPU, pinned to the 4090
+with `--device Vulkan0`. It generated at 0.54 to 0.77 tokens per
+second, and the batch took 35 minutes for 1,161 tokens. It dropped all
+four factual fields: the same three release years, and the same
+"QwenAI" for Qwen2.5's developer, character for character with the
+candidate. It wrote the same `merge_intervals`, the same shallow copy
+under the same comment claiming to avoid the mutation it causes. On
+these prompts the shared failures belong to the base model. Neither
+pack caused them.
+
+The split lane makes that agreement harder, not softer. The f16 served
+through a different device mix than either pack, and **8 of its 15
+replies still came back byte-identical to the candidate's** (6 to the
+baseline's) — same tokens, across a different backend split. Identical
+text through an unmatched lane is a stronger statement about the model
+underneath than the score table is.
+
+**The original scores 20, one point above both.** It does not score
+perfectly either — it wrote the same `merge_intervals`. Each pack then
+gave up exactly one further point, and they are the two points that
+already separated the packs from each other: `parse_size` for the
+candidate, RoPE for the baseline. The original got both right.
+
+A hostile reading is available here: quantization cost each pack a
+point, and that is real. This probe cannot refute it and does not try.
+One sample per prompt, one draw of fifteen prompts, no re-runs, and a
+comparison that crosses serving lanes — one point out of 25 sits well
+inside what prompt selection alone can move, which is the same
+weakness that makes the tie between the packs a weak result. Tier 2
+measures the shift this probe cannot size.
 
 **What this changes.** The writeup (issue #84) has to explain why this
 project built an eval harness at all, and this is the cleanest
@@ -1696,13 +1732,23 @@ habit the scoreboard exists to replace.
 
 Raw receipts: `eval/probe-2026-08-11/` holds the prompt set and ground
 truth (`prompts.py`), the runner (`run_batch.py`), the scorer with its
-executed test suite (`score.py`), both artifacts' full replies with
+executed test suite (`score.py`), all three models' full replies with
 per-prompt token counts and wall-clock (`out-candidate.json`,
-`out-baseline.json`), the scored output (`score.console.log`), and
-both `llama-server` logs. `artifacts.json` records the served paths
-and SHA-256s — the candidate's `48271199…0122` is the published file.
-`SHA256SUMS` covers the set. The unrecorded earlier pass left only its
-runner (`informal-pass-runner.sh`).
+`out-baseline.json`, `out-f16.json`), the scored output
+(`score.console.log` for the two packs,
+`score-f16-vs-candidate.console.log` and
+`score-f16-vs-baseline.console.log` for the control), and all three
+`llama-server` logs. The control reused `prompts.py`, `run_batch.py`,
+and `score.py` unchanged from the pack runs, so the *scoring*
+instrument is one instrument. The *serving* lane is not —
+`server-f16.cmd` records both deviating flags, `-ngl 14` and
+`--device Vulkan0`, against the packs' `-ngl 99`. That file is a launch
+record rather than a log, and the offload it states is not separately
+attested by the server's own output.
+`artifacts.json` records the served paths and SHA-256s — the
+candidate's `48271199…0122` is the published file, and the f16's is
+`a16d46d3…3638d`. `SHA256SUMS` covers the set. The unrecorded earlier
+pass left only its runner (`informal-pass-runner.sh`).
 
 ## Provenance is not evidence
 
@@ -1710,9 +1756,9 @@ Hashes answer a different question and must not be confused with
 quality. Hugging Face stores SHA-256 per file, and GGUF embeds
 metadata in-file — those prove *this is the exact file*. vramfit's
 fingerprint proves less: it ties a scan checkpoint to that scan's
-recorded provenance, not to content (swapping weights under an
-unchanged path defeats it — content evidence is an open item in
-issue #8). None of these proves the artifact is any good. The project's claim is
+recorded provenance, not to content — swapping weights under an
+unchanged path defeats it, and no content evidence covers that gap
+today. None of these proves the artifact is any good. The project's claim is
 that a publication should carry both: provenance (hashes,
 fingerprint, run log) and evidence (the three tiers above). Shipping
 either alone is the current ecosystem's failure mode — evidence
@@ -1888,10 +1934,10 @@ either. Numbers without framing invite the hostile reading.
   The remedy is `--exclude-weights` per collapsed tensor (probe
   G1c). Front-stack promotions stay gated by the reconstruction
   check.
-- Whether the pack path should emit `--exclude-weights` from a
+- ~~Whether the pack path should emit `--exclude-weights` from a
   recipe, so a protection whose reconstruction check fails can
   keep its promotion and drop only the imatrix row — the
-  fourteenth data point applied the fix by hand.
+  fourteenth data point applied the fix by hand.~~
   **Resolved (2026-08-09,
   [ADR-0023](../adr/0023-imatrix-exclusions.md)):** it should, and
   does — `plan --exclude-imatrix` marks protected pairs, the recipe
@@ -1907,10 +1953,16 @@ either. Numbers without framing invite the hostile reading.
   The mechanism replicates. The exact layout does not, and the
   hand layout turned out to carry a knife edge (chunk 137) that
   the sibling does not.
-- Whether the f16 original answers the seventeenth data point's
+- ~~Whether the f16 original answers the seventeenth data point's
   fifteen prompts the way both quantizations did (issue #143). The
   candidate and the baseline dropped the same four factual fields and
   wrote the same shallow-copy defect, which reads as inherited from
   the base model rather than caused by either pack. Nothing has tested
-  that reading. The f16 is 92.9 GiB and does not fit the 24 GiB card,
-  so the control needs a CPU or split-GPU lane.
+  that reading.~~ **Measured (2026-08-11, issue #143): the base model
+  does it too.** The f16 dropped the same four factual fields and
+  wrote the same shallow-copy `merge_intervals`, so the shared
+  failures are inherited. It scored 20 of 25 against 19 for both
+  packs, and each pack's one further loss is its own — `parse_size`
+  for the candidate, RoPE for the baseline. The control ran on a
+  split lane, 14 layers on the GPU and the rest on the CPU, because
+  the f16 is 92.9 GiB and does not fit the 24 GiB card.
