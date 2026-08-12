@@ -31,9 +31,16 @@ def test_report_term_outside_allowlist_fails_with_line_number(tmp_path) -> None:
     assert failures[0].startswith("FAIL doc.md:2:")
 
 
-def test_report_uppercase_term_fails(tmp_path) -> None:
+@pytest.mark.parametrize(
+    "spelling",
+    [TERM.capitalize(), TERM.upper()],
+    ids=["title-case", "upper-case"],
+)
+def test_report_recased_term_fails(tmp_path, spelling) -> None:
+    # The pre-rename exception root was title-case, so the gate cannot
+    # match case-sensitively.
     path = tmp_path / "doc.md"
-    path.write_text(f"{TERM.capitalize()}Error was the pre-rename root.\n")
+    path.write_text(f"{spelling}Error was the pre-rename root.\n")
 
     failures, _, _ = gate.report(tmp_path, [path], {})
 
