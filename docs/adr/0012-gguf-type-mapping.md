@@ -23,6 +23,31 @@
   overrides, placed before the group overrides — the quantizer
   applies the first matching pattern. The backend still rejects
   tensor-level *groups*: the boundary moved for protections only.
+- **Amendment (2026-08-12, issue #180):** decision 2 gains a second
+  group shape and drops a fixed prefix.
+
+    The backend derives the layer index from the group name. Any
+    decoder-layer group ending in `.layers.<n>`, `.h.<n>`, or
+    `.blocks.<n>` becomes `blk\.<n>\.`. GGUF numbers every decoder
+    layer `blk.<n>.` whatever the checkpoint calls it, so matching
+    `model.layers.<n>` alone refused the Nemotron 3.5 Lightning
+    target at `backbone.layers.<n>` (#160).
+
+    A routed-expert stack group becomes its fused tensor:
+    `blk\.<n>\.ffn_up_exps\.`, `ffn_down_exps`, or `ffn_gate_exps`.
+    llama.cpp fuses one layer's routed experts into a single 3D
+    tensor carrying one quantization type, so the stack is the unit
+    a pack addresses (#159, ADR-0001 as amended by #161).
+
+    Stack overrides go before layer overrides, and both go after the
+    protection overrides. The quantizer applies the first matching
+    pattern, and `blk\.1\.` also matches `blk.1.ffn_up_exps.weight`.
+    Order is priority: per-tensor, then stack, then layer.
+
+    The refusal stands for every other group, and it names the
+    group. Tensor-level groups still refuse. So does any tensor
+    class outside this mapping — the Mamba `in_proj`, the router,
+    the shared experts. Issue #183 carries those.
 
 ## Context
 
