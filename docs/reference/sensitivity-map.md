@@ -58,7 +58,11 @@ below remain, the sub-4-bit pricing claims do not.
 - **`vramfit_schema`** — 2 since the envelope key renamed from
   `quantfit_schema` with the tool (#118). The reader accepts only
   the new key at version 2. A schema-1 map migrates with a key
-  rename plus a version bump, or a re-scan.
+  rename plus a version bump, or a re-scan. The #134 ruling froze
+  the 49B run root as a pre-rename archive, so migrate a copy and
+  leave the archive alone. A load check read all nine of its
+  schema-1 maps on 2026-08-11: 82 groups each
+  ([card ledger](../../publication/model-card/card-ledger.md)).
 - **`sensitivity`** — divergence of the perturbed model's output from the
   full-precision reference, measured per
   [ADR-0006](../adr/0006-sensitivity-metric.md) (mean final-logits KL).

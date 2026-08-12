@@ -88,6 +88,15 @@ below remain, the sub-4-bit pricing claims do not.
   different artifact than the recipe intends — ADR-0013 ruled that
   case breaking. Schema versions advance per artifact — the
   sensitivity map sits at 2.
+- **Migrating an old recipe.** The #134 ruling measured the schema-4
+  case. A schema-4 recipe that carries no no-op protection pair
+  stamps to version 6 and loads, so it needs no re-plan.
+  `recipe-g1c-replication.json` in the 49B run root qualifies: it
+  protects 48 tensors at 5 bits inside 3-bit groups. A schema-2
+  recipe never qualifies. It predates `protections` and fails with
+  `$.plan: missing required field "protections"`. Re-plan that one.
+  The [card ledger](../../publication/model-card/card-ledger.md)
+  carries the ruling and the archive rule.
 - **`runtime`** — the target runtime the plan was made for, or null for
   an unconstrained plan. `vramfit plan` always sets it. The solver
   filtered its candidates to this runtime's capability, and pack

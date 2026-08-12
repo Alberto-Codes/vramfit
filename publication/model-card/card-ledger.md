@@ -139,65 +139,83 @@ are the record.
 
 ## The run root is a frozen archive (#134, 2026-08-11)
 
-The run root does not re-key. It stays a pre-rename archive, and a
-reader migrates a copy on load. The files keep their pre-rename keys
-and their pre-rename hashes, so the "Local source" column above stays
-true.
+The maintainer does not re-key the run root. It stays a pre-rename
+archive. A reader migrates a copy on load. The files keep their
+pre-rename keys and their pre-rename hashes, so the "Local source"
+column above stays true.
 
-The reason is the schema version, not the key. Every run-root artifact
-predates the rename by several schema generations:
+The schema version blocks the reader, not the key. Every run-root
+artifact predates the rename by one to four schema versions.
 
-| Artifact | Run-root version | Reader version |
+| Artifact | Run-root version | Current version |
 |---|---|---|
-| Sensitivity map (5 files) | 1 | 2 |
+| Sensitivity map (9 files) | 1 | 2 |
 | Scan checkpoint (5 files) | 1 | 2 |
 | Recipe (7 files) | 2 | 6 |
 | Recipe `recipe-g1c-replication.json` | 4 | 6 |
-| Evals sidecar (5 files) | 1 | 2 |
-| Analysis artifact | 1 | 2 |
+| Evals sidecar (5 files) | 1 | 2, writer only |
+| Analysis artifact (1 file) | 1 | 2 on the Hub copy |
 
-A key rename alone repairs nothing. Measured on 2026-08-11: a re-keyed
-`recipe-g1c-replication.json` fails with `unsupported schema version 4
-— this vramfit reads version 6`, and a re-keyed schema-1 map fails with
-`unsupported schema version 1 — this vramfit reads version 2`. The
-rejection moves from the key to the version. The session still cannot
-re-plan, and the ledger loses the hashes that tie each published file
-to its source.
+The last two rows name no reader. `evals_sidecar_json` writes version
+2 and parses nothing. The analysis artifact has no vramfit constant.
+
+A key rename alone repairs nothing. The rejection moves from the key
+to the version. Two loads on 2026-08-11 measured it:
+
+- A re-keyed `recipe-g1c-replication.json` fails with
+  `unsupported schema version 4 — this vramfit reads version 6`.
+- A re-keyed schema-1 map fails with
+  `unsupported schema version 1 — this vramfit reads version 2`.
+
+A re-key therefore buys no re-plan. It also destroys the pre-rename
+hashes that tie each published file to its source.
 
 ### How a reader migrates a copy
 
-Edit a copy. Never the archive.
+Edit a copy. Never edit the archive.
 
-- **Sensitivity maps.** Rename the key and stamp version 2, per
-  [the map format page](../../docs/reference/sensitivity-map.md).
-  Verified 2026-08-11: all five maps load, 82 groups each.
-- **`recipe-g1c-replication.json`.** Rename the key and stamp version
-  6. Verified 2026-08-11: it loads. The stamp is honest because the
-  recipe carries 48 protected tensors and no no-op protection pair —
-  the schema-5 condition the [recipe page](../../docs/reference/recipe.md)
-  names. Prefer the published copy: the Hub already serves this file
-  migrated, as `recipe.json` at
+- **Sensitivity maps.** Rename the key. Stamp version 2. See
+  [the map format page](../../docs/reference/sensitivity-map.md). A
+  #134 load check read all nine maps on 2026-08-11: 82 groups each.
+- **Scan checkpoints.** Rename the key. Stamp version 2. A #134 load
+  check read all five checkpoints on 2026-08-11: 328 measurements
+  each. The reader then compares `fingerprint` against the running
+  scan. That fingerprint embeds the calibration path under
+  `~/quantfit-runs/`, so the #120 ruling to keep the directory name
+  keeps these checkpoints resumable.
+- **`recipe-g1c-replication.json`.** Take the published copy. The Hub
+  serves it migrated as `recipe.json` at
   `75f36c1835c9f768ef03da3160db9a44d95205b8da8f18d966c6f60dcf92b9b6`.
-  Its content matches the local source at every field except the
-  envelope.
-- **The seven schema-2 recipes.** These do not migrate. They predate
-  `plan.protections` ([ADR-0022](../../docs/adr/0022-within-layer-protections.md)),
-  so a stamped copy fails with `$.plan: missing required field
+  It matches the local source at every top-level field except the
+  envelope. To migrate the local file instead, rename the key and
+  stamp version 6. A #134 load check read that copy on 2026-08-11.
+  The stamp is honest. The recipe protects 48 tensors at 5 bits
+  inside 3-bit groups, so it carries no no-op pair (issue #59).
+- **The seven schema-2 recipes.** A reader cannot migrate these. They
+  predate `plan.protections`
+  ([ADR-0022](../../docs/adr/0022-within-layer-protections.md)), so a
+  stamped copy fails with `$.plan: missing required field
   "protections"`. A version stamp would claim a field the run never
   recorded. Re-plan instead.
-- **Sidecars, the analysis artifact, and the run logs.** No migration
-  is needed. `evals_sidecar_json` and `run_log_jsonl` write only —
-  vramfit has no loader for either, so these files never reach the
-  envelope check. `eval/analysis/make-paired-analysis.py` is a
-  standalone generator in the run root, not a vramfit reader. Its
-  output keeps reproducing `38032b73…`, and the published
-  `90d0b813…` stays the migrated copy.
+- **Sidecars, run logs, and the analysis artifact.** These need no
+  migration. `evals_sidecar_json` is a write-only adapter.
+  `read_run_log` parses each line with `json.loads` and checks no
+  envelope. The 23 run logs carry `quantfit_runlog`, a different key.
+  No path reaches the envelope check.
 
-The envelope-key guard in
-`vramfit.adapters.outbound.json_common` stays. The archive is its
-subject: 29 files on the reference box carry `quantfit_schema`
-permanently, and a session that points a reader at one gets a message
-naming the rename and #118 instead of a bare missing-field error.
+`eval/analysis/make-paired-analysis.py` freezes with the archive. It
+keeps writing `"quantfit_schema": 1`. It also stamps
+`datetime.date.today()`, so it reproduced `38032b73…` only on
+2026-08-10. A #134 re-run on 2026-08-11 produced `4f781e4a…`, which
+differs from the archived file in the `date` field alone. The
+published `90d0b813…` stays the migrated copy.
+
+This ruling leaves `_reject_renamed_envelope_key` in
+`vramfit.adapters.outbound.json_common` a live subject. The run root
+keeps 29 files that carry `quantfit_schema`: 28 artifacts and the
+generator script. A reader that opens one reports the rename and
+#118, not a bare missing-field error. #154 tier 2 rules on the guard
+itself against that fact.
 
 ## Other open flags
 
