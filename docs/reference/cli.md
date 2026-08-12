@@ -128,7 +128,7 @@ vramfit scan MODEL
   --precisions TEXT      Candidate bit-widths, strictly descending CSV,
                          2-bit floor, default per ADR-0010
                          [default: 8,4,3,2]
-  --group-by TEXT        Grouping granularity (layer | tensor)  [default: layer]
+  --group-by TEXT        Grouping granularity (layer | tensor | stack)  [default: layer]
   --max-tokens INT       Calibration token budget  [default: 131072]
   --device TEXT          Device map: auto | cpu | cuda  [default: auto]
   --trust-remote-code    Allow model repos with custom code (the
@@ -219,7 +219,7 @@ vramfit validate RECIPE
   --model TEXT           Model id or checkpoint path
                          [default: the recipe's model_id]
   --max-tokens INT       Calibration token budget  [default: 131072]
-  --group-by TEXT        Grouping granularity (layer | tensor)  [default: layer]
+  --group-by TEXT        Grouping granularity (layer | tensor | stack)  [default: layer]
   --device TEXT          Device map: auto | cpu | cuda  [default: auto]
   --trust-remote-code    Allow model repos with custom code
   --gpu-memory SIZE      Byte cap on GPU 0 model shards (e.g. 17GiB).

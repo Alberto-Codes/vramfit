@@ -204,6 +204,25 @@ def test_tensor_overrides_reject_tensor_level_groups() -> None:
         tensor_overrides(recipe)
 
 
+@pytest.mark.parametrize(
+    "group",
+    [
+        "model.layers.0.mlp.experts.up_proj",
+        "backbone.layers.0.mixer.experts.down_proj",
+    ],
+    ids=["stack-keyed", "nemotron-naming"],
+)
+def test_tensor_overrides_reject_stack_keyed_groups(group: str) -> None:
+    # The v1 backend maps only `model.layers.<n>` groups, so a
+    # stack-keyed recipe stops at pack rather than mispacking
+    # (ADR-0022 decision 1, amended 2026-08-11). Issue #180 lifts
+    # this. Locking the refusal keeps it loud until then.
+    recipe = make_recipe((group, 4))
+
+    with pytest.raises(PackError, match="no GGUF tensor mapping"):
+        tensor_overrides(recipe)
+
+
 def make_protected_recipe(
     pairs: tuple[tuple[str, int], ...],
     *assignments: tuple[str, int],

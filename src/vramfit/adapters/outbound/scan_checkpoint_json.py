@@ -146,10 +146,13 @@ def _parse_checkpoint(data: object, fingerprint: str) -> tuple[Measurement, ...]
             a field is missing or mistyped, a damage value is invalid,
             or the stored fingerprint differs. The pre-rename message
             names `CHECKPOINT_SCHEMA_VERSION` too, because an archived
-            checkpoint fails the version next (#154).
+            checkpoint fails the version next (#154). The checkpoint
+            reads exactly one version, so it passes that single
+            version as the readable set — unlike the sensitivity map,
+            which reads two (#161).
     """
     root = _get_dict(data, "$")
-    _reject_renamed_envelope_key(root, "$", CHECKPOINT_SCHEMA_VERSION)
+    _reject_renamed_envelope_key(root, "$", (CHECKPOINT_SCHEMA_VERSION,))
     version = _get_int(root, "vramfit_schema", "$")
     _require(
         version == CHECKPOINT_SCHEMA_VERSION,

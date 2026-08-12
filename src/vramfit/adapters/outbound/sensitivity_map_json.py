@@ -2,7 +2,9 @@
 
 Owns (de)serialization and validation of the map schema, including the
 ``vramfit_schema`` envelope (`MAP_SCHEMA_VERSION` — schema versions
-advance per artifact, ADR-0013). One file class serves both directions:
+advance per artifact, ADR-0013). The adapter writes version 3 and
+also reads version 2, because version 3 only widened ``group_by``
+with the ``stack`` value (#161). One file class serves both directions:
 ``vramfit scan`` writes through the sink face, ``vramfit plan`` reads
 through the source face. Validation is strict: artifacts are rejected,
 never normalized — ``scan.precisions`` must arrive strictly descending,
@@ -57,8 +59,13 @@ from vramfit.domain.model import LayerGroup, ScanMeta, SensitivityMap
 from vramfit.domain.scan import KQUANT_IMX_METHOD, SCAN_METHOD
 
 # The sensitivity-map schema version. Versions advance per artifact
-# (ADR-0013) — the recipe sits at 6 while the map sits at 2.
-MAP_SCHEMA_VERSION: Final[int] = 2
+# (ADR-0013) — the recipe sits at 6 while the map sits at 3.
+MAP_SCHEMA_VERSION: Final[int] = 3
+# Older versions this adapter still reads. Version 3 only widened
+# ``group_by`` with the ``stack`` value (#161), so every version-2 map
+# is already a valid version-3 document. The writer emits 3, which
+# tells a reader the producer could have keyed on stacks.
+MAP_SCHEMA_ALSO_READS: Final[tuple[int, ...]] = (2,)
 
 
 def map_from_dict(data: object) -> SensitivityMap:
@@ -72,7 +79,8 @@ def map_from_dict(data: object) -> SensitivityMap:
         The validated map.
 
     Raises:
-        ArtifactError: If the envelope is not `MAP_SCHEMA_VERSION`, or
+        ArtifactError: If the envelope is neither `MAP_SCHEMA_VERSION`
+            nor a version in `MAP_SCHEMA_ALSO_READS`, or
             any field is missing, mistyped, or violates a schema rule
             (duplicate group names, unknown ``group_by``, sensitivity
             keys not matching ``scan.precisions``, and so on).
@@ -81,11 +89,16 @@ def map_from_dict(data: object) -> SensitivityMap:
         Reject an unsupported schema version:
 
         ```python
-        map_from_dict({"vramfit_schema": 3})  # raises ArtifactError
+        map_from_dict({"vramfit_schema": 4})  # raises ArtifactError
         ```
     """
     root = _get_dict(data, "$")
-    _check_schema_version(root, "$", expected=MAP_SCHEMA_VERSION)
+    _check_schema_version(
+        root,
+        "$",
+        expected=MAP_SCHEMA_VERSION,
+        also_reads=MAP_SCHEMA_ALSO_READS,
+    )
     model_id = _get_str(root, "model_id", "$")
     _require("scan" in root, "$", 'missing required field "scan"')
     scan = _parse_scan_meta(_get_dict(root["scan"], "$.scan"))
@@ -234,7 +247,8 @@ def _parse_scan_meta(obj: dict[str, Any]) -> ScanMeta:
     Raises:
         ArtifactError: If a field is missing or invalid, precisions are
             empty, duplicated, not integers, or not strictly descending,
-            ``group_by`` is not ``layer`` or ``tensor``, a present
+            ``group_by`` is not ``layer``, ``tensor``, or ``stack``,
+            a present
             ``within_group`` is not a non-empty string (absent
             defaults to ``rtn-block32``, ADR-0018), or ``imatrix``
             does not pair with the assisted method token — assisted
@@ -265,9 +279,9 @@ def _parse_scan_meta(obj: dict[str, Any]) -> ScanMeta:
     )
     group_by = _get_str(obj, "group_by", path)
     _require(
-        group_by in ("layer", "tensor"),
+        group_by in ("layer", "tensor", "stack"),
         f"{path}.group_by",
-        'must be "layer" or "tensor"',
+        'must be "layer", "tensor", or "stack"',
     )
     # Optional and additive (ADR-0018): maps written before the field
     # existed are rtn-block32 scans by definition. A present field
@@ -295,7 +309,7 @@ def _parse_scan_meta(obj: dict[str, Any]) -> ScanMeta:
         calibration=_get_str(obj, "calibration", path),
         calibration_tokens=tokens,
         precisions=tuple(precisions),
-        group_by=cast('Literal["layer", "tensor"]', group_by),
+        group_by=cast('Literal["layer", "tensor", "stack"]', group_by),
         started_at=_get_str(obj, "started_at", path),
         within_group=within_group,
         imatrix=imatrix,

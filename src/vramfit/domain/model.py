@@ -82,8 +82,11 @@ class ScanMeta:
         calibration_tokens (int): Number of calibration tokens measured.
         precisions (tuple[int, ...]): Candidate bit-widths, strictly
             descending.
-        group_by (str): Layer grouping granularity (``layer`` or
-            ``tensor``).
+        group_by (str): Grouping granularity — ``layer``, ``tensor``,
+            or ``stack``. ``stack`` keys on the unit a pack addresses.
+            It collapses a mixture-of-experts layer's *routed* experts
+            into one group per projection. Every other weight stays
+            separate, including the shared expert and the router.
         started_at (str): ISO-8601 timestamp of the scan start.
         within_group (str): Within-group method token (ADR-0018) —
             `SCAN_METHOD` (``rtn-block32``) unless the scan selected
@@ -114,7 +117,7 @@ class ScanMeta:
     calibration: str
     calibration_tokens: int
     precisions: tuple[int, ...]
-    group_by: Literal["layer", "tensor"]
+    group_by: Literal["layer", "tensor", "stack"]
     started_at: str
     within_group: str = SCAN_METHOD
     imatrix: str | None = None

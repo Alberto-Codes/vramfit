@@ -14,7 +14,7 @@ The sensitivity map is the output of `vramfit scan` and the input to
 
 ```json
 {
-  "vramfit_schema": 2,
+  "vramfit_schema": 3,
   "model_id": "nvidia/Nemotron-Super-49B",
   "scan": {
     "metric": "kl_divergence",
@@ -55,10 +55,15 @@ The sensitivity map is the output of `vramfit scan` and the input to
 [ADR-0020](../adr/0020-imatrix-assisted-pricing.md): the fields
 below remain, the sub-4-bit pricing claims do not.
 
-- **`vramfit_schema`** — 2 since the envelope key renamed with the
-  tool (#118). The reader accepts only the new key at version 2. A
-  schema-1 map migrates with a key rename plus a version bump, or a
-  re-scan. The #134 ruling froze
+- **`vramfit_schema`** — the writer emits 3 since `group_by` gained
+  the `stack` value (#161). The reader accepts 2 and 3, because
+  version 3 only widened that enum: every version-2 map is already a
+  valid version-3 document, and the
+  [published maps dataset](https://huggingface.co/datasets/Alberto-Codes/Llama-3_3-Nemotron-Super-49B-v1_5-sensitivity-maps)
+  ships version 2. Version 2 dates from the envelope key rename with
+  the tool (#118). The reader accepts only the new key. A schema-1
+  map migrates with a key rename plus a version bump, or a re-scan.
+  The #134 ruling froze
   the 49B run root as a pre-rename archive. Migrate a copy. Never
   edit the archive. A #134 load check read all nine of its schema-1
   maps on 2026-08-11: 82 groups each
@@ -115,3 +120,40 @@ below remain, the sub-4-bit pricing claims do not.
   known blind spot recorded in ADR-0006. Group names must be unique, and
   every group's `sensitivity` keys must equal `scan.precisions` exactly
   (the v1 loader rejects partially-scanned groups).
+- **`scan.group_by`** — `layer`, `tensor`, or `stack`.
+
+    | Value | One group per | Dense model | Nemotron 3.5 Lightning 30B-A3B backbone |
+    |-------|---------------|-------------|--------------------------------|
+    | `layer` | decoder layer | 1 per layer | 52 layers plus the embeddings |
+    | `stack` | pack-addressable stack | 1 per weight | 46 expert stacks plus the rest |
+    | `tensor` | checkpoint weight | 1 per weight | 5888 expert weights plus the rest |
+
+    Counts are backbone-only (#160). Scanning the MTP block adds 256
+    expert weights, which is 2 more expert stacks.
+
+    `stack` keys on the unit a pack assigns a precision to (#161). It
+    collapses a mixture-of-experts layer's routed experts into one
+    group per projection, and keeps every other weight separate. On a
+    dense model it matches `tensor`, because a pack addresses each of
+    those weights alone.
+
+    Pick `stack` when a finer key would buy nothing. llama.cpp fuses
+    each layer's experts into one tensor that carries one quantization
+    type, which gives 46 addressable expert slots on the Nemotron
+    target (#159). vLLM, TensorRT-LLM, and SGLang each resolve one
+    algorithm per mixture-of-experts module, which gives 23 (#166). No
+    surveyed runtime serves a per-expert precision, so a
+    `tensor`-keyed map of that model prices 5888 distinctions no pack
+    can express.
+
+    !!! warning "A `stack` scan does not pack yet"
+
+        The GGUF v1 backend maps only `model.layers.<n>` groups to
+        `blk.<n>.` patterns. It refuses every other group name with a
+        `PackError` (ADR-0022 decision 1, amended 2026-08-11). A
+        `stack`-keyed recipe therefore reaches `vramfit pack` and
+        stops there. The same refusal catches any model whose layers
+        are not named `model.layers.<n>`, including the Nemotron 3.5
+        Lightning target at `backbone.layers.<n>`. Issue #180 carries
+        the backend work. Scan and plan with `stack` today. Do not
+        spend a multi-day scan expecting to pack the result.

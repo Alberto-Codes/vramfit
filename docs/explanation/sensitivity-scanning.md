@@ -69,6 +69,15 @@ guards additivity, not the frame transfer
    precise)? Both are implemented (`--group-by`); the plan remains a
    layer-level first pass, then tensor-level refinement for the groups the
    solver puts on the budget boundary.
+
+    A third value, `stack`, arrived with the mixture-of-experts target
+    (#161). It answers a question the layer/tensor axis cannot: on a
+    MoE model, "per-tensor" means 128 separate expert weights per
+    projection, and no runtime will serve them at different
+    precisions. `stack` keys on what a pack can actually address — one
+    group per projection's fused experts. The refinement pass gains a
+    middle rung, and on a dense model the rung collapses into
+    `tensor`, where it belongs.
 2. **Calibration data** — generic text vs workload-matched, and how many
    tokens before the measurement stabilizes? First measurement
    ([ADR-0006](../adr/0006-sensitivity-metric.md)): 8,192 tokens is

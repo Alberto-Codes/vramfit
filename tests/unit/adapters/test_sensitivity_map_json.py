@@ -126,10 +126,30 @@ class TestSensitivityMap:
 
     def test_wrong_schema_version_rejected(self) -> None:
         raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
+        raw["vramfit_schema"] = 4
+
+        with pytest.raises(ArtifactError, match="unsupported schema version 4"):
+            map_from_dict(raw)
+
+    def test_schema_version_two_map_still_reads(self) -> None:
+        # Version 3 only widened group_by with "stack" (#161), so every
+        # version-2 map is already a valid version-3 document. The
+        # published maps dataset ships version 2.
+        raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
+        raw["vramfit_schema"] = 2
+
+        assert map_from_dict(raw).scan.group_by == "layer"
+
+    def test_schema_version_three_map_reads(self) -> None:
+        raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
         raw["vramfit_schema"] = 3
 
-        with pytest.raises(ArtifactError, match="unsupported schema version 3"):
-            map_from_dict(raw)
+        assert map_from_dict(raw).scan.group_by == "layer"
+
+    def test_writer_emits_schema_version_three(self) -> None:
+        raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
+
+        assert map_to_dict(map_from_dict(raw))["vramfit_schema"] == 3
 
     def test_pre_rename_envelope_key_rejected(self) -> None:
         raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
@@ -137,6 +157,35 @@ class TestSensitivityMap:
 
         with pytest.raises(ArtifactError, match='renamed to "vramfit_schema"'):
             map_from_dict(raw)
+
+    def test_pre_rename_map_at_a_readable_version_is_not_told_to_bump(self) -> None:
+        # #154 tells a reader to bump when a key rename alone will not
+        # load the document. Version 2 now reads (#161), so a
+        # pre-rename schema-2 map needs the rename and nothing else.
+        # Naming both blockers here would send the reader on a
+        # pointless edit.
+        raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
+        raw.pop("vramfit_schema")
+        raw = {"quantfit_schema": 2, **raw}
+
+        with pytest.raises(ArtifactError) as excinfo:
+            map_from_dict(raw)
+
+        message = excinfo.value.message
+        assert "new key at version 2 or 3" in message
+        assert "does not make it load" not in message
+
+    def test_pre_rename_map_at_an_unreadable_version_names_both_blockers(self) -> None:
+        raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
+        raw.pop("vramfit_schema")
+        raw = {"quantfit_schema": 1, **raw}
+
+        with pytest.raises(ArtifactError) as excinfo:
+            map_from_dict(raw)
+
+        message = excinfo.value.message
+        assert "declares version 1" in message
+        assert "does not make it load" in message
 
     def test_non_integer_precision_key_rejected(self) -> None:
         raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
@@ -215,6 +264,25 @@ class TestSensitivityMap:
 
         with pytest.raises(ArtifactError, match="layer"):
             map_from_dict(raw)
+
+    def test_stack_group_by_round_trips(self) -> None:
+        # The pack-addressable key (#161): one group per fused expert
+        # stack, which llama.cpp addresses as one tensor (#159).
+        raw = make_map(
+            [
+                (
+                    "model.layers.0.mlp.experts.up_proj",
+                    1000,
+                    {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3},
+                )
+            ]
+        )
+        raw["scan"]["group_by"] = "stack"
+
+        map_ = map_from_dict(raw)
+
+        assert map_.scan.group_by == "stack"
+        assert map_from_dict(map_to_dict(map_)) == map_
 
     def test_non_utf8_file_rejected(self, tmp_path) -> None:
         path = tmp_path / "map.json"
