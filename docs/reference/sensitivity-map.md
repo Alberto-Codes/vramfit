@@ -122,11 +122,14 @@ below remain, the sub-4-bit pricing claims do not.
   (the v1 loader rejects partially-scanned groups).
 - **`scan.group_by`** — `layer`, `tensor`, or `stack`.
 
-    | Value | One group per | Dense model | Nemotron 3.5 Lightning 30B-A3B |
+    | Value | One group per | Dense model | Nemotron 3.5 Lightning 30B-A3B backbone |
     |-------|---------------|-------------|--------------------------------|
-    | `layer` | decoder layer | 1 per layer | 52 groups |
+    | `layer` | decoder layer | 1 per layer | 52 layers plus the embeddings |
     | `stack` | pack-addressable stack | 1 per weight | 46 expert stacks plus the rest |
     | `tensor` | checkpoint weight | 1 per weight | 5888 expert weights plus the rest |
+
+    Counts are backbone-only (#160). Scanning the MTP block adds 256
+    expert weights, which is 2 more expert stacks.
 
     `stack` keys on the unit a pack assigns a precision to (#161). It
     collapses a mixture-of-experts layer's routed experts into one
@@ -139,5 +142,18 @@ below remain, the sub-4-bit pricing claims do not.
     type, which gives 46 addressable expert slots on the Nemotron
     target (#159). vLLM, TensorRT-LLM, and SGLang each resolve one
     algorithm per mixture-of-experts module, which gives 23 (#166). No
-    runtime serves a per-expert precision, so a `tensor`-keyed map of
-    that model prices 5888 distinctions no pack can express.
+    surveyed runtime serves a per-expert precision, so a
+    `tensor`-keyed map of that model prices 5888 distinctions no pack
+    can express.
+
+    !!! warning "A `stack` scan does not pack yet"
+
+        The GGUF v1 backend maps only `model.layers.<n>` groups to
+        `blk.<n>.` patterns. It refuses every other group name with a
+        `PackError` (ADR-0022 decision 1, amended 2026-08-11). A
+        `stack`-keyed recipe therefore reaches `vramfit pack` and
+        stops there. The same refusal catches any model whose layers
+        are not named `model.layers.<n>`, including the Nemotron 3.5
+        Lightning target at `backbone.layers.<n>`. Issue #180 carries
+        the backend work. Scan and plan with `stack` today. Do not
+        spend a multi-day scan expecting to pack the result.

@@ -158,6 +158,35 @@ class TestSensitivityMap:
         with pytest.raises(ArtifactError, match='renamed to "vramfit_schema"'):
             map_from_dict(raw)
 
+    def test_pre_rename_map_at_a_readable_version_is_not_told_to_bump(self) -> None:
+        # #154 tells a reader to bump when a key rename alone will not
+        # load the document. Version 2 now reads (#161), so a
+        # pre-rename schema-2 map needs the rename and nothing else.
+        # Naming both blockers here would send the reader on a
+        # pointless edit.
+        raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
+        raw.pop("vramfit_schema")
+        raw = {"quantfit_schema": 2, **raw}
+
+        with pytest.raises(ArtifactError) as excinfo:
+            map_from_dict(raw)
+
+        message = excinfo.value.message
+        assert "new key at version 2 or 3" in message
+        assert "does not make it load" not in message
+
+    def test_pre_rename_map_at_an_unreadable_version_names_both_blockers(self) -> None:
+        raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
+        raw.pop("vramfit_schema")
+        raw = {"quantfit_schema": 1, **raw}
+
+        with pytest.raises(ArtifactError) as excinfo:
+            map_from_dict(raw)
+
+        message = excinfo.value.message
+        assert "declares version 1" in message
+        assert "does not make it load" in message
+
     def test_non_integer_precision_key_rejected(self) -> None:
         raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
         raw["groups"][0]["sensitivity"]["4x"] = 0.5

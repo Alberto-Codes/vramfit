@@ -18,8 +18,9 @@
   version 2. Adapters name the older versions through
   `_check_schema_version(also_reads=...)`, which defaults to empty —
   a widening is stated, never assumed. A bump that changes a
-  field's meaning still reads one version. Read decision 3's "the
-  sensitivity map stays at 1" as version 3.
+  field's meaning still reads one version. Decision 3 says "the
+  sensitivity map stays at 1". Read that as version 3: #118's
+  envelope rename took it to 2, and this ruling takes it to 3.
 
 ## Context
 

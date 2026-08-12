@@ -9,6 +9,8 @@ from vramfit.domain.scan import (
     GroupSpec,
     Measurement,
     assemble_map,
+    group_key,
+    matches_a_layer,
     plan_measurements,
     scan_fingerprint,
 )
@@ -230,3 +232,70 @@ class TestAssembleMap:
 
         with pytest.raises(ValueError, match='unknown group "g9"'):
             assemble_map("m", make_meta(), SPECS, measurements)
+
+
+class TestGroupKey:
+    @pytest.mark.parametrize(
+        ("name", "expected"),
+        [
+            ("model.layers.0.mlp.experts.7.up_proj.weight", "model.layers.0"),
+            ("model.embed_tokens.weight", "model.embed_tokens"),
+            ("transformer.h.3.attn.c_attn.weight", "transformer.h.3"),
+        ],
+        ids=["moe-member", "outside-any-layer", "gpt2-style"],
+    )
+    def test_layer_key_returns_the_decoder_prefix(self, name, expected) -> None:
+        assert group_key(name, "layer") == expected
+
+    def test_tensor_key_keeps_the_expert_index(self) -> None:
+        name = "model.layers.0.mlp.experts.7.up_proj.weight"
+
+        assert group_key(name, "tensor") == "model.layers.0.mlp.experts.7.up_proj"
+
+    @pytest.mark.parametrize(
+        ("name", "expected"),
+        [
+            (
+                "model.layers.0.mlp.experts.7.up_proj.weight",
+                "model.layers.0.mlp.experts.up_proj",
+            ),
+            (
+                "backbone.layers.3.mixer.experts.57.down_proj.weight",
+                "backbone.layers.3.mixer.experts.down_proj",
+            ),
+            (
+                "model.layers.1.block_sparse_moe.experts.0.w1.weight",
+                "model.layers.1.block_sparse_moe.experts.w1",
+            ),
+        ],
+        ids=["qwen-style", "nemotron-style", "mixtral-style"],
+    )
+    def test_stack_key_removes_the_routed_expert_index(self, name, expected) -> None:
+        assert group_key(name, "stack") == expected
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "model.layers.0.mlp.shared_expert.up_proj.weight",
+            "model.layers.0.mlp.shared_experts.gate_proj.weight",
+            "model.layers.0.mlp.gate.weight",
+            "model.layers.0.self_attn.q_proj.weight",
+            "model.layers.0.mlp.experts.gate_up_proj.weight",
+        ],
+        ids=[
+            "shared-expert",
+            "shared-experts-plural",
+            "router",
+            "attention",
+            "already-fused-3d",
+        ],
+    )
+    def test_stack_key_leaves_unindexed_names_alone(self, name) -> None:
+        # Only a routed-expert index collapses. A shared expert, a
+        # router, and an already-fused 3D stack each stay their own
+        # group, which is what the pack addresses (#159).
+        assert group_key(name, "stack") == group_key(name, "tensor")
+
+    def test_matches_a_layer_separates_layer_weights_from_edges(self) -> None:
+        assert matches_a_layer("model.layers.0.mlp.up_proj.weight")
+        assert not matches_a_layer("model.embed_tokens.weight")

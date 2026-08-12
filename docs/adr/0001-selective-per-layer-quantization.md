@@ -22,13 +22,23 @@
 
     Two measurements forced it. llama.cpp fuses each layer's experts
     into one tensor carrying one quantization type, which gives 46
-    addressable expert slots on Nemotron 3.5 Lightning 30B-A3B
-    (#159). vLLM, TensorRT-LLM, and SGLang each resolve one algorithm
-    per mixture-of-experts module, which gives 23 (#166). No runtime
-    serves a per-expert precision. A key finer than the stack prices
-    distinctions no pack can express, and a key coarser than it —
-    the layer — cannot price `ffn_up_exps` against `ffn_down_exps`,
-    which differ in shape and therefore in available precisions.
+    addressable expert slots on the backbone of Nemotron 3.5
+    Lightning 30B-A3B (#159). Exporting the MTP block adds 2. vLLM,
+    TensorRT-LLM, and SGLang each resolve one algorithm per
+    mixture-of-experts module, which gives 23 (#166).
+
+    No surveyed runtime serves a per-expert precision. #166 covered
+    vLLM, TensorRT-LLM, SGLang, and llm-compressor. #159 covered
+    llama.cpp. MLX, ExLlamaV3, and ktransformers stayed out of
+    scope, and #166 flags `ml-explore/mlx-lm` PR 1536 as worth a
+    read.
+
+    A key finer than the stack prices distinctions no pack can
+    express. A key coarser than it, the layer, cannot price
+    `ffn_up_exps` against `ffn_down_exps`, which llama.cpp's
+    `--tensor-type` addresses separately. The two stacks share one
+    palette: 2688 and 1856 both refuse the k-quant family, because
+    neither divides 256 (#159).
 
     The sensitivity-map schema bumped to 3 for the new value. Readers
     accept 2 and 3, because version 3 only widened the enum.

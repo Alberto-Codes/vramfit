@@ -21,7 +21,7 @@ def make_map(
         A dict accepted by map_from_dict.
     """
     return {
-        "vramfit_schema": 2,
+        "vramfit_schema": 3,
         "model_id": model_id,
         "scan": {
             "metric": "kl_divergence",

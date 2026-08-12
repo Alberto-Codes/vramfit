@@ -21,6 +21,26 @@
   record may now resolve to zero pairs, and schema-4 recipes can
   carry no-op pairs that falsely fail decision 6's gate — re-plan
   them.
+- **Amendment (2026-08-11, issue #161):** decision 1 says "Layer
+  groups stay the unit of scanning and assignment". ADR-0001 now
+  rules the unit is whatever a pack can address, which adds the
+  `stack` granularity for mixture-of-experts models. Decision 1's
+  refusal is unchanged in substance: the GGUF v1 backend still maps
+  only `model.layers.<n>` groups to `blk.<n>.` patterns, so it
+  refuses a `stack`-keyed group with a `PackError`. The same
+  refusal already catches any model whose layers are not named
+  `model.layers.<n>`, which includes the Nemotron 3.5 Lightning
+  target at `backbone.layers.<n>`. **A `stack` scan is therefore
+  measurable but not yet packable.** Issue #180 carries the backend
+  work. Until it lands, `--group-by stack` serves measurement and
+  planning only.
+
+    Decision 7 also says "`--group-by tensor` remains unbuilt". Read
+    that as stale since the meter shipped the flag. What decision 7
+    rules is unchanged and still holds: the 8.5-day per-tensor scan
+    is not the route, and the GGUF backend rejects groups it cannot
+    map. `stack` exists because it is *coarser* than per-tensor and
+    matches the pack, not because per-tensor scanning came back.
 
 ## Context
 

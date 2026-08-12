@@ -1,7 +1,10 @@
-"""Scan orchestration logic: work plan, resume filtering, map assembly.
+"""Scan orchestration logic: naming, work plan, resume, map assembly.
 
 The scan loop itself lives in the inbound adapter (it drives ports).
-This module holds the pure parts: which (group x precision) cells still
+This module holds the pure parts: which group a parameter belongs to
+under each granularity (`group_key`, the `layer`/`tensor`/`stack`
+naming rule that the torch meter applies but does not own),
+which (group x precision) cells still
 need measurement, how a finished pile of measurements becomes a
 `SensitivityMap` — per-tensor sizes riding through from `GroupSpec`
 (ADR-0022) — the within-group method tokens and the kquant
@@ -31,9 +34,11 @@ See Also:
 from __future__ import annotations
 
 import math
+import re
 from collections.abc import Collection, Iterable, Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
+from typing import Literal
 
 from vramfit.domain.model import (
     KQUANT_IMX_METHOD as KQUANT_IMX_METHOD,  # noqa: PLC0414 - re-export: method tokens read from this module
@@ -45,6 +50,76 @@ from vramfit.domain.model import (
     SCAN_METHOD as SCAN_METHOD,  # noqa: PLC0414 - re-export: method tokens read from this module
 )
 from vramfit.domain.model import LayerGroup, ScanMeta, SensitivityMap
+
+# Decoder-layer prefixes across common naming families: llama-style
+# ".layers.N.", GPT-2-style ".h.N.", and ".blocks.N.".
+_LAYER_PREFIX = re.compile(r"^(.*\.(?:layers|h|blocks)\.\d+)\.")
+# The routed-expert index inside a mixture-of-experts parameter name.
+# Every family spells the index the same way, between ".experts." and
+# the projection: Mixtral at ".block_sparse_moe.experts.N.w1", Qwen and
+# DeepSeek at ".mlp.experts.N.up_proj", and Nemotron 3.5 Lightning at
+# "backbone.layers.N.mixer.experts.M.down_proj" (#160).
+_EXPERT_INDEX = re.compile(r"\.experts\.\d+\.")
+
+
+def group_key(name: str, group_by: Literal["layer", "tensor", "stack"]) -> str:
+    """Derive one parameter's group name under a granularity.
+
+    Pure naming policy, so the meter stays a thin discovery loop and
+    the fast suite covers every granularity without torch.
+
+    Args:
+        name: Parameter name, e.g. ``model.layers.0.self_attn.q_proj.weight``.
+        group_by: Grouping granularity.
+
+    Returns:
+        The group this parameter belongs to. ``layer`` returns the
+        decoder-layer prefix, and falls back to the bare tensor name
+        when the parameter sits outside any layer. ``tensor`` returns
+        the tensor name. ``stack`` returns the tensor name with a
+        routed-expert index removed, which fuses one projection's
+        experts into the unit a pack addresses (#159, #161).
+
+    Examples:
+        Collapse one projection's routed experts:
+
+        ```python
+        from vramfit.domain.scan import group_key
+
+        name = "backbone.layers.3.mixer.experts.57.down_proj.weight"
+        assert group_key(name, "stack") == ("backbone.layers.3.mixer.experts.down_proj")
+        ```
+    """
+    if group_by == "tensor":
+        return name.removesuffix(".weight")
+    if group_by == "stack":
+        return _EXPERT_INDEX.sub(".experts.", name).removesuffix(".weight")
+    match = _LAYER_PREFIX.match(name)
+    return match.group(1) if match else name.removesuffix(".weight")
+
+
+def matches_a_layer(name: str) -> bool:
+    """Report whether a parameter sits inside a decoder layer.
+
+    The meter refuses ``layer`` grouping on a model where nothing
+    matches — degrading to per-tensor groups would misrepresent the
+    map.
+
+    Args:
+        name: Parameter name.
+
+    Returns:
+        True when the name carries a decoder-layer prefix.
+
+    Examples:
+        ```python
+        from vramfit.domain.scan import matches_a_layer
+
+        assert matches_a_layer("model.layers.0.mlp.up_proj.weight")
+        assert not matches_a_layer("model.embed_tokens.weight")
+        ```
+    """
+    return _LAYER_PREFIX.match(name) is not None
 
 
 @dataclass(frozen=True, slots=True)

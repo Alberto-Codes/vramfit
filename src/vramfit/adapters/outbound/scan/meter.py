@@ -11,10 +11,11 @@ vocabulary) so the reference model runs exactly once.
 Only floating-point tensors with 2+ dimensions join layer groups —
 norms and biases stay at reference precision and are not scanned.
 Tied names that alias one storage collapse to one group.
-``group_by`` decides the rest: ``layer`` collapses each decoder layer,
-``tensor`` keeps every weight apart, and ``stack`` keeps every weight
-apart except a mixture-of-experts layer's routed experts, which fuse
-into one group per projection — the unit a pack addresses (#161).
+``group_by`` decides the rest. ``layer`` collapses each decoder layer
+into one group. ``tensor`` keeps every weight apart. ``stack`` also
+keeps every weight apart, except a layer's routed experts. Those fuse
+into one group per projection, which is the unit a pack addresses
+(#161). [vramfit.domain.scan][] holds the naming rule.
 A measurement that fails to restore the model poisons the meter: it
 refuses further cells rather than measure against corrupt weights.
 Groups that ``auto`` sharding offloaded to host RAM perturb through
@@ -53,7 +54,6 @@ See Also:
 
 from __future__ import annotations
 
-import re
 import sys
 from collections.abc import Mapping
 from pathlib import Path
@@ -84,17 +84,7 @@ from vramfit.adapters.outbound.scan.quantize import (
     MIN_BITS,
     rtn_quantize_dequantize,
 )
-from vramfit.domain.scan import GroupSpec
-
-# Decoder-layer prefixes across common naming families: llama-style
-# ".layers.N.", GPT-2-style ".h.N.", and ".blocks.N.".
-_LAYER_PREFIX = re.compile(r"^(.*\.(?:layers|h|blocks)\.\d+)\.")
-# The routed-expert index inside a mixture-of-experts parameter name.
-# Matches the Mixtral family (".block_sparse_moe.experts.N.w1") and the
-# Qwen, DeepSeek, and Nemotron family (".mlp.experts.N.up_proj").
-# `stack` grouping removes the index, which fuses one projection's
-# experts into the single unit a pack addresses (#159, #161).
-_EXPERT_INDEX = re.compile(r"\.experts\.\d+\.")
+from vramfit.domain.scan import GroupSpec, group_key, matches_a_layer
 
 
 class TorchDamageMeter:
@@ -638,14 +628,13 @@ def _discover_groups(
 ) -> dict[str, list[str]]:
     """Group the model's quantizable parameters.
 
+    Discovery walks the parameters and filters them. The naming rule
+    itself lives in [vramfit.domain.scan][] (`group_key`), so the
+    fast suite covers every granularity without torch.
+
     Args:
         model: The loaded model.
-        group_by: ``layer`` collapses each decoder layer into one
-            group. ``tensor`` keeps every weight separate. ``stack``
-            keeps every weight separate except a mixture-of-experts
-            layer's routed experts, which collapse to one group per
-            projection. On a dense model ``stack`` matches ``tensor``,
-            because a pack addresses each of its weights on its own.
+        group_by: Grouping granularity, passed through to `group_key`.
 
     Returns:
         Ordered mapping of group name to member parameter names. Only
@@ -661,15 +650,8 @@ def _discover_groups(
     for name, param in model.named_parameters():
         if param.ndim < 2 or not param.is_floating_point():  # noqa: PLR2004
             continue
-        if group_by == "tensor":
-            key = name.removesuffix(".weight")
-        elif group_by == "stack":
-            key = _EXPERT_INDEX.sub(".experts.", name).removesuffix(".weight")
-        else:
-            match = _LAYER_PREFIX.match(name)
-            layer_matches += bool(match)
-            key = match.group(1) if match else name.removesuffix(".weight")
-        groups.setdefault(key, []).append(name)
+        layer_matches += group_by == "layer" and matches_a_layer(name)
+        groups.setdefault(group_key(name, group_by), []).append(name)
     if not groups:
         raise ValueError(f"no quantizable parameters found in {model.__class__}")
     if group_by == "layer" and layer_matches == 0:

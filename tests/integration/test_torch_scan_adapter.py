@@ -288,6 +288,33 @@ class TestTorchDamageMeter:
         assert len(by_stack) == 4
         assert len(by_tensor) == 10
 
+    def test_nemotron_expert_names_group_by_stack(self) -> None:
+        # The real target spells experts "backbone.layers.N.mixer.
+        # experts.M.down_proj" (#160), not the ".mlp.experts." of the
+        # Qwen family. The index sits in the same place, so one rule
+        # covers both. This pins that.
+        from vramfit.adapters.outbound.scan.meter import _discover_groups
+
+        class NemotronLike(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+
+                def expert() -> torch.nn.Module:
+                    part = torch.nn.Module()
+                    part.down_proj = torch.nn.Linear(4, 4)
+                    return part
+
+                layer = torch.nn.Module()
+                layer.mixer = torch.nn.Module()
+                layer.mixer.experts = torch.nn.ModuleList([expert() for _ in range(3)])
+                self.backbone = torch.nn.Module()
+                self.backbone.layers = torch.nn.ModuleList([layer])
+
+        groups = _discover_groups(NemotronLike(), "stack")
+
+        assert set(groups) == {"backbone.layers.0.mixer.experts.down_proj"}
+        assert len(groups["backbone.layers.0.mixer.experts.down_proj"]) == 3
+
     def test_stack_grouping_matches_tensor_grouping_on_a_dense_model(self) -> None:
         # A dense model has no expert index to collapse. A pack
         # addresses each of its weights alone, so the two agree.
