@@ -216,7 +216,7 @@ def test_tensor_overrides_name_the_group_they_cannot_map() -> None:
 
     message = str(caught.value)
     assert '"backbone.layers.0.mixer.in_proj"' in message
-    assert "decoder-layer groups, routed-expert stacks" in message
+    assert "layer groups, routed-expert stacks" in message
 
 
 @pytest.mark.parametrize(
@@ -313,6 +313,58 @@ def test_tensor_overrides_reject_an_expert_projection_outside_the_stack_table() 
     message = str(caught.value)
     assert '"model.layers.0.block_sparse_moe.experts.w1"' in message
     assert "down_proj" in message
+
+
+@pytest.mark.parametrize(
+    "group",
+    ["model.embed_tokens", "backbone.embeddings"],
+    ids=["llama", "nemotron"],
+)
+def test_token_embedding_type_maps_every_embedding_naming_family(group: str) -> None:
+    # `--token-embedding-type` binds one tensor whatever the
+    # checkpoint calls the group. Missing a name refuses the whole
+    # recipe, because the group then reaches the pattern branch.
+    recipe = make_recipe((group, 8), ("backbone.layers.0", 4))
+
+    assert token_embedding_type(recipe) == "q8_0"
+    assert [o.pattern for o in tensor_overrides(recipe)] == [r"blk\.0\."]
+
+
+def test_tensor_overrides_reject_two_layer_stacks_naming_both() -> None:
+    # GGUF numbers one layer stack `blk.<n>.`. The target carries
+    # `mtp.layers.<n>` beside `backbone.layers.<n>`, and a
+    # multimodal checkpoint carries a vision tower. Mapping both
+    # onto `blk.0.` would drop one silently (#183).
+    recipe = make_recipe(("backbone.layers.0", 8), ("mtp.layers.0", 4))
+
+    with pytest.raises(PackError) as caught:
+        tensor_overrides(recipe)
+
+    message = str(caught.value)
+    assert "two layer stacks" in message
+    assert '"backbone.layers.0"' in message
+    assert '"mtp.layers.0"' in message
+
+
+def test_tensor_overrides_reject_a_vision_tower_beside_the_language_model() -> None:
+    # GGUF names vision blocks `v.blk.<n>.`, not `blk.<n>.`.
+    recipe = make_recipe(
+        ("model.layers.0", 4),
+        ("vision_tower.transformer.layers.0", 4),
+    )
+
+    with pytest.raises(PackError, match="two layer stacks"):
+        tensor_overrides(recipe)
+
+
+def test_tensor_overrides_accept_one_root_across_layers_and_stacks() -> None:
+    recipe = make_recipe(
+        ("backbone.layers.0", 8),
+        ("backbone.layers.1.mixer.experts.up_proj", 4),
+        ("backbone.layers.2", 2),
+    )
+
+    assert len(tensor_overrides(recipe)) == 3
 
 
 def test_tensor_overrides_reject_a_shared_expert_stack() -> None:

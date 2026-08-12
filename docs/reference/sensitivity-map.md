@@ -149,16 +149,22 @@ below remain, the sub-4-bit pricing claims do not.
     !!! warning "A `stack` scan packs its expert stacks, not every group"
 
         The GGUF backend maps two group shapes (ADR-0012 decision 2,
-        amended 2026-08-12). A decoder-layer group becomes
-        `blk.<n>.`, under any checkpoint naming family — both
-        `model.layers.<n>` and the Nemotron 3.5 Lightning target's
+        amended 2026-08-12). A layer group becomes `blk.<n>.` across
+        the three naming families above — both `model.layers.<n>`
+        and the Nemotron 3.5 Lightning target's
         `backbone.layers.<n>`. A routed-expert stack becomes its
-        fused tensor, `blk.<n>.ffn_up_exps.` or
-        `blk.<n>.ffn_down_exps.`.
+        fused tensor: `blk.<n>.ffn_up_exps.`,
+        `blk.<n>.ffn_down_exps.`, or `blk.<n>.ffn_gate_exps.`.
 
         Every other `stack` group still raises a `PackError` that
         names it. On the Nemotron target that covers the Mamba
-        `in_proj` and `out_proj`, the attention projections, the
-        router, and the shared experts. So a `layer`-keyed recipe
-        packs today, and a whole-model `stack`-keyed recipe does
-        not. Issue #183 carries the remaining classes.
+        `in_proj`, `out_proj`, and `conv1d`, the attention
+        projections, the router, and the shared experts. So a
+        `layer`-keyed recipe packs today and a whole-model
+        `stack`-keyed recipe does not. Issue #183 carries the
+        remaining classes.
+
+        The backend also refuses a recipe naming two layer stacks.
+        GGUF numbers one stack `blk.<n>.`, so the target's
+        `mtp.layers.<n>` and a multimodal checkpoint's vision tower
+        each collide with the backbone. Scan one stack at a time.

@@ -86,9 +86,10 @@ class PackResult:
             scan measured one, the embedding assignment otherwise
             (ADR-0012). None when the recipe has neither group.
         overrides (tuple[TypeOverride, ...]): Ordered per-tensor
-            overrides, in recipe order. Patterns are unique — the
-            quantizer applies the first match, so a duplicate would
-            silently shadow its successor.
+            overrides: protections, then expert stacks, then layer
+            groups, each in recipe order. Order carries priority.
+            The quantizer applies the first match, so a broader
+            pattern placed first would shadow a narrower one.
         imatrix_path (str | None): Importance matrix file driven into
             the quantizer (ADR-0016). None when the pack ran without
             one.

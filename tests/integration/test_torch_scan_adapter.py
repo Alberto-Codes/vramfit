@@ -237,13 +237,13 @@ class TestTorchDamageMeter:
         # flags disengage and the renamed group surfaces only later,
         # as a PackError for an unmapped group. This pins the drift.
         from vramfit.adapters.outbound.gguf.types import (
-            EMBEDDING_GROUP,
+            EMBEDDING_GROUPS,
             OUTPUT_GROUP,
         )
 
         names = {spec.name for spec in tiny_meter.groups()}
 
-        assert EMBEDDING_GROUP in names
+        assert names & EMBEDDING_GROUPS
         assert OUTPUT_GROUP in names
 
     def test_gpt2_style_names_group_by_layer(self) -> None:

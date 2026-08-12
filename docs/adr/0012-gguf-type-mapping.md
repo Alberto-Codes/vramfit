@@ -24,30 +24,47 @@
   applies the first matching pattern. The backend still rejects
   tensor-level *groups*: the boundary moved for protections only.
 - **Amendment (2026-08-12, issue #180):** decision 2 gains a second
-  group shape and drops a fixed prefix.
+  group shape, drops a fixed prefix, and gains one refusal.
 
     The backend derives the layer index from the group name. Any
-    decoder-layer group ending in `.layers.<n>`, `.h.<n>`, or
-    `.blocks.<n>` becomes `blk\.<n>\.`. GGUF numbers every decoder
-    layer `blk.<n>.` whatever the checkpoint calls it, so matching
-    `model.layers.<n>` alone refused the Nemotron 3.5 Lightning
-    target at `backbone.layers.<n>` (#160).
+    layer group ending in `.layers.<n>`, `.h.<n>`, or `.blocks.<n>`
+    becomes `blk\.<n>\.`. GGUF numbers every layer `blk.<n>.`
+    whatever the checkpoint calls it. Matching `model.layers.<n>`
+    alone refused the Nemotron 3.5 Lightning target at
+    `backbone.layers.<n>` (#160).
+
+    The embedding group gains the same treatment. Decision 2 fixed
+    it at `model.embed_tokens`, and the target names it
+    `backbone.embeddings`. The backend now carries both names. The
+    output head stays the literal `lm_head`, which the target
+    carries verbatim.
 
     A routed-expert stack group becomes its fused tensor:
-    `blk\.<n>\.ffn_up_exps\.`, `ffn_down_exps`, or `ffn_gate_exps`.
-    llama.cpp fuses one layer's routed experts into a single 3D
-    tensor carrying one quantization type, so the stack is the unit
-    a pack addresses (#159, ADR-0001 as amended by #161).
+    `blk\.<n>\.ffn_up_exps\.`, `blk\.<n>\.ffn_down_exps\.`, or
+    `blk\.<n>\.ffn_gate_exps\.`. llama.cpp fuses one layer's routed
+    experts into a single 3D tensor. That tensor carries one
+    quantization type, so the expert stack is the unit a pack
+    addresses (#159, ADR-0001 as amended by #161).
 
-    Stack overrides go before layer overrides, and both go after the
-    protection overrides. The quantizer applies the first matching
-    pattern, and `blk\.1\.` also matches `blk.1.ffn_up_exps.weight`.
-    Order is priority: per-tensor, then stack, then layer.
+    Expert-stack overrides go before layer overrides, and both go
+    after the protection overrides. The quantizer applies the first
+    matching pattern, and `blk\.1\.` also matches
+    `blk.1.ffn_up_exps.weight`. Order is priority: per-tensor, then
+    expert stack, then layer.
 
-    The refusal stands for every other group, and it names the
-    group. Tensor-level groups still refuse. So does any tensor
-    class outside this mapping — the Mamba `in_proj`, the router,
-    the shared experts. Issue #183 carries those.
+    **Every mapped group must hang from one parameter-tree root.**
+    A free prefix cannot tell a decoder layer from any other layer
+    stack. The target carries `mtp.layers.<n>` beside
+    `backbone.layers.<n>`, and a multimodal checkpoint carries a
+    vision tower that GGUF names `v.blk.<n>.`. Both would map onto
+    `blk.<n>.` and lose one assignment to the first-match rule. The
+    backend refuses a recipe naming two roots, and names both.
+
+    The backend still refuses every other group, and it names the
+    group. It refuses tensor-level groups. It refuses any tensor
+    class outside this mapping — the Mamba `in_proj`, `out_proj`,
+    and `conv1d`, the attention projections, the router, the shared
+    experts. Issue #183 carries those.
 
 ## Context
 

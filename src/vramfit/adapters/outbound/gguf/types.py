@@ -3,10 +3,10 @@
 The decision core of the GGUF backend, kept free of IO so the mapping
 is testable and the verified fake can share it. Nominal precisions
 map to K-quant types (the full llama.cpp capability set since
-ADR-0013), decoder-layer groups map to escaped `blk.<n>.` regex
-patterns under any checkpoint naming family, routed-expert stack
-groups map to their fused `blk.<n>.ffn_<proj>_exps.` tensor (#159,
-#161), protected tensors map through the fixed HF-to-GGUF class table to
+ADR-0013), layer groups map to escaped `blk.<n>.` regex patterns
+across the three naming families the scan produces, routed-expert
+stack groups map to their fused `blk.<n>.ffn_<proj>_exps.` tensor
+(#159, #161), protected tensors map through the fixed HF-to-GGUF class table to
 per-tensor patterns (ADR-0022), excluded pairs map to the full GGUF
 tensor names ``--exclude-weights`` deletes by substring (ADR-0023),
 and the embedding and `lm_head` groups map to the quantizer's
@@ -67,24 +67,40 @@ BASE_FTYPE_BY_BITS: Final[dict[int, str]] = {
 # another runtime must not silently become a GGUF (ADR-0013).
 GGUF_RUNTIME: Final[str] = LLAMA_CPP
 
-EMBEDDING_GROUP: Final[str] = "model.embed_tokens"
+# The embedding group names the scan produces, across naming
+# families. llama-family checkpoints say `model.embed_tokens`.
+# Nemotron-H says `backbone.embeddings`. Both drive the one
+# `--token-embedding-type` flag, so the backend needs the names, not
+# a pattern.
+EMBEDDING_GROUPS: Final[frozenset[str]] = frozenset(
+    {"model.embed_tokens", "backbone.embeddings"}
+)
 
 OUTPUT_GROUP: Final[str] = "lm_head"
 
-# A decoder-layer group, under any naming family the scan produces.
-# The prefix is free, so `model.layers.4` and Nemotron 3.5
-# Lightning's `backbone.layers.4` both yield 4 (#160). GGUF numbers
-# every decoder layer `blk.<n>.`, whatever the checkpoint calls it.
+# A layer group, under the three naming families the scan produces
+# (`domain.scan` names them the same way). The prefix is free, so
+# `model.layers.4` and Nemotron-H's `backbone.layers.4` both yield 4
+# (#160). GGUF numbers every layer `blk.<n>.`, whatever the
+# checkpoint calls it.
 _LAYER_GROUP: Final[re.Pattern[str]] = re.compile(r"^.+\.(?:layers|h|blocks)\.(\d+)$")
 
-# A routed-expert stack group: a decoder-layer prefix, then
-# `.experts.` with the expert index already collapsed by
-# `group_key`, then the projection (#161). The trailing projection
-# stops this from also matching a plain layer group. The dot before
-# `experts` matters — it refuses `shared_experts`, which GGUF names
-# `ffn_up_shexp` and this table does not carry (#183).
+# A routed-expert stack group: a layer prefix, then `.experts.` with
+# the expert index already collapsed by `group_key`, then the
+# projection (#161). The dot before `experts` matters — it refuses
+# `shared_experts`, which GGUF names `ffn_up_shexp` and this table
+# does not carry (#183).
 _EXPERT_STACK: Final[re.Pattern[str]] = re.compile(
-    r"^.+\.(?:layers|h|blocks)\.(\d+)\.(?:.*\.)?experts\.([a-z_0-9]+)$"
+    r"^.+\.(?:layers|h|blocks)\.(\d+)\.(?:.*\.)?experts\.([A-Za-z0-9_]+)$"
+)
+
+# The parameter-tree root a layer or expert-stack group hangs from.
+# `blk.<n>.` addresses exactly one layer stack, so a recipe that
+# names two of them cannot pack. The target carries `backbone` and
+# `mtp`, and a multimodal checkpoint carries a vision tower that
+# GGUF names `v.blk.<n>.` instead.
+_STACK_ROOT: Final[re.Pattern[str]] = re.compile(
+    r"^(.+?)\.(?:layers|h|blocks)\.\d+(?:\.|$)"
 )
 
 # llama.cpp fuses one layer's routed experts into a single 3D tensor
@@ -228,7 +244,8 @@ def token_embedding_type(recipe: Recipe) -> str | None:
     ``--token-embedding-type`` binds the embedding tensor before any
     pattern override, so the embedding group never becomes a pattern.
     When the model ties embeddings, this assignment also governs the
-    output head (ADR-0012).
+    output head (ADR-0012). The group carries one of the names in
+    `EMBEDDING_GROUPS`, which differ by naming family.
 
     Args:
         recipe: The recipe to pack.
@@ -249,7 +266,7 @@ def token_embedding_type(recipe: Recipe) -> str | None:
         ```
     """
     for assignment in recipe.assignments:
-        if assignment.group == EMBEDDING_GROUP:
+        if assignment.group in EMBEDDING_GROUPS:
             return ggml_type_for(assignment.bits)
     return None
 
@@ -428,35 +445,66 @@ def gguf_stack_prefix(group: str) -> str | None:
     return f"blk.{match.group(1)}.{suffix}."
 
 
+def _claim_root(group: str, roots: dict[str, str]) -> None:
+    """Hold every mapped group to one parameter-tree root.
+
+    Args:
+        group: Recipe group name.
+        roots: Roots claimed so far, mapped to the group that
+            claimed each. Updated in place.
+
+    Raises:
+        PackError: If ``group`` hangs from a second root.
+    """
+    match = _STACK_ROOT.match(group)
+    if match is None:
+        return
+    root = match.group(1)
+    roots.setdefault(root, group)
+    if len(roots) > 1:
+        first = next(iter(roots))
+        raise PackError(
+            f'groups "{roots[first]}" and "{group}" name two layer stacks — '
+            f'a GGUF pack numbers one stack "blk.<n>." and would silently '
+            f"drop the other (#183)"
+        )
+
+
 def tensor_overrides(recipe: Recipe) -> tuple[TypeOverride, ...]:
     r"""Translate recipe groups into quantizer tensor-type overrides.
 
-    Two group shapes map. A decoder-layer group under any naming
-    family — ``model.layers.<n>``, ``backbone.layers.<n>`` — becomes
-    the escaped pattern ``blk\.<n>\.``. A routed-expert stack group
-    becomes the escaped pattern for its fused tensor, e.g.
-    ``blk\.<n>\.ffn_up_exps\.`` (#159, #161). Escaping matters — an
-    unescaped ``blk.1.`` would also match ``blk.11.``. The embedding
-    and ``lm_head`` groups map to dedicated flags and are skipped
-    here.
+    Two group shapes map. A layer group under any of the three
+    naming families — ``model.layers.<n>``, ``backbone.layers.<n>``
+    — becomes the escaped pattern ``blk\.<n>\.``. A routed-expert
+    stack group becomes the escaped pattern for its fused tensor,
+    e.g. ``blk\.<n>\.ffn_up_exps\.`` (#159, #161). Escaping matters
+    — an unescaped ``blk.1.`` would also match ``blk.11.``. The
+    embedding and ``lm_head`` groups map to dedicated flags and are
+    skipped here.
 
-    Stack overrides come first, ahead of the layer overrides. The
-    quantizer applies the first matching pattern, and ``blk\.1\.``
-    also matches ``blk.1.ffn_up_exps.weight``. Callers place the
-    protection overrides ahead of both — a per-tensor pattern is the
-    most specific of the three (ADR-0022).
+    Expert-stack overrides come first, ahead of the layer overrides.
+    The quantizer applies the first matching pattern, and
+    ``blk\.1\.`` also matches ``blk.1.ffn_up_exps.weight``. Callers
+    place the protection overrides ahead of both — a per-tensor
+    pattern is the most specific of the three (ADR-0022).
+
+    Every mapped group must hang from one parameter-tree root.
+    ``blk.<n>.`` addresses a single layer stack, so a recipe naming
+    two of them would map both onto it and silently drop one.
 
     Args:
         recipe: The recipe to pack.
 
     Returns:
-        Stack overrides in recipe order, then layer overrides in
-        recipe order.
+        Expert-stack overrides in recipe order, then layer overrides
+        in recipe order.
 
     Raises:
         PackError: If a group is not a layer group, a routed-expert
-            stack, the embedding, or the output head, or its
-            precision has no table entry.
+            stack, the embedding, or the output head. Also if a
+            routed-expert stack names a projection outside the
+            fused-stack table, if the groups hang from two roots, or
+            if a precision has no table entry.
 
     Examples:
         The group ``model.layers.7`` at 4-bit becomes an escaped
@@ -468,9 +516,11 @@ def tensor_overrides(recipe: Recipe) -> tuple[TypeOverride, ...]:
     """
     stacks: list[TypeOverride] = []
     layers: list[TypeOverride] = []
+    roots: dict[str, str] = {}
     for assignment in recipe.assignments:
-        if assignment.group in (EMBEDDING_GROUP, OUTPUT_GROUP):
+        if assignment.group in EMBEDDING_GROUPS or assignment.group == OUTPUT_GROUP:
             continue
+        _claim_root(assignment.group, roots)
         prefix = gguf_stack_prefix(assignment.group)
         if prefix is not None:
             bits = ggml_type_for(assignment.bits)
@@ -480,7 +530,7 @@ def tensor_overrides(recipe: Recipe) -> tuple[TypeOverride, ...]:
         if match is None:
             raise PackError(
                 f'group "{assignment.group}" has no GGUF tensor mapping — the '
-                "backend maps decoder-layer groups, routed-expert stacks, the "
+                "backend maps layer groups, routed-expert stacks, the "
                 "embedding, and the output head (ADR-0012, ADR-0022)"
             )
         bits = ggml_type_for(assignment.bits)
