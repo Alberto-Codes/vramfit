@@ -30,10 +30,10 @@
     match by construction. Measured 2026-08-12 from bartowski's
     published GGUF imatrix, by the range-request method in Context
     below. Frequency alone therefore ranks experts inside a layer. It
-    never ranks one layer against another. Decision 2 keeps a
-    bit-allocation lever on one assumption: an expert's damage varies
-    with its count. Under that assumption a weighted price still
-    reorders the 46 expert stacks. #178 tests the assumption.
+    never ranks one layer against another. Decision 2 still moves bits
+    on one assumption: an expert's damage varies with its count. Under
+    that assumption a weighted price reorders the 46 expert stacks.
+    #178 tests the assumption.
 
     A split reaches 1.73 times the routing mass at the same budget.
     The 10.5 GiB budget puts 18.5 % of expert parameters at `MXFP4`.
