@@ -14,11 +14,11 @@ name. An entry that matches nothing fails too: a stale entry widens
 the gate without saying so, which is the drift this gate prevents.
 
 Examples:
-    Run against the tracked tree:
+    Run against the index:
 
     ```console
     $ uv run python scripts/check_banned_terms.py
-    checked 219 files, 13 allowed occurrences in 6 files
+    allowed 16 occurrences in 6 allowlisted files
     ```
 """
 
@@ -53,9 +53,9 @@ _PATTERN = re.compile(re.escape(BANNED_TERM), re.IGNORECASE)
 def tracked_files(root: Path) -> list[Path]:
     """List the files git tracks or would add under a repository root.
 
-    The listing includes untracked files that no ignore rule excludes.
-    A new file carrying the term must fail on its first commit, not
-    after it lands.
+    The listing reads the index, so a newly staged file is covered on
+    its first commit. Untracked files stay out on purpose. A scratch
+    file in someone's working tree must not fail everyone's commit.
 
     Args:
         root: Repository root to list.
@@ -66,6 +66,7 @@ def tracked_files(root: Path) -> list[Path]:
     Raises:
         RuntimeError: If git is not on PATH. The gate must fail loudly
             rather than scan nothing.
+        subprocess.CalledProcessError: If git rejects the listing.
     """
     git = shutil.which("git")
     if git is None:
@@ -73,7 +74,7 @@ def tracked_files(root: Path) -> list[Path]:
     # S603: every argument is a literal and `git` is a resolved absolute
     # path. No caller input reaches the command line.
     listing = subprocess.run(  # noqa: S603
-        [git, "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+        [git, "ls-files", "-z", "--cached"],
         cwd=root,
         capture_output=True,
         check=True,
@@ -86,7 +87,9 @@ def occurrences(path: Path) -> list[tuple[int, str, int]]:
     """Find every line of a file that carries the banned term.
 
     A file that does not decode as UTF-8 is binary and yields nothing.
-    No tracked binary carries the term as text.
+    No tracked binary carries the term as text. A file the gate cannot
+    read at all raises instead, because a gate that reports an
+    unreadable file clean is worse than no gate.
 
     Args:
         path: File to read.
@@ -94,10 +97,13 @@ def occurrences(path: Path) -> list[tuple[int, str, int]]:
     Returns:
         One ``(line number, stripped line, match count)`` triple per
         matching line, in file order.
+
+    Raises:
+        OSError: If the file cannot be read.
     """
     try:
         text = path.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
+    except UnicodeDecodeError:
         return []
     return [
         (number, line.strip(), len(_PATTERN.findall(line)))

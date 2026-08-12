@@ -292,7 +292,7 @@ def _reject_renamed_envelope_key(obj: dict[str, Any], path: str, expected: int) 
         expected: The schema version this artifact's adapter reads.
 
     Raises:
-        ArtifactError: If the object carries ``quantfit_schema``, the
+        ArtifactError: If the object carries ``quantfit_schema``. That
             key renamed to ``vramfit_schema`` with the tool (#118).
     """
     if "quantfit_schema" not in obj:
@@ -302,10 +302,10 @@ def _reject_renamed_envelope_key(obj: dict[str, Any], path: str, expected: int) 
     if found is not None and found != expected:
         detail = (
             f" The document declares version {found}. "
-            "A key rename alone does not make it load."
+            "A key rename alone does not make it load. "
+            "Bump the version or re-run the stage that writes it."
         )
-    _require(
-        False,
+    raise ArtifactError(
         f"{path}.quantfit_schema",
         'the envelope key renamed to "vramfit_schema" (#118). '
         f"This vramfit reads only the new key at version {expected}.{detail}",

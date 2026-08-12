@@ -27,10 +27,10 @@
 - **Amendment (2026-08-11):** the tool renamed to vramfit (#118,
   chart #114). The sidecar envelope key renamed with it, and the
   sidecar schema version bumped to 2. The rename executed in #120.
-  This record keeps its dated version numbers. Read every sidecar
-  schema version 1 below as 2, including the example block. #121
-  re-uploaded the five published sidecars at that key and
-  version.
+  This record keeps its dated version numbers. Read every dated
+  sidecar schema version 1 below as 2. The example block shows the
+  live version. #121 re-uploaded the five published sidecars at that
+  key and version.
 
 ## Context
 
@@ -89,11 +89,12 @@ and versioned. The evidence deserves the same treatment.
 ## Open questions
 
 - ~~The schema shape.~~ **Decided (2026-08-10, issue #65): schema
-  version 1, committed with the writer.**
+  version 1, committed with the writer.** (Since bumped to 2 with the
+  rename, #118. The block below shows the live version.)
 
   ```json
   {
-    "vramfit_schema": 1,
+    "vramfit_schema": 2,
     "artifact": {"file": "…", "sha256": "…", "size_bytes": 0},
     "toolchain": {"llama_cpp_build": "…", "lm_eval": "…",
                   "llama_cpp_python": "…", "lane": "…"},

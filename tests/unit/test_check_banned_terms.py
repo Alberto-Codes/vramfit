@@ -1,14 +1,7 @@
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
+import check_banned_terms as gate
 import pytest
-
-_SCRIPTS = Path(__file__).resolve().parents[2] / "scripts"
-sys.path.insert(0, str(_SCRIPTS))
-
-import check_banned_terms as gate  # noqa: E402
 
 pytestmark = pytest.mark.unit
 
@@ -82,10 +75,8 @@ def test_occurrences_binary_file_yields_nothing(tmp_path) -> None:
     assert gate.occurrences(path) == []
 
 
-def test_check_this_repository_passes() -> None:
-    root = _SCRIPTS.parent
-
-    failures, allowed, _ = gate.check(root)
-
-    assert failures == []
-    assert allowed > 0
+def test_occurrences_unreadable_file_raises(tmp_path) -> None:
+    # A gate that reports an unreadable file clean is worse than no
+    # gate, so the read error must escape.
+    with pytest.raises(OSError):
+        gate.occurrences(tmp_path / "absent.md")

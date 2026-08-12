@@ -95,11 +95,12 @@ def test_pre_rename_envelope_key_older_version_names_both_blockers(tmp_path) -> 
     assert "A key rename alone does not make it load." in message
 
 
+@pytest.mark.parametrize("value", ["one", True], ids=["string", "boolean"])
 def test_pre_rename_envelope_key_unreadable_version_names_only_the_key(
-    tmp_path,
+    tmp_path, value
 ) -> None:
     path = tmp_path / "scan.checkpoint.json"
-    path.write_text(json.dumps({"quantfit_schema": "one", "fingerprint": FP}))
+    path.write_text(json.dumps({"quantfit_schema": value, "fingerprint": FP}))
 
     with pytest.raises(ArtifactError) as excinfo:
         JsonScanCheckpointFile(path).load(FP)

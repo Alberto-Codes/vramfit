@@ -364,12 +364,13 @@ change.
     never carry. Run logs carry `vramfit_runlog` instead, versioning
     one event line rather than a whole document.
 
-> **Ruled 2026-08-11 (#118).** Both envelope keys rename with the
-> tool (chart #114). The key rename is a breaking change. Every
-> schema version bumps, including the run-log version. The rename
-> PR (#120) reads only the new keys: one term per concept. The
-> re-upload task (#121) then edits the published HF files in place,
-> re-hashes, and re-uploads them.
+> **Ruled 2026-08-11 (#118).** Both envelope keys renamed with the
+> tool (chart #114). The rename was a breaking change, and every
+> schema version bumped with it, including the run-log version. The
+> rename PR (#120) reads only the two keys defined above: one term
+> per concept. The re-upload task (#121) then edited the published HF
+> files in place, re-hashed, and re-uploaded them. A reader that meets
+> a pre-rename key names that key in the error (#154).
 
 ## Planning
 
