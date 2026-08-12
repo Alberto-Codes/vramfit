@@ -49,16 +49,17 @@ ADR that supersedes the old one.
 | [0013](0013-runtime-capability-in-recipes.md) | Recipes record their target runtime | Accepted, amended by 0014 |
 | [0014](0014-per-type-effective-bits.md) | The solver predicts sizes from per-type effective bits | Accepted |
 | [0015](0015-offload-aware-scanning.md) | The meter perturbs offloaded groups through accelerate's weights map | Accepted |
-| [0016](0016-imatrix-in-the-pack-path.md) | Pack consumes an importance matrix | Accepted |
+| [0016](0016-imatrix-in-the-pack-path.md) | Pack consumes an importance matrix | Accepted, amended by 0026 |
 | [0017](0017-post-pack-smoke-test.md) | A packed model proves it emits language before anything trusts it | Accepted |
 | [0018](0018-kquant-within-group-method.md) | A K-quant-faithful within-group method behind a scan flag | Accepted |
 | [0019](0019-kquant-priced-maps.md) | Sub-4-bit recipes solve on kquant-priced maps | Superseded by 0021 |
 | [0020](0020-imatrix-assisted-pricing.md) | The meter prices K-quant cells with the pack's imatrix | Superseded by 0021 |
-| [0021](0021-runtime-frame-measurement.md) | Sub-4-bit damage is measured in the runtime frame | Accepted |
+| [0021](0021-runtime-frame-measurement.md) | Sub-4-bit damage is measured in the runtime frame | Accepted, amended by 0026 |
 | [0022](0022-within-layer-protections.md) | Tensor-level precision arrives as within-layer protections | Accepted, amended by 0023 |
-| [0023](0023-imatrix-exclusions.md) | Imatrix exclusions carry the fit-collapse remedy in the recipe | Accepted |
+| [0023](0023-imatrix-exclusions.md) | Imatrix exclusions carry the fit-collapse remedy in the recipe | Accepted, amended by 0026 |
 | [0024](0024-tier3-task-slice.md) | Tier 3 runs a fixed five-task slice at leaderboard settings | Accepted |
 | [0025](0025-evals-sidecar.md) | Evaluation results ship as a versioned evals sidecar | Accepted |
+| [0026](0026-moe-expert-pricing.md) | Routing frequency prices a fused expert stack | Accepted |
 
 ## Template
 
