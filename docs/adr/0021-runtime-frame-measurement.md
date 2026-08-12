@@ -4,10 +4,6 @@
 - **Date:** 2026-08-06 (accepted 2026-08-06)
 - **Supersedes:** [ADR-0019](0019-kquant-priced-maps.md),
   [ADR-0020](0020-imatrix-assisted-pricing.md)
-- **Amendment (2026-08-11, issue #162):**
-  [ADR-0026](0026-moe-expert-pricing.md) reads decision 4 onto a fused
-  expert stack. A stack is one group, so a sub-4-bit stack waits for a
-  runtime-frame price like any other group.
 
 ## Context
 

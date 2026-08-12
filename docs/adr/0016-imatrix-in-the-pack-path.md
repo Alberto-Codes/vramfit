@@ -2,11 +2,6 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-29 (accepted 2026-07-29)
-- **Amendment (2026-08-11, issue #162):**
-  [ADR-0026](0026-moe-expert-pricing.md) reads the matrix per expert.
-  A fused expert stack carries one `.counts` entry per expert, and the
-  quantizer already fits each expert against its own slice. Routing
-  frequency weights the stack's price.
 
 Acceptance evidence (the same night, PR #38): the matrix generated
 in 67 minutes (345 chunks, `--process-output`, 18.3 MB). Both
