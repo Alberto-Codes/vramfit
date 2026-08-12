@@ -103,6 +103,35 @@ def sample_pack_recipe() -> Recipe:
     )
 
 
+def stack_pack_recipe() -> Recipe:
+    """A `--group-by stack` recipe shaped like the Nemotron target.
+
+    Every name is one the target's checkpoint really carries: the
+    embedding at `backbone.embeddings`, layers at
+    `backbone.layers.<n>`, and one layer's routed experts fused into
+    two stacks (#159, #160, #161). No name here mapped under the
+    pre-#180 backend, the embedding included.
+    """
+    return replace(
+        sample_pack_recipe(),
+        assignments=(
+            Assignment(group="backbone.embeddings", bits=8, bytes=1_000, damage=0.001),
+            Assignment(
+                group="backbone.layers.1.mixer.experts.up_proj",
+                bits=4,
+                bytes=900,
+                damage=0.01,
+            ),
+            Assignment(
+                group="backbone.layers.1.mixer.experts.down_proj",
+                bits=2,
+                bytes=900,
+                damage=0.03,
+            ),
+        ),
+    )
+
+
 def excluded_pack_recipe() -> Recipe:
     base = sample_pack_recipe()
     return replace(
@@ -236,6 +265,74 @@ class TestRecipePackerContract:
             TypeOverride(pattern=r"blk\.0\.", quant_type="q8_0"),
             TypeOverride(pattern=r"blk\.1\.", quant_type="q4_k"),
         )
+
+    def test_pack_carries_the_stack_type_mapping(self, build, tmp_path) -> None:
+        # A `--group-by stack` recipe for the Nemotron target packs:
+        # the layer index derives from `backbone.layers.<n>`, and
+        # each routed-expert stack addresses its fused tensor (#180).
+        packer: RecipePacker = build(tmp_path)
+        packer.convert()
+
+        result = packer.pack(stack_pack_recipe())
+
+        assert result.overrides == (
+            TypeOverride(pattern=r"blk\.1\.ffn_up_exps\.", quant_type="q4_k"),
+            TypeOverride(pattern=r"blk\.1\.ffn_down_exps\.", quant_type="q2_k"),
+        )
+
+    def test_pack_stack_recipe_binds_the_nemotron_embedding_group(
+        self, build, tmp_path
+    ) -> None:
+        # The target names its embedding `backbone.embeddings`, not
+        # `model.embed_tokens`. Missing that name refuses the whole
+        # recipe, because `--pure` would drop the embedding to the
+        # floor otherwise (#180).
+        packer: RecipePacker = build(tmp_path)
+        packer.convert()
+
+        result = packer.pack(stack_pack_recipe())
+
+        assert result.token_embedding_type == "q8_0"  # noqa: S105 - a ggml type name, not a secret
+
+    def test_pack_two_layer_stacks_raises_pack_error_naming_both(
+        self, build, tmp_path
+    ) -> None:
+        # The target carries `mtp.layers.<n>` beside
+        # `backbone.layers.<n>`. Both would map to `blk.<n>.`, and
+        # the quantizer applies the first match, so the second
+        # assignment would vanish. Refuse instead (#183).
+        packer: RecipePacker = build(tmp_path, base_exists=True)
+        recipe = replace(
+            sample_pack_recipe(),
+            assignments=(
+                Assignment(group="backbone.layers.0", bits=8, bytes=1_000, damage=0.01),
+                Assignment(group="mtp.layers.0", bits=4, bytes=500, damage=0.02),
+            ),
+        )
+
+        with pytest.raises(PackError, match="two layer stacks"):
+            packer.pack(recipe)
+
+    def test_pack_unmappable_group_raises_pack_error_naming_it(
+        self, build, tmp_path
+    ) -> None:
+        # The Mamba mixer projection has no GGUF class mapping. The
+        # backend refuses by name rather than guessing a tensor.
+        packer: RecipePacker = build(tmp_path, base_exists=True)
+        recipe = replace(
+            sample_pack_recipe(),
+            assignments=(
+                Assignment(
+                    group="backbone.layers.0.mixer.in_proj",
+                    bits=4,
+                    bytes=500,
+                    damage=0.01,
+                ),
+            ),
+        )
+
+        with pytest.raises(PackError, match=r"backbone\.layers\.0\.mixer\.in_proj"):
+            packer.pack(recipe)
 
     def test_pack_without_imatrix_records_none(self, build, tmp_path) -> None:
         packer: RecipePacker = build(tmp_path)
@@ -372,6 +469,84 @@ class TestLlamaCppCommandLines:
             str(tmp_path / "out.gguf"),
             "Q4_K_S",
             "1",
+        ]
+
+    def test_quantize_argv_carries_the_stack_patterns(self, tmp_path) -> None:
+        packer = _real_packer(tmp_path)
+        packer.convert()
+
+        packer.pack(stack_pack_recipe())
+
+        argv = json.loads((tmp_path / "quantize-argv.json").read_text())
+        pairs = [argv[i + 1] for i, flag in enumerate(argv) if flag == "--tensor-type"]
+        assert pairs == [
+            r"blk\.1\.ffn_up_exps\.=q4_k",
+            r"blk\.1\.ffn_down_exps\.=q2_k",
+        ]
+
+    def test_quantize_argv_orders_stack_patterns_before_layer_patterns(
+        self, tmp_path
+    ) -> None:
+        # llama-quantize applies the first matching pattern, and
+        # `blk\.1\.` also matches `blk.1.ffn_up_exps.weight`. A stack
+        # pattern placed after the layer pattern would never apply.
+        packer = _real_packer(tmp_path)
+        packer.convert()
+        recipe = replace(
+            sample_pack_recipe(),
+            assignments=(
+                Assignment(group="model.layers.1", bits=8, bytes=1_000, damage=0.001),
+                Assignment(
+                    group="model.layers.1.mlp.experts.up_proj",
+                    bits=2,
+                    bytes=900,
+                    damage=0.03,
+                ),
+            ),
+        )
+
+        packer.pack(recipe)
+
+        argv = json.loads((tmp_path / "quantize-argv.json").read_text())
+        pairs = [argv[i + 1] for i, flag in enumerate(argv) if flag == "--tensor-type"]
+        assert pairs == [r"blk\.1\.ffn_up_exps\.=q2_k", r"blk\.1\.=q8_0"]
+
+    def test_quantize_argv_orders_protection_then_stack_then_layer(
+        self, tmp_path
+    ) -> None:
+        # ADR-0012 decision 2 rules the three-way priority. The
+        # quantizer applies the first matching pattern, and each
+        # pattern here matches a superset of the next.
+        packer = _real_packer(tmp_path)
+        packer.convert()
+        recipe = replace(
+            sample_pack_recipe(),
+            plan=replace(
+                sample_pack_recipe().plan,
+                protections={"*.self_attn.v_proj.weight": 5},
+            ),
+            assignments=(
+                Assignment(group="model.layers.1", bits=8, bytes=1_000, damage=0.001),
+                Assignment(
+                    group="model.layers.1.mlp.experts.up_proj",
+                    bits=2,
+                    bytes=900,
+                    damage=0.03,
+                ),
+            ),
+            protected_tensors=(
+                ProtectedTensor("model.layers.1.self_attn.v_proj.weight", 5),
+            ),
+        )
+
+        packer.pack(recipe)
+
+        argv = json.loads((tmp_path / "quantize-argv.json").read_text())
+        pairs = [argv[i + 1] for i, flag in enumerate(argv) if flag == "--tensor-type"]
+        assert pairs == [
+            r"blk\.1\.attn_v\.=q5_k",
+            r"blk\.1\.ffn_up_exps\.=q2_k",
+            r"blk\.1\.=q8_0",
         ]
 
     def test_quantize_argv_with_imatrix_carries_the_flag(self, tmp_path) -> None:

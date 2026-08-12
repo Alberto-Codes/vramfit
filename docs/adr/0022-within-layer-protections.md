@@ -42,6 +42,33 @@
     map. `stack` exists because it is *coarser* than per-tensor and
     matches the pack, not because per-tensor scanning came back.
 
+- **Amendment (2026-08-12, issue #180):** this amendment supersedes
+  the amendment above in part. The GGUF backend now maps a
+  routed-expert stack group to its fused tensor. It derives the
+  layer index from the group name instead of matching
+  `model.layers.<n>`, and it carries the target's
+  `backbone.embeddings` name
+  ([ADR-0012](0012-gguf-type-mapping.md) decision 2, amended the
+  same day). A `layer`-keyed recipe for the Nemotron 3.5 Lightning
+  target packs. So does a recipe whose only stack groups are
+  routed-expert stacks.
+
+    Decision 1's refusal narrows. It does not lift. A whole-model
+    `stack`-keyed recipe still carries groups outside any GGUF class
+    mapping — the Mamba `in_proj`, `out_proj`, and `conv1d`, the
+    attention projections, the router, the shared experts. The
+    backend refuses each by name. Issue #183 carries that table, and
+    it must first rule what a recipe does with a group
+    `llama-quantize` never quantizes.
+
+    The protection path is unchanged.
+    [ADR-0012](0012-gguf-type-mapping.md) decision 2's class table
+    still matches `model.layers.<n>.<class>.weight` only. The target
+    does carry four of the seven classes, at
+    `backbone.layers.<n>.mixer.{q,k,v,o}_proj`. Generalizing the
+    prefix alone would still miss them, because the table keys read
+    `self_attn.q_proj` and this checkpoint says `mixer.q_proj`.
+
 ## Context
 
 The twelfth data point (in

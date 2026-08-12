@@ -12,6 +12,7 @@ from vramfit.adapters.outbound.gguf.types import (
     base_type,
     check_runtime,
     ggml_type_for,
+    gguf_stack_prefix,
     gguf_tensor_name,
     imatrix_exclusion_names,
     output_tensor_type,
@@ -204,23 +205,185 @@ def test_tensor_overrides_reject_tensor_level_groups() -> None:
         tensor_overrides(recipe)
 
 
+def test_tensor_overrides_name_the_group_they_cannot_map() -> None:
+    # The refusal is the backend's only guard against mispacking a
+    # group it does not understand, so the message must name the
+    # group and what it does map (#180).
+    recipe = make_recipe(("backbone.layers.0.mixer.in_proj", 4))
+
+    with pytest.raises(PackError) as caught:
+        tensor_overrides(recipe)
+
+    message = str(caught.value)
+    assert '"backbone.layers.0.mixer.in_proj"' in message
+    assert "layer groups, routed-expert stacks" in message
+
+
+@pytest.mark.parametrize(
+    ("group", "pattern"),
+    [
+        ("model.layers.0", r"blk\.0\."),
+        ("backbone.layers.7", r"blk\.7\."),
+        ("transformer.h.3", r"blk\.3\."),
+        ("gpt_neox.blocks.11", r"blk\.11\."),
+    ],
+    ids=["llama", "nemotron", "gpt2", "blocks"],
+)
+def test_tensor_overrides_derive_the_layer_index_from_any_naming_family(
+    group: str, pattern: str
+) -> None:
+    # GGUF numbers every decoder layer `blk.<n>.` whatever the
+    # checkpoint calls it, so the index is derived, not matched
+    # against one fixed prefix (#160, #180).
+    recipe = make_recipe((group, 4))
+
+    assert tensor_overrides(recipe) == (TypeOverride(pattern, "q4_k"),)
+
+
+@pytest.mark.parametrize(
+    ("group", "tensor"),
+    [
+        ("model.layers.0.mlp.experts.up_proj", "blk.0.ffn_up_exps.weight"),
+        ("backbone.layers.9.mixer.experts.down_proj", "blk.9.ffn_down_exps.weight"),
+        (
+            "model.layers.2.block_sparse_moe.experts.gate_proj",
+            "blk.2.ffn_gate_exps.weight",
+        ),
+    ],
+    ids=["up", "down", "gate"],
+)
+def test_tensor_overrides_map_a_routed_expert_stack_to_its_fused_tensor(
+    group: str, tensor: str
+) -> None:
+    # llama.cpp fuses one layer's experts into a single tensor with
+    # one type, so the stack is what a pack addresses (#159, #161).
+    recipe = make_recipe((group, 4))
+
+    overrides = tensor_overrides(recipe)
+
+    assert len(overrides) == 1
+    assert re.search(overrides[0].pattern, tensor)
+    assert overrides[0].quant_type == "q4_k"
+
+
+def test_tensor_overrides_escape_the_stack_pattern_so_layer_1_never_matches_11() -> (
+    None
+):
+    recipe = make_recipe(("model.layers.1.mlp.experts.up_proj", 8))
+
+    pattern = tensor_overrides(recipe)[0].pattern
+
+    assert re.search(pattern, "blk.1.ffn_up_exps.weight")
+    assert not re.search(pattern, "blk.11.ffn_up_exps.weight")
+    assert not re.search(pattern, "blk.1.ffn_up_exps_scale.weight")
+
+
+def test_tensor_overrides_put_stacks_before_layers_so_the_stack_wins() -> None:
+    # The quantizer applies the first matching pattern, and the
+    # layer pattern `blk\.1\.` also matches `blk.1.ffn_up_exps.
+    # weight`. A stack override placed second would never apply.
+    recipe = make_recipe(
+        ("model.layers.1", 8),
+        ("model.layers.1.mlp.experts.up_proj", 2),
+    )
+
+    overrides = tensor_overrides(recipe)
+
+    assert [o.quant_type for o in overrides] == ["q2_k", "q8_0"]
+    assert re.search(overrides[0].pattern, "blk.1.ffn_up_exps.weight")
+
+
+def test_tensor_overrides_keep_recipe_order_within_the_stack_bucket() -> None:
+    recipe = make_recipe(
+        ("backbone.layers.5.mixer.experts.down_proj", 2),
+        ("backbone.layers.1.mixer.experts.up_proj", 8),
+    )
+
+    assert [o.quant_type for o in tensor_overrides(recipe)] == ["q2_k", "q8_0"]
+
+
+def test_tensor_overrides_reject_an_expert_projection_outside_the_stack_table() -> None:
+    # Mixtral spells its projections w1/w2/w3. Guessing which fused
+    # tensor those become would mispack silently (#159).
+    recipe = make_recipe(("model.layers.0.block_sparse_moe.experts.w1", 4))
+
+    with pytest.raises(PackError) as caught:
+        tensor_overrides(recipe)
+
+    message = str(caught.value)
+    assert '"model.layers.0.block_sparse_moe.experts.w1"' in message
+    assert "down_proj" in message
+
+
 @pytest.mark.parametrize(
     "group",
-    [
-        "model.layers.0.mlp.experts.up_proj",
-        "backbone.layers.0.mixer.experts.down_proj",
-    ],
-    ids=["stack-keyed", "nemotron-naming"],
+    ["model.embed_tokens", "backbone.embeddings"],
+    ids=["llama", "nemotron"],
 )
-def test_tensor_overrides_reject_stack_keyed_groups(group: str) -> None:
-    # The v1 backend maps only `model.layers.<n>` groups, so a
-    # stack-keyed recipe stops at pack rather than mispacking
-    # (ADR-0022 decision 1, amended 2026-08-11). Issue #180 lifts
-    # this. Locking the refusal keeps it loud until then.
-    recipe = make_recipe((group, 4))
+def test_token_embedding_type_maps_every_embedding_naming_family(group: str) -> None:
+    # `--token-embedding-type` binds one tensor whatever the
+    # checkpoint calls the group. Missing a name refuses the whole
+    # recipe, because the group then reaches the pattern branch.
+    recipe = make_recipe((group, 8), ("backbone.layers.0", 4))
+
+    assert token_embedding_type(recipe) == "q8_0"
+    assert [o.pattern for o in tensor_overrides(recipe)] == [r"blk\.0\."]
+
+
+def test_tensor_overrides_reject_two_layer_stacks_naming_both() -> None:
+    # GGUF numbers one layer stack `blk.<n>.`. The target carries
+    # `mtp.layers.<n>` beside `backbone.layers.<n>`, and a
+    # multimodal checkpoint carries a vision tower. Mapping both
+    # onto `blk.0.` would drop one silently (#183).
+    recipe = make_recipe(("backbone.layers.0", 8), ("mtp.layers.0", 4))
+
+    with pytest.raises(PackError) as caught:
+        tensor_overrides(recipe)
+
+    message = str(caught.value)
+    assert "two layer stacks" in message
+    assert '"backbone.layers.0"' in message
+    assert '"mtp.layers.0"' in message
+
+
+def test_tensor_overrides_reject_a_vision_tower_beside_the_language_model() -> None:
+    # GGUF names vision blocks `v.blk.<n>.`, not `blk.<n>.`.
+    recipe = make_recipe(
+        ("model.layers.0", 4),
+        ("vision_tower.transformer.layers.0", 4),
+    )
+
+    with pytest.raises(PackError, match="two layer stacks"):
+        tensor_overrides(recipe)
+
+
+def test_tensor_overrides_accept_one_root_across_layers_and_stacks() -> None:
+    recipe = make_recipe(
+        ("backbone.layers.0", 8),
+        ("backbone.layers.1.mixer.experts.up_proj", 4),
+        ("backbone.layers.2", 2),
+    )
+
+    assert len(tensor_overrides(recipe)) == 3
+
+
+def test_tensor_overrides_reject_a_shared_expert_stack() -> None:
+    # A shared expert is a separate GGUF tensor, `ffn_up_shexp`.
+    # Folding it into the routed stack would pack the wrong weights
+    # at the wrong precision (#183).
+    recipe = make_recipe(("backbone.layers.1.mixer.shared_experts.up_proj", 4))
 
     with pytest.raises(PackError, match="no GGUF tensor mapping"):
         tensor_overrides(recipe)
+
+
+def test_gguf_stack_prefix_maps_experts_attached_straight_to_the_layer() -> None:
+    assert gguf_stack_prefix("model.layers.4.experts.up_proj") == "blk.4.ffn_up_exps."
+
+
+def test_gguf_stack_prefix_returns_none_for_a_plain_layer_group() -> None:
+    assert gguf_stack_prefix("model.layers.4") is None
+    assert gguf_stack_prefix("model.embed_tokens") is None
 
 
 def make_protected_recipe(
