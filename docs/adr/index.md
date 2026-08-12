@@ -59,9 +59,10 @@ ADR that supersedes the old one.
 | [0020](0020-imatrix-assisted-pricing.md) | The meter prices K-quant cells with the pack's imatrix | Superseded by 0021 |
 | [0021](0021-runtime-frame-measurement.md) | Sub-4-bit damage is measured in the runtime frame | Accepted |
 | [0022](0022-within-layer-protections.md) | Tensor-level precision arrives as within-layer protections | Accepted, amended by 0023 |
-| [0023](0023-imatrix-exclusions.md) | Imatrix exclusions carry the fit-collapse remedy in the recipe | Accepted |
+| [0023](0023-imatrix-exclusions.md) | Imatrix exclusions carry the fit-collapse remedy in the recipe | Accepted, amended by 0026 |
 | [0024](0024-tier3-task-slice.md) | Tier 3 runs a fixed five-task slice at leaderboard settings | Accepted |
 | [0025](0025-evals-sidecar.md) | Evaluation results ship as a versioned evals sidecar | Accepted |
+| [0026](0026-moe-expert-pricing.md) | Expert pricing trusts any nonzero imatrix count | Accepted, except decision 2 |
 
 ## Template
 
