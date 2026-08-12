@@ -24,6 +24,15 @@
   generator sits beside it in the run archive.
   Publication #1 carries one: `analysis/kld564-paired-q3ks.json`,
   the paired candidate-vs-Q3_K_S comparison.
+- **Amendment (2026-08-11):** the `quantfit_schema` envelope key
+  became `vramfit_schema` with the rename to vramfit (#118, chart
+  #114). The sidecar schema version bumped to 2 with it. The
+  rename executed in #120. This record keeps every dated word
+  (#119). Throughout it, read `quantfit_schema` as
+  `vramfit_schema`. Read every sidecar schema version 1 as 2. The
+  example block therefore emits `"vramfit_schema": 2`. #121
+  re-uploaded the five published sidecars at that key and
+  version.
 
 ## Context
 
