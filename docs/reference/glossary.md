@@ -304,6 +304,23 @@ change.
     ([ADR-0016](../adr/0016-imatrix-in-the-pack-path.md)). Not
     "calibration data" (that names the text) or "activation cache".
 
+**Imatrix entry**
+:   One tensor's statistics inside an importance matrix, holding one
+    row per matrix. A dense tensor holds one row. An **expert stack**
+    holds one row per expert, and the HF checkpoint spells those
+    experts as separate parameters (#177). An entry carries the
+    column weights and the **imatrix count** together. Not "imatrix
+    row", which names one row inside an entry.
+
+**Imatrix count**
+:   The chunk tally an importance matrix records for one matrix. A
+    routed expert's count is how often the router fired it over the
+    calibration corpus, so it measures routing frequency. A count
+    above zero divides the sums, and a count of zero weighs every
+    column 1, which is the unassisted fit
+    ([ADR-0026](../adr/0026-moe-expert-pricing.md) decision 1). Not
+    "routing count" or "sample count".
+
 **Fit collapse**
 :   A quantizer failure mode under a fixed imatrix: an imatrix row
     with extreme column dynamic range (the collapsed rows span
