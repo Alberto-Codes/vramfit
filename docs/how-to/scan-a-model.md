@@ -90,8 +90,14 @@ does not).
 Use the same file the pack step will consume — the map records the
 imatrix path, and the recipe carries it forward so the validation
 pass and the pack can hold the frame. The command echoes the
-coverage split ("imatrix covers N of M parameters"). `token_embd`
-is the expected miss. Expect assisted cells to run longer than
+coverage split ("imatrix covers N of M parameters"). On a dense
+llama-family model `token_embd` is the expected miss. A MoE model
+misses far more. On Nemotron 3.5 Lightning 30B-A3B only 29 tensors
+price assisted, because a k-quant fit needs rows that divide into
+256-element super-blocks and most of this model's rows do not
+([ADR-0020](../adr/0020-imatrix-assisted-pricing.md)). Read the
+split before you trust the `kquant-imx` label.
+Expect assisted cells to run longer than
 unassisted kquant cells, and both to run longer than RTN — the
 weighted fit searches more candidate scales.
 
