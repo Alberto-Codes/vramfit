@@ -19,17 +19,26 @@ from typing import Literal
 
 import pytest
 
-from tests.fakes import MemoryRecipePacker
+from tests.fakes import MemoryImatrixCounts, MemoryRecipePacker
 from vramfit.adapters.outbound.gguf.pack import LlamaCppPacker
 from vramfit.adapters.outbound.gguf.types import PackError
 from vramfit.domain.model import Assignment, PlanMeta, ProtectedTensor, Recipe
-from vramfit.domain.pack import TypeOverride
+from vramfit.domain.pack import TypeOverride, ZeroCountExpert
 from vramfit.ports.outbound import RecipePacker
 
 pytestmark = pytest.mark.contract
 
 BASE_BYTES = 1_000
 PACKED_BYTES = 500
+
+# Two experts of one stack the router never fired, plus one inside a
+# stack a recipe excludes. No such expert exists on the real target
+# and corpus (issue #162), so decision 5 only tests against a fake.
+STARVED = (
+    ZeroCountExpert(stack="blk.1.ffn_up_exps.weight", expert=57),
+    ZeroCountExpert(stack="blk.1.ffn_up_exps.weight", expert=4),
+    ZeroCountExpert(stack="blk.0.attn_v.weight", expert=1),
+)
 
 _CONVERT_STUB = f"""\
 import json, sys
@@ -163,6 +172,7 @@ def _real_packer(
     with_imatrix: bool = False,
     with_uncovered: bool = False,
     with_excluded_miss: bool = False,
+    with_starved: bool = False,
 ) -> RecipePacker:
     def stub_body(stage: str, template: str) -> str:
         if fail_stage == stage:
@@ -196,6 +206,11 @@ def _real_packer(
         python_bin=Path(sys.executable),
         threads=1,
         imatrix=tmp_path / "imatrix.gguf" if with_imatrix else None,
+        # The matrix itself is never written here. Its read is a
+        # separate port with its own contract suite (ADR-0026
+        # decision 5), so this suite injects the fake and keeps the
+        # packer's own behavior hermetic.
+        imatrix_counts=MemoryImatrixCounts(experts=STARVED if with_starved else ()),
     )
 
 
@@ -207,6 +222,7 @@ def _fake_packer(
     with_imatrix: bool = False,
     with_uncovered: bool = False,
     with_excluded_miss: bool = False,
+    with_starved: bool = False,
 ) -> RecipePacker:
     uncovered = ("token_embd.weight",) if with_uncovered else ()
     if with_excluded_miss:
@@ -218,6 +234,7 @@ def _fake_packer(
         has_base=base_exists,
         imatrix=str(tmp_path / "imatrix.gguf") if with_imatrix else None,
         imatrix_uncovered=uncovered,
+        imatrix_zero_count_experts=STARVED if with_starved else (),
     )
 
 
@@ -398,6 +415,62 @@ class TestRecipePackerContract:
 
         assert result.imatrix_uncovered == ("token_embd.weight",)
         assert result.imatrix_excluded == ("blk.0.attn_v.weight",)
+
+    def test_pack_with_imatrix_records_zero_count_experts(
+        self, build, tmp_path
+    ) -> None:
+        # ADR-0026 decision 5. The quantizer warns for a missing
+        # tensor and says nothing for an expert its stack covers at
+        # a count of zero, so this field is the only report.
+        packer: RecipePacker = build(tmp_path, with_imatrix=True, with_starved=True)
+        packer.convert()
+
+        result = packer.pack(sample_pack_recipe())
+
+        assert result.imatrix_zero_count_experts == (
+            ZeroCountExpert(stack="blk.0.attn_v.weight", expert=1),
+            ZeroCountExpert(stack="blk.1.ffn_up_exps.weight", expert=4),
+            ZeroCountExpert(stack="blk.1.ffn_up_exps.weight", expert=57),
+        )
+
+    def test_pack_without_imatrix_reports_no_zero_count_experts(
+        self, build, tmp_path
+    ) -> None:
+        packer: RecipePacker = build(tmp_path, with_starved=True)
+        packer.convert()
+
+        result = packer.pack(sample_pack_recipe())
+
+        assert result.imatrix_zero_count_experts == ()
+
+    def test_pack_zero_count_expert_in_excluded_stack_is_not_reported(
+        self, build, tmp_path
+    ) -> None:
+        # An exclusion drops the stack's whole entry, so every
+        # expert in it misses on purpose (ADR-0023). Reporting those
+        # would bury the unintentional case this field exists for.
+        packer: RecipePacker = build(tmp_path, with_imatrix=True, with_starved=True)
+        packer.convert()
+
+        result = packer.pack(excluded_pack_recipe())
+
+        assert result.imatrix_excluded == ("blk.0.attn_v.weight",)
+        assert result.imatrix_zero_count_experts == (
+            ZeroCountExpert(stack="blk.1.ffn_up_exps.weight", expert=4),
+            ZeroCountExpert(stack="blk.1.ffn_up_exps.weight", expert=57),
+        )
+
+    def test_pack_with_imatrix_and_no_starved_expert_reports_none(
+        self, build, tmp_path
+    ) -> None:
+        # The measured case on the real target and corpus: 0
+        # uncovered experts across 2,944 cells (issue #162).
+        packer: RecipePacker = build(tmp_path, with_imatrix=True)
+        packer.convert()
+
+        result = packer.pack(sample_pack_recipe())
+
+        assert result.imatrix_zero_count_experts == ()
 
     def test_pack_llama_cpp_recipe_is_accepted(self, build, tmp_path) -> None:
         packer: RecipePacker = build(tmp_path, base_exists=True)

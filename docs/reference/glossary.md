@@ -301,8 +301,9 @@ change.
     mapping driven into the quantizer — base type, embedding and
     output-head flag types, the pattern overrides, the importance
     matrix path when one was used, and the imatrix coverage record
-    (uncovered tensors, and the exclusions the recipe instructed).
-    Code type `vramfit.domain.pack.PackResult`.
+    (uncovered tensors, the exclusions the recipe instructed, and
+    the **zero-count experts**). Code type
+    `vramfit.domain.pack.PackResult`.
 
 **Importance matrix** (short: **imatrix**)
 :   Per-weight activation statistics collected over a calibration run,
@@ -328,6 +329,29 @@ change.
     column 1, which is the unassisted fit
     ([ADR-0026](../adr/0026-moe-expert-pricing.md) decision 1). Not
     "routing count" or "sample count".
+
+**Imatrix count summary**
+:   One layer group's **imatrix counts** reduced to a minimum, a
+    median, and a maximum. An assisted **sensitivity map** records
+    one per covered group, in `imatrix_counts`
+    ([ADR-0026](../adr/0026-moe-expert-pricing.md) decision 4). It is
+    provenance and never a gate — nothing prices against it. Over a
+    fused **expert stack** it records the routing distribution the
+    solver trusts. Code type
+    `vramfit.domain.model.ImatrixCountSummary`. Not "coverage
+    record" — that names the **pack result**'s uncovered and
+    excluded tensors.
+
+**Zero-count expert**
+:   A routed expert whose **imatrix count** is zero. Its row weighs
+    every column 1, which is the unassisted fit, and the quantizer
+    warns about nothing, because the expert's **expert stack** is
+    covered. The pack path reports it by stack and expert index
+    ([ADR-0026](../adr/0026-moe-expert-pricing.md) decision 5). Code
+    type `vramfit.domain.pack.ZeroCountExpert`. Not an "imatrix
+    miss" — that names a whole tensor the matrix does not hold. None
+    exists on Nemotron 3.5 Lightning 30B-A3B under the published
+    822-chunk imatrix (issue #162).
 
 **Fit collapse**
 :   A quantizer failure mode under a fixed imatrix: an imatrix row

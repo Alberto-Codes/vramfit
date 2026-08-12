@@ -18,7 +18,7 @@ from vramfit.adapters.outbound.json_common import ArtifactError
 from vramfit.domain.budget import ModelShape
 from vramfit.domain.evals import EvalsSidecar
 from vramfit.domain.model import Recipe, SensitivityMap
-from vramfit.domain.pack import PackResult
+from vramfit.domain.pack import PackResult, ZeroCountExpert
 from vramfit.domain.scan import GroupSpec, Measurement
 
 
@@ -171,6 +171,7 @@ class MemoryRecipePacker:
     has_base: bool = False
     imatrix: str | None = None
     imatrix_uncovered: tuple[str, ...] = ()
+    imatrix_zero_count_experts: tuple[ZeroCountExpert, ...] = ()
     packed: list[Recipe] = field(default_factory=list)
 
     def convert(self) -> int:
@@ -201,9 +202,49 @@ class MemoryRecipePacker:
                 else ()
             ),
             imatrix_excluded=excluded,
+            # An exclusion drops a stack's whole entry, so its
+            # experts are intentional misses (ADR-0023) and stay out
+            # of the zero-count report, exactly as the real adapter
+            # filters them. The real adapter's count source sorts,
+            # so this sorts too.
+            imatrix_zero_count_experts=(
+                tuple(
+                    sorted(
+                        (
+                            e
+                            for e in self.imatrix_zero_count_experts
+                            if e.stack not in excluded
+                        ),
+                        key=lambda e: (e.stack, e.expert),
+                    )
+                )
+                if self.imatrix is not None
+                else ()
+            ),
         )
         self.packed.append(recipe)
         return result
+
+
+@dataclass
+class MemoryImatrixCounts:
+    """In-memory `ImatrixCountSource`. The zero-count experts are configured.
+
+    Like the real adapter, the result is sorted by stack then expert
+    index — a caller must never depend on configuration order — and
+    a configured failure raises `PackError` rather than returning an
+    empty set, which is what a healthy matrix returns.
+    """
+
+    experts: tuple[ZeroCountExpert, ...] = ()
+    unreadable: bool = False
+    calls: int = 0
+
+    def zero_count_experts(self) -> tuple[ZeroCountExpert, ...]:
+        self.calls += 1
+        if self.unreadable:
+            raise PackError("cannot read the imatrix: configured failure")
+        return tuple(sorted(self.experts, key=lambda e: (e.stack, e.expert)))
 
 
 @dataclass

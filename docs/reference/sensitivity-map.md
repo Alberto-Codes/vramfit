@@ -42,6 +42,11 @@ The sensitivity map is the output of `vramfit scan` and the input to
         "k_proj": 10000000,
         "v_proj": 10000000,
         "o_proj": 40000000
+      },
+      "imatrix_counts": {
+        "min": 426,
+        "median": 18114.0,
+        "max": 192191
       }
     }
   ]
@@ -98,6 +103,24 @@ below remain, the sub-4-bit pricing claims do not.
   older maps, `scripts/backfill_tensor_sizes.py` reads the
   checkpoint's safetensors headers — a JSON parse, no torch — and
   writes an annotated map copy.
+- **`imatrix_counts`** — the group's imatrix counts, reduced to
+  `min`, `median`, and `max`
+  ([ADR-0026](../adr/0026-moe-expert-pricing.md) decision 4). Over a
+  fused expert stack these three numbers are the routing
+  distribution across its experts. They are provenance. Nothing
+  prices against them, and no gate reads them. The field is
+  additive and informational, so it forced no schema bump: a reader
+  that drops it loses provenance and no assignment. An absent field
+  means unknown — an unassisted scan, a map written before the
+  field existed, or a group the imatrix does not cover. An explicit
+  null is rejected, because the writer never emits one. A present
+  field must run `min <= median <= max` with a non-negative `min`.
+  `median` is a float: an even member count averages the two middle
+  counts. A scan records the field when `--imatrix` names the
+  matrix it resolves weights from. The counts read through
+  `resolve_imatrix_counts`, which applies no super-block gate — an
+  expert stack whose rows refuse a k-quant fit still reports its
+  distribution (#177).
 - **`scan.within_group`** — the within-group method token
   ([ADR-0018](../adr/0018-kquant-within-group-method.md)):
   `rtn-block32` (round-to-nearest, the v1 default), `kquant-ref`

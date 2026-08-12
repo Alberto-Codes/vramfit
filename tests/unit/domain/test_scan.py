@@ -4,7 +4,7 @@ from typing import Any
 
 import pytest
 
-from vramfit.domain.model import ScanMeta
+from vramfit.domain.model import ImatrixCountSummary, ScanMeta
 from vramfit.domain.scan import (
     GroupSpec,
     Measurement,
@@ -232,6 +232,25 @@ class TestAssembleMap:
 
         with pytest.raises(ValueError, match='unknown group "g9"'):
             assemble_map("m", make_meta(), SPECS, measurements)
+
+    def test_imatrix_count_summary_rides_into_the_map(self) -> None:
+        # ADR-0026 decision 4: the meter reduces, the map carries.
+        summary = ImatrixCountSummary(minimum=426, median=18_114.0, maximum=192_191)
+        specs = (
+            GroupSpec(
+                name="g0", tensors=("g0.w",), bytes_fp16=1000, imatrix_counts=summary
+            ),
+            SPECS[1],
+        )
+
+        map_ = assemble_map("m", make_meta(), specs, complete_measurements())
+
+        assert map_.groups[0].imatrix_counts == summary
+
+    def test_a_spec_without_counts_carries_none(self) -> None:
+        map_ = assemble_map("m", make_meta(), SPECS, complete_measurements())
+
+        assert map_.groups[0].imatrix_counts is None
 
 
 class TestGroupKey:

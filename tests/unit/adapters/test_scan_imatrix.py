@@ -25,6 +25,7 @@ from vramfit.adapters.outbound.scan.imatrix import (
     resolve_assisted_weights,
     resolve_imatrix_counts,
 )
+from vramfit.domain.model import ImatrixCountSummary
 
 pytestmark = pytest.mark.unit
 
@@ -613,6 +614,33 @@ class TestResolveImatrixCounts:
         counts, _ = resolve_imatrix_counts(load_imatrix(path), params)
 
         assert [counts[name] for name in params] == [5, 0]
+
+    def test_a_fused_stacks_counts_reduce_to_the_maps_summary(self, tmp_path) -> None:
+        # ADR-0026 decision 4, the meter's chain without a model: an
+        # expert stack's counts resolve per expert, then reduce to
+        # the three numbers the map carries. The rows here are 2688
+        # wide, the real target's width, which no k-quant fit can
+        # price — the counts read anyway (#177).
+        path = _write_imatrix(
+            tmp_path / "im.gguf",
+            {
+                "blk.20.ffn_up_exps.weight.in_sum2": np.ones(
+                    (4, HIDDEN), dtype=np.float32
+                ),
+                "blk.20.ffn_up_exps.weight.counts": np.array(
+                    [[192_191.0, 426.0, 18_114.0, 823.0]]
+                ),
+            },
+        )
+        params = _stack_params(20, "up_proj", experts=4)
+
+        counts, uncovered = resolve_imatrix_counts(load_imatrix(path), params)
+        summary = ImatrixCountSummary.from_counts(counts[name] for name in params)
+
+        assert uncovered == ()
+        assert summary.minimum == 426
+        assert summary.median == pytest.approx(9_468.5)
+        assert summary.maximum == 192_191
 
     def test_a_count_rounds_half_away_from_zero(self, tmp_path) -> None:
         # The file stores counts as float32 and the C loader applies

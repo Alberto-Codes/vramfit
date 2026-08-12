@@ -12,6 +12,7 @@ from vramfit.adapters.outbound.sensitivity_map_json import (
     map_to_dict,
     save_sensitivity_map,
 )
+from vramfit.domain.model import ImatrixCountSummary
 
 
 @pytest.mark.unit
@@ -358,4 +359,106 @@ class TestTensorBytes:
         raw["groups"][0]["tensor_bytes"] = None
 
         with pytest.raises(ArtifactError, match="tensor_bytes"):
+            map_from_dict(raw)
+
+
+@pytest.mark.unit
+class TestImatrixCounts:
+    def make_counted_dict(self) -> dict:
+        raw = make_map(
+            [
+                (
+                    "backbone.layers.1.mixer.experts.up_proj",
+                    1_000,
+                    {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.4},
+                )
+            ]
+        )
+        raw["groups"][0]["imatrix_counts"] = {
+            "min": 426,
+            "median": 18_114.0,
+            "max": 192_191,
+        }
+        return raw
+
+    def test_imatrix_counts_round_trip(self) -> None:
+        raw = self.make_counted_dict()
+
+        map_ = map_from_dict(raw)
+        again = map_from_dict(map_to_dict(map_))
+
+        assert again == map_
+        assert map_.groups[0].imatrix_counts == ImatrixCountSummary(
+            minimum=426, median=18_114.0, maximum=192_191
+        )
+
+    def test_absent_imatrix_counts_loads_none(self) -> None:
+        raw = self.make_counted_dict()
+        del raw["groups"][0]["imatrix_counts"]
+
+        map_ = map_from_dict(raw)
+
+        assert map_.groups[0].imatrix_counts is None
+        # The writer omits the unknown field instead of writing null.
+        assert "imatrix_counts" not in map_to_dict(map_)["groups"][0]
+
+    def test_the_field_forces_no_schema_bump(self) -> None:
+        # ADR-0013's silent-drop test: a reader that drops this
+        # field loses provenance and no assignment, so the envelope
+        # holds at 3 (ADR-0026 decision 4).
+        raw = self.make_counted_dict()
+
+        assert map_to_dict(map_from_dict(raw))["vramfit_schema"] == 3
+
+    def test_a_version_2_map_accepts_the_field(self) -> None:
+        raw = self.make_counted_dict()
+        raw["vramfit_schema"] = 2
+
+        assert map_from_dict(raw).groups[0].imatrix_counts is not None
+
+    def test_zero_minimum_loads(self) -> None:
+        # Zero is a real count, not a missing one (ADR-0026).
+        raw = self.make_counted_dict()
+        raw["groups"][0]["imatrix_counts"] = {"min": 0, "median": 5.0, "max": 10}
+
+        summary = map_from_dict(raw).groups[0].imatrix_counts
+
+        assert summary is not None
+        assert summary.minimum == 0
+
+    def test_negative_minimum_rejected(self) -> None:
+        raw = self.make_counted_dict()
+        raw["groups"][0]["imatrix_counts"]["min"] = -1
+
+        with pytest.raises(ArtifactError, match="must not be negative"):
+            map_from_dict(raw)
+
+    def test_out_of_order_values_rejected(self) -> None:
+        raw = self.make_counted_dict()
+        raw["groups"][0]["imatrix_counts"]["median"] = 1_000_000.0
+
+        with pytest.raises(ArtifactError, match="must be ordered"):
+            map_from_dict(raw)
+
+    def test_missing_median_rejected(self) -> None:
+        raw = self.make_counted_dict()
+        del raw["groups"][0]["imatrix_counts"]["median"]
+
+        with pytest.raises(ArtifactError, match="median"):
+            map_from_dict(raw)
+
+    def test_null_imatrix_counts_rejected(self) -> None:
+        # The writer omits the field when unknown and never writes
+        # null — an explicit null is a hand-edit (ADR-0026).
+        raw = self.make_counted_dict()
+        raw["groups"][0]["imatrix_counts"] = None
+
+        with pytest.raises(ArtifactError, match="imatrix_counts"):
+            map_from_dict(raw)
+
+    def test_non_numeric_median_rejected(self) -> None:
+        raw = self.make_counted_dict()
+        raw["groups"][0]["imatrix_counts"]["median"] = "18114"
+
+        with pytest.raises(ArtifactError, match="median"):
             map_from_dict(raw)

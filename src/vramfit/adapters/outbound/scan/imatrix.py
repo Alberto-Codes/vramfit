@@ -24,9 +24,14 @@ A dense tensor holds one matrix. An expert stack holds one matrix
 per expert, and the HF checkpoint spells those experts as separate
 parameters. So `resolve_assisted_weights` reads an expert stack's
 row by expert index, not by row length (#177).
-`resolve_imatrix_counts` reads the same entries for their counts.
-The counts record routing frequency and price nothing (ADR-0026
-decisions 4 and 5).
+`resolve_imatrix_counts` reads the same entries for their counts,
+per HF parameter name, and the scan summarizes them into the map
+(ADR-0026 decision 4). It applies no super-block gate, because a
+count is routing frequency rather than a fit (#177). The counts
+price nothing. The pack path reads the same counts through its own
+port — it holds GGUF names and no torch
+([vramfit.adapters.outbound.gguf.imatrix_counts][], ADR-0026
+decision 5).
 
 Examples:
     Load weights for the parameters a meter discovered:

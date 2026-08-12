@@ -7,7 +7,8 @@ naming rule that the torch meter applies but does not own),
 which (group x precision) cells still
 need measurement, how a finished pile of measurements becomes a
 `SensitivityMap` — per-tensor sizes riding through from `GroupSpec`
-(ADR-0022) — the within-group method tokens and the kquant
+(ADR-0022), and each group's imatrix count summary riding the same
+way (ADR-0026) — the within-group method tokens and the kquant
 coverage set (ADR-0006, ADR-0018, ADR-0020 — every token
 re-exported from [vramfit.domain.model][], where `ScanMeta`
 anchors them), and
@@ -49,7 +50,12 @@ from vramfit.domain.model import (
 from vramfit.domain.model import (
     SCAN_METHOD as SCAN_METHOD,  # noqa: PLC0414 - re-export: method tokens read from this module
 )
-from vramfit.domain.model import LayerGroup, ScanMeta, SensitivityMap
+from vramfit.domain.model import (
+    ImatrixCountSummary,
+    LayerGroup,
+    ScanMeta,
+    SensitivityMap,
+)
 
 # Decoder-layer prefixes across common naming families: llama-style
 # ".layers.N.", GPT-2-style ".h.N.", and ".blocks.N.".
@@ -135,6 +141,10 @@ class GroupSpec:
             at reference precision (ADR-0022), or empty when the
             meter predates the field. Rides into the map's groups so
             protections can price against it.
+        imatrix_counts (ImatrixCountSummary | None): The group's
+            imatrix counts, reduced (ADR-0026 decision 4). None when
+            the meter is unassisted or the imatrix does not cover the
+            group. Rides into the map's groups as provenance.
 
     Examples:
         A one-tensor group:
@@ -150,6 +160,7 @@ class GroupSpec:
     tensors: tuple[str, ...]
     bytes_fp16: int
     tensor_bytes: Mapping[str, int] = field(hash=False, default_factory=dict)
+    imatrix_counts: ImatrixCountSummary | None = None
 
     def __post_init__(self) -> None:
         """Enforce the spec invariants and freeze the size record.
@@ -348,7 +359,8 @@ def assemble_map(
 
     Each spec's per-tensor sizes ride into its map group unchanged
     (ADR-0022) — a meter that reports them makes the map
-    protection-ready.
+    protection-ready. Its imatrix count summary rides the same way
+    (ADR-0026 decision 4), as provenance the solver never reads.
 
     Args:
         model_id: The scanned model's identifier.
@@ -406,6 +418,7 @@ def assemble_map(
                 bytes_fp16=spec.bytes_fp16,
                 sensitivity=curves[spec.name],
                 tensor_bytes=spec.tensor_bytes,
+                imatrix_counts=spec.imatrix_counts,
             )
             for spec in spec_list
         ),

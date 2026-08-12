@@ -183,7 +183,14 @@ expected miss). A covered tensor whose rows do not divide into
 256-element super-blocks joins the uncovered set instead of refusing
 the scan. A scan is only comparable to a pack that consumes the
 same imatrix file — the CLI resolves the path, and the map records
-the resolved spelling.
+the resolved spelling. Each covered group also gets an
+`imatrix_counts` summary in the map — `min`, `median`, and `max`
+over its members' counts
+([ADR-0026](../adr/0026-moe-expert-pricing.md) decision 4). The
+numbers are provenance and nothing prices against them. They read
+through their own resolver, which applies no super-block gate, so
+an expert stack that joins the uncovered set still reports its
+routing distribution.
 
 Exit codes: 1 when the scan extra is missing, the model or calibration
 cannot load, sharding offloaded a quantizable group beyond host RAM,
@@ -347,13 +354,27 @@ tensors keep their promoted types and quantize without their
 imatrix rows. Packing such a recipe without `--imatrix` warns that
 the exclusions change nothing.
 
+With `--imatrix` the command also reads the matrix's own counts
+before the quantizer starts, and warns for every routed expert the
+matrix covers at a count of zero
+([ADR-0026](../adr/0026-moe-expert-pricing.md) decision 5). Such an
+expert takes the unassisted fit and the quantizer prints nothing,
+because its expert stack is present. The warning names each one as
+`<stack>[<index>]`, and `model_packed` records the pairs. This is a
+third case: `--exclude-weights` names an intentional miss, an
+uncovered tensor names a whole-tensor gap, and a zero-count expert
+sits inside a stack the matrix does cover. An unreadable matrix
+fails the pack in milliseconds, before the quantize stage. Reading
+the counts needs gguf-py, which the `pack` extra provisions.
+
 With `--smoke-text` the command runs the smoke test: `--smoke-chunks` perplexity chunks through
 `build/bin/llama-perplexity`, gated by the `--smoke-threshold`
 ceiling (ADR-0017). Without the flag the command warns that the
 packed model is unproven. Every run appends the pack events to the
 run log: pack_started, gguf_converted (with `reused`), model_packed
 (real bytes, base type, embedding and output tensor types, override
-count, imatrix, uncovered tensors, excluded tensors), size_checked (margin and
+count, imatrix, uncovered tensors, excluded tensors, zero-count
+experts), size_checked (margin and
 `fits`), reconstruction_checked when the gate ran (per-tensor
 protected and reference RMSE, `collapsed`, `passed`), smoke_tested
 when the smoke test ran (perplexity — null

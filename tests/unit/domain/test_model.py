@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import math
+
 import pytest
 
 from vramfit.domain.model import (
     Assignment,
+    ImatrixCountSummary,
     LayerGroup,
     PlanMeta,
     ProtectedTensor,
@@ -134,6 +137,76 @@ class TestLayerGroupTensorBytes:
         sizes["a"] = 1
 
         assert group.tensor_bytes["a"] == 400
+
+
+class TestImatrixCountSummary:
+    def test_ordered_values_construct(self) -> None:
+        summary = ImatrixCountSummary(minimum=426, median=18_114.0, maximum=192_191)
+
+        assert summary.maximum == 192_191
+
+    def test_negative_minimum_rejected(self) -> None:
+        # A count is a chunk tally, so it is never negative.
+        with pytest.raises(ValueError, match="minimum must not be negative"):
+            ImatrixCountSummary(minimum=-1, median=0.0, maximum=1)
+
+    def test_median_below_minimum_rejected(self) -> None:
+        with pytest.raises(ValueError, match="ordered"):
+            ImatrixCountSummary(minimum=10, median=5.0, maximum=20)
+
+    def test_median_above_maximum_rejected(self) -> None:
+        with pytest.raises(ValueError, match="ordered"):
+            ImatrixCountSummary(minimum=1, median=30.0, maximum=20)
+
+    def test_non_finite_median_rejected(self) -> None:
+        with pytest.raises(ValueError, match="median must be finite"):
+            ImatrixCountSummary(minimum=0, median=math.nan, maximum=1)
+
+    def test_from_counts_reduces_to_three_numbers(self) -> None:
+        summary = ImatrixCountSummary.from_counts([192_191, 426, 18_114])
+
+        assert (summary.minimum, summary.median, summary.maximum) == (
+            426,
+            18_114,
+            192_191,
+        )
+
+    def test_from_counts_averages_the_two_middle_values(self) -> None:
+        # An even member count has no single middle expert.
+        assert ImatrixCountSummary.from_counts([4, 2]).median == 3.0
+
+    def test_from_counts_on_one_count_collapses_to_it(self) -> None:
+        summary = ImatrixCountSummary.from_counts([421_370])
+
+        assert summary.minimum == summary.maximum == 421_370
+
+    def test_from_counts_keeps_a_zero_count(self) -> None:
+        # Zero is a real count the pack path reports (ADR-0026
+        # decision 5), never a missing one.
+        assert ImatrixCountSummary.from_counts([0, 10]).minimum == 0
+
+    def test_from_counts_on_no_counts_rejected(self) -> None:
+        with pytest.raises(ValueError, match="counts must not be empty"):
+            ImatrixCountSummary.from_counts([])
+
+
+class TestLayerGroupImatrixCounts:
+    def make_group(self, counts: ImatrixCountSummary | None) -> LayerGroup:
+        return LayerGroup(
+            name="backbone.layers.1.mixer.experts.up_proj",
+            tensors=("a",),
+            bytes_fp16=1_000,
+            sensitivity={8: 0.0, 4: 0.1},
+            imatrix_counts=counts,
+        )
+
+    def test_absent_summary_means_unknown(self) -> None:
+        assert self.make_group(None).imatrix_counts is None
+
+    def test_present_summary_rides_on_the_group(self) -> None:
+        summary = ImatrixCountSummary(minimum=426, median=18_114.0, maximum=192_191)
+
+        assert self.make_group(summary).imatrix_counts == summary
 
 
 @pytest.mark.unit

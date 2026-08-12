@@ -5,7 +5,8 @@ The dataclasses enforce their own structural invariants in
 unique group names, sensitivity keys matching the scan, imatrix
 provenance pairing with the assisted method token, tensor sizes
 covering exactly the group's tensors, protection records pairing
-with their resolved pairs — ADR-0022) so an instance
+with their resolved pairs — ADR-0022, an imatrix count summary
+running minimum to median to maximum — ADR-0026) so an instance
 that exists is safe for the solver — however it was constructed. The
 within-group method tokens live here — `SCAN_METHOD` beside the
 `ScanMeta` field it is the default for (ADR-0018), and the kquant
@@ -50,7 +51,9 @@ See Also:
 from __future__ import annotations
 
 import itertools
-from collections.abc import Mapping
+import math
+import statistics
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Literal
@@ -159,6 +162,87 @@ class ScanMeta:
 
 
 @dataclass(frozen=True, slots=True)
+class ImatrixCountSummary:
+    """One group's imatrix counts, reduced to three numbers.
+
+    Provenance on an assisted map, never a gate (ADR-0026 decision
+    4). A fused expert stack holds one count per routed expert, and
+    the spread of those counts is the routing distribution the solver
+    trusts. Recording it lets a later data point challenge ADR-0026
+    decision 1 with evidence, instead of re-deriving the
+    distribution from the imatrix file.
+
+    Attributes:
+        minimum (int): The group's smallest imatrix count.
+        median (float): The middle count. An even member count
+            averages the two middle values, so the field is a float
+            even though every count is an integer.
+        maximum (int): The group's largest imatrix count.
+
+    Examples:
+        Summarize one expert stack's routing distribution:
+
+        ```python
+        from vramfit.domain.model import ImatrixCountSummary
+
+        summary = ImatrixCountSummary.from_counts([426, 18_114, 192_191])
+        assert summary.median == 18_114
+        ```
+    """
+
+    minimum: int
+    median: float
+    maximum: int
+
+    def __post_init__(self) -> None:
+        """Enforce the ordering the three numbers must satisfy.
+
+        Raises:
+            ValueError: If any value is negative, ``median`` is not
+                finite, or the three do not run
+                ``minimum <= median <= maximum``. A count is a chunk
+                tally, so it is never negative, and a summary that
+                contradicts its own order records a broken reduction.
+        """
+        if self.minimum < 0:
+            raise ValueError("minimum must not be negative")
+        if not math.isfinite(self.median):
+            raise ValueError("median must be finite")
+        if not self.minimum <= self.median <= self.maximum:
+            raise ValueError("minimum, median, and maximum must be ordered")
+
+    @classmethod
+    def from_counts(cls, counts: Iterable[int]) -> ImatrixCountSummary:
+        """Reduce a group's imatrix counts to a summary.
+
+        Args:
+            counts: One imatrix count per group member.
+
+        Returns:
+            The summary over those counts.
+
+        Raises:
+            ValueError: If ``counts`` is empty. An empty group has no
+                distribution, and a zeroed summary would read as one.
+
+        Examples:
+            ```python
+            from vramfit.domain.model import ImatrixCountSummary
+
+            assert ImatrixCountSummary.from_counts([4, 2]).median == 3.0
+            ```
+        """
+        values = sorted(counts)
+        if not values:
+            raise ValueError("counts must not be empty")
+        return cls(
+            minimum=values[0],
+            median=statistics.median(values),
+            maximum=values[-1],
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class LayerGroup:
     """One scanned layer group and its damage curve.
 
@@ -173,6 +257,11 @@ class LayerGroup:
             reference precision (ADR-0022), or empty when the map
             predates the field. Protections price against these — a
             plan refuses a protection on a group without them.
+        imatrix_counts (ImatrixCountSummary | None): The group's
+            imatrix counts, reduced (ADR-0026 decision 4). None on an
+            unassisted map, on a map written before the field
+            existed, and on a group the imatrix does not cover.
+            Provenance only — nothing prices against it.
 
     Examples:
         A group whose damage doubles from 4-bit to 2-bit:
@@ -194,6 +283,7 @@ class LayerGroup:
     bytes_fp16: int
     sensitivity: Mapping[int, float] = field(hash=False)
     tensor_bytes: Mapping[str, int] = field(hash=False, default_factory=dict)
+    imatrix_counts: ImatrixCountSummary | None = None
 
     def __post_init__(self) -> None:
         """Enforce group invariants and freeze the mappings.

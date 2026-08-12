@@ -41,7 +41,9 @@ GGUF imatrix file that loads before the model. Construction refuses
 weights the
 model cannot consume — wrong names, wrong lengths, misaligned rows,
 non-finite values — before the scan spends an hour, and reports the
-coverage split for the run log.
+coverage split for the run log. An assisted run resolved from a
+file also summarizes each group's imatrix counts into the map, as
+provenance the solver never reads (ADR-0026 decision 4).
 
 See Also:
     - [vramfit.ports.outbound][]: `DamageMeter`, the port this
@@ -67,6 +69,7 @@ from vramfit.adapters.outbound.scan.imatrix import (
     check_imatrix_weights,
     load_imatrix,
     resolve_assisted_weights,
+    resolve_imatrix_counts,
 )
 from vramfit.adapters.outbound.scan.kl import mean_kl, reference_log_probs
 from vramfit.adapters.outbound.scan.kquant import kquant_quantize_dequantize
@@ -84,6 +87,7 @@ from vramfit.adapters.outbound.scan.quantize import (
     MIN_BITS,
     rtn_quantize_dequantize,
 )
+from vramfit.domain.model import ImatrixCountSummary
 from vramfit.domain.scan import GroupSpec, group_key, matches_a_layer
 
 
@@ -101,7 +105,9 @@ class TorchDamageMeter:
     A single group's originals stay on their device. A multi-group
     perturbation stages GPU-resident originals on the CPU and
     restores offloaded originals from the safetensors shards
-    (ADR-0015).
+    (ADR-0015). An assisted meter resolved from a file also holds
+    each parameter's imatrix count, which `groups` reduces to the
+    per-group summary the map records (ADR-0026 decision 4).
 
     Attributes:
         model_id (str): The Hugging Face id or local path the model
@@ -178,7 +184,11 @@ class TorchDamageMeter:
                 two exclude each other. The file loads before the
                 model, so a malformed imatrix refuses in
                 milliseconds. Name resolution runs after group
-                discovery, when the parameter shapes exist.
+                discovery, when the parameter shapes exist. This
+                path also reads each parameter's imatrix count for
+                the map's provenance (ADR-0026 decision 4).
+                ``imatrix_weights`` carries no counts, so a meter
+                built that way records no summary.
 
         Raises:
             ValueError: If ``within_group`` is not a known method —
@@ -257,8 +267,17 @@ class TorchDamageMeter:
             for members in self._groups.values()
             for name in members
         }
+        # Counts read through their own resolver, never the assisted
+        # one: they are routing frequency, not a fit, so no
+        # super-block gate applies and an expert stack whose rows
+        # refuse a k-quant fit still reports its distribution (#177,
+        # ADR-0026 decision 4).
+        self._imatrix_counts: dict[str, int] = {}
         if pending_imatrix is not None:
             self._imatrix_weights, _ = resolve_assisted_weights(
+                pending_imatrix, rows_by_param
+            )
+            self._imatrix_counts, _ = resolve_imatrix_counts(
                 pending_imatrix, rows_by_param
             )
         # None when unassisted — distinct from zero coverage, which
@@ -282,7 +301,9 @@ class TorchDamageMeter:
         Returns:
             All groups in module order, sized at 2 bytes per parameter
             (the bf16 reference), with per-tensor sizes for the
-            protection pricing (ADR-0022).
+            protection pricing (ADR-0022) and, on an assisted run
+            resolved from a file, the group's imatrix count summary
+            (ADR-0026 decision 4).
         """
         return tuple(
             GroupSpec(
@@ -292,9 +313,30 @@ class TorchDamageMeter:
                 # Per-tensor sizes ride into the map so protections
                 # can price against them (ADR-0022).
                 tensor_bytes={t: self._param(t).numel() * 2 for t in tensors},
+                imatrix_counts=self._count_summary(tensors),
             )
             for name, tensors in self._groups.items()
         )
+
+    def _count_summary(self, tensors: list[str]) -> ImatrixCountSummary | None:
+        """Reduce one group's imatrix counts to its map provenance.
+
+        Args:
+            tensors: The group's member parameter names.
+
+        Returns:
+            The summary over the members the imatrix covers, or None
+            when it covers none of them (ADR-0026 decision 4). A
+            partly covered group summarizes the members it does
+            cover — the alternative drops a 128-expert stack's whole
+            distribution over one missing member.
+        """
+        counts = [
+            self._imatrix_counts[name]
+            for name in tensors
+            if name in self._imatrix_counts
+        ]
+        return ImatrixCountSummary.from_counts(counts) if counts else None
 
     def calibration_tokens(self) -> int:
         """Count the calibration tokens each measurement runs over.

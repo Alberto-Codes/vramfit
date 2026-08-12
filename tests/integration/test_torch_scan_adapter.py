@@ -623,6 +623,66 @@ class TestTorchDamageMeter:
         assert "model.layers.0.self_attn.q_proj.weight" not in meter.imatrix_uncovered
         assert "model.embed_tokens.weight" in meter.imatrix_uncovered
 
+    def test_imatrix_path_summarizes_each_covered_group_counts(
+        self, aligned_model_dir, tmp_path
+    ) -> None:
+        # ADR-0026 decision 4: the map records the group's imatrix
+        # counts as provenance. The counts read through their own
+        # resolver, which applies no super-block gate (#177).
+        from vramfit.adapters.outbound.scan.meter import TorchDamageMeter
+
+        gguf = pytest.importorskip("gguf", reason="scan extra not installed")
+        np = pytest.importorskip("numpy", reason="scan extra not installed")
+        calibration = tmp_path / "calib.txt"
+        calibration.write_text(CALIBRATION_TEXT)
+        imatrix = tmp_path / "im.gguf"
+        writer = gguf.GGUFWriter(str(imatrix), "imatrix")
+        writer.add_type("imatrix")
+        writer.add_tensor(
+            "blk.0.attn_q.weight.in_sum2", np.full(256, 8.0, dtype=np.float32)
+        )
+        writer.add_tensor(
+            "blk.0.attn_q.weight.counts", np.array([426.0], dtype=np.float32)
+        )
+        writer.write_header_to_file()
+        writer.write_kv_data_to_file()
+        writer.write_tensors_to_file()
+        writer.close()
+
+        meter = TorchDamageMeter(
+            str(aligned_model_dir),
+            calibration,
+            max_tokens=128,
+            device="cpu",
+            group_by="tensor",
+            within_group="kquant",
+            imatrix_path=imatrix,
+        )
+        specs = {spec.name: spec for spec in meter.groups()}
+
+        covered = specs["model.layers.0.self_attn.q_proj"]
+        assert covered.imatrix_counts is not None
+        assert covered.imatrix_counts.minimum == 426
+        assert covered.imatrix_counts.median == 426
+        assert covered.imatrix_counts.maximum == 426
+        # A group the matrix does not name carries no summary. An
+        # absent field means unknown, never a count of zero.
+        assert specs["model.embed_tokens"].imatrix_counts is None
+
+    def test_unassisted_meter_summarizes_no_counts(
+        self, aligned_model_dir, tmp_path
+    ) -> None:
+        from vramfit.adapters.outbound.scan.meter import TorchDamageMeter
+
+        calibration = tmp_path / "calib.txt"
+        calibration.write_text(CALIBRATION_TEXT)
+
+        meter = TorchDamageMeter(
+            str(aligned_model_dir), calibration, max_tokens=128, device="cpu"
+        )
+
+        assert all(spec.imatrix_counts is None for spec in meter.groups())
+
     def test_wrong_model_imatrix_is_refused_at_construction(
         self, aligned_model_dir, tmp_path
     ) -> None:

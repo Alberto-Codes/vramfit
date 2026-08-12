@@ -251,8 +251,34 @@ fit the packer does not ship. ADR-0021 recorded that failure.
 ## Consequences
 
 - Decision 1 needs no new machinery. The loader already implements it.
-- Decisions 4 and 5 add fields to the map and to the pack report.
-  Decision 2 adds the frequency term.
+- **Decisions 4 and 5 are built (#179, 2026-08-12).** Decision 2
+  adds the frequency term and stays unbuilt.
+
+    Decision 4 lands as `imatrix_counts` on a map group: `min`,
+    `median`, and `max`. The scan reads each member's count through
+    `resolve_imatrix_counts` and reduces it. The field is additive
+    and optional, so ADR-0013's silent-drop test does not fire — a
+    reader that drops it loses provenance and no assignment — and
+    `vramfit_schema` holds at 3. An absent field means unknown, and
+    the writer never emits a null. `median` is a float, because an
+    even member count averages the two middle counts.
+
+    Decision 5 lands as `imatrix_zero_count_experts` on the pack
+    result, holding `(stack, expert)` pairs. It sits beside
+    `imatrix_uncovered` and `imatrix_excluded` and merges with
+    neither. An exclusion drops a stack's whole entry, so its
+    experts are intentional misses and stay out. The pack reads the
+    matrix through a new `ImatrixCountSource` port, not through the
+    scan's reader: the pack path holds GGUF names rather than
+    Hugging Face ones, and the base install carries no torch
+    (ADR-0005). The gguf-py adapter reads only the `.counts`
+    tensors, about 24 KB on this model. It runs before the
+    quantizer, so an unreadable matrix refuses in milliseconds.
+
+    No zero-count expert exists on this model and this corpus, so
+    the port's contract suite writes its own starved matrices. That
+    is the only test decision 5 can have until a shorter
+    calibration run produces one.
 - Decision 2 needs the per-expert rows of a fused stack. #187 built the
   read on 2026-08-12. `load_imatrix` now reshapes a stack's sums per
   matrix, and `resolve_imatrix_counts` serves the counts. The clause

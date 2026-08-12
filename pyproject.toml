@@ -159,6 +159,10 @@ convention = "google"
     "PLR2004",  # magic values are the point of test assertions
     "PLC0415",  # torch-tier tests import the scan extra lazily to skip cleanly
 ]
+"tests/contract/test_recipe_packer_contract.py" = [
+    "PLR0913",  # the two packer builders take one flag per scenario by design
+    "PLR0917",
+]
 "src/vramfit/adapters/inbound/cli.py" = [
     "PLR0913",  # typer commands take one arg per CLI option by design
     "PLR0917",

@@ -11,7 +11,9 @@ can log each (ADR-0012), the smoke port (`SmokeTester`) carries
 the post-pack proof that the artifact emits language (ADR-0017),
 the reconstruction port (`ReconstructionChecker`) carries the
 per-tensor measurement that guards protected packs against fit
-collapse (ADR-0022), and the evals port (`EvalsSidecarSink`) carries
+collapse (ADR-0022), the imatrix-count port (`ImatrixCountSource`)
+carries the zero-count experts a quantizer flattens without a word
+(ADR-0026), and the evals port (`EvalsSidecarSink`) carries
 one evaluated artifact's scoreboard evidence to its published
 sidecar (ADR-0025).
 Concrete implementations live in [vramfit.adapters.outbound][].
@@ -40,7 +42,7 @@ from typing import Protocol
 from vramfit.domain.budget import ModelShape
 from vramfit.domain.evals import EvalsSidecar
 from vramfit.domain.model import Recipe, SensitivityMap
-from vramfit.domain.pack import PackResult
+from vramfit.domain.pack import PackResult, ZeroCountExpert
 from vramfit.domain.scan import GroupSpec, Measurement
 
 
@@ -346,6 +348,47 @@ class ReconstructionChecker(Protocol):
         Raises:
             RuntimeError: If a file cannot be read, or a requested
                 tensor is missing from either file.
+        """
+        ...
+
+
+class ImatrixCountSource(Protocol):
+    """Reads an importance matrix for experts it covers at a count of zero.
+
+    ADR-0026 decision 5. A routed expert with a zero count takes the
+    unassisted fit, and the quantizer says nothing about it — the
+    expert's stack is present, so no coverage warning fires. Only a
+    read of the matrix's own counts finds it, which is why this is a
+    port and not a scrape of the quantizer's output.
+
+    The port stays separate from `RecipePacker` for two reasons. The
+    read touches a file the packer only forwards to a subprocess, and
+    the scan's own count reader keys on Hugging Face parameter names
+    while the pack path holds GGUF names. The gguf-py adapter
+    implements it in milliseconds — the counts of a 5,957-tensor
+    matrix are about 24 KB.
+
+    Examples:
+        The pack step drives the port like this:
+
+        ```python
+        starved = counts.zero_count_experts()
+        ```
+    """
+
+    def zero_count_experts(self) -> tuple[ZeroCountExpert, ...]:
+        """Name every routed expert the matrix covers at a count of zero.
+
+        Returns:
+            The zero-count experts, sorted by stack then expert
+            index. Empty when every covered expert fired at least
+            once — what the north-star MoE target and its corpus
+            measure (issue #162).
+
+        Raises:
+            RuntimeError: If the matrix cannot be read. An empty
+                result must mean a healthy matrix, never a skipped
+                read.
         """
         ...
 

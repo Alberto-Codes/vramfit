@@ -2,7 +2,9 @@
 
 The pack step hands a recipe to a runtime's quantizer and gets a file
 back. The domain owns what survives that exchange without IO: the
-record of what was driven (`PackResult`), the arithmetic that
+record of what was driven (`PackResult`, carrying the zero-count
+experts the matrix flattens silently — `ZeroCountExpert`,
+ADR-0026 decision 5), the arithmetic that
 re-checks real bytes against the planned budget (ADR-0012), the
 smoke-test verdict against the perplexity ceiling (ADR-0017), and
 the reconstruction-check verdict on protected packs — the stripped
@@ -71,6 +73,46 @@ class TypeOverride:
 
 
 @dataclass(frozen=True, slots=True)
+class ZeroCountExpert:
+    """One routed expert the importance matrix covers at a count of zero.
+
+    The pack path's report under ADR-0026 decision 5. The expert's
+    imatrix row weighs every column 1, which is the unassisted fit,
+    and the quantizer logs nothing — its stack is present, so no
+    coverage warning fires.
+
+    Attributes:
+        stack (str): The GGUF expert stack holding the expert, e.g.
+            ``blk.20.ffn_up_exps.weight``.
+        expert (int): The routed-expert index inside that stack.
+
+    Examples:
+        Expert 57 of one stack fired no tokens:
+
+        ```python
+        from vramfit.domain.pack import ZeroCountExpert
+
+        starved = ZeroCountExpert(stack="blk.20.ffn_up_exps.weight", expert=57)
+        ```
+    """
+
+    stack: str
+    expert: int
+
+    def __post_init__(self) -> None:
+        """Reject a report that names no expert.
+
+        Raises:
+            ValueError: If ``stack`` is empty or ``expert`` is
+                negative.
+        """
+        if not self.stack:
+            raise ValueError("stack must not be empty")
+        if self.expert < 0:
+            raise ValueError("expert must not be negative")
+
+
+@dataclass(frozen=True, slots=True)
 class PackResult:
     """The pack step's accounting record for one packed model.
 
@@ -102,6 +144,11 @@ class PackResult:
             rows the pack dropped on the recipe's instruction
             (ADR-0023). Empty without an imatrix — an exclusion
             without a matrix is a no-op.
+        imatrix_zero_count_experts (tuple[ZeroCountExpert, ...]):
+            Routed experts the matrix covers at a count of zero
+            (ADR-0026 decision 5). A third case beside the two
+            fields above, which name whole tensors. Empty without an
+            imatrix.
 
     Examples:
         Inspect the real size of a packed model:
@@ -119,6 +166,7 @@ class PackResult:
     imatrix_path: str | None = None
     imatrix_uncovered: tuple[str, ...] = ()
     imatrix_excluded: tuple[str, ...] = ()
+    imatrix_zero_count_experts: tuple[ZeroCountExpert, ...] = ()
 
     def __post_init__(self) -> None:
         """Enforce the result invariants.
@@ -127,9 +175,10 @@ class PackResult:
             ValueError: If ``packed_bytes`` is not positive,
                 ``base_type`` is empty, ``token_embedding_type``,
                 ``output_tensor_type``, or ``imatrix_path`` is empty,
-                ``imatrix_uncovered`` or ``imatrix_excluded`` is set
-                without an ``imatrix_path``, or two overrides share a
-                pattern.
+                ``imatrix_uncovered``, ``imatrix_excluded``, or
+                ``imatrix_zero_count_experts`` is set without an
+                ``imatrix_path``, two overrides share a pattern, or
+                two zero-count reports name the same expert.
         """
         if self.packed_bytes <= 0:
             raise ValueError("packed_bytes must be positive")
@@ -145,9 +194,14 @@ class PackResult:
             raise ValueError("imatrix_uncovered requires an imatrix_path")
         if self.imatrix_excluded and self.imatrix_path is None:
             raise ValueError("imatrix_excluded requires an imatrix_path")
+        if self.imatrix_zero_count_experts and self.imatrix_path is None:
+            raise ValueError("imatrix_zero_count_experts requires an imatrix_path")
         patterns = [override.pattern for override in self.overrides]
         if len(set(patterns)) != len(patterns):
             raise ValueError("override patterns must be unique")
+        starved = list(self.imatrix_zero_count_experts)
+        if len(set(starved)) != len(starved):
+            raise ValueError("zero-count experts must be unique")
 
 
 def weight_budget_margin(recipe: Recipe, packed_bytes: int) -> int:

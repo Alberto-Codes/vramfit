@@ -6,6 +6,7 @@ from vramfit.domain.model import Assignment, PlanMeta, ProtectedTensor, Recipe
 from vramfit.domain.pack import (
     PackResult,
     TypeOverride,
+    ZeroCountExpert,
     collapsed_tensors,
     smoke_passed,
     weight_budget_margin,
@@ -159,6 +160,78 @@ class TestPackResult:
         )
 
         assert result.imatrix_path is None
+
+    def test_zero_count_experts_without_imatrix_raise_value_error(self) -> None:
+        with pytest.raises(ValueError, match="imatrix_zero_count_experts"):
+            PackResult(
+                packed_bytes=1,
+                base_type="Q4_K_S",
+                token_embedding_type=None,
+                output_tensor_type=None,
+                overrides=(),
+                imatrix_zero_count_experts=(
+                    ZeroCountExpert(stack="blk.1.ffn_up_exps.weight", expert=57),
+                ),
+            )
+
+    def test_repeated_zero_count_expert_raises_value_error(self) -> None:
+        starved = ZeroCountExpert(stack="blk.1.ffn_up_exps.weight", expert=57)
+        with pytest.raises(ValueError, match="zero-count experts must be unique"):
+            PackResult(
+                packed_bytes=1,
+                base_type="Q4_K_S",
+                token_embedding_type=None,
+                output_tensor_type=None,
+                overrides=(),
+                imatrix_path="model.imatrix.gguf",
+                imatrix_zero_count_experts=(starved, starved),
+            )
+
+    def test_zero_count_experts_default_to_empty(self) -> None:
+        result = PackResult(
+            packed_bytes=1,
+            base_type="Q4_K_S",
+            token_embedding_type=None,
+            output_tensor_type=None,
+            overrides=(),
+        )
+
+        assert result.imatrix_zero_count_experts == ()
+
+    def test_zero_count_experts_are_separate_from_uncovered_tensors(self) -> None:
+        # ADR-0023 fenced imatrix_uncovered to unintentional gaps
+        # over whole tensors. An expert inside a covered stack is a
+        # third case, so the two records never mix (ADR-0026).
+        result = PackResult(
+            packed_bytes=1,
+            base_type="Q4_K_S",
+            token_embedding_type=None,
+            output_tensor_type=None,
+            overrides=(),
+            imatrix_path="model.imatrix.gguf",
+            imatrix_uncovered=("token_embd.weight",),
+            imatrix_zero_count_experts=(
+                ZeroCountExpert(stack="blk.1.ffn_up_exps.weight", expert=57),
+            ),
+        )
+
+        assert result.imatrix_uncovered == ("token_embd.weight",)
+        assert result.imatrix_zero_count_experts[0].expert == 57
+
+
+class TestZeroCountExpert:
+    def test_valid_report_constructs(self) -> None:
+        starved = ZeroCountExpert(stack="blk.20.ffn_up_exps.weight", expert=0)
+
+        assert starved.expert == 0
+
+    def test_empty_stack_raises_value_error(self) -> None:
+        with pytest.raises(ValueError, match="stack must not be empty"):
+            ZeroCountExpert(stack="", expert=1)
+
+    def test_negative_expert_index_raises_value_error(self) -> None:
+        with pytest.raises(ValueError, match="expert must not be negative"):
+            ZeroCountExpert(stack="blk.20.ffn_up_exps.weight", expert=-1)
 
 
 class TestWeightBudgetMargin:

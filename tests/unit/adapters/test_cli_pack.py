@@ -12,6 +12,7 @@ from vramfit.adapters.inbound.cli import app
 from vramfit.adapters.outbound.recipe_json import save_recipe
 from vramfit.adapters.outbound.run_log_jsonl import read_run_log
 from vramfit.domain.model import Assignment, PlanMeta, Recipe
+from vramfit.domain.pack import ZeroCountExpert
 
 runner = CliRunner()
 
@@ -1046,3 +1047,80 @@ class TestSmokeWiring:
         log = read_run_log(out.with_name(out.stem + ".runlog.jsonl"))
         packed = next(line for line in log if line["event"] == "model_packed")
         assert packed["imatrix_uncovered"] == ["token_embd.weight"]
+
+    def test_zero_count_experts_are_warned_and_recorded(
+        self, tmp_path, monkeypatch, llama_cpp_dir, recipe_path
+    ) -> None:
+        # ADR-0026 decision 5. The quantizer prints nothing for
+        # these, so the command's warning is the only report an
+        # operator sees.
+        imatrix_path = tmp_path / "imatrix.gguf"
+        imatrix_path.touch()
+        patch_packer(
+            monkeypatch,
+            MemoryRecipePacker(
+                packed_bytes=100,
+                imatrix=str(imatrix_path),
+                imatrix_zero_count_experts=(
+                    ZeroCountExpert(stack="blk.20.ffn_up_exps.weight", expert=57),
+                ),
+            ),
+        )
+        out = tmp_path / "packed.gguf"
+
+        result = runner.invoke(
+            app,
+            [
+                "pack",
+                str(recipe_path),
+                "--llama-cpp",
+                str(llama_cpp_dir),
+                "--out",
+                str(out),
+                "--imatrix",
+                str(imatrix_path),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "fired no token through" in result.output
+        assert "blk.20.ffn_up_exps.weight[57]" in result.output
+        log = read_run_log(out.with_name(out.stem + ".runlog.jsonl"))
+        packed = next(line for line in log if line["event"] == "model_packed")
+        assert packed["imatrix_zero_count_experts"] == [
+            ["blk.20.ffn_up_exps.weight", 57]
+        ]
+
+    def test_no_zero_count_expert_warns_nothing_and_records_empty(
+        self, tmp_path, monkeypatch, llama_cpp_dir, recipe_path
+    ) -> None:
+        # The measured case on the real target (issue #162). Silence
+        # here must mean a healthy matrix, so the run log still
+        # carries the empty record.
+        imatrix_path = tmp_path / "imatrix.gguf"
+        imatrix_path.touch()
+        patch_packer(
+            monkeypatch,
+            MemoryRecipePacker(packed_bytes=100, imatrix=str(imatrix_path)),
+        )
+        out = tmp_path / "packed.gguf"
+
+        result = runner.invoke(
+            app,
+            [
+                "pack",
+                str(recipe_path),
+                "--llama-cpp",
+                str(llama_cpp_dir),
+                "--out",
+                str(out),
+                "--imatrix",
+                str(imatrix_path),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "fired no token" not in result.output
+        log = read_run_log(out.with_name(out.stem + ".runlog.jsonl"))
+        packed = next(line for line in log if line["event"] == "model_packed")
+        assert packed["imatrix_zero_count_experts"] == []

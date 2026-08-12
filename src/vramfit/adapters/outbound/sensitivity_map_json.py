@@ -15,7 +15,11 @@ absent, because every map written before the field existed measured
 with that method, and ``scan.imatrix`` (ADR-0020) defaults to None,
 because every map written before the field existed was unassisted.
 A present ``imatrix`` must pair with the assisted method token —
-the loader rejects a map whose provenance contradicts itself.
+the loader rejects a map whose provenance contradicts itself. A
+group's ``imatrix_counts`` is additive the same way (ADR-0026
+decision 4) and defaults to None: it records provenance and no
+assignment, so a reader that drops it loses nothing the solver
+uses, and the schema holds at 3.
 
 Examples:
     Round-trip a map through a file:
@@ -55,7 +59,12 @@ from vramfit.adapters.outbound.json_common import (
     _require,
     _save_json,
 )
-from vramfit.domain.model import LayerGroup, ScanMeta, SensitivityMap
+from vramfit.domain.model import (
+    ImatrixCountSummary,
+    LayerGroup,
+    ScanMeta,
+    SensitivityMap,
+)
 from vramfit.domain.scan import KQUANT_IMX_METHOD, SCAN_METHOD
 
 # The sensitivity-map schema version. Versions advance per artifact
@@ -133,7 +142,8 @@ def map_to_dict(map_: SensitivityMap) -> dict[str, Any]:
         and the imatrix path is always written — null when
         unassisted (ADR-0020). Per-tensor sizes are written only
         when known — an absent field means unknown, never zero
-        (ADR-0022).
+        (ADR-0022). A group's imatrix count summary follows the same
+        rule (ADR-0026 decision 4).
     """
     return {
         "vramfit_schema": MAP_SCHEMA_VERSION,
@@ -162,6 +172,21 @@ def map_to_dict(map_: SensitivityMap) -> dict[str, Any]:
                 **(
                     {"tensor_bytes": {t: g.tensor_bytes[t] for t in g.tensors}}
                     if g.tensor_bytes
+                    else {}
+                ),
+                # Additive and informational the same way (ADR-0026
+                # decision 4): a reader that drops it loses provenance
+                # and no assignment, so ADR-0013's silent-drop test
+                # does not fire and the schema holds at 3.
+                **(
+                    {
+                        "imatrix_counts": {
+                            "min": g.imatrix_counts.minimum,
+                            "median": g.imatrix_counts.median,
+                            "max": g.imatrix_counts.maximum,
+                        }
+                    }
+                    if g.imatrix_counts is not None
                     else {}
                 ),
             }
@@ -351,6 +376,43 @@ def _parse_sensitivity(obj: dict[str, Any], path: str) -> dict[int, float]:
     return sensitivity
 
 
+def _parse_imatrix_counts(obj: dict[str, Any], path: str) -> ImatrixCountSummary | None:
+    """Validate one group's optional imatrix count summary.
+
+    Args:
+        obj: The group's JSON object.
+        path: JSON path of the group.
+
+    Returns:
+        The summary, or None when the group carries no
+        ``imatrix_counts`` field. Absent means unknown — an
+        unassisted map, a map written before the field existed, or a
+        group the imatrix does not cover (ADR-0026 decision 4).
+
+    Raises:
+        ArtifactError: If the field is present and any of ``min``,
+            ``median``, or ``max`` is missing, mistyped, negative, or
+            out of order. The writer never emits an explicit null, so
+            one is a hand-edit and is rejected rather than read as
+            absent.
+    """
+    if "imatrix_counts" not in obj:
+        return None
+    field_path = f"{path}.imatrix_counts"
+    counts = _get_dict(obj["imatrix_counts"], field_path)
+    minimum = _get_int(counts, "min", field_path)
+    maximum = _get_int(counts, "max", field_path)
+    _require("median" in counts, field_path, 'missing required field "median"')
+    median = _as_float(counts["median"], f"{field_path}.median")
+    _require(minimum >= 0, f"{field_path}.min", "must not be negative")
+    _require(
+        minimum <= median <= maximum,
+        field_path,
+        f"min {minimum}, median {median}, and max {maximum} must be ordered",
+    )
+    return ImatrixCountSummary(minimum=minimum, median=median, maximum=maximum)
+
+
 def _parse_layer_group(
     raw: Any, path: str, expected_precisions: set[int]
 ) -> LayerGroup:
@@ -372,7 +434,9 @@ def _parse_layer_group(
             cover exactly the group's tensors with positive sizes
             summing to ``bytes_fp16`` (ADR-0022 — absent means
             unknown, and an explicit null is rejected: the writer
-            never emits one).
+            never emits one). A present ``imatrix_counts`` must
+            carry an ordered ``min``, ``median``, and ``max``
+            (ADR-0026 decision 4).
     """
     obj = _get_dict(raw, path)
     bytes_fp16 = _get_int(obj, "bytes_fp16", path)
@@ -421,4 +485,5 @@ def _parse_layer_group(
         bytes_fp16=bytes_fp16,
         sensitivity=sensitivity,
         tensor_bytes=tensor_bytes,
+        imatrix_counts=_parse_imatrix_counts(obj, path),
     )

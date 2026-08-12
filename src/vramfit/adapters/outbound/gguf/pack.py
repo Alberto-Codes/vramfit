@@ -15,7 +15,14 @@ zero-exit output for tensors the matrix did not cover — the
 quantizer only warns, and a silently unassisted tensor must not
 pass unrecorded. The recipe's imatrix exclusions become
 ``--exclude-weights`` flags, and their intentional misses stay out
-of that coverage record (ADR-0023). Every failure — a tool that cannot start, exits
+of that coverage record (ADR-0023). The adapter also reads the
+matrix itself for routed experts it covers at a count of zero — the
+quantizer does not even warn about those, because their stack is
+present (ADR-0026 decision 5). That read goes through the
+`ImatrixCountSource` port
+([vramfit.adapters.outbound.gguf.imatrix_counts][]), which keeps
+the file read out of this adapter's own contract.
+Every failure — a tool that cannot start, exits
 nonzero, dies to a signal, or leaves no usable file — translates to
 `PackError` at this boundary (ADR-0011), carrying the tool's last
 output lines.
@@ -48,6 +55,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
+from vramfit.adapters.outbound.gguf.imatrix_counts import GgufImatrixCounts
 from vramfit.adapters.outbound.gguf.toolrun import run_tool, sized_file
 from vramfit.adapters.outbound.gguf.types import (
     PackError,
@@ -60,7 +68,8 @@ from vramfit.adapters.outbound.gguf.types import (
     token_embedding_type,
 )
 from vramfit.domain.model import Recipe
-from vramfit.domain.pack import PackResult
+from vramfit.domain.pack import PackResult, ZeroCountExpert
+from vramfit.ports.outbound import ImatrixCountSource
 
 # The quantizer's zero-exit warning for a tensor the importance
 # matrix does not cover (llama.cpp src/llama-quant.cpp). The tensor
@@ -84,6 +93,10 @@ class LlamaCppPacker:
         threads (int): Quantizer thread count.
         imatrix (Path | None): Importance matrix file for the
             quantizer (ADR-0016). None packs without one.
+        imatrix_counts (ImatrixCountSource | None): Reader for the
+            matrix's zero-count experts (ADR-0026 decision 5).
+            Defaults to the gguf-py reader over ``imatrix``. Set it
+            to read the counts another way.
 
     Examples:
         The composition root wires the paths:
@@ -108,6 +121,7 @@ class LlamaCppPacker:
     python_bin: Path
     threads: int = 8
     imatrix: Path | None = None
+    imatrix_counts: ImatrixCountSource | None = None
 
     def convert(self) -> int:
         """Materialize the f16 base GGUF, reusing any existing file.
@@ -151,7 +165,9 @@ class LlamaCppPacker:
         recipe's imatrix exclusions become ``--exclude-weights``
         flags (ADR-0023) — the quantizer drops those rows, so the
         coverage scan discounts them as intentional. Without an
-        imatrix the exclusions are no-ops and stay unemitted.
+        imatrix the exclusions are no-ops and stay unemitted. A
+        configured matrix is also read for zero-count experts before
+        the quantizer starts (ADR-0026 decision 5).
 
         Args:
             recipe: The recipe to apply.
@@ -163,8 +179,9 @@ class LlamaCppPacker:
         Raises:
             PackError: If the recipe targets another runtime
                 (ADR-0013), the base GGUF is missing, the recipe
-                cannot be mapped (ADR-0012), the quantizer fails, or
-                it writes no usable file.
+                cannot be mapped (ADR-0012), the imatrix cannot be
+                read, the quantizer fails, or it writes no usable
+                file.
         """
         check_runtime(recipe)
         if not self.base_gguf.exists():
@@ -179,6 +196,9 @@ class LlamaCppPacker:
         # its own pattern before its group's.
         overrides = protection_overrides(recipe) + tensor_overrides(recipe)
         excluded = imatrix_exclusion_names(recipe) if self.imatrix is not None else ()
+        # Read before the quantizer runs: an unreadable matrix must
+        # refuse in milliseconds, not after a half-hour quantize.
+        starved = self._zero_count_experts(excluded)
         command = [str(self.quantize_bin), "--pure"]
         if self.imatrix is not None:
             command += ["--imatrix", str(self.imatrix)]
@@ -215,4 +235,37 @@ class LlamaCppPacker:
             imatrix_path=None if self.imatrix is None else str(self.imatrix),
             imatrix_uncovered=uncovered,
             imatrix_excluded=excluded,
+            imatrix_zero_count_experts=starved,
+        )
+
+    def _zero_count_experts(
+        self, excluded: tuple[str, ...]
+    ) -> tuple[ZeroCountExpert, ...]:
+        """Read the configured matrix for its zero-count experts.
+
+        The default reader is the gguf-py one over the same file the
+        quantizer gets. It is built here rather than at construction
+        so a pack without an imatrix touches neither gguf-py nor the
+        file (ADR-0005).
+
+        Args:
+            excluded: Tensors the recipe excludes (ADR-0023). An
+                exclusion on a stack drops all its rows, so its
+                experts are intentional misses and stay out of this
+                report.
+
+        Returns:
+            The zero-count experts, sorted by stack then expert
+            index. Empty when the pack runs without an imatrix.
+
+        Raises:
+            PackError: If the matrix cannot be read.
+        """
+        if self.imatrix is None:
+            return ()
+        source = self.imatrix_counts or GgufImatrixCounts(self.imatrix)
+        return tuple(
+            expert
+            for expert in source.zero_count_experts()
+            if expert.stack not in excluded
         )
