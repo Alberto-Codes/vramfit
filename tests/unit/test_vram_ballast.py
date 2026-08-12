@@ -151,6 +151,13 @@ def test_run_command_restores_the_previous_signal_handlers() -> None:
     assert after == before
 
 
+def test_run_command_with_an_empty_command_returns_127(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert ballast.run_command([]) == ballast.EXIT_COMMAND_NOT_FOUND
+    assert "no command to run" in capsys.readouterr().err
+
+
 def test_run_command_with_a_missing_binary_returns_127(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -164,7 +171,7 @@ def test_hold_at_zero_bytes_skips_the_allocation(fake_ballast) -> None:
     assert "cuMemAlloc_v2" not in driver.calls
 
 
-def test_hold_allocates_and_release_frees_once(fake_ballast) -> None:
+def test_repeated_release_frees_and_destroys_once(fake_ballast) -> None:
     holder, driver = fake_ballast()
     holder.open_device(0)
     holder.hold(10216 * MIB)
@@ -186,7 +193,9 @@ def test_release_reports_a_driver_failure_without_raising(
     holder, _ = fake_ballast({"cuMemFree_v2": 999})
     holder.hold(10216 * MIB)
     holder.release()
-    assert "cuMemFree failed with CUresult 999" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "cuMemFree failed with CUresult 999" in err
+    assert "process exit reclaims" in err
 
 
 def test_driver_error_on_allocation_raises(fake_ballast) -> None:

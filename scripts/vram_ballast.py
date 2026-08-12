@@ -200,8 +200,13 @@ class CudaBallast:
 
         Release runs on the way out of a failed run, so it reports a
         driver failure to stderr rather than raise over the original
-        error. A failed free leaves the card short, and the operator
-        needs to read that in the run log.
+        error.
+
+        A failed call still clears its handle. Retrying ``cuMemFree`` on
+        a handle the driver rejected recovers nothing, and it risks a
+        double free where the call failed after the memory went back.
+        The reclaim path is process exit, which returns every allocation
+        the process owns. Release is the last thing ``main`` does.
         """
         if self._pointer is not None:
             self._report(self._lib.cuMemFree_v2(self._pointer), "cuMemFree")
@@ -215,8 +220,8 @@ class CudaBallast:
         if result == CUDA_SUCCESS:
             return
         print(
-            f"error: {call} failed with CUresult {result} — the card may "
-            "still hold the ballast",
+            f"error: {call} failed with CUresult {result} — process exit "
+            "reclaims the allocation",
             file=sys.stderr,
         )
 
@@ -261,8 +266,11 @@ def run_command(command: list[str]) -> int:
     Returns:
         The child's wait status as a shell reports it: its exit code,
         128 plus the signal number when a signal killed it, or 127 when
-        the command does not exist.
+        the command is empty or does not exist.
     """
+    if not command:
+        print("error: no command to run", file=sys.stderr)
+        return EXIT_COMMAND_NOT_FOUND
     child: subprocess.Popen[bytes] | None = None
     pending: int | None = None
 
