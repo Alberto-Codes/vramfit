@@ -293,10 +293,11 @@ def _reject_renamed_envelope_key(
     Args:
         obj: Top-level artifact object.
         path: JSON path of the artifact root.
-        readable: Every schema version this adapter reads, lowest
-            last-resort first. A document already at one of these
-            versions needs only the key rename, so the message must
-            not also tell the reader to bump.
+        readable: Every schema version this adapter reads, in any
+            order — membership decides the message and `sorted`
+            renders it. A document already at one of these versions
+            needs only the key rename, so the message must not also
+            tell the reader to bump.
 
     Raises:
         ArtifactError: If the object carries ``quantfit_schema``. That
