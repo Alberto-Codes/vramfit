@@ -184,38 +184,39 @@
 
     The read accepts both expert layouts. An indexed 2D parameter
     reads its own row by expert index, as #187 built. A fused 3D
-    parameter reads its whole entry as one stack. The read asserts
-    that the entry's count length equals the parameter's first
-    dimension, and it refuses a mismatch. The meter never constructs
-    indexed names for a fused parameter. Constructed names are how
-    #177's verification missed the fusion.
+    parameter reads its whole entry as one expert stack. The read
+    asserts that the entry's count length equals the parameter's
+    first dimension, and it refuses a mismatch. The meter never
+    constructs indexed names for a fused parameter. Constructed
+    names are how #177 missed the fusion.
 
-    No version pin decides the layout, so vramfit pins none. The
-    conversion registry decides it per model class.
+    A version pin alone decides no layout, so vramfit pins none. The
+    conversion mapping decides it per model class.
     `get_model_conversion_mapping` skips a custom-code model unless
-    the user registers it (`conversion_mapping.py:1924-1930`, version
+    the user registers it (`conversion_mapping.py:1925-1930`, version
     5.14.1), so such a model loads unfused under transformers 5.
     `save_pretrained` reverses the merge, so checkpoints stay
     indexed. Both layouts persist, and the shape assertion is the
-    vouching mechanism, not the floor.
+    vouching mechanism, not a version floor.
 
-    The read assumes stack order. transformers sorts checkpoint keys
-    numerically before `MergeModulelist` stacks them
+    The read assumes the expert stack's order. transformers sorts
+    checkpoint keys numerically before `MergeModulelist` stacks them
     (`core_model_loading.py`, `dot_natural_key`, version 5.14.1).
     `convert_hf_to_gguf.py` stacks experts by index
     (`conversion/nemotron.py:406-408`, checkout `e9fa078`). So slice
     `i`, imatrix row `i`, and checkpoint expert `i` name one expert.
     No runtime check detects a permutation, because all 128 slices
-    share one shape. #163's lane verifies one loaded slice against
-    its checkpoint tensor, tracked on #163.
+    share one shape. #163's lane compares one loaded slice against
+    its checkpoint expert tensor. A comment on #163 carries the
+    check.
 
-    Assisted weights refuse a fused stack by rule.
-    `resolve_assisted_weights` reports the fused name uncovered, and
-    the stacks stay unassisted until a non-k-quant assisted fit
-    exists. Today the super-block gate reaches the same outcome by
-    arithmetic, because expert rows are 2688 and 1856. The rule makes
-    the refusal deliberate. A future fused stack with 256-divisible
-    rows must not reach `_matrix_row`'s dense branch.
+    `resolve_assisted_weights` refuses a fused expert stack by rule.
+    It reports the fused name uncovered, and the stacks stay
+    unassisted until a non-k-quant assisted fit exists. Today the
+    unmapped name refuses first, and the super-block gate refuses
+    rows of 2688 and 1856 behind it. Neither refusal is the rule. A
+    fused expert stack with 256-divisible rows would otherwise reach
+    `_matrix_row` and fail with a wrong diagnosis.
 
     `group_key` keeps the `stack` rule's expert-index form. The rule
     is inert on a fused layout and still groups an unfused one. A
