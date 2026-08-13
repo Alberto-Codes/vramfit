@@ -174,6 +174,54 @@
     stack's counts. It blocks #200, which blocks #178. Decision 2
     stays Proposed.
 
+- **Amendment (2026-08-13, issue #202):** the scan reads a fused
+  expert stack's counts as one vector, keyed by the loaded parameter
+  name. Element `i` is expert `i`'s routing frequency. A dense name
+  keeps its scalar chunk tally. The return shape separates the two
+  quantities, which rules #193's resolver fork. #193 builds the
+  contract, and #179 reads it for decision 4. This amendment also
+  resolves the version fork the 2026-08-12 amendment left with #202.
+
+    The read accepts both expert layouts. An indexed 2D parameter
+    reads its own row by expert index, as #187 built. A fused 3D
+    parameter reads its whole entry as one stack. The read asserts
+    that the entry's count length equals the parameter's first
+    dimension, and it refuses a mismatch. The meter never constructs
+    indexed names for a fused parameter. Constructed names are how
+    #177's verification missed the fusion.
+
+    No version pin decides the layout, so vramfit pins none. The
+    conversion registry decides it per model class.
+    `get_model_conversion_mapping` skips a custom-code model unless
+    the user registers it (`conversion_mapping.py:1924-1930`, version
+    5.14.1), so such a model loads unfused under transformers 5.
+    `save_pretrained` reverses the merge, so checkpoints stay
+    indexed. Both layouts persist, and the shape assertion is the
+    vouching mechanism, not the floor.
+
+    The read assumes stack order. transformers sorts checkpoint keys
+    numerically before `MergeModulelist` stacks them
+    (`core_model_loading.py`, `dot_natural_key`, version 5.14.1).
+    `convert_hf_to_gguf.py` stacks experts by index
+    (`conversion/nemotron.py:406-408`, checkout `e9fa078`). So slice
+    `i`, imatrix row `i`, and checkpoint expert `i` name one expert.
+    No runtime check detects a permutation, because all 128 slices
+    share one shape. #163's lane verifies one loaded slice against
+    its checkpoint tensor, tracked on #163.
+
+    Assisted weights refuse a fused stack by rule.
+    `resolve_assisted_weights` reports the fused name uncovered, and
+    the stacks stay unassisted until a non-k-quant assisted fit
+    exists. Today the super-block gate reaches the same outcome by
+    arithmetic, because expert rows are 2688 and 1856. The rule makes
+    the refusal deliberate. A future fused stack with 256-divisible
+    rows must not reach `_matrix_row`'s dense branch.
+
+    `group_key` keeps the `stack` rule's expert-index form. The rule
+    is inert on a fused layout and still groups an unfused one. A
+    custom-code MoE model reports indexed names under transformers 5,
+    so the unfused case stays reachable.
+
 ## Context
 
 Issue #162 asked how the solver prices an expert that the imatrix
@@ -275,9 +323,10 @@ fit the packer does not ship. ADR-0021 recorded that failure.
   cell? The meter emits one damage number per group. Decision 2 needs
   a per-expert decomposition that does not exist. The chart ruled a
   full per-expert scan out of scope, so the mechanism must come from
-  somewhere cheaper. #200 carries the question and waits on #202.
-  Maintainer ruling (2026-08-12): **settle the read before ruling the
-  decomposition.** Decision 2 has no counts to weight with until then.
+  somewhere cheaper. #200 carries the question. Maintainer ruling
+  (2026-08-12): **settle the read before ruling the decomposition.**
+  The 2026-08-13 (#202) amendment settles the read, so #200 is open
+  to rule.
 - Does a split of a layer's experts into two expert stacks pay for
   itself? The 2026-08-12 measurement reports 1.73 times the routing
   mass at the same budget. It reports no damage number. #167 carries
@@ -311,8 +360,9 @@ fit the packer does not ship. ADR-0021 recorded that failure.
   read on 2026-08-12. `load_imatrix` reshapes a stack's sums per
   matrix, and `resolve_imatrix_counts` serves the counts against an
   indexed parameter name. **That read reaches no expert on this
-  model.** The 2026-08-12 (#202) amendment above measures it. The
-  clause waits on #202, then on #178 for its data point.
+  model.** The 2026-08-12 (#202) amendment above measures it, and the
+  2026-08-13 (#202) amendment rules the fused read. #193 builds it.
+  The clause then waits on #178 for its data point.
 - **ADR-0023 cannot reach inside a stack.** `--exclude-weights` matches
   by substring against imatrix entry names
   (`tools/quantize/quantize.cpp:274`), and a fused expert stack is one
