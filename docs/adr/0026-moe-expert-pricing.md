@@ -193,15 +193,17 @@
     A version pin alone decides no layout, so vramfit pins none. The
     conversion mapping decides it per model class.
     `get_model_conversion_mapping` skips a custom-code model unless
-    the user registers it (`conversion_mapping.py:1925-1930`, version
-    5.14.1), so such a model loads unfused under transformers 5.
+    the user registers it
+    (`transformers/conversion_mapping.py:1925-1930`, version 5.14.1),
+    so such a model loads unfused under transformers 5.
     `save_pretrained` reverses the merge, so checkpoints stay
     indexed. Both layouts persist, and the shape assertion is the
     vouching mechanism, not a version floor.
 
     The read assumes the expert stack's order. transformers sorts
     checkpoint keys numerically before `MergeModulelist` stacks them
-    (`core_model_loading.py`, `dot_natural_key`, version 5.14.1).
+    (`transformers/core_model_loading.py`, `dot_natural_key`,
+    version 5.14.1).
     `convert_hf_to_gguf.py` stacks experts by index
     (`conversion/nemotron.py:406-408`, checkout `e9fa078`). So slice
     `i`, imatrix row `i`, and checkpoint expert `i` name one expert.
