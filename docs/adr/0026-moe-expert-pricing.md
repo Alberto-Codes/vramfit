@@ -6,9 +6,9 @@
   stack's damage by routing frequency, and no packed data point tests
   it. ADR-0019 and ADR-0020 waited under the same bar and both lost
   packed. Decisions 1, 3, 4, and 5 are Accepted. Do not build
-  decision 2 against this record. The 2026-08-12 amendment fixes the
-  clause's reach: frequency ranks experts inside a layer, and never
-  one layer against another.
+  decision 2 against this record. The 2026-08-12 (#167) amendment
+  fixes the clause's reach: frequency ranks experts inside a layer,
+  and never one layer against another.
 - **Extends:** [ADR-0023](0023-imatrix-exclusions.md) decisions 1 and
   4. The amendment bullet lands there when this record is accepted.
 - **Note:** [ADR-0020](0020-imatrix-assisted-pricing.md) is superseded.
@@ -123,44 +123,55 @@
     target available. A private fork forfeits that property.
 
 - **Amendment (2026-08-12, issue #202):** decision 2 has no input on
-  this model. The consequence below claims #187 built the read the
-  clause needs. That read resolves against checkpoint parameter names.
-  transformers fuses this model's routed experts at load, so the loaded
-  module reports none of those names.
+  this model. The consequence below recorded #187's read as the input
+  the clause needs. That read resolves against checkpoint parameter
+  names. transformers fuses this model's routed experts at load, so
+  the loaded module reports none of those names.
 
-    `conversion_mapping.py:1266` applies `MergeModulelist(dim=0)` to
+    `transformers/conversion_mapping.py:1266-1283` (version 5.14.1)
+    applies `MergeModulelist(dim=0)` to
     `mixer.experts.*.up_proj.weight` and to the `down_proj` twin.
     `NemotronHExperts` declares both as 3D parameters. The checkpoint
-    holds 6,144 indexed expert tensors across 24 expert-bearing layers.
-    The loaded module holds 46 fused parameters, named
-    `model.layers.<n>.mixer.experts.up_proj` and the `down_proj` twin,
-    shaped (128, 1856, 2688) and (128, 2688, 1856).
+    holds 6,144 indexed expert tensors: 128 experts times 2
+    projections across the 23 MoE layers and the MTP block. The
+    causal-LM load drops the MTP block. The loaded module holds 46
+    fused parameters, named `model.layers.<n>.mixer.experts.up_proj`
+    and the `down_proj` twin, shaped (128, 1856, 2688) and
+    (128, 2688, 1856).
 
     Measured 2026-08-12 under transformers 5.14.1. The model
-    instantiated on the meta device from the published config, and
-    `origin/main` resolved the reported names. `gguf_tensor_name` maps
-    0 of the 46 routed-expert parameters. It maps 140 of 164 dense
-    parameters, so #186 holds. `resolve_imatrix_counts` reads a routing
-    frequency for no expert on this model.
+    instantiated on the meta device from the published model config,
+    and vramfit resolved the reported names at checkout `cea5c4d`.
+    `gguf_tensor_name` maps 0 of the 46 routed-expert parameters. It
+    maps 140 of 164 dense parameters, so #186's mapping holds.
+    `resolve_imatrix_counts` reads a routing frequency for no expert
+    on this model.
 
     `_EXPERT_INDEX` requires an `.experts.<n>.` segment. `_LAYER_PARAM`
     requires a `.weight` suffix. A fused parameter carries neither.
 
     #177 verified 128 names against the published imatrix. It resolved
-    names it constructed, not names the model reports. #163 has not run,
-    so no session had loaded this checkpoint.
+    names it constructed, not names the model reports. #163's lane has
+    not run, so no session has loaded this checkpoint.
 
     The same fusion makes `group_key`'s `stack` rule inert here.
     `group_key(name, "stack")` equals `group_key(name, "tensor")` for
-    every parameter, at 210 groups each. ADR-0001's amendment keys the
-    map on the pack-addressable stack, and the map still holds 46 expert
-    stacks on this model. transformers produces that, not the rule.
+    every parameter, at 210 groups each. ADR-0001's #161 amendment
+    keys the map on the pack-addressable stack, and the map still
+    holds 46 expert stacks on this model. transformers produces those
+    46 stacks, not the rule.
 
     `transformers>=4.56` is an open floor, so the expert layout depends
     on the resolved version. Nothing in vramfit pins it or asserts it.
+    #202 carries the version fork.
 
-    #202 rules how the scan reads a fused stack's counts. It blocks
-    #200, which blocks #178. Decision 2 stays Proposed.
+    Decision 4 stores a stack's count minimum, median, and maximum.
+    Those fields read the same counts, so they have no input on this
+    model either. #179 builds decision 4 and must read #202 first.
+
+    #202 carries the question of how the scan reads a fused expert
+    stack's counts. It blocks #200, which blocks #178. Decision 2
+    stays Proposed.
 
 ## Context
 
@@ -264,8 +275,8 @@ fit the packer does not ship. ADR-0021 recorded that failure.
   a per-expert decomposition that does not exist. The chart ruled a
   full per-expert scan out of scope, so the mechanism must come from
   somewhere cheaper. #200 carries the question and waits on #202.
-  Maintainer ruling (2026-08-12): settle the read before ruling the
-  decomposition. Decision 2 has no counts to weight with until then.
+  Maintainer ruling (2026-08-12): **settle the read before ruling the
+  decomposition.** Decision 2 has no counts to weight with until then.
 - Does a split of a layer's experts into two expert stacks pay for
   itself? The 2026-08-12 measurement reports 1.73 times the routing
   mass at the same budget. It reports no damage number. #167 carries
@@ -299,8 +310,8 @@ fit the packer does not ship. ADR-0021 recorded that failure.
   read on 2026-08-12. `load_imatrix` reshapes a stack's sums per
   matrix, and `resolve_imatrix_counts` serves the counts against an
   indexed parameter name. **That read reaches no expert on this
-  model.** The 2026-08-12 amendment above measures it. The clause waits
-  on #202, then on #178 for its data point.
+  model.** The 2026-08-12 (#202) amendment above measures it. The
+  clause waits on #202, then on #178 for its data point.
 - **ADR-0023 cannot reach inside a stack.** `--exclude-weights` matches
   by substring against imatrix entry names
   (`tools/quantize/quantize.cpp:274`), and a fused expert stack is one
