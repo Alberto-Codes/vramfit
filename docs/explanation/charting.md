@@ -93,6 +93,35 @@ A `chart:task` ticket has no decision to record. It closes with what
 was done and the facts later tickets depend on, and its line in
 Decisions so far records those facts.
 
+That is a boundary on the work, not only on the closing comment. A
+task ticket builds what a record already authorizes. It does not
+introduce a port, an artifact schema field the authorizing clause
+does not name, a refusal in a case a record already answers, or text
+into an Accepted ADR beyond an observed consequence. Each of those is
+a decision. The list names the cases seen so far and is not closed.
+
+The refusal case needs its own test, because refusing bad input is
+ordinary engineering. Refusing a malformed file no record addresses
+is a bug fix. Refusing a case a record already assigns a behavior to
+is a decision. #187 refused a negative imatrix count, which no record
+mentions, and that was right. #195 refused a file holding no counts,
+where ADR-0026 decision 5 says the pack path reports. That was a
+decision taken inside a task ticket.
+
+The ticket's own wording is not authority. A ticket is written before
+the work and can name a mechanism that turns out to be impossible, or
+use a word the ADRs reserve. When the two disagree, build to the
+record and raise the conflict on the ticket. #177 and #186 both
+refused a ticket's "contract suite" wording, because the `contract`
+marker belongs to a verified fake over a port and neither change added
+one. Reshaping the codebase until the ticket's wording fits is the
+failure that rule prevents — #179 added a port so the word would
+apply, and PR #195 did not merge.
+
+When the build needs a decision, stop and open a `chart:discuss`
+ticket for it. A blocked task is a cheaper outcome than a merged
+decision nobody took.
+
 Blocking uses GitHub's native issue dependencies, and children are
 native sub-issues of the chart. The **claimable set** is the open,
 unblocked, unassigned tickets.
