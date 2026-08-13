@@ -139,9 +139,10 @@
     and the `down_proj` twin, shaped (128, 1856, 2688) and
     (128, 2688, 1856).
 
-    Measured 2026-08-12 under transformers 5.14.1. The model
-    instantiated on the meta device from the published model config,
-    and vramfit resolved the reported names at checkout `cea5c4d`.
+    Measured 2026-08-12 under transformers 5.14.1. The measurement
+    instantiated the model on the meta device from the published
+    model config. vramfit resolved the reported names at checkout
+    `cea5c4d`.
     `gguf_tensor_name` maps 0 of the 46 routed-expert parameters. It
     maps 140 of 164 dense parameters, so #186's mapping holds.
     `resolve_imatrix_counts` reads a routing frequency for no expert

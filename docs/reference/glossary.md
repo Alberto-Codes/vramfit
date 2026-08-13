@@ -316,8 +316,8 @@ change.
 :   One tensor's statistics inside an importance matrix, holding one
     row per matrix. A dense tensor holds one row. An **expert stack**
     holds one row per expert. The HF checkpoint spells those experts
-    as separate parameters (#177), and transformers fuses them into
-    one 3D parameter at load (#202). An entry carries the
+    as separate parameters (#177). At load, transformers fuses them
+    into one 3D parameter (#202). An entry carries the
     column weights and the **imatrix count** together. Not "imatrix
     row", which names one row inside an entry.
 
