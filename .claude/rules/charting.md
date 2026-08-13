@@ -25,6 +25,24 @@ and do not silently deviate.
   done and the facts later tickets depend on. A `chart:research`
   ticket closes with its findings comment: gist, key facts, and
   primary-source links.
+- A `chart:task` never introduces a port. It never adds an
+  artifact schema field the authorizing clause does not name. It
+  never writes into an Accepted ADR beyond an observed
+  consequence. Each is a decision. Open a `chart:discuss` instead.
+- Refusing a malformed input no record addresses is a bug fix.
+  Refusing a case a record already answers is a decision. #187
+  refused a negative count, and that was right. #195 refused a
+  file ADR-0026 says to report on, and that was wrong.
+- Check precedent before adding a port or any comparable seam. Run
+  `git log --follow -S'<symbol>' -- <path>`. Without `--follow` the
+  history stops at the 2026-08 rename. Then read what kind of
+  change introduced the last one. No `chart:task` has added a port.
+- The ticket's wording is not authority. Build to the record when
+  the two disagree. Raise the conflict on the ticket. Never
+  reshape the code until the wording fits.
+- Read the open tickets before building. Another may already own
+  part of the scope. #179 pre-empted #191's echo policy and
+  overlapped #194's coverage record.
 - Add a one-line gist plus both links to the chart's
   `## Decisions so far`.
 - Claim before work: self-assign the ticket as the session's first

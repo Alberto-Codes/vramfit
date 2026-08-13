@@ -62,11 +62,31 @@ Judgment, not query. Weigh:
 Every prompt carries:
 
 - The chart, the ticket to claim, and the one-decision boundary.
+- The authorizing clause, quoted, with its ADR and decision
+  number. A `chart:task` builds what that clause says and nothing
+  more, so the session needs the words rather than a paraphrase.
 - Pointers to research or evidence already on the ticket.
 - Traps the ticket body cannot know: disk headroom, GPU
   serialization, instrument paths, parallel-session hazards.
+- Open tickets touching the same surface, by number. A session
+  that does not know a neighbor owns part of the scope builds
+  into it.
 - For discuss tickets: the expected record form (ADR, amendment,
   dated docs note), so the session budgets a PR.
+
+Mark every mechanism as a hint, never a requirement. A prompt is
+written before the work and can name an approach that turns out to
+be impossible. Write "the counts read through `X` today", not
+"read the counts through `X`". A session that finds the hint wrong
+raises it on the ticket. It does not reshape the code until the
+wording fits, and it does not widen an Accepted clause to make the
+build land. #179 did both, and PR #195 did not merge.
+
+A prompt authorizes nothing. Only a record does. Some work plainly
+needs a decision first — a port, or an artifact schema field the
+authorizing clause does not name. That ticket is not claimable. Say
+so on the board and name the missing decision instead of emitting a
+prompt.
 
 Report the ranked board first, then the prompts. When the
 conversation shows an earlier triage, state what changed since.
