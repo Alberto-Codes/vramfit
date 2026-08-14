@@ -352,7 +352,7 @@
 
 - **Amendment (2026-08-13, issue #198):** the pack path reads its
   counts through a new outbound port. `ImatrixCountSource` joins
-  `ports/outbound.py`, and a gguf-py reader beside the packer
+  `src/vramfit/ports/outbound.py`, and a gguf-py reader beside the packer
   implements it. The reader opens the recipe's imatrix file and
   reads only the `.counts` tensors, about 24 KB on the published
   matrix. This clause authorizes the port, and #179 builds it. A
@@ -377,7 +377,7 @@
     carries it through the scan extra.
 
     The reader refuses a file it cannot vouch for, as `PackError`.
-    The refused cases, a closed list:
+    The refused cases form a closed list:
 
     - The file is not a GGUF, or its `general.type` is not
       `imatrix`.
@@ -390,8 +390,9 @@
       otherwise.
 
     An empty report is what a healthy matrix returns, so a silent
-    read failure and a clean bill of health look alike. Refusal
-    separates them. The C loader shares part of the posture. It
+    read failure and a clean bill of health look alike. The reader
+    separates them by refusing. The C loader shares part of the
+    posture. It
     errors on a mismatched `in_sum2`/`counts` pair
     (`common/imatrix-loader.cpp:140`, checkout `e9fa078`). Two
     refusals are stricter than that loader. It skips a suffix it
