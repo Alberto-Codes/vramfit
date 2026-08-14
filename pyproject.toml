@@ -322,6 +322,13 @@ ignore_imports = [
 # Dev dependencies
 # --------------------------------------------------------------------------- #
 [dependency-groups]
+# CI installs this group to run the gguf-py contract suites (#197).
+# It carries gguf-py and numpy without torch, so the job stays small.
+# Dependency groups never reach the published package metadata.
+gguf = [
+    "gguf>=0.10",
+    "numpy>=1.26",
+]
 dev = [
     "docvet>=1.15",
     "hypothesis>=6.100",
