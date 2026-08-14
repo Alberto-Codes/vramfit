@@ -8,7 +8,9 @@
   packed. Decisions 1, 3, 4, and 5 are Accepted. Do not build
   decision 2 against this record. The 2026-08-12 (#167) amendment
   fixes the clause's reach: frequency ranks experts inside a layer,
-  and never one layer against another.
+  and never one layer against another. The 2026-08-13 (#200)
+  amendment rules the decomposition mechanism and the demotion
+  trigger a probe refutation fires.
 - **Extends:** [ADR-0023](0023-imatrix-exclusions.md) decisions 1 and
   4. The amendment bullet lands there when this record is accepted.
 - **Note:** [ADR-0020](0020-imatrix-assisted-pricing.md) is superseded.
@@ -225,6 +227,63 @@
     custom-code MoE model reports indexed names under transformers 5,
     so the unfused case stays reachable.
 
+- **Amendment (2026-08-13, issue #200):** the meter attributes damage
+  inside a stack cell by slice perturbation. A per-expert cell is a
+  slice of the fused parameter on dim 0, not a name.
+  `NemotronHExperts.forward` reads `self.up_proj[expert_idx]`, so the
+  meter quantizes a slice in place, keeps every other weight at
+  reference precision, and measures damage as usual. Slice cells
+  serve two roles. A single-expert slice ranks. A band slice weights.
+  A modeled per-expert term meets no bar — ADR-0019 and ADR-0020
+  built on modeled priors and both lost packed.
+
+    The probe ranks first. A stratified sample quantizes one expert
+    at a time across each layer's count range and reports the
+    count-to-damage relation. A sample of 8 experts per layer across
+    all 23 MoE layers costs 184 cells at one precision. A first pass
+    over the most and least skewed layers costs 48 cells. The full
+    per-expert scan stays out of scope at 2,944 cells per precision.
+    One-expert-at-a-time measurement is MODE's published method
+    (arXiv 2606.17118). Maintainer ruling (2026-08-13): **if the
+    probe refutes the count-to-damage ranking on this model,
+    decision 2 demotes and the chart proceeds unweighted.** No
+    probe-derived ordering replaces frequency.
+
+    The band term weights second, when the ranking holds. The meter
+    measures each stack's two contiguous frequency bands as two
+    slice cells. The 2026-08-12 (#167) amendment measured that two
+    widths cost at most 1.1 % of the achievable damage cut, so two
+    bands match what a split pack realizes. 23 layers times 2
+    projections times 2 bands costs 92 cells per precision, the same
+    order as the 52-cell layer scan. The weighted stack price sums
+    the measured band terms. One width per sensitivity cluster is
+    MoPEQ's published method (arXiv 2509.02512).
+
+    Slice cells rank and weight in the scan frame. They never price.
+    A part quantized alone against a full-precision remainder
+    overstates its joint damage by 71 % to 376 %, through a monotone
+    transform (arXiv 2607.12266). Ordering survives that transform
+    and absolute damage does not. #178's packed run through the
+    runtime frame (ADR-0021 decision 2) stays the pricing authority.
+
+    The probe exists because the published results split on this
+    model's case. MODE, GEMQ, MoPEQ, and a causal audit
+    (arXiv 2606.10703) each report that frequency misranks expert
+    sensitivity. QuantMoE-Bench (arXiv 2406.08155) reports frequency
+    ranks better on unbalanced routing than on balanced routing.
+    This model routes unbalanced, at a 193x count spread inside
+    `blk.20`. The probe measures instead of trusting either result.
+
+    The slice path changes the meter's perturbation step only. It
+    adds no granularity token, no converter, no recipe schema field,
+    and no split. The map may record a slice cell as provenance.
+    Such a record names the layer, the projection, the expert index
+    range, and the precision, and carries the measured damage. The
+    fields are additive and optional, mirroring decision 4. The
+    probe's own record is its ticket's closing data point. #210
+    builds the slice path and runs the probe through the rented-GPU
+    lane, behind #163.
+
 ## Context
 
 Issue #162 asked how the solver prices an expert that the imatrix
@@ -329,7 +388,9 @@ fit the packer does not ship. ADR-0021 recorded that failure.
   somewhere cheaper. #200 carries the question. Maintainer ruling
   (2026-08-12): **settle the read before ruling the decomposition.**
   The 2026-08-13 (#202) amendment settles the read, so #200 is open
-  to rule.
+  to rule. The 2026-08-13 (#200) amendment rules the mechanism:
+  slice perturbation, with a ranking probe and a measured band term.
+  #210 builds and runs the probe.
 - Does a split of a layer's experts into two expert stacks pay for
   itself? The 2026-08-12 measurement reports 1.73 times the routing
   mass at the same budget. It reports no damage number. #167 carries
@@ -339,8 +400,9 @@ fit the packer does not ship. ADR-0021 recorded that failure.
   `ggml_mul_mat_id`'s row count. No run measures it. #167 carries the
   item.
 - Does per-expert damage vary apart from routing frequency? Decision 2
-  assumes the two move together. A third expert stack pays only when
-  they separate. #167 carries the test.
+  assumes the two move together. The #210 probe tests the assumption
+  before #178 packs, and a refutation demotes decision 2. A third
+  expert stack pays only when they separate, which #167 carries.
 - What count floor makes a statistic worthless? The measurement bounds
   the question from one side only. It shows 426 samples is the
   thinnest this model and corpus produce. It does not show 426 is
@@ -366,6 +428,9 @@ fit the packer does not ship. ADR-0021 recorded that failure.
   model.** The 2026-08-12 (#202) amendment above measures it, and the
   2026-08-13 (#202) amendment rules the fused read. #193 builds it.
   The clause then waits on #178 for its data point.
+- The 2026-08-13 (#200) amendment adds a slice perturbation path to
+  the meter. #210 builds it and runs the probe. #178 consumes the
+  band term when the ranking holds.
 - **ADR-0023 cannot reach inside a stack.** `--exclude-weights` matches
   by substring against imatrix entry names
   (`tools/quantize/quantize.cpp:274`), and a fused expert stack is one
