@@ -798,8 +798,9 @@ class TestZeroCountExpertReport:
         )
 
         assert result.exit_code == 0, result.output
-        assert "zero samples" in result.output
-        assert f"{self.STACK} expert 1" in result.output
+        assert "zero samples for 1 experts" in result.output
+        assert "the run log names each stack-expert pair" in result.output
+        assert f"{self.STACK} expert 1" not in result.output
         log = read_run_log(out.with_name(out.stem + ".runlog.jsonl"))
         packed = next(line for line in log if line["event"] == "model_packed")
         assert packed["imatrix_zero_count_experts"] == [[self.STACK, 1]]
@@ -1153,7 +1154,9 @@ class TestSmokeWiring:
         )
 
         assert result.exit_code == 0, result.output
-        assert "did not cover" in result.output
+        assert "did not cover 1 tensors" in result.output
+        assert "the run log names them" in result.output
+        assert "token_embd.weight" not in result.output
         log = read_run_log(out.with_name(out.stem + ".runlog.jsonl"))
         packed = next(line for line in log if line["event"] == "model_packed")
         assert packed["imatrix_uncovered"] == ["token_embd.weight"]

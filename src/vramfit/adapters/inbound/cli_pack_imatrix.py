@@ -124,6 +124,13 @@ def _warn_imatrix_provenance(recipe: Recipe, imatrix: Path | None) -> None:
 def _report_imatrix_effects(result: PackResult) -> None:
     """Echo what the imatrix did and did not reach.
 
+    The coverage lines state counts only (#191's shape): a joined
+    list buries the split it reports — on the MoE target the
+    zero-count report draws from 2,944 cells. The ``model_packed``
+    run-log event names every uncovered tensor and every zero-count
+    pair. The exclusions line keeps its names: the operator chose
+    that set, and it is small by design (ADR-0023).
+
     Args:
         result: The pack step's accounting record.
     """
@@ -134,20 +141,18 @@ def _report_imatrix_effects(result: PackResult) -> None:
             "quantized with the unweighted fit (ADR-0023)"
         )
     if result.imatrix_uncovered:
-        names = ", ".join(result.imatrix_uncovered)
         typer.echo(
-            f"warning: the importance matrix did not cover: {names} — "
-            "these tensors quantized unassisted (token_embd is expected)",
+            "warning: the importance matrix did not cover "
+            f"{len(result.imatrix_uncovered)} tensors — they quantized "
+            "unassisted, and the run log names them (token_embd is "
+            "expected)",
             err=True,
         )
     if result.imatrix_zero_count_experts:
-        pairs = ", ".join(
-            f"{stack} expert {expert}"
-            for stack, expert in result.imatrix_zero_count_experts
-        )
         typer.echo(
-            f"warning: the importance matrix counts zero samples for: "
-            f"{pairs} — the quantizer fits these experts unassisted "
-            "(ADR-0026)",
+            "warning: the importance matrix counts zero samples for "
+            f"{len(result.imatrix_zero_count_experts)} experts — the "
+            "quantizer fits them unassisted, and the run log names "
+            "each stack-expert pair (ADR-0026)",
             err=True,
         )
