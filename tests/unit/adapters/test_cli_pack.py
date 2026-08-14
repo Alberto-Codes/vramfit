@@ -790,7 +790,8 @@ class TestZeroCountExpertReport:
             monkeypatch,
             MemoryRecipePacker(packed_bytes=100, imatrix=str(imatrix)),
         )
-        count_source.stack_counts = {self.STACK: (3, 0)}
+        down_stack = "blk.1.ffn_down_exps.weight"
+        count_source.stack_counts = {self.STACK: (3, 0), down_stack: (0, 5)}
         out = tmp_path / "packed.gguf"
 
         result = self._invoke(
@@ -798,11 +799,16 @@ class TestZeroCountExpertReport:
         )
 
         assert result.exit_code == 0, result.output
-        assert "zero samples" in result.output
-        assert f"{self.STACK} expert 1" in result.output
+        assert "zero samples for 2 stack-expert pairs" in result.output
+        assert "the run log names each pair" in result.output
+        assert self.STACK not in result.output
+        assert down_stack not in result.output
         log = read_run_log(out.with_name(out.stem + ".runlog.jsonl"))
         packed = next(line for line in log if line["event"] == "model_packed")
-        assert packed["imatrix_zero_count_experts"] == [[self.STACK, 1]]
+        assert packed["imatrix_zero_count_experts"] == [
+            [self.STACK, 1],
+            [down_stack, 0],
+        ]
 
     def test_healthy_matrix_reports_nothing(
         self, tmp_path, monkeypatch, llama_cpp_dir, recipe_path, count_source
@@ -1133,7 +1139,7 @@ class TestSmokeWiring:
             MemoryRecipePacker(
                 packed_bytes=100,
                 imatrix=str(imatrix_path),
-                imatrix_uncovered=("token_embd.weight",),
+                imatrix_uncovered=("token_embd.weight", "blk.0.attn_v.weight"),
             ),
         )
         out = tmp_path / "packed.gguf"
@@ -1153,7 +1159,13 @@ class TestSmokeWiring:
         )
 
         assert result.exit_code == 0, result.output
-        assert "did not cover" in result.output
+        assert "did not cover 2 tensors" in result.output
+        assert "the run log names them" in result.output
+        assert "token_embd.weight" not in result.output
+        assert "blk.0.attn_v.weight" not in result.output
         log = read_run_log(out.with_name(out.stem + ".runlog.jsonl"))
         packed = next(line for line in log if line["event"] == "model_packed")
-        assert packed["imatrix_uncovered"] == ["token_embd.weight"]
+        assert packed["imatrix_uncovered"] == [
+            "token_embd.weight",
+            "blk.0.attn_v.weight",
+        ]
