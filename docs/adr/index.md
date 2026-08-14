@@ -62,7 +62,7 @@ ADR that supersedes the old one.
 | [0023](0023-imatrix-exclusions.md) | Imatrix exclusions carry the fit-collapse remedy in the recipe | Accepted, amended by 0026 |
 | [0024](0024-tier3-task-slice.md) | Tier 3 runs a fixed five-task slice at leaderboard settings | Accepted |
 | [0025](0025-evals-sidecar.md) | Evaluation results ship as a versioned evals sidecar | Accepted |
-| [0026](0026-moe-expert-pricing.md) | Expert pricing trusts any nonzero imatrix count | Accepted, except decision 2 |
+| [0026](0026-moe-expert-pricing.md) | Expert pricing trusts any nonzero imatrix count | Accepted, except decision 2 (demoted 2026-08-14) |
 | [0027](0027-instrument-frame-matching.md) | Damage numbers compare only within one instrument | Accepted |
 
 ## Template
