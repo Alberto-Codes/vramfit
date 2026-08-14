@@ -77,6 +77,12 @@ arithmetic.
 - Where the lane runs: the reference box, or a rented H100 NVL /
   H200 (~$10–30 per loop, issue #40). The instrument check decides
   whether rented numbers compare with box numbers at all.
+  **Resolved (2026-08-14, #163 and #220): they do not.** The
+  instruments disagree 0.3–10.6 % per cell with zero
+  same-instrument noise, and ordering survives.
+  [ADR-0027](0027-instrument-frame-matching.md) states the
+  frame-match rule, the ordering bar for rented maps, and the
+  per-instrument noise floor.
 - Whether `plan` grows a precision-exclusion flag, or map copies
   with the excluded column removed stay the mechanism for
   decision 4.
