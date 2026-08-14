@@ -37,6 +37,9 @@ status: draft
     in-frame damage 2.0–3.9× (1.05–1.7× at 3-bit) against the
     K-quant fit the pack
     ships ([ADR-0019](../adr/0019-kquant-priced-maps.md)).
+    [ADR-0021](../adr/0021-runtime-frame-measurement.md) supersedes
+    that record. The measurement stands, and the pricing claim does
+    not.
     RTN as a serving format and RTN as a pricing frame are
     different claims.
 

@@ -23,7 +23,7 @@
   chart proceeds unweighted. The band term never runs. Record:
   [#210 closing comment](https://github.com/Alberto-Codes/vramfit/issues/210#issuecomment-5297980661).
 - **Extends:** [ADR-0023](0023-imatrix-exclusions.md) decisions 1 and
-  4. The amendment bullet lands there when this record is accepted.
+  4. The amendment landed there on 2026-08-11 (#162).
 - **Note:** [ADR-0020](0020-imatrix-assisted-pricing.md) is superseded.
   This record does not amend it. ADR-0021 decision 1 keeps ADR-0020's
   port in the codebase, and decision 3 below cites it on that basis.

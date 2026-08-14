@@ -87,7 +87,7 @@ below remain, the sub-4-bit pricing claims do not.
   dropped either record would silently pack a
   different artifact than the recipe intends — ADR-0013 ruled that
   case breaking. Schema versions advance per artifact — the
-  sensitivity map sits at 2.
+  sensitivity map sits at 3.
 - **`runtime`** — the target runtime the plan was made for, or null for
   an unconstrained plan. `vramfit plan` always sets it. The solver
   filtered its candidates to this runtime's capability, and pack

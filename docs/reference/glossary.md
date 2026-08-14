@@ -59,6 +59,14 @@ change.
     stack (see **Fit collapse**) and the serving stack (see **Target
     runtime**). Not "expert group" or "fused experts".
 
+> **Ruled 2026-08-14 (#212).** "Stack cell" is the allowed cell
+> form — see **Stack cell**. The full compound "expert-stack cell"
+> stacks three nouns, so the cell form drops the first word. The
+> carve-out covers this compound only, and the bare word "stack"
+> stays reserved. ADR-0026's 2026-08-13 (#200) amendment writes
+> the form and conforms. ADR-0026 decision 2 (demoted 2026-08-14)
+> prices a stack as one cell and never writes the compound.
+
 **Routing mass**
 :   The share of a layer's imatrix counts held by the experts a recipe
     assigns one precision. It measures what a bit budget reaches, not
@@ -66,6 +74,14 @@ change.
     budget that puts 18.5 % of expert parameters at the wider type
     reaches 18.5 % of routing mass without a split, and 31.9 % with
     one (#167). Not "routing share" or "expert mass".
+
+**Stack cell**
+:   A measurement cell whose group is one expert stack, as the
+    `stack` value of `--group-by` produces (#161). The 2026-08-13
+    (#200) amendment of ADR-0026 attributes damage inside one by
+    slice perturbation. The #212 ruling under **Expert stack**
+    allows the compound. A **slice cell** measures a dim-0 slice
+    of the stack instead. Not "expert-stack cell" or "fused cell".
 
 **Slice cell**
 :   A measurement cell over a dim-0 slice of a fused expert stack.
@@ -122,7 +138,9 @@ change.
     ([ADR-0018](../adr/0018-kquant-within-group-method.md)).
     `kquant-imx` is the same port with assisted pricing — the map
     then also records the imatrix path in `scan.imatrix`
-    ([ADR-0020](../adr/0020-imatrix-assisted-pricing.md)). A method
+    ([ADR-0020](../adr/0020-imatrix-assisted-pricing.md)).
+    [ADR-0021](../adr/0021-runtime-frame-measurement.md) supersedes
+    ADR-0020, and the method stays a valid scan option. A method
     change is a new scan — the token lives in the fingerprint and in
     the map's `scan.within_group`, and the recipe carries its map's
     token for the validation pass. Not "quantization mode" or
@@ -132,6 +150,8 @@ change.
 :   Measuring a kquant cell with the pack's imatrix weighting the
     within-group fit, through the ported `_impl` quantizers
     ([ADR-0020](../adr/0020-imatrix-assisted-pricing.md)).
+    [ADR-0021](../adr/0021-runtime-frame-measurement.md) supersedes
+    ADR-0020, and the method stays a valid scan option.
     **Unassisted** names the reference-path fit without weights.
     A tensor the imatrix does not cover always prices unassisted —
     the same fallback `llama-quantize` applies. Not "imatrix mode"
@@ -182,6 +202,28 @@ change.
     sub-4-bit losses: every scan-frame refinement improved in-frame
     prices and worsened the packed artifact
     ([ADR-0021](../adr/0021-runtime-frame-measurement.md)).
+
+**Runtime-frame lane**
+:   The measurement path that prices damage in the runtime frame.
+    The lane quantizes the candidate group to its real packed type
+    inside a real GGUF. It measures damage under the runtime's own
+    numerics ([ADR-0021](../adr/0021-runtime-frame-measurement.md)
+    decision 2, #40). The solver buys no 2-bit until this lane
+    reports a price (ADR-0021 decision 4). It names what a
+    measurement runs through, not where it runs. Always write the
+    term in full (the #213 ruling, under **Harness lane**). Not
+    "packed lane" or "GGUF lane".
+
+**Rented-GPU lane**
+:   The measurement path on a rented card that holds the checkpoint
+    resident, so scan, validate, imatrix, and evals run without
+    offload (#40). #163 proved it on the 30B checkpoint. Its damage
+    magnitudes never cross instruments, and an ordering crosses
+    only after the map passes ADR-0027 decision 4's ordering bar.
+    It names where a measurement runs, not what it runs through.
+    Always write the term in full (the #213 ruling, under
+    **Harness lane**). Not "rented measurement lane" or "cloud
+    lane".
 
 **Group spec**
 :   A discovered layer group before measurement: name, member tensors,
@@ -424,13 +466,19 @@ change.
     so cards compare across candidates and time. Not "benchmark suite"
     or "eval suite".
 
-**Harness lane** (short: **lane**)
+**Harness lane**
 :   The recorded software path that drives a packed model through the
     tier-3 slice: the harness, the binding, and the llama.cpp build
     acting as one instrument
     ([ADR-0024](../adr/0024-tier3-task-slice.md)). The evals sidecar
-    records it in its toolchain block. Not "backend" (the harness's
-    own term for one piece of the path).
+    records it in its toolchain block, under the field name `lane`.
+    Not "backend" (the harness's own term for one piece of the path).
+
+> **Ruled 2026-08-14 (#213).** The bare short form "lane" is
+> struck. It named this lane and the rented-GPU lane, and ADR-0028
+> writes the runtime-frame lane beside them. Each compound writes
+> in full from here on. Records written before this ruling keep
+> the short form, and the sidecar's `lane` field name stays.
 
 ## Architecture
 
