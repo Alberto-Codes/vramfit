@@ -107,6 +107,44 @@ class TestGgufTensorName:
         assert names == {"blk.3.ffn_up_exps.weight"}
 
     @pytest.mark.parametrize(
+        ("param", "expected"),
+        [
+            (
+                "model.layers.3.mixer.experts.up_proj",
+                "blk.3.ffn_up_exps.weight",
+            ),
+            (
+                "backbone.layers.20.mixer.experts.down_proj",
+                "blk.20.ffn_down_exps.weight",
+            ),
+        ],
+    )
+    def test_a_fused_expert_stack_maps_to_the_same_gguf_name(
+        self, param: str, expected: str
+    ) -> None:
+        # transformers 5 fuses the routed experts at load (#202).
+        # The loaded module reports one 3D parameter per projection,
+        # with no ".weight" suffix and no expert index. #202 measured
+        # the model root. The backbone root joins because #186 pairs
+        # both roots for this family's dense names.
+        assert gguf_tensor_name(param) == expected
+
+    @pytest.mark.parametrize(
+        "param",
+        [
+            # Nemotron 3.5 Lightning's experts are ungated (#160). A
+            # fused gate stays out until a loaded model reports one.
+            "model.layers.3.mixer.experts.gate_proj",
+            # No loaded model reports a fused llama-family spelling.
+            "model.layers.3.mlp.experts.up_proj",
+            # A fused parameter carries no ".weight" suffix (#202).
+            "model.layers.3.mixer.experts.up_proj.weight",
+        ],
+    )
+    def test_an_unproved_fused_spelling_returns_none(self, param: str) -> None:
+        assert gguf_tensor_name(param) is None
+
+    @pytest.mark.parametrize(
         "param",
         [
             "model.norm.weight",
@@ -550,16 +588,18 @@ class TestNemotronHDenseCoverage:
         # count is the calibration chunk tally for the router matmul.
         # It is not a routing frequency: the glossary defines that for
         # a routed expert, and ADR-0026 decisions 4 and 5 read only
-        # expert-stack rows. A caller that took min/median/max over a
-        # layer's counts would fold this number into the distribution
-        # as a phantom expert. #193 carries the guard.
+        # expert-stack rows. The return shape carries the difference —
+        # a dense name reads a scalar, never a vector (#193).
         path, _ = _write_dense_imatrix(tmp_path / "im.gguf", layers=1)
         router = "backbone.layers.0.mixer.gate.weight"
         expert = "backbone.layers.0.mixer.experts.0.up_proj.weight"
 
-        counts, uncovered = resolve_imatrix_counts(load_imatrix(path), [router, expert])
+        counts, uncovered = resolve_imatrix_counts(
+            load_imatrix(path), {router: (128, HIDDEN), expert: (1856, HIDDEN)}
+        )
 
         assert counts == {router: 2}
+        assert isinstance(counts[router], int)
         assert uncovered == (expert,)
 
 
@@ -656,6 +696,29 @@ class TestExpertStackResolution:
                 {"backbone.layers.3.mixer.experts.0.up_proj.weight": 256},
             )
 
+    def test_two_parameters_claiming_one_row_are_refused(self, tmp_path) -> None:
+        # _SUFFIX_TO_GGUF carries two suffixes per attention stem,
+        # and no checkpoint spells both (#186). If one ever does,
+        # both parameters would read row 0 and one would price
+        # against the wrong columns. The resolver now refuses the
+        # second claimant (#193).
+        path = _write_imatrix(
+            tmp_path / "im.gguf",
+            {
+                "blk.5.attn_q.weight.in_sum2": np.ones(256, dtype=np.float32),
+                "blk.5.attn_q.weight.counts": np.array([1.0]),
+            },
+        )
+
+        with pytest.raises(ValueError, match="both claim"):
+            resolve_assisted_weights(
+                load_imatrix(path),
+                {
+                    "model.layers.5.self_attn.q_proj.weight": 256,
+                    "backbone.layers.5.mixer.q_proj.weight": 256,
+                },
+            )
+
     def test_zero_coverage_names_each_cause(self, tmp_path) -> None:
         # Naming the file alone sends an operator to regenerate a
         # correct matrix, which costs GPU hours and fails the same
@@ -671,6 +734,7 @@ class TestExpertStackResolution:
             "model.norm.weight": 256,
             "model.layers.9.mlp.up_proj.weight": 256,
             "model.layers.0.self_attn.q_proj.weight": 96,
+            "model.layers.0.mixer.experts.up_proj": 2688,
         }
 
         with pytest.raises(ValueError) as caught:
@@ -678,8 +742,38 @@ class TestExpertStackResolution:
 
         message = str(caught.value)
         assert "1 names have no GGUF mapping" in message
+        assert "1 are fused expert stacks" in message
         assert "1 mapped to a tensor the file does not hold" in message
         assert "1 have rows that do not divide" in message
+
+
+class TestFusedExpertStackResolution:
+    def test_a_fused_expert_stack_reports_uncovered_by_rule(self, tmp_path) -> None:
+        # ADR-0026 (2026-08-13): the stacks stay unassisted until a
+        # non-k-quant assisted fit exists. Rows of 256 would pass the
+        # super-block gate and reach _matrix_row, which would refuse
+        # with a wrong diagnosis. The rule refuses first.
+        path = _write_imatrix(
+            tmp_path / "im.gguf",
+            {
+                "blk.3.ffn_up_exps.weight.in_sum2": np.ones(
+                    (EXPERTS, 256), dtype=np.float32
+                ),
+                "blk.3.ffn_up_exps.weight.counts": np.ones(
+                    (1, EXPERTS), dtype=np.float32
+                ),
+                "output.weight.in_sum2": np.ones(256, dtype=np.float32),
+                "output.weight.counts": np.array([1.0]),
+            },
+        )
+        fused = "model.layers.3.mixer.experts.up_proj"
+
+        covered, uncovered = resolve_assisted_weights(
+            load_imatrix(path), {fused: 256, "lm_head.weight": 256}
+        )
+
+        assert uncovered == (fused,)
+        assert set(covered) == {"lm_head.weight"}
 
 
 class TestResolveImatrixCounts:
@@ -687,7 +781,9 @@ class TestResolveImatrixCounts:
         path = _write_stack(tmp_path / "im.gguf", columns=256)
         params = _stack_params(3, "up_proj")
 
-        counts, _ = resolve_imatrix_counts(load_imatrix(path), params)
+        counts, _ = resolve_imatrix_counts(
+            load_imatrix(path), dict.fromkeys(params, (8, 256))
+        )
 
         assert [counts[name] for name in params] == list(range(1, EXPERTS + 1))
 
@@ -711,7 +807,10 @@ class TestResolveImatrixCounts:
         params = _stack_params(3, "up_proj", experts=4)
         entries = load_imatrix(path)
 
-        counts, _ = resolve_imatrix_counts(entries, [*params, "lm_head.weight"])
+        counts, _ = resolve_imatrix_counts(
+            entries,
+            dict.fromkeys(params, (8, HIDDEN)) | {"lm_head.weight": (8, 256)},
+        )
         covered, uncovered = resolve_assisted_weights(
             entries, dict.fromkeys(params, HIDDEN) | {"lm_head.weight": 256}
         )
@@ -728,7 +827,9 @@ class TestResolveImatrixCounts:
 
         names = ["model.layers.0.self_attn.q_proj.weight", "model.norm.weight"]
 
-        counts, uncovered = resolve_imatrix_counts(load_imatrix(path), names)
+        counts, uncovered = resolve_imatrix_counts(
+            load_imatrix(path), dict.fromkeys(names, (8, 256))
+        )
 
         assert counts == {}
         assert uncovered == tuple(names)
@@ -743,7 +844,9 @@ class TestResolveImatrixCounts:
         )
         params = _stack_params(3, "up_proj", experts=2)
 
-        counts, _ = resolve_imatrix_counts(load_imatrix(path), params)
+        counts, _ = resolve_imatrix_counts(
+            load_imatrix(path), dict.fromkeys(params, (8, 256))
+        )
 
         assert [counts[name] for name in params] == [5, 0]
 
@@ -760,6 +863,105 @@ class TestResolveImatrixCounts:
         )
         params = _stack_params(3, "up_proj", experts=4)
 
-        counts, _ = resolve_imatrix_counts(load_imatrix(path), params)
+        counts, _ = resolve_imatrix_counts(
+            load_imatrix(path), dict.fromkeys(params, (8, 256))
+        )
 
         assert [counts[name] for name in params] == [5, 4, 5, 3]
+
+    def test_a_fused_expert_stack_reads_one_count_vector(self, tmp_path) -> None:
+        # ADR-0026 (2026-08-13): a fused expert stack's counts return
+        # as one vector, keyed by the loaded parameter name. Element
+        # i is expert i's routing frequency. The read constructs no
+        # indexed names — constructed names are how #177 missed the
+        # fusion.
+        path = _write_stack(tmp_path / "im.gguf", columns=256)
+        stack = "model.layers.3.mixer.experts.up_proj"
+
+        counts, uncovered = resolve_imatrix_counts(
+            load_imatrix(path), {stack: (EXPERTS, 1856, 256)}
+        )
+
+        assert uncovered == ()
+        assert counts[stack] == tuple(range(1, EXPERTS + 1))
+
+    def test_a_fused_vector_keeps_zeros_and_rounds_half_away_from_zero(
+        self, tmp_path
+    ) -> None:
+        # Zero is a real count that ADR-0026 decision 5 reports, and
+        # the vector rounds the C loader's way, the same as a scalar.
+        # Rows of 2688 refuse a k-quant fit, and the counts still
+        # resolve — routing frequency takes no super-block gate.
+        path = _write_imatrix(
+            tmp_path / "im.gguf",
+            {
+                "blk.3.ffn_up_exps.weight.in_sum2": np.ones(
+                    (4, HIDDEN), dtype=np.float32
+                ),
+                "blk.3.ffn_up_exps.weight.counts": np.array([[5.0, 0.0, 4.5, 2.5]]),
+            },
+        )
+        stack = "backbone.layers.3.mixer.experts.up_proj"
+
+        counts, _ = resolve_imatrix_counts(
+            load_imatrix(path), {stack: (4, 1856, HIDDEN)}
+        )
+
+        assert counts[stack] == (5, 0, 5, 3)
+
+    def test_a_fused_stack_that_is_not_three_dimensional_raises(self, tmp_path) -> None:
+        # The name decides the fused fork and the shape vouches for
+        # it (ADR-0026, 2026-08-13). A 2D shape under a fused name
+        # means the loaded model and the name table disagree.
+        path = _write_stack(tmp_path / "im.gguf", columns=256)
+
+        with pytest.raises(ValueError, match="dimensions, not 3"):
+            resolve_imatrix_counts(
+                load_imatrix(path),
+                {"model.layers.3.mixer.experts.up_proj": (EXPERTS, 256)},
+            )
+
+    def test_a_fused_count_length_against_first_dimension_mismatch_raises(
+        self, tmp_path
+    ) -> None:
+        # The shape assertion is the vouching mechanism, not a
+        # version floor (ADR-0026, 2026-08-13). 64 experts against
+        # 128 counts means the imatrix describes another model.
+        path = _write_stack(tmp_path / "im.gguf", columns=256)
+
+        with pytest.raises(ValueError, match="holds 64 experts"):
+            resolve_imatrix_counts(
+                load_imatrix(path),
+                {"model.layers.3.mixer.experts.up_proj": (64, 1856, 256)},
+            )
+
+    def test_a_fused_stack_on_a_dense_entry_raises(self, tmp_path) -> None:
+        # A one-matrix entry cannot be an expert stack. Reading it as
+        # a length-1 vector would record a chunk tally as a routing
+        # frequency, which is the defect #193 separates.
+        path = _write_imatrix(
+            tmp_path / "im.gguf",
+            {
+                "blk.3.ffn_up_exps.weight.in_sum2": np.ones(256, dtype=np.float32),
+                "blk.3.ffn_up_exps.weight.counts": np.array([7.0]),
+            },
+        )
+
+        with pytest.raises(ValueError, match="counts 1 matrices"):
+            resolve_imatrix_counts(
+                load_imatrix(path),
+                {"model.layers.3.mixer.experts.up_proj": (EXPERTS, 1856, 256)},
+            )
+
+    def test_a_fused_stack_the_file_does_not_hold_reports_uncovered(
+        self, tmp_path
+    ) -> None:
+        path = _write_stack(tmp_path / "im.gguf", columns=256)
+        down = "model.layers.3.mixer.experts.down_proj"
+
+        counts, uncovered = resolve_imatrix_counts(
+            load_imatrix(path), {down: (EXPERTS, 256, 1856)}
+        )
+
+        assert counts == {}
+        assert uncovered == (down,)
