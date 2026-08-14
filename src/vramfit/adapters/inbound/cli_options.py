@@ -59,9 +59,11 @@ def echo_imatrix_coverage(meter: DamageMeter) -> None:
 
     Uncovered parameters price unassisted under the assisted label
     (ADR-0020) — the operator must see the split, in the scan and
-    in the validation pass alike. Silent for unassisted meters and
-    meters without the notion — the run log's ``meter_built`` event
-    carries the same split.
+    in the validation pass alike. The console states the counts
+    only. On a fused-expert model 181 of 210 parameters fall back,
+    and a joined list of names buries the split it reports. The run
+    log's ``meter_built`` event names every uncovered parameter.
+    Silent for unassisted meters and meters without the notion.
 
     Args:
         meter: The built meter.
@@ -70,7 +72,9 @@ def echo_imatrix_coverage(meter: DamageMeter) -> None:
     if covered is None:
         return
     uncovered: tuple[str, ...] = getattr(meter, "imatrix_uncovered", None) or ()
-    detail = f" (uncovered: {', '.join(uncovered)})" if uncovered else ""
+    detail = (
+        f" ({len(uncovered)} uncovered — the run log names them)" if uncovered else ""
+    )
     typer.echo(
         f"imatrix covers {covered} of {covered + len(uncovered)} parameters{detail}"
     )
