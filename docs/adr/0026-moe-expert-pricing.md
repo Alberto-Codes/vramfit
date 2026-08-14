@@ -330,15 +330,15 @@
     and 2, not evidence of an assisted fit. mlx-lm documents the
     same reasoning: `dynamic_quant` saves each layer's sensitivities
     to a JSON file, so later decisions skip the re-measurement
-    (`mlx_lm/LEARNED_QUANTS.md`). The statistic outlives the pricing
-    decision it fed.
+    (ml-explore/mlx-lm, `mlx_lm/LEARNED_QUANTS.md`). The statistic
+    outlives the pricing decision it fed.
 
     The summary is all-or-nothing per group. It appears only when
     every expert-stack member resolves its full count vector.
     Otherwise the fields are absent. PR #195 proposed a fourth
     field, `covered`. It stays out. Under all-or-nothing it repeats
     the member count the reader already holds, so decision 4 stays
-    three numbers. ADR-0022's `tensor_bytes` set the shape: its
+    three numbers. ADR-0022's `tensor_bytes` sets the shape: its
     loader requires the sizes to cover exactly the group's tensors.
 
     Coverage stays #194's question, and this clause adds no coverage
