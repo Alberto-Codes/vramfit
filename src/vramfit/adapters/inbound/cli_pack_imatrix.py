@@ -125,11 +125,11 @@ def _report_imatrix_effects(result: PackResult) -> None:
     """Echo what the imatrix did and did not reach.
 
     The coverage lines state counts only (#191's shape): a joined
-    list buries the split it reports — on the MoE target the
-    zero-count report draws from 2,944 cells. The ``model_packed``
-    run-log event names every uncovered tensor and every zero-count
-    pair. The exclusions line keeps its names: the operator chose
-    that set, and it is small by design (ADR-0023).
+    list buries the split it reports. On the MoE target the
+    zero-count report enumerates 5,888 stack-expert pairs. The
+    ``model_packed`` run-log event names every uncovered tensor and
+    every zero-count pair. The exclusions line keeps its names: the
+    operator chose that set, and it is small by design (ADR-0023).
 
     Args:
         result: The pack step's accounting record.
@@ -151,8 +151,8 @@ def _report_imatrix_effects(result: PackResult) -> None:
     if result.imatrix_zero_count_experts:
         typer.echo(
             "warning: the importance matrix counts zero samples for "
-            f"{len(result.imatrix_zero_count_experts)} experts — the "
-            "quantizer fits them unassisted, and the run log names "
-            "each stack-expert pair (ADR-0026)",
+            f"{len(result.imatrix_zero_count_experts)} stack-expert "
+            "pairs — the quantizer fits them unassisted, and the run "
+            "log names each pair (ADR-0026)",
             err=True,
         )
