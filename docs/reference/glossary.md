@@ -71,8 +71,9 @@ change.
 :   A measurement cell over a dim-0 slice of a fused expert stack.
     The meter quantizes the slice in place and keeps every other
     weight at reference precision (ADR-0026's 2026-08-13 (#200)
-    amendment). A slice cell ranks or weights in the scan frame and
-    never prices. Its two forms are the single-expert slice, which
+    amendment). A slice cell ranks or weights in the scan frame, and
+    its damage number never sets a recipe's price (ADR-0021
+    decision 2). Its two forms are the single-expert slice, which
     the probe measures, and the band slice. Not "sub-cell" or
     "partial group".
 

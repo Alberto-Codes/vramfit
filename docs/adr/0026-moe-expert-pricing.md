@@ -234,11 +234,13 @@
   `NemotronHExperts.forward` reads `self.up_proj[expert_idx]`, so the
   meter quantizes a slice in place, keeps every other weight at
   reference precision, and measures damage as usual. Slice cells
-  serve two roles. A single-expert slice ranks. A band slice weights.
-  A modeled per-expert term meets no bar — ADR-0019 and ADR-0020
-  built on modeled priors and both lost packed.
+  serve two roles. A single-expert slice ranks the experts. A band
+  slice weights the stack price. A modeled per-expert term meets no
+  bar — ADR-0019 and ADR-0020 built on modeled priors and both lost
+  packed.
 
-    The probe ranks first. A stratified sample quantizes one expert
+    The probe runs first and produces the ranking. A stratified
+    sample quantizes one expert
     at a time across each layer's count range and reports the
     count-to-damage relation. A sample of 8 experts per layer across
     all 23 MoE layers costs 184 cells at one precision. A first pass
@@ -251,7 +253,8 @@
     demotion records the loss in the header note, and decision 2
     never accepts. No probe-derived ordering replaces frequency.
 
-    The band term weights second, when the ranking holds. The meter
+    The band measurement runs second, when the ranking holds, and
+    produces the weights. The meter
     measures each stack's two contiguous frequency bands as two
     slice cells. The 2026-08-12 (#167) amendment measured that two
     widths cost at most 1.1 % of the achievable damage cut. So two
@@ -265,7 +268,8 @@
     MoPEQ's published method (arXiv 2509.02512), and the split point
     stays a budget parameter, not a cluster fit.
 
-    Slice cells rank and weight in the scan frame. They never price.
+    Slice cells rank and weight in the scan frame. Their damage
+    numbers never set a recipe's price.
     A part quantized alone against a full-precision remainder
     overstates its joint damage by 71 % to 346 % (arXiv 2607.12266).
     The overstatement runs through a monotone transform, so ordering
@@ -278,7 +282,7 @@
     (arXiv 2606.10703) each report that frequency misranks expert
     sensitivity. QuantMoE-Bench (arXiv 2406.08155) reports frequency
     ranks better on unbalanced routing than on balanced routing.
-    This model routes unbalanced, at a 193x count spread inside
+    This model routes tokens unevenly, at a 193x count spread inside
     `blk.20`. The probe measures instead of trusting either result.
 
     The slice path changes the meter's perturbation step only. It
