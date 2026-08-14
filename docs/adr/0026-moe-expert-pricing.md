@@ -18,10 +18,9 @@
   negatively. The hottest expert is the most damaging in 1 of 23
   layers. In the slice frame, per-expert damage varies inside a
   layer at a median 2.9x and a 491x peak. The count does not
-  predict it. The
-  2026-08-13 (#200) ruling fires: decision 2 never accepts, no
-  probe-derived ordering replaces frequency, and the chart proceeds
-  unweighted. The band term never runs. Record:
+  predict it. The 2026-08-13 (#200) ruling fires: decision 2 never
+  accepts, no probe-derived ordering replaces frequency, and the
+  chart proceeds unweighted. The band term never runs. Record:
   [#210 closing comment](https://github.com/Alberto-Codes/vramfit/issues/210#issuecomment-5297980661).
 - **Extends:** [ADR-0023](0023-imatrix-exclusions.md) decisions 1 and
   4. The amendment bullet lands there when this record is accepted.
@@ -559,7 +558,7 @@ fit the packer does not ship. ADR-0021 recorded that failure.
   ADR-0020's. A frequency-weighted recipe must beat an unweighted one
   through the runtime frame, at the same size. Resolved 2026-08-14
   by demotion: the #210 probe refuted the ranking upstream of any
-  pack, so the comparison never packs and #178 closed.
+  pack. The comparison never packs, and #178 closed.
 - How does the meter attribute damage to one expert inside a stack
   cell? The meter emits one damage number per group. Decision 2 needs
   a per-expert decomposition that does not exist. The chart ruled a
