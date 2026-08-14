@@ -114,9 +114,12 @@ jobs:
 
   # The gguf-py contract suites guard on import and skip wherever
   # gguf is absent, so the test job never runs them (#197). This job
-  # installs the gguf dependency group — gguf-py and numpy, no torch —
-  # and runs the contract tier. The import step fails loudly when
-  # gguf is missing. Without it a broken install skips green.
+  # installs the gguf dependency group and runs the contract tier.
+  # The group carries gguf-py and numpy without torch. The marker
+  # expression keeps the resource tiers out, matching the addopts
+  # default — a bare `-m contract` would replace that deselection.
+  # The import step fails loudly when gguf is missing. Without it a
+  # broken install skips green.
   test-gguf:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -129,7 +132,9 @@ jobs:
       - run: uv python install 3.12
       - run: uv sync --locked --dev --group gguf
       - run: uv run python -c "import gguf"
-      - run: uv run pytest -m contract --tb=short
+      - run: >-
+          uv run pytest --tb=short
+          -m "contract and not gpu and not integration and not e2e and not slow"
       - run: uv cache prune --ci
         if: always()
         continue-on-error: true
