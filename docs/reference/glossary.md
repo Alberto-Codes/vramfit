@@ -59,6 +59,14 @@ change.
     stack (see **Fit collapse**) and the serving stack (see **Target
     runtime**). Not "expert group" or "fused experts".
 
+> **Ruled 2026-08-14 (#212).** "Stack cell" is the allowed cell
+> form: a measurement cell whose group is one expert stack. The
+> full compound "expert-stack cell" stacks three nouns, so the
+> cell form drops the first word. The carve-out covers this
+> compound only — the bare word "stack" stays reserved. Accepted
+> records that write "stack cell" (ADR-0026 decision 2 and its
+> 2026-08-13 (#200) amendment) conform.
+
 **Routing mass**
 :   The share of a layer's imatrix counts held by the experts a recipe
     assigns one precision. It measures what a bit budget reaches, not
@@ -122,7 +130,9 @@ change.
     ([ADR-0018](../adr/0018-kquant-within-group-method.md)).
     `kquant-imx` is the same port with assisted pricing — the map
     then also records the imatrix path in `scan.imatrix`
-    ([ADR-0020](../adr/0020-imatrix-assisted-pricing.md)). A method
+    ([ADR-0020](../adr/0020-imatrix-assisted-pricing.md), superseded
+    by [ADR-0021](../adr/0021-runtime-frame-measurement.md) — the
+    method stays a valid scan option). A method
     change is a new scan — the token lives in the fingerprint and in
     the map's `scan.within_group`, and the recipe carries its map's
     token for the validation pass. Not "quantization mode" or
@@ -131,7 +141,9 @@ change.
 **Assisted pricing**
 :   Measuring a kquant cell with the pack's imatrix weighting the
     within-group fit, through the ported `_impl` quantizers
-    ([ADR-0020](../adr/0020-imatrix-assisted-pricing.md)).
+    ([ADR-0020](../adr/0020-imatrix-assisted-pricing.md), superseded
+    by [ADR-0021](../adr/0021-runtime-frame-measurement.md) — the
+    port stays a scan-frame instrument for the validation pass).
     **Unassisted** names the reference-path fit without weights.
     A tensor the imatrix does not cover always prices unassisted —
     the same fallback `llama-quantize` applies. Not "imatrix mode"
@@ -182,6 +194,29 @@ change.
     sub-4-bit losses: every scan-frame refinement improved in-frame
     prices and worsened the packed artifact
     ([ADR-0021](../adr/0021-runtime-frame-measurement.md)).
+
+**Runtime-frame lane**
+:   The measurement path that prices damage in the runtime frame:
+    quantize the candidate group to its real packed type inside a
+    real GGUF, and measure damage under the runtime's own numerics
+    ([ADR-0021](../adr/0021-runtime-frame-measurement.md)
+    decision 2, #40). The solver buys no 2-bit until this lane
+    reports a price (ADR-0021 decision 4). It names what a
+    measurement runs through, not where it runs. Always write the
+    term in full — the bare word "lane" collides with the
+    **harness lane** and the **rented-GPU lane** (ruled 2026-08-14,
+    #213). Not "packed lane" or "GGUF lane".
+
+**Rented-GPU lane**
+:   The measurement path on a rented card that holds the checkpoint
+    resident, so scan, validate, imatrix, and evals run without
+    offload (#40). #163 proved it on the 30B checkpoint. Its damage
+    numbers cross instruments only under ADR-0027's frame-match
+    rule. It names where a measurement runs, not what it runs
+    through. Always write the term in full — the bare word "lane"
+    collides with the **harness lane** and the **runtime-frame
+    lane** (ruled 2026-08-14, #213). Not "cloud lane" or "remote
+    lane".
 
 **Group spec**
 :   A discovered layer group before measurement: name, member tensors,
@@ -424,13 +459,16 @@ change.
     so cards compare across candidates and time. Not "benchmark suite"
     or "eval suite".
 
-**Harness lane** (short: **lane**)
+**Harness lane**
 :   The recorded software path that drives a packed model through the
     tier-3 slice: the harness, the binding, and the llama.cpp build
     acting as one instrument
     ([ADR-0024](../adr/0024-tier3-task-slice.md)). The evals sidecar
-    records it in its toolchain block. Not "backend" (the harness's
-    own term for one piece of the path).
+    records it in its toolchain block, under the field name `lane`.
+    Always write the term in full — the bare word "lane" collides
+    with the **runtime-frame lane** and the **rented-GPU lane**
+    (ruled 2026-08-14, #213). The sidecar field name stays. Not
+    "backend" (the harness's own term for one piece of the path).
 
 ## Architecture
 
