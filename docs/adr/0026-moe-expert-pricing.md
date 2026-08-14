@@ -350,6 +350,82 @@
     #194's coverage record can separate them. #194 rules whether the
     map records its assisted-coverage split, and under which field.
 
+- **Amendment (2026-08-13, issue #198):** the pack path reads its
+  counts through a new outbound port. `ImatrixCountSource` joins
+  `ports/outbound.py`, and a gguf-py reader beside the packer
+  implements it. The reader opens the recipe's imatrix file and
+  reads only the `.counts` tensors, about 24 KB on the published
+  matrix. This clause authorizes the port, and #179 builds it. A
+  `chart:task` may not add a port on its own, so the authorization
+  lives here.
+
+    The subprocess reports nothing here. `llama-quantize` fills a
+    zero-count expert's row with ones and prints no warning,
+    because the stack itself is present
+    (`tools/quantize/quantize.cpp:196-212`, checkout `e9fa078`).
+    The stdout scan behind `imatrix_uncovered` (ADR-0016) can never
+    see this case. Only a read of the file finds it. The scan-side
+    resolver serves no pack caller. It keys on loaded Hugging Face
+    parameter names, and its module imports torch. A pack holds
+    GGUF names, and no recipe carries member tensors.
+
+    A pack that names an imatrix now needs gguf-py. The reader
+    defers the import to the first read, and a missing module
+    raises `PackError` naming the pack extra. The base install
+    keeps `vramfit pack --help` and a matrix-less pack working
+    (ADR-0005). gguf-py is pure Python, and the pack extra already
+    carries it through the scan extra.
+
+    The reader refuses a file it cannot vouch for, as `PackError`.
+    The refused cases: the file is not a GGUF, its `general.type`
+    is not `imatrix`, it holds no `.counts` tensor, a tensor ends
+    in neither `.in_sum2` nor `.counts`, a count is negative or
+    not finite, or an expert stack's count length mismatches the
+    base GGUF. An empty report is what a healthy matrix returns,
+    so a silent read failure and a clean bill of health look
+    alike. Refusal separates them. The C loader shares part of the
+    posture: it errors on a mismatched `in_sum2`/`counts` pair
+    (`common/imatrix-loader.cpp`, read 2026-08-13). The
+    unknown-suffix refusal is stricter than that loader, which
+    skips a name it does not recognize. The format has held
+    exactly two suffixes since GGUF became its default
+    (ggml-org/llama.cpp#9400), and none is planned. A third suffix
+    must fail here. It must not pass a health report that read
+    nothing.
+
+    The base GGUF vouches for the expert stacks. `pack` requires
+    the base file before it runs, so the reader takes its tensor
+    index. An imatrix entry whose base tensor is 3D is an expert
+    stack, and its count length must equal that tensor's `ne[2]`.
+    A mismatch refuses. Every other entry is dense and carries one
+    tally. This mirrors the shape assertion in the 2026-08-13
+    (#202) amendment and `llama-quantize`'s own size check
+    (`src/llama-quant.cpp:1211`, checkout `e9fa078`). It replaces
+    PR #195's rule, which inferred a stack from an entry holding
+    two or more counts. That rule misses a one-expert stack and
+    misreads a dense entry holding two tallies.
+
+    The reader rounds a stored count half up before the zero test,
+    which matches `std::lround` on the non-negative counts an
+    imatrix holds. Pack and scan agree on which counts are zero.
+
+    The report stays a report. A zero-count expert warns on the
+    console, lands in the pack result and the run log under
+    `imatrix_zero_count_experts`, and never stops the pack. Each
+    entry names the stack and the expert index, as decision 5
+    states. Refusal fences the unvouchable file only. A dense
+    entry present at a count of zero stays unreported, and #196
+    rules that case.
+
+    The scan side closes its twin gap here.
+    `resolve_imatrix_counts` returns an empty mapping with no
+    signal, which is the shape of the #202 regression. Decision
+    4's caller follows the 2026-08-13 (#201) clause: an empty
+    resolution leaves the summary fields absent and never refuses.
+    #194's coverage record separates a dense-only group from an
+    unresolved one. This closes the detector deferral #193 parked
+    on #179 and adds no detector.
+
 ## Context
 
 Issue #162 asked how the solver prices an expert that the imatrix
@@ -500,6 +576,9 @@ fit the packer does not ship. ADR-0021 recorded that failure.
 - The 2026-08-13 (#201) amendment scopes decision 4's reduction to
   expert-stack count vectors. #179 builds the map fields under that
   clause and adds no coverage field.
+- The 2026-08-13 (#198) amendment adds the `ImatrixCountSource`
+  port, and an `--imatrix` pack gains a gguf-py requirement. #179
+  builds the reader and the report beside decision 4's map fields.
 - **ADR-0023 cannot reach inside a stack.** `--exclude-weights` matches
   by substring against imatrix entry names
   (`tools/quantize/quantize.cpp:274`), and a fused expert stack is one
