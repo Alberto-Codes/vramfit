@@ -193,7 +193,11 @@ class ImatrixCountSummary:
     max: int
 
     def __post_init__(self) -> None:
-        """Enforce the summary invariants.
+        """Enforce the summary invariants and coerce the median.
+
+        The median coerces to ``float`` here, so an in-memory
+        constructor cannot reintroduce the two-JSON-types defect the
+        attribute documents.
 
         Raises:
             ValueError: If ``min`` is negative, ``median`` is not
@@ -201,6 +205,7 @@ class ImatrixCountSummary:
                 ``min <= median <= max`` — an unordered summary
                 cannot come from one pooled distribution.
         """
+        object.__setattr__(self, "median", float(self.median))
         if self.min < 0:
             raise ValueError("min must not be negative")
         if not math.isfinite(self.median):

@@ -351,6 +351,14 @@ class TestImatrixCountSummaryInvariants:
 
         assert summary.min <= summary.median <= summary.max
 
+    def test_integer_median_coerces_to_float(self) -> None:
+        # An in-memory constructor must not reintroduce the
+        # two-JSON-types defect the JSON writer guards against.
+        summary = ImatrixCountSummary(min=1, median=2, max=3)
+
+        assert summary.median == 2.0
+        assert isinstance(summary.median, float)
+
     def test_unordered_summary_rejected(self) -> None:
         with pytest.raises(ValueError, match="ordered"):
             ImatrixCountSummary(min=10, median=5.0, max=20)
