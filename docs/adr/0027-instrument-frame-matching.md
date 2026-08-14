@@ -27,7 +27,7 @@ The largest gaps sit on the high-damage cells. That is error
 amplification through a perturbed forward pass, not random noise.
 
 Vendor documentation says this disagreement is expected, not a
-defect. cuBLAS guarantees bit-wise repetition only on GPUs with one
+defect. cuBLAS guarantees bitwise repetition only on GPUs with one
 architecture and one streaming-multiprocessor count, under one
 toolkit version with a single stream
 ([cuBLAS introduction](https://docs.nvidia.com/cuda/cublas/)). The
@@ -80,10 +80,10 @@ frame's identity and rules how a rented map earns trust.
    10 hold-out cells, spanning every precision and every group
    kind the map holds. The box ordering must reproduce the map
    ordering. Decision 3 licenses the comparison, because the bar
-   reads orderings and never magnitudes. Two cells whose map
-   damages differ by less than 2 % of the larger count as one
-   rank. The band rounds the 2.1 % low-damage agreement the #163
-   check measured. No absolute tolerance exists. The check's
+   reads orderings and never magnitudes. Two cells count as one
+   rank when their map damages differ by less than 2 % of the
+   larger damage. The band rounds the 2.1 % low-damage agreement
+   the #163 check measured. No absolute tolerance exists. The check's
    result lands on the owning ticket.
 5. **An instrument measures its own noise floor before its numbers
    price anything.** This generalizes ADR-0021 decision 3 beyond

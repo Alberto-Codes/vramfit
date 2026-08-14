@@ -154,7 +154,7 @@ change.
     streaming-multiprocessor count, torch build, and offload
     split ([ADR-0027](../adr/0027-instrument-frame-matching.md)).
     The instrument fixes the frame's numerics. cuBLAS repeats
-    bit-wise only on one architecture and SM count under one
+    bitwise only on one architecture and SM count under one
     toolkit, so an H100 and a 4090 are two instruments.
     An **instrument check** re-measures hold-out cells across
     instruments ([ADR-0021](../adr/0021-runtime-frame-measurement.md)
