@@ -320,14 +320,17 @@ def test_assisted_checkpoint_refuses_an_unassisted_rerun(tmp_path, monkeypatch) 
     assert "different scan" in second.output
 
 
-def test_assisted_scan_echoes_and_logs_the_coverage_split(
+def test_assisted_scan_echoes_the_count_and_logs_the_names(
     tmp_path, monkeypatch
 ) -> None:
+    # The console states the count only — a model with fused expert
+    # stacks would land 181 names on one line (#191). The run log's
+    # meter_built event carries the full list.
     from vramfit.adapters.outbound.run_log_jsonl import read_run_log
 
     class ImatrixAwareFake(MemoryDamageMeter):
         imatrix_covered_count = 1
-        imatrix_uncovered = ("model.layers.1.w",)
+        imatrix_uncovered = ("model.layers.1.w", "model.layers.2.w")
 
     damages = {(spec.name, bits): 0.1 for spec in SPECS for bits in (3, 2)}
     install_meter(
@@ -347,12 +350,16 @@ def test_assisted_scan_echoes_and_logs_the_coverage_split(
     )
 
     assert result.exit_code == 0, result.output
-    assert "imatrix covers 1 of 2 parameters" in result.output
-    assert "model.layers.1.w" in result.output
+    assert (
+        "imatrix covers 1 of 3 parameters (2 uncovered — the run log names them)"
+        in result.output
+    )
+    assert "model.layers.1.w" not in result.output
+    assert "model.layers.2.w" not in result.output
     events = read_run_log(tmp_path / "sensitivity.runlog.jsonl")
     built = next(e for e in events if e["event"] == "meter_built")
     assert built["imatrix_covered"] == 1
-    assert built["imatrix_uncovered"] == ["model.layers.1.w"]
+    assert built["imatrix_uncovered"] == ["model.layers.1.w", "model.layers.2.w"]
     started = events[0]
     assert started["within_group"] == "kquant-imx"
     assert started["imatrix"] == str(imatrix)
