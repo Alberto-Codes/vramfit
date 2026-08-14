@@ -12,9 +12,10 @@
 ADR-0012 decision 1 maps nominal bits to k-quant types. Every
 k-quant packs 256-element super-blocks, so `llama-quantize` accepts
 one only on rows divisible by 256. `tensor_type_fallback` enforces
-this after a manual `--tensor-type` override (`src/llama-quant.cpp:374`
-and `:712`, checkout `e9fa0781`). A rejected override degrades to
-another type on a zero exit.
+this after a manual `--tensor-type` override
+(`src/llama-quant.cpp:374`, applied at `src/llama-quant.cpp:712`,
+checkout `e9fa078`). A rejected override degrades to another type
+on a zero exit.
 
 The 30B target's routed-expert stacks carry rows of 2688 and 1856
 (#159). Neither divides by 256. The stacks hold 93.0 % of the
@@ -113,7 +114,7 @@ Facts verified upstream on 2026-08-14 (#189):
   `quantize_q4_0`. The imatrix counts keep their provenance role
   (ADR-0026).
 - Pack needs a llama.cpp build that carries Q2_0, merged upstream
-  2026-07-07. The pinned checkout `e9fa0781` carries it (#159).
+  2026-07-07. The pinned checkout `e9fa078` carries it (#159).
 - The Nemotron-H tensor classes outside this mapping stay with
   #183. `ssm_in` shares the 2688-row k-quant exclusion and waits
   there.
