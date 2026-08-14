@@ -131,7 +131,7 @@ jobs:
           cache-suffix: gguf
       - run: uv python install 3.12
       - run: uv sync --locked --dev --group gguf
-      - run: uv run python -c "import gguf"
+      - run: uv run python -c "import gguf, numpy"
       - run: >-
           uv run pytest --tb=short
           -m "contract and not gpu and not integration and not e2e and not slow"
