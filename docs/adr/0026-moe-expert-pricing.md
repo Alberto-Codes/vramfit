@@ -11,13 +11,14 @@
   and never one layer against another. The 2026-08-13 (#200)
   amendment rules the decomposition mechanism and its demotion
   trigger.
-- **Note (2026-08-14):** decision 2 is **demoted**. The #210 probe
+- **Note (2026-08-14):** decision 2 **demotes**. The #210 probe
   measured 184 stratified single-expert slice cells at 2 bits in the
   #163 H100 frame and refuted the count-to-damage ranking. The
-  median per-layer Spearman rho is +0.24, 6 of 23 layers correlate
-  negatively, and the hottest expert is the most damaging in 1 of 23
-  layers. Per-expert damage varies inside a layer — a median 2.9x
-  and a 491x peak — and the count does not predict it. The
+  median per-layer Spearman rho is +0.24. 6 of 23 layers correlate
+  negatively. The hottest expert is the most damaging in 1 of 23
+  layers. In the slice frame, per-expert damage varies inside a
+  layer at a median 2.9x and a 491x peak. The count does not
+  predict it. The
   2026-08-13 (#200) ruling fires: decision 2 never accepts, no
   probe-derived ordering replaces frequency, and the chart proceeds
   unweighted. The band term never runs. Record:
@@ -523,7 +524,8 @@ fit the packer does not ship. ADR-0021 recorded that failure.
    `tools/quantize/quantize.cpp:196-212` exactly. The scan frame and
    the pack apply the same weights to the same columns.
 2. **Routing frequency weights an expert's damage inside its stack.**
-   *(Demoted 2026-08-14. See the header note.)* A stack carries one type, proved
+   *(Demoted 2026-08-14. See the header note.)* A stack carries one
+   type, proved
    by #159 and by `src/llama-quant.cpp:1256-1262`, where `new_type`
    sits outside the per-expert loop. The meter prices the stack as one
    cell. Inside that cell, each expert's damage contributes
@@ -567,11 +569,13 @@ fit the packer does not ship. ADR-0021 recorded that failure.
   The 2026-08-13 (#202) amendment settles the read, so #200 is open
   to rule. The 2026-08-13 (#200) amendment rules the mechanism:
   slice perturbation, with a ranking probe and a measured band term.
-  #210 builds and runs the probe.
+  #210 built and ran the probe on 2026-08-14, and the refutation
+  demoted this decision.
 - Does a split of a layer's experts into two expert stacks pay for
   itself? The 2026-08-12 measurement reports 1.73 times the routing
   mass at the same budget. It reports no damage number. #167 carries
-  the question and waits on #178.
+  the question. #178 closed by demotion on 2026-08-14, and #167
+  stays open for the maintainer with a premise note (#210).
 - What does a two-stack pack cost at decode? The amendment derives
   about 2.5 times the expert traffic per decoded token from
   `ggml_mul_mat_id`'s row count. No run measures it. #167 carries the
@@ -580,10 +584,10 @@ fit the packer does not ship. ADR-0021 recorded that failure.
   assumes the two move together. The #210 probe tests the assumption
   before #178 packs, and a refutation demotes decision 2. A third
   expert stack pays only when they separate. #167 carries that test.
-  Answered 2026-08-14: they separate. Within-layer damage spans a
-  median 2.9x while its rank correlation with the count is +0.24 at
-  the median (#210). The damage signal is real and frequency does
-  not carry it.
+  Answered 2026-08-14: they separate. In the slice frame,
+  within-layer damage spans a median 2.9x. Its rank correlation
+  with the count is +0.24 at the median (#210). The damage ordering
+  is real and frequency does not carry it.
 - What count floor makes a statistic worthless? The measurement bounds
   the question from one side only. It shows 426 samples is the
   thinnest this model and corpus produce. It does not show 426 is
@@ -601,14 +605,15 @@ fit the packer does not ship. ADR-0021 recorded that failure.
 
 - Decision 1 needs no new machinery. The loader already implements it.
 - Decisions 4 and 5 add fields to the map and to the pack report.
-  Decision 2 adds the frequency term.
+  Decision 2 adds no frequency term — it demoted on 2026-08-14.
 - Decision 2 needs the per-expert rows of a fused stack. #187 built the
   read on 2026-08-12. `load_imatrix` reshapes a stack's sums per
   matrix, and `resolve_imatrix_counts` serves the counts against an
   indexed parameter name. **That read reaches no expert on this
   model.** The 2026-08-12 (#202) amendment above measures it, and the
   2026-08-13 (#202) amendment rules the fused read. #193 builds it.
-  The clause then waits on #178 for its data point.
+  The clause never gets its data point: the #210 refutation demoted
+  it on 2026-08-14, and #178 closed without packing.
 - The 2026-08-13 (#200) amendment adds a slice perturbation path to
   the meter. #210 built it (PR #222) and ran the probe on
   2026-08-14. The ranking did not hold, so no caller consumes a
