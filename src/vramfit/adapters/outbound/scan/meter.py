@@ -430,6 +430,8 @@ class TorchDamageMeter:
         method, keeps every other weight at reference precision, and
         measures damage as usual. A slice cell ranks or weights in
         the scan frame — its damage never sets a recipe's price.
+        Validation resolves only the named parameters, so a probe
+        pays no per-cell walk over the whole model.
 
         Args:
             slices: Half-open expert index range per fused expert
@@ -453,13 +455,13 @@ class TorchDamageMeter:
                 numbers.
         """
         self._refuse_poisoned()
+        # Resolve only the named parameters — a probe calls this per
+        # cell, and a name outside the discovered set stays absent,
+        # which is the validator's unknown-parameter refusal.
+        known = {name for members in self._groups.values() for name in members}
         check_slice_cell(
             slices,
-            {
-                name: self._param(name)
-                for members in self._groups.values()
-                for name in members
-            },
+            {name: self._param(name) for name in slices if name in known},
         )
         targets: list[_Perturbation] = [
             (name, bits, expert_range) for name, expert_range in slices.items()
