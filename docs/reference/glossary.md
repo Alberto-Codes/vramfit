@@ -70,10 +70,10 @@ change.
 **Slice cell**
 :   A measurement cell over a dim-0 slice of a fused expert stack.
     The meter quantizes the slice in place and keeps every other
-    weight at reference precision (ADR-0026, 2026-08-13 #200
+    weight at reference precision (ADR-0026's 2026-08-13 (#200)
     amendment). A slice cell ranks or weights in the scan frame and
-    never prices. Its two forms are the per-expert probe's
-    single-expert slice and a frequency band. Not "sub-cell" or
+    never prices. Its two forms are the single-expert slice, which
+    the probe measures, and the band slice. Not "sub-cell" or
     "partial group".
 
 **Per-expert probe** (short: **probe**)
@@ -86,8 +86,8 @@ change.
 **Frequency band** (short: **band**)
 :   A contiguous run of one expert stack's experts, ordered by
     imatrix count. The meter measures a band as one slice cell, and
-    a split pack realizes a band as its own expert stack (#167
-    amendment to ADR-0026). Not "expert cluster" or "tier".
+    a split pack realizes a band as its own expert stack (ADR-0026's
+    2026-08-12 (#167) amendment). Not "expert cluster" or "tier".
 
 **Sensitivity**
 :   A group's measured fragility: how much damage quantizing *it alone* to a
