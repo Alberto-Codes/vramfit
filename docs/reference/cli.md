@@ -183,7 +183,12 @@ expected miss). A covered tensor whose rows do not divide into
 256-element super-blocks joins the uncovered set instead of refusing
 the scan. A scan is only comparable to a pack that consumes the
 same imatrix file — the CLI resolves the path, and the map records
-the resolved spelling.
+the resolved spelling. An assisted scan also reads each fused
+expert stack's count vector and pools each group's vectors into the
+`imatrix_counts` count minimum, median, and maximum
+([ADR-0026](../adr/0026-moe-expert-pricing.md) decision 4). A group
+without a resolved expert stack records none — see the
+[sensitivity map format](../reference/sensitivity-map.md).
 
 Exit codes: 1 when the scan extra is missing, the model or calibration
 cannot load, sharding offloaded a quantizable group beyond host RAM,

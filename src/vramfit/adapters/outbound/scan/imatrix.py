@@ -33,9 +33,12 @@ row by expert index, not by row length (#177). A fused 3D
 parameter reads its whole entry as one expert stack.
 `resolve_imatrix_counts` reads the same entries for their counts.
 The counts record routing frequency and price nothing (ADR-0026
-decisions 4 and 5). `resolve_assisted_weights` refuses a fused
-expert stack by rule. The expert stacks stay unassisted until a
-non-k-quant assisted fit exists (ADR-0026, 2026-08-13 amendment).
+decisions 4 and 5). `expert_stack_count_vectors` then selects one
+group's expert-stack vectors for decision 4's map summary, all or
+nothing per group (the #201 amendment). `resolve_assisted_weights`
+refuses a fused expert stack by rule. The expert stacks stay
+unassisted until a non-k-quant assisted fit exists (ADR-0026,
+2026-08-13 amendment).
 
 Examples:
     Load weights for the parameters a meter discovered:
@@ -55,7 +58,7 @@ from __future__ import annotations
 
 import math
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -635,6 +638,50 @@ def resolve_imatrix_counts(
         count = entry.counts[_matrix_row(entry, name, gguf_name, expert)]
         covered[name] = _lround(float(count.item()))
     return covered, tuple(uncovered)
+
+
+def expert_stack_count_vectors(
+    counts: Mapping[str, int | tuple[int, ...]], members: Iterable[str]
+) -> tuple[tuple[int, ...], ...] | None:
+    """Select one group's expert-stack count vectors, all or nothing.
+
+    The selection rule behind ADR-0026 decision 4, scoped by the
+    2026-08-13 #201 amendment: the summary reduces expert-stack
+    count vectors only, and it appears only when every expert-stack
+    member resolved its full count vector. A scalar chunk tally
+    never enters — the router, the shared experts, and every dense
+    member stay out. An empty resolution leaves the summary absent
+    and never refuses (the #198 amendment) — #194 owns separating a
+    dense-only group from an unresolved one.
+
+    Args:
+        counts: Resolved counts per parameter name, from
+            `resolve_imatrix_counts`.
+        members: The group's member parameter names.
+
+    Returns:
+        One count vector per fused expert-stack member, or None when
+        the group holds no expert stack or any of its expert stacks
+        did not resolve.
+
+    Examples:
+        A covered one-stack group:
+
+        ```python
+        stack = "model.layers.3.mixer.experts.up_proj"
+        vectors = expert_stack_count_vectors({stack: (3, 9)}, [stack])
+        assert vectors == ((3, 9),)
+        ```
+    """
+    stacks = [
+        counts.get(name)
+        for name in members
+        if (resolved := _resolve_name(name)) is not None and resolved[2]
+    ]
+    vectors = tuple(vector for vector in stacks if isinstance(vector, tuple))
+    if not stacks or len(vectors) != len(stacks):
+        return None
+    return vectors
 
 
 def check_imatrix_weights(

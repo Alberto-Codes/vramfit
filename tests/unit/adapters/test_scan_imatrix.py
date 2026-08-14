@@ -20,6 +20,7 @@ np = pytest.importorskip("numpy", reason="scan extra not installed")
 
 from vramfit.adapters.outbound.scan.imatrix import (
     assisted_weights_for_params,
+    expert_stack_count_vectors,
     gguf_tensor_name,
     load_imatrix,
     resolve_assisted_weights,
@@ -965,3 +966,39 @@ class TestResolveImatrixCounts:
 
         assert counts == {}
         assert uncovered == (down,)
+
+
+class TestExpertStackCountVectors:
+    """The #201 amendment's selection rule: vectors only, all or nothing."""
+
+    UP = "model.layers.3.mixer.experts.up_proj"
+    DOWN = "model.layers.3.mixer.experts.down_proj"
+    DENSE = "model.layers.3.mixer.out_proj.weight"
+
+    def test_covered_stacks_pool_and_dense_scalars_stay_out(self) -> None:
+        counts = {self.UP: (1, 2), self.DOWN: (3, 4), self.DENSE: 421_370}
+
+        vectors = expert_stack_count_vectors(counts, [self.UP, self.DOWN, self.DENSE])
+
+        assert vectors == ((1, 2), (3, 4))
+
+    def test_group_without_an_expert_stack_selects_none(self) -> None:
+        assert expert_stack_count_vectors({self.DENSE: 421_370}, [self.DENSE]) is None
+
+    def test_one_unresolved_stack_makes_the_group_all_or_nothing(self) -> None:
+        counts: dict[str, int | tuple[int, ...]] = {self.UP: (1, 2)}
+
+        assert expert_stack_count_vectors(counts, [self.UP, self.DOWN]) is None
+
+    def test_empty_resolution_selects_none_and_never_raises(self) -> None:
+        # The #202 regression shape: an empty resolution leaves the
+        # summary absent and never refuses (the #198 amendment).
+        assert expert_stack_count_vectors({}, [self.UP, self.DENSE]) is None
+
+    def test_indexed_expert_scalars_never_enter(self) -> None:
+        # An unfused layout resolves one scalar per indexed expert.
+        # The summary reduces count vectors only, so the group
+        # selects nothing.
+        indexed = "model.layers.3.mixer.experts.0.up_proj.weight"
+
+        assert expert_stack_count_vectors({indexed: 7}, [indexed]) is None
