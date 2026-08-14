@@ -327,9 +327,9 @@ against the base GGUF, between the convert and quantize stages
 ([ADR-0026](../adr/0026-moe-expert-pricing.md) decision 5). The
 quantizer fills a zero-count expert's row with ones and prints no
 warning, so only this read finds the case. A console warning states
-the zero-count pair total, and each pair lands in the `model_packed`
-event under `imatrix_zero_count_experts`, as two-element
-`[stack, expert]` arrays (#226) — a report, never a gate. A matrix the reader cannot vouch
+the zero-count pair total (#226). Each pair lands in the
+`model_packed` event under `imatrix_zero_count_experts`, as
+two-element `[stack, expert]` arrays — a report, never a gate. A matrix the reader cannot vouch
 for halts the pack before the quantizer runs. The refusals form a
 closed list: not an imatrix, no counts, an unknown tensor suffix,
 a sums tensor without its counts twin, a count that is negative or
