@@ -377,37 +377,58 @@
     carries it through the scan extra.
 
     The reader refuses a file it cannot vouch for, as `PackError`.
-    The refused cases: the file is not a GGUF, its `general.type`
-    is not `imatrix`, it holds no `.counts` tensor, a tensor ends
-    in neither `.in_sum2` nor `.counts`, a count is negative or
-    not finite, or an expert stack's count length mismatches the
-    base GGUF. An empty report is what a healthy matrix returns,
-    so a silent read failure and a clean bill of health look
-    alike. Refusal separates them. The C loader shares part of the
-    posture: it errors on a mismatched `in_sum2`/`counts` pair
-    (`common/imatrix-loader.cpp`, read 2026-08-13). The
-    unknown-suffix refusal is stricter than that loader, which
-    skips a name it does not recognize. The format has held
-    exactly two suffixes since GGUF became its default
-    (ggml-org/llama.cpp#9400), and none is planned. A third suffix
-    must fail here. It must not pass a health report that read
-    nothing.
+    The refused cases, a closed list:
 
-    The base GGUF vouches for the expert stacks. `pack` requires
-    the base file before it runs, so the reader takes its tensor
-    index. An imatrix entry whose base tensor is 3D is an expert
-    stack, and its count length must equal that tensor's `ne[2]`.
-    A mismatch refuses. Every other entry is dense and carries one
-    tally. This mirrors the shape assertion in the 2026-08-13
+    - The file is not a GGUF, or its `general.type` is not
+      `imatrix`.
+    - The file holds no `.counts` tensor.
+    - A tensor ends in neither `.in_sum2` nor `.counts`.
+    - A `.in_sum2` tensor lacks its `.counts` twin.
+    - A count is negative or not finite.
+    - A matched entry's count length differs from its base
+      tensor's matrix count — `ne[2]` for a 3D tensor, 1
+      otherwise.
+
+    An empty report is what a healthy matrix returns, so a silent
+    read failure and a clean bill of health look alike. Refusal
+    separates them. The C loader shares part of the posture. It
+    errors on a mismatched `in_sum2`/`counts` pair
+    (`common/imatrix-loader.cpp:140`, checkout `e9fa078`). Two
+    refusals are stricter than that loader. It skips a suffix it
+    does not recognize, and the format has held exactly two
+    suffixes since GGUF became its default
+    (ggml-org/llama.cpp#9400, which plans no third). A future
+    suffix must fail here rather than pass a health report that
+    read nothing. The loader also accepts a negative count, which
+    the quantizer then prices as unassisted. #187 refused a
+    negative count on the scan side, and the pack side follows
+    it.
+
+    The base GGUF vouches for the entries. `pack` requires the
+    base file before it runs, so the reader takes its tensor
+    index, a memory-mapped header read. An entry whose base
+    tensor is 3D is an expert stack, and element `i` of its
+    counts is expert `i`'s tally. Every other matched entry is
+    dense at a count length of 1, which the matrix-count rule
+    enforces. This mirrors the shape assertion in the 2026-08-13
     (#202) amendment and `llama-quantize`'s own size check
     (`src/llama-quant.cpp:1211`, checkout `e9fa078`). It replaces
     PR #195's rule, which inferred a stack from an entry holding
     two or more counts. That rule misses a one-expert stack and
     misreads a dense entry holding two tallies.
 
+    An entry naming no base tensor skips silently. The scan-side
+    resolver reads the model's parameters and never an extra
+    entry, and `llama-quantize` never consults one. The strong
+    wrong-model signal runs the other way, as base tensors the
+    matrix lacks, and `imatrix_uncovered` already names those. A
+    matrix over an MTP-bearing export packs a backbone-only base
+    this way, with its extra stack entries unread.
+
     The reader rounds a stored count half up before the zero test,
     which matches `std::lround` on the non-negative counts an
-    imatrix holds. Pack and scan agree on which counts are zero.
+    imatrix holds (`common/imatrix-loader.cpp:158`, checkout
+    `e9fa078`). Pack and scan agree on which counts are zero.
 
     The report stays a report. A zero-count expert warns on the
     console, lands in the pack result and the run log under
