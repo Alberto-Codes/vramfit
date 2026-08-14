@@ -17,10 +17,8 @@ import pytest
 torch = pytest.importorskip("torch", reason="scan extra not installed")
 pytest.importorskip("transformers", reason="scan extra not installed")
 
-from vramfit.adapters.outbound.scan.meter import (
-    TorchDamageMeter,
-    _group_count_summaries,
-)
+from vramfit.adapters.outbound.scan.discovery import group_count_summaries
+from vramfit.adapters.outbound.scan.meter import TorchDamageMeter
 from vramfit.domain.model import ImatrixCountSummary
 
 pytestmark = pytest.mark.unit
@@ -34,15 +32,13 @@ class TestGroupCountSummaries:
     def test_covered_group_pools_its_stacks_and_nothing_else(self) -> None:
         counts = {UP: (3, 9), DOWN: (5, 7), DENSE: 421_370}
 
-        summaries = _group_count_summaries(
-            counts, {"model.layers.0": [UP, DOWN, DENSE]}
-        )
+        summaries = group_count_summaries(counts, {"model.layers.0": [UP, DOWN, DENSE]})
 
         summary = summaries["model.layers.0"]
         assert (summary.min, summary.median, summary.max) == (3, 6.0, 9)
 
     def test_group_without_a_resolved_stack_records_nothing(self) -> None:
-        summaries = _group_count_summaries(
+        summaries = group_count_summaries(
             {UP: (3, 9), DENSE: 421_370},
             {"model.layers.0": [UP, DOWN], "model.layers.1": [DENSE]},
         )
@@ -50,7 +46,7 @@ class TestGroupCountSummaries:
         assert summaries == {}
 
     def test_empty_resolution_records_nothing_and_never_raises(self) -> None:
-        assert _group_count_summaries({}, {"model.layers.0": [UP]}) == {}
+        assert group_count_summaries({}, {"model.layers.0": [UP]}) == {}
 
 
 class TestGroupsHandoff:

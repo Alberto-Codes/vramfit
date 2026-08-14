@@ -4,7 +4,10 @@ The scan metric fixed by ADR-0006: divergence of next-token
 distributions at the final logits, averaged over calibration tokens.
 KL is computed in float32 regardless of model dtype. A KL that is
 non-finite or negative beyond float16 residue is a defect, so
-`mean_kl` rejects it instead of recording it.
+`mean_kl` rejects it instead of recording it. The calibration passes
+live here too: `reference_pass` caches the unperturbed
+distributions once, and `mean_damage` averages the perturbed
+model's KL against that cache.
 
 Examples:
     Identical distributions diverge by (almost) zero:
@@ -24,6 +27,7 @@ See Also:
 from __future__ import annotations
 
 import math
+from typing import cast
 
 import torch
 
@@ -44,6 +48,55 @@ def reference_log_probs(logits: torch.Tensor) -> torch.Tensor:
         tokens at a 128k vocabulary.
     """
     return torch.log_softmax(logits.to(torch.float32), dim=-1).to(torch.float16).cpu()
+
+
+def reference_pass(
+    model: torch.nn.Module, batches: list[torch.Tensor]
+) -> list[torch.Tensor]:
+    """Run the unperturbed model once and cache its distributions.
+
+    Args:
+        model: The loaded model, unperturbed.
+        batches: The tokenized calibration batches.
+
+    Returns:
+        Per-batch reference log-probabilities, on the CPU.
+    """
+    # transformers models expose their input device; the nn.Module
+    # stub types the attribute lookup as a submodule.
+    device = cast("torch.device", model.device)
+    reference: list[torch.Tensor] = []
+    with torch.inference_mode():
+        for batch in batches:
+            logits = model(batch.to(device)).logits
+            reference.append(reference_log_probs(logits))
+    return reference
+
+
+def mean_damage(
+    model: torch.nn.Module,
+    batches: list[torch.Tensor],
+    reference: list[torch.Tensor],
+) -> float:
+    """Run the perturbed model over all batches and average KL.
+
+    Args:
+        model: The loaded model, perturbed.
+        batches: The tokenized calibration batches.
+        reference: Cached per-batch reference log-probabilities.
+
+    Returns:
+        Token-weighted mean KL divergence.
+    """
+    device = cast("torch.device", model.device)
+    total = 0.0
+    tokens = 0
+    with torch.inference_mode():
+        for batch, ref in zip(batches, reference, strict=True):
+            logits = model(batch.to(device)).logits
+            total += mean_kl(ref, logits) * batch.numel()
+            tokens += batch.numel()
+    return total / tokens
 
 
 def mean_kl(reference: torch.Tensor, perturbed_logits: torch.Tensor) -> float:

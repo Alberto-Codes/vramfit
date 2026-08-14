@@ -247,7 +247,7 @@ class TestTorchDamageMeter:
         assert OUTPUT_GROUP in names
 
     def test_gpt2_style_names_group_by_layer(self) -> None:
-        from vramfit.adapters.outbound.scan.meter import _discover_groups
+        from vramfit.adapters.outbound.scan.discovery import discover_groups
 
         class Gpt2Like(torch.nn.Module):
             def __init__(self) -> None:
@@ -257,7 +257,7 @@ class TestTorchDamageMeter:
                     [torch.nn.Linear(4, 4) for _ in range(2)]
                 )
 
-        groups = _discover_groups(Gpt2Like(), "layer")
+        groups = discover_groups(Gpt2Like(), "layer")
 
         assert set(groups) == {"transformer.h.0", "transformer.h.1"}
 
@@ -265,9 +265,9 @@ class TestTorchDamageMeter:
         # llama.cpp gives one quantization type per fused expert stack
         # (#159), so the map keys on that unit (#161). Discovery must
         # collapse the expert index and nothing else.
-        from vramfit.adapters.outbound.scan.meter import _discover_groups
+        from vramfit.adapters.outbound.scan.discovery import discover_groups
 
-        groups = _discover_groups(_MoeLike(experts=4), "stack")
+        groups = discover_groups(_MoeLike(experts=4), "stack")
 
         assert set(groups) == {
             "model.layers.0.mlp.experts.up_proj",
@@ -278,12 +278,12 @@ class TestTorchDamageMeter:
         assert len(groups["model.layers.0.mlp.experts.up_proj"]) == 4
 
     def test_stack_grouping_is_coarser_than_tensor_grouping_on_moe(self) -> None:
-        from vramfit.adapters.outbound.scan.meter import _discover_groups
+        from vramfit.adapters.outbound.scan.discovery import discover_groups
 
         model = _MoeLike(experts=4)
 
-        by_stack = _discover_groups(model, "stack")
-        by_tensor = _discover_groups(model, "tensor")
+        by_stack = discover_groups(model, "stack")
+        by_tensor = discover_groups(model, "tensor")
 
         assert len(by_stack) == 4
         assert len(by_tensor) == 10
@@ -293,7 +293,7 @@ class TestTorchDamageMeter:
         # experts.M.down_proj" (#160), not the ".mlp.experts." of the
         # Qwen family. The index sits in the same place, so one rule
         # covers both. This pins that.
-        from vramfit.adapters.outbound.scan.meter import _discover_groups
+        from vramfit.adapters.outbound.scan.discovery import discover_groups
 
         class NemotronLike(torch.nn.Module):
             def __init__(self) -> None:
@@ -310,7 +310,7 @@ class TestTorchDamageMeter:
                 self.backbone = torch.nn.Module()
                 self.backbone.layers = torch.nn.ModuleList([layer])
 
-        groups = _discover_groups(NemotronLike(), "stack")
+        groups = discover_groups(NemotronLike(), "stack")
 
         assert set(groups) == {"backbone.layers.0.mixer.experts.down_proj"}
         assert len(groups["backbone.layers.0.mixer.experts.down_proj"]) == 3
@@ -318,7 +318,7 @@ class TestTorchDamageMeter:
     def test_stack_grouping_matches_tensor_grouping_on_a_dense_model(self) -> None:
         # A dense model has no expert index to collapse. A pack
         # addresses each of its weights alone, so the two agree.
-        from vramfit.adapters.outbound.scan.meter import _discover_groups
+        from vramfit.adapters.outbound.scan.discovery import discover_groups
 
         class DenseLike(torch.nn.Module):
             def __init__(self) -> None:
@@ -330,17 +330,17 @@ class TestTorchDamageMeter:
 
         model = DenseLike()
 
-        assert _discover_groups(model, "stack") == _discover_groups(model, "tensor")
+        assert discover_groups(model, "stack") == discover_groups(model, "tensor")
 
     def test_max_memory_maps_cap_and_cpu_for_auto_only(self) -> None:
-        from vramfit.adapters.outbound.scan.meter import _max_memory
+        from vramfit.adapters.outbound.scan.discovery import max_memory_map
 
-        assert _max_memory("auto", 17 * 2**30) == {
+        assert max_memory_map("auto", 17 * 2**30) == {
             0: 17 * 2**30,
             "cpu": 999 * 2**30,
         }
-        assert _max_memory("cpu", 17 * 2**30) is None
-        assert _max_memory("auto", None) is None
+        assert max_memory_map("cpu", 17 * 2**30) is None
+        assert max_memory_map("auto", None) is None
 
     def test_poisoned_meter_refuses_measure_recipe(self, tiny_meter) -> None:
         tiny_meter._poisoned = True
@@ -772,7 +772,7 @@ class TestTorchDamageMeter:
         assert meter.measure(group, 2) == before
 
     def test_layer_grouping_without_layer_structure_raises(self) -> None:
-        from vramfit.adapters.outbound.scan.meter import _discover_groups
+        from vramfit.adapters.outbound.scan.discovery import discover_groups
 
         class Flat(torch.nn.Module):
             def __init__(self) -> None:
@@ -780,7 +780,130 @@ class TestTorchDamageMeter:
                 self.proj = torch.nn.Linear(4, 4)
 
         with pytest.raises(ValueError, match="--group-by tensor"):
-            _discover_groups(Flat(), "layer")
+            discover_groups(Flat(), "layer")
+
+
+@pytest.fixture
+def tiny_moe_meter(tiny_moe_model_dir, tmp_path):
+    from vramfit.adapters.outbound.scan.meter import TorchDamageMeter
+
+    calibration = tmp_path / "calib.txt"
+    calibration.write_text(CALIBRATION_TEXT)
+    return TorchDamageMeter(
+        str(tiny_moe_model_dir), calibration, max_tokens=128, device="cpu"
+    )
+
+
+class TestMeasureSlices:
+    """The slice perturbation path (ADR-0026, the #200 amendment)."""
+
+    UP = "model.layers.0.mlp.experts.gate_up_proj"
+    DOWN = "model.layers.0.mlp.experts.down_proj"
+
+    def test_fixture_loads_fused_expert_stacks(self, tiny_moe_meter) -> None:
+        # The path exists for the fused layout, so the fixture must
+        # produce it — a dense or indexed layout would test nothing.
+        param = tiny_moe_meter._param(self.UP)
+
+        assert param.ndim == 3
+        assert param.shape[0] == 8
+
+    def test_single_expert_cell_measures_and_restores_bit_exactly(
+        self, tiny_moe_meter
+    ) -> None:
+        before = {
+            name: tiny_moe_meter._param(name).clone() for name in (self.UP, self.DOWN)
+        }
+
+        damage = tiny_moe_meter.measure_slices(
+            {self.UP: (0, 1), self.DOWN: (0, 1)}, bits=2
+        )
+
+        assert damage >= 0.0
+        for name, original in before.items():
+            assert torch.equal(tiny_moe_meter._param(name), original)
+
+    def test_full_range_slice_equals_the_whole_tensor_measure(
+        self, tiny_moe_meter, tiny_moe_model_dir, tmp_path
+    ) -> None:
+        # One expert slice holds a multiple of 256 elements, so the
+        # slice sees the same block alignment as the whole tensor —
+        # the full range and the whole-tensor cell must agree
+        # exactly, or the slice path measures something else.
+        from vramfit.adapters.outbound.scan.meter import TorchDamageMeter
+
+        calibration = tmp_path / "calib-tensor.txt"
+        calibration.write_text(CALIBRATION_TEXT)
+        by_tensor = TorchDamageMeter(
+            str(tiny_moe_model_dir),
+            calibration,
+            max_tokens=128,
+            group_by="tensor",
+            device="cpu",
+        )
+        group = next(
+            spec.name for spec in by_tensor.groups() if spec.tensors == (self.UP,)
+        )
+
+        whole = by_tensor.measure(group, 2)
+        sliced = by_tensor.measure_slices({self.UP: (0, 8)}, bits=2)
+
+        assert sliced == whole
+
+    def test_slice_perturbs_only_the_named_range_and_restores(
+        self, tiny_moe_meter, monkeypatch
+    ) -> None:
+        # Snapshot the weights mid-measurement: the named range must
+        # hold the round-tripped values, every other expert must hold
+        # the originals, and the restore must put the originals back.
+        from vramfit.adapters.outbound.scan import meter as meter_module
+        from vramfit.adapters.outbound.scan.quantize import rtn_quantize_dequantize
+
+        before = tiny_moe_meter._param(self.UP).clone()
+        captured = {}
+
+        def snapshot(model, batches, reference) -> float:
+            captured["perturbed"] = tiny_moe_meter._param(self.UP).clone()
+            return 0.0
+
+        monkeypatch.setattr(meter_module, "mean_damage", snapshot)
+        tiny_moe_meter.measure_slices({self.UP: (2, 4)}, bits=2)
+
+        perturbed = captured["perturbed"]
+        assert torch.equal(perturbed[2:4], rtn_quantize_dequantize(before[2:4], 2))
+        assert torch.equal(perturbed[0:2], before[0:2])
+        assert torch.equal(perturbed[4:], before[4:])
+        assert torch.equal(tiny_moe_meter._param(self.UP), before)
+
+    def test_smaller_slice_damages_no_more_than_the_full_stack(
+        self, tiny_moe_meter
+    ) -> None:
+        # Not an axiom — a sanity bound for this tiny fixture: one
+        # expert of eight should not out-damage all eight.
+        one = tiny_moe_meter.measure_slices({self.UP: (0, 1)}, bits=2)
+        all_eight = tiny_moe_meter.measure_slices({self.UP: (0, 8)}, bits=2)
+
+        assert one <= all_eight
+
+    def test_unknown_parameter_refuses_through_the_meter(self, tiny_moe_meter) -> None:
+        with pytest.raises(ValueError, match="unknown parameter"):
+            tiny_moe_meter.measure_slices({"model.layers.9.nope": (0, 1)}, bits=2)
+
+    def test_dense_parameter_refuses_through_the_meter(self, tiny_moe_meter) -> None:
+        with pytest.raises(ValueError, match="fused expert stack"):
+            tiny_moe_meter.measure_slices(
+                {"model.layers.0.self_attn.q_proj.weight": (0, 1)}, bits=2
+            )
+
+    def test_bits_below_two_refuse(self, tiny_moe_meter) -> None:
+        with pytest.raises(ValueError, match="bits"):
+            tiny_moe_meter.measure_slices({self.UP: (0, 1)}, bits=1)
+
+    def test_poisoned_meter_refuses_measure_slices(self, tiny_moe_meter) -> None:
+        tiny_moe_meter._poisoned = True
+
+        with pytest.raises(RuntimeError, match="rebuild the meter"):
+            tiny_moe_meter.measure_slices({self.UP: (0, 1)}, bits=2)
 
 
 def test_scan_cli_produces_a_valid_map_on_the_tiny_model(
