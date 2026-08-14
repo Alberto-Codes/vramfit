@@ -7,7 +7,11 @@ after the convert stage — loads the recipe, wires the
 `RecipePacker` port to the llama.cpp adapter, and drives the two
 stages — convert, then quantize (imatrix-assisted when ``--imatrix``
 is given, ADR-0016, with the recipe's imatrix exclusions applied,
-ADR-0023) — emitting one run-log event per stage. After
+ADR-0023) — emitting one run-log event per stage. Between the
+stages an ``--imatrix`` pack reads the matrix's counts and reports
+every zero-count expert (ADR-0026 decision 5) — the imatrix
+warnings, the count read, and the echoes live in
+[vramfit.adapters.inbound.cli_pack_imatrix][]. After
 packing it re-checks the real bytes against the recipe's weight
 budget, gates a protected imatrix pack on the reconstruction check
 (ADR-0022 — the stage lives in
@@ -34,6 +38,7 @@ from __future__ import annotations
 
 import sys
 import time
+from dataclasses import replace
 from pathlib import Path
 from typing import Annotated
 
@@ -42,6 +47,11 @@ import typer
 from vramfit.adapters.inbound.cli_pack_check import (
     _check_protected_mappable,
     _reconstruction_stage,
+)
+from vramfit.adapters.inbound.cli_pack_imatrix import (
+    _read_zero_count_experts,
+    _report_imatrix_effects,
+    _warn_imatrix_provenance,
 )
 from vramfit.adapters.inbound.cli_pack_smoke import (
     _check_inputs,
@@ -55,7 +65,7 @@ from vramfit.adapters.outbound.recipe_json import load_recipe
 from vramfit.adapters.outbound.run_log_jsonl import JsonlRunLogFile
 from vramfit.domain.budget import format_size
 from vramfit.domain.model import Recipe
-from vramfit.domain.pack import PackResult, weight_budget_margin
+from vramfit.domain.pack import weight_budget_margin
 from vramfit.ports.outbound import RecipePacker
 
 
@@ -96,65 +106,6 @@ def _build_packer(
         threads=threads,
         imatrix=imatrix,
     )
-
-
-def _warn_imatrix_provenance(recipe: Recipe, imatrix: Path | None) -> None:
-    """Warn when the pack's imatrix cannot honor the recipe's record.
-
-    An assisted-priced recipe is only comparable to a pack that
-    consumes the same imatrix file (ADR-0020), and a recipe's
-    imatrix exclusions change nothing without a matrix to exclude
-    from (ADR-0023). Warnings, not refusals — packing itself works
-    either way.
-
-    Args:
-        recipe: The loaded recipe.
-        imatrix: The ``--imatrix`` value, or None.
-    """
-    if recipe.imatrix is not None:
-        if imatrix is None:
-            typer.echo(
-                "warning: the recipe was priced with imatrix "
-                f'"{recipe.imatrix}" but --imatrix is absent — the pack '
-                "will not match the map's frame (ADR-0020)",
-                err=True,
-            )
-        elif imatrix.resolve() != Path(recipe.imatrix).resolve():
-            typer.echo(
-                f'warning: --imatrix "{imatrix}" differs from the recipe\'s '
-                f'recorded imatrix "{recipe.imatrix}" — the pack will not '
-                "match the map's frame (ADR-0020)",
-                err=True,
-            )
-    excluded_pairs = [p for p in recipe.protected_tensors if p.exclude_imatrix]
-    if excluded_pairs and imatrix is None:
-        typer.echo(
-            f"warning: the recipe marks {len(excluded_pairs)} imatrix "
-            "exclusions but --imatrix is absent — without a matrix the "
-            "exclusions change nothing (ADR-0023)",
-            err=True,
-        )
-
-
-def _report_imatrix_effects(result: PackResult) -> None:
-    """Echo what the imatrix did and did not reach.
-
-    Args:
-        result: The pack step's accounting record.
-    """
-    if result.imatrix_excluded:
-        names = ", ".join(result.imatrix_excluded)
-        typer.echo(
-            f"imatrix exclusions applied: {names} — these tensors "
-            "quantized with the unweighted fit (ADR-0023)"
-        )
-    if result.imatrix_uncovered:
-        names = ", ".join(result.imatrix_uncovered)
-        typer.echo(
-            f"warning: the importance matrix did not cover: {names} — "
-            "these tensors quantized unassisted (token_embd is expected)",
-            err=True,
-        )
 
 
 def _load_recipe(path: Path) -> Recipe:
@@ -247,7 +198,13 @@ def pack(
     untied head (ADR-0012). The ``--python-bin`` interpreter
     runs the convert script — the ``pack`` extra provisions its
     dependencies. ``--imatrix`` hands the quantizer an importance
-    matrix (ADR-0016). A recipe priced on an assisted map records
+    matrix (ADR-0016). The command then reads that matrix's
+    ``.counts`` tensors against the base GGUF and reports every
+    expert the matrix counts zero times — the quantizer fits such
+    an expert unassisted and prints no warning (ADR-0026 decision
+    5). A matrix the reader cannot vouch for halts before the
+    quantizer runs. The read needs gguf-py, which the pack extra
+    provisions. A recipe priced on an assisted map records
     its imatrix — the command warns when ``--imatrix`` is absent or
     names a different file, because the pack would not match the
     map's frame (ADR-0020). A recipe with imatrix exclusions packs
@@ -355,11 +312,17 @@ def pack(
         },
     )
 
+    # The count read runs between the stages: it needs the base GGUF
+    # the convert stage ensured, and an unvouchable matrix must
+    # refuse before the quantizer runs for minutes (ADR-0026).
+    zero_counts = _read_zero_count_experts(run_log, imatrix, base_path)
+
     started = time.monotonic()
     try:
         result = packer.pack(recipe)
     except (RuntimeError, ValueError, OSError) as exc:
         raise _halt(run_log, "quantize", exc) from exc
+    result = replace(result, imatrix_zero_count_experts=zero_counts)
     run_log.emit(
         "model_packed",
         {
@@ -373,6 +336,9 @@ def pack(
             "imatrix": result.imatrix_path,
             "imatrix_uncovered": list(result.imatrix_uncovered),
             "imatrix_excluded": list(result.imatrix_excluded),
+            "imatrix_zero_count_experts": [
+                [stack, expert] for stack, expert in result.imatrix_zero_count_experts
+            ],
         },
     )
     _report_imatrix_effects(result)

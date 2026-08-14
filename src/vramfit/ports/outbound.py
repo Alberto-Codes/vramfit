@@ -11,9 +11,11 @@ can log each (ADR-0012), the smoke port (`SmokeTester`) carries
 the post-pack proof that the artifact emits language (ADR-0017),
 the reconstruction port (`ReconstructionChecker`) carries the
 per-tensor measurement that guards protected packs against fit
-collapse (ADR-0022), and the evals port (`EvalsSidecarSink`) carries
-one evaluated artifact's scoreboard evidence to its published
-sidecar (ADR-0025).
+collapse (ADR-0022), the count port (`ImatrixCountSource`) carries
+the importance matrix's per-expert tallies to the pack step's
+zero-count report (ADR-0026 decision 5), and the evals port
+(`EvalsSidecarSink`) carries one evaluated artifact's scoreboard
+evidence to its published sidecar (ADR-0025).
 Concrete implementations live in [vramfit.adapters.outbound][].
 
 Examples:
@@ -346,6 +348,50 @@ class ReconstructionChecker(Protocol):
         Raises:
             RuntimeError: If a file cannot be read, or a requested
                 tensor is missing from either file.
+        """
+        ...
+
+
+class ImatrixCountSource(Protocol):
+    """Reads an importance matrix's per-expert counts for the pack step.
+
+    The read behind ADR-0026 decision 5 (the 2026-08-13 #198
+    amendment): ``llama-quantize`` fills a zero-count expert's row
+    with ones and prints no warning, so only a read of the file
+    finds the case. The gguf-py adapter implements it beside the
+    packer, reading the ``.counts`` tensors only — about 24 KB on
+    the published matrix. An empty report is what a healthy matrix
+    returns, so the adapter refuses a file it cannot vouch for
+    instead of reading nothing silently. The verdict on the counts
+    is domain arithmetic (`vramfit.domain.pack.zero_count_experts`).
+
+    Examples:
+        The pack command drives the port like this:
+
+        ```python
+        pairs = zero_count_experts(source.expert_stack_counts())
+        ```
+    """
+
+    def expert_stack_counts(self) -> Mapping[str, tuple[int, ...]]:
+        """Read the matrix's expert-stack count vectors.
+
+        Returns:
+            One count vector per expert-stack entry, keyed by GGUF
+            tensor name. Element ``i`` is expert ``i``'s tally,
+            rounded half up — the C loader's rounding, so pack and
+            scan agree on which counts are zero. Dense entries stay
+            out: an entry is an expert stack exactly when its base
+            tensor is 3D.
+
+        Raises:
+            RuntimeError: If the reading library is missing, or the
+                file cannot be vouched for — not an imatrix, no
+                counts, an unknown tensor suffix, a sums tensor
+                without its counts twin, a count that is negative or
+                not finite, or a count length that contradicts the
+                base tensor.
+            OSError: If a file cannot be read.
         """
         ...
 

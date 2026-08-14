@@ -10,6 +10,7 @@ from vramfit.domain.pack import (
     smoke_passed,
     weight_budget_margin,
     without_protections,
+    zero_count_experts,
 )
 
 pytestmark = pytest.mark.unit
@@ -279,3 +280,67 @@ class TestCollapsedTensors:
 
         with pytest.raises(ValueError, match="same tensors"):
             collapsed_tensors({"a": 0.1}, {"b": 0.1})
+
+
+class TestZeroCountExperts:
+    def test_zero_counts_name_their_stack_and_expert_index(self) -> None:
+        pairs = zero_count_experts({"blk.3.ffn_up_exps.weight": (7, 0, 12, 0)})
+
+        assert pairs == (
+            ("blk.3.ffn_up_exps.weight", 1),
+            ("blk.3.ffn_up_exps.weight", 3),
+        )
+
+    def test_healthy_stacks_report_nothing(self) -> None:
+        assert zero_count_experts({"blk.0.ffn_up_exps.weight": (1, 2)}) == ()
+
+    def test_pairs_sort_by_stack_then_expert(self) -> None:
+        pairs = zero_count_experts(
+            {
+                "blk.10.ffn_up_exps.weight": (0,),
+                "blk.2.ffn_down_exps.weight": (0, 0),
+            }
+        )
+
+        assert pairs == (
+            ("blk.10.ffn_up_exps.weight", 0),
+            ("blk.2.ffn_down_exps.weight", 0),
+            ("blk.2.ffn_down_exps.weight", 1),
+        )
+
+    def test_empty_counts_report_nothing(self) -> None:
+        assert zero_count_experts({}) == ()
+
+
+class TestZeroCountResultInvariants:
+    def make_result(self, **overrides) -> PackResult:
+        fields: dict = {
+            "packed_bytes": 500,
+            "base_type": "q4_0",
+            "token_embedding_type": None,
+            "output_tensor_type": None,
+            "overrides": (),
+            "imatrix_path": "model.imatrix.gguf",
+            "imatrix_zero_count_experts": (("blk.0.ffn_up_exps.weight", 1),),
+        }
+        fields.update(overrides)
+        return PackResult(**fields)
+
+    def test_zero_count_report_requires_an_imatrix_path(self) -> None:
+        with pytest.raises(ValueError, match="imatrix_path"):
+            self.make_result(imatrix_path=None)
+
+    def test_zero_count_report_with_its_imatrix_constructs(self) -> None:
+        result = self.make_result()
+
+        assert result.imatrix_zero_count_experts == (("blk.0.ffn_up_exps.weight", 1),)
+
+    def test_negative_expert_index_rejected(self) -> None:
+        with pytest.raises(ValueError, match="negative"):
+            self.make_result(
+                imatrix_zero_count_experts=(("blk.0.ffn_up_exps.weight", -1),)
+            )
+
+    def test_empty_stack_name_rejected(self) -> None:
+        with pytest.raises(ValueError, match="stack"):
+            self.make_result(imatrix_zero_count_experts=(("", 0),))
