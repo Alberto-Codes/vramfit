@@ -24,11 +24,6 @@
   overrides, placed before the group overrides — the quantizer
   applies the first matching pattern. The backend still rejects
   tensor-level *groups*: the boundary moved for protections only.
-- **Amendment (2026-08-14, ADR-0028):** decision 1's table does not
-  reach a routed-expert stack. Expert rows refuse every k-quant, and
-  the quantizer substitutes on a zero exit. Expert-stack groups map
-  through [ADR-0028](0028-expert-stack-type-table.md)'s table, and
-  pack halts on the quantizer's type-fallback warning.
 - **Amendment (2026-08-12, issue #180):** decision 2 gains a second
   group shape, drops a fixed prefix, and gains one refusal.
 
@@ -71,6 +66,13 @@
     class outside this mapping — the Mamba `in_proj`, `out_proj`,
     and `conv1d`, the attention projections, the router, the shared
     experts. Issue #183 carries those.
+
+- **Amendment (2026-08-14, ADR-0028):** decision 1's table does not
+  reach a routed-expert stack. The quantizer rejects every k-quant
+  on the expert rows and substitutes on a zero exit. Expert-stack
+  groups map through [ADR-0028](0028-expert-stack-type-table.md)'s
+  table, pack halts on the quantizer's type-fallback warning, and
+  decision 5's halt stages gain `type_fallback`.
 
 ## Context
 

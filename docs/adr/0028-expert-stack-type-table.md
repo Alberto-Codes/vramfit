@@ -2,8 +2,10 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-14
-- **Amends:** [ADR-0012](0012-gguf-type-mapping.md) decision 1. That
-  table keeps every group that is not a routed-expert stack.
+- **Amends:** [ADR-0012](0012-gguf-type-mapping.md) decisions 1
+  and 5. Decision 1's table keeps every group that is not a
+  routed-expert stack. Decision 5's halt stages gain
+  `type_fallback`.
 
 ## Context
 
@@ -16,22 +18,23 @@ another type on a zero exit.
 
 The 30B target's routed-expert stacks carry rows of 2688 and 1856
 (#159). Neither divides by 256. The stacks hold 93.0 % of the
-parameters. So every type the ADR-0012 table emits is unreachable
-there, and the quantizer rewrites the recipe without failing. The
-community Q4_K_M build shows the result: zero k-quant expert
-tensors, Q5_0 on 13 layers, Q8_0 on 11. That breaks ADR-0012
-decision 3 — the packed file is recipe-driven, never
-heuristic-driven — and moves packed bytes away from predicted bytes.
+parameters. So every k-quant the ADR-0012 table emits is
+unreachable there, and the quantizer rewrites it without failing.
+Only the table's Q8_0 row survives on the stacks. The community
+Q4_K_M build shows the result: zero k-quant expert tensors, Q5_0
+on 13 layers, Q8_0 on 11. That breaks ADR-0012 decision 3 (the
+packed file is recipe-driven, never heuristic-driven) and moves
+packed bytes away from predicted bytes.
 
 Facts verified upstream on 2026-08-14 (#189):
 
 - The fallback warns. `tensor_type_fallback` logs an
   `ncols … not divisible` line and a `falling back to …` line before
-  it substitutes. Pack discards the quantizer's output on success,
-  so the rewrite is silent at the vramfit boundary only.
-  `run_tool` already returns the merged output, and pack already
-  scans it for ADR-0016's imatrix-miss warning.
-- The reachable palette on the stacks, in bits per weight: Q2_0 at
+  it substitutes. Pack scans the quantizer's output only for
+  ADR-0016's imatrix-miss warning and persists none of it, so the
+  rewrite is silent at the vramfit boundary only. `run_tool`
+  already returns the merged output.
+- The types the stack rows accept, in bits per weight: Q2_0 at
   2.25 (block 64), MXFP4 at 4.25 (block 32), Q4_0 and IQ4_NL and
   NVFP4 at 4.5, Q4_1 at 5.0, Q5_0 at 5.5, Q5_1 at 6.0, Q8_0 at 8.5.
   No type lands between 2.25 and 4.25. Q1_0 at 1.125 uses block
@@ -58,17 +61,17 @@ Facts verified upstream on 2026-08-14 (#189):
    | 4 | `Q4_0` | 4.50 | +12.5 % |
    | 2 | `Q2_0` | 2.25 | +12.5 % |
 
-   The backend already derives the stack shape from the group name
-   (ADR-0012, 2026-08-12 amendment). Every entry's block size
-   divides both 2688 and 1856, so the fallback never fires on these
-   rows. Q4_0 takes the 4-bit row over MXFP4 because
+   The backend already recognizes a routed-expert-stack group from
+   its name (ADR-0012, 2026-08-12 amendment). Every entry's block
+   size divides both 2688 and 1856, so the fallback never fires on
+   these rows. Q4_0 takes the 4-bit row over MXFP4 because
    `quantize_q4_0` consumes the importance matrix per expert and
    MXFP4 ignores it.
 
-2. **Nominal 3 on an expert stack refuses at pack time.** The
-   reachable palette holds no type between 2.25 and 4.25 bits per
-   weight. The refusal names the group, the empty band, and both
-   neighbouring entries.
+2. **The backend refuses nominal 3 on an expert stack at pack
+   time.** The stack rows accept no type between 2.25 and 4.25
+   bits per weight. The refusal names the group, the empty
+   2.25–4.25 gap, and both neighboring table entries.
 
 3. **A type-fallback warning halts the pack.** Pack scans the
    quantizer's merged output for the `tensor_type_fallback` warning
@@ -98,14 +101,13 @@ Facts verified upstream on 2026-08-14 (#189):
 - The plan step prices an expert-stack group at this table's
   effective bits (ADR-0014): 2.25 at nominal 2, not Q2_K's 2.625.
   Without that entry the size prediction drifts and the ADR-0012
-  decision 4 re-check fails late. The build ticket carries the
-  mechanism.
+  decision 4 re-check fails late. #228 carries the build.
 - ADR-0021 decision 4 stands. This table states what nominal 2
   means on a stack. The solver still buys no 2-bit until a
   runtime-frame price exists.
 - On this target the decision 3 scan detects nothing, because
-  every table entry divides the stack rows. The scan guards every
-  other tensor class and every future target.
+  every table entry's block size divides the stack rows. The scan
+  guards every other tensor class and every future target.
 - At nominal 2 and 8 the importance matrix does not shape the
   stack quantization. At nominal 4 it does, per expert, through
   `quantize_q4_0`. The imatrix counts keep their provenance role
