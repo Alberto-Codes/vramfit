@@ -67,6 +67,29 @@ change.
     reaches 18.5 % of routing mass without a split, and 31.9 % with
     one (#167). Not "routing share" or "expert mass".
 
+**Slice cell**
+:   A measurement cell over a dim-0 slice of a fused expert stack.
+    The meter quantizes the slice in place and keeps every other
+    weight at reference precision (ADR-0026's 2026-08-13 (#200)
+    amendment). A slice cell ranks or weights in the scan frame, and
+    its damage number never sets a recipe's price (ADR-0021
+    decision 2). Its two forms are the single-expert slice, which
+    the probe measures, and the band slice. Not "sub-cell" or
+    "partial group".
+
+**Per-expert probe** (short: **probe**)
+:   The stratified single-expert measurement that tests whether an
+    expert's damage tracks its imatrix count on a model. One slice
+    cell per sampled expert, at one precision. A refutation demotes
+    ADR-0026 decision 2 and the recipe stays unweighted. Not
+    "spot check" or "sensitivity sample".
+
+**Frequency band** (short: **band**)
+:   A contiguous run of one expert stack's experts, ordered by
+    imatrix count. The meter measures a band as one slice cell, and
+    a split pack realizes a band as its own expert stack (ADR-0026's
+    2026-08-12 (#167) amendment). Not "expert cluster" or "tier".
+
 **Sensitivity**
 :   A group's measured fragility: how much damage quantizing *it alone* to a
     given precision causes. The property the scan measures.
