@@ -6,8 +6,10 @@ under each granularity (`group_key`, the `layer`/`tensor`/`stack`
 naming rule that the torch meter applies but does not own),
 which (group x precision) cells still
 need measurement, how a finished pile of measurements becomes a
-`SensitivityMap` — per-tensor sizes riding through from `GroupSpec`
-(ADR-0022) — the within-group method tokens and the kquant
+`SensitivityMap` — per-tensor sizes and imatrix count summaries
+riding through from `GroupSpec`
+(ADR-0022, ADR-0026 decision 4) — the pooled count reduction
+(`summarize_imatrix_counts`), the within-group method tokens and the kquant
 coverage set (ADR-0006, ADR-0018, ADR-0020 — every token
 re-exported from [vramfit.domain.model][], where `ScanMeta`
 anchors them), and
@@ -35,7 +37,8 @@ from __future__ import annotations
 
 import math
 import re
-from collections.abc import Collection, Iterable, Mapping
+import statistics
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Literal
@@ -49,7 +52,12 @@ from vramfit.domain.model import (
 from vramfit.domain.model import (
     SCAN_METHOD as SCAN_METHOD,  # noqa: PLC0414 - re-export: method tokens read from this module
 )
-from vramfit.domain.model import LayerGroup, ScanMeta, SensitivityMap
+from vramfit.domain.model import (
+    ImatrixCountSummary,
+    LayerGroup,
+    ScanMeta,
+    SensitivityMap,
+)
 
 # Decoder-layer prefixes across common naming families: llama-style
 # ".layers.N.", GPT-2-style ".h.N.", and ".blocks.N.".
@@ -135,6 +143,11 @@ class GroupSpec:
             at reference precision (ADR-0022), or empty when the
             meter predates the field. Rides into the map's groups so
             protections can price against it.
+        imatrix_counts (ImatrixCountSummary | None): The pooled count
+            distribution of the group's fused expert stacks (ADR-0026
+            decision 4), or None for an unassisted meter or a group
+            the 2026-08-13 #201 amendment leaves without one. Rides
+            into the map's groups unchanged.
 
     Examples:
         A one-tensor group:
@@ -150,6 +163,7 @@ class GroupSpec:
     tensors: tuple[str, ...]
     bytes_fp16: int
     tensor_bytes: Mapping[str, int] = field(hash=False, default_factory=dict)
+    imatrix_counts: ImatrixCountSummary | None = None
 
     def __post_init__(self) -> None:
         """Enforce the spec invariants and freeze the size record.
@@ -338,6 +352,55 @@ def plan_measurements(
     return tuple(cell for cell in grid if cell not in seen)
 
 
+def summarize_imatrix_counts(
+    vectors: Iterable[Sequence[int]],
+) -> ImatrixCountSummary:
+    """Pool expert-stack count vectors into one summary (ADR-0026).
+
+    The reduction behind decision 4's map fields, scoped by the
+    2026-08-13 #201 amendment: it consumes expert-stack count
+    vectors only. The caller selects the vectors — a scalar chunk
+    tally never reaches this function.
+
+    Args:
+        vectors: One count vector per fused expert stack in the
+            group. Each element ``i`` is expert ``i``'s routing
+            frequency.
+
+    Returns:
+        The pooled count minimum, median, and maximum. The median is
+        a float in every case — ``statistics.median`` returns an
+        ``int`` for odd-length integer input, and one field must not
+        write two JSON types.
+
+    Raises:
+        ValueError: If no counts arrive at all — an empty reduction
+            has no distribution to summarize, and the #201 amendment
+            leaves such a group's fields absent instead.
+
+    Examples:
+        Pool a two-stack group:
+
+        ```python
+        from vramfit.domain.scan import summarize_imatrix_counts
+
+        summary = summarize_imatrix_counts([(3, 9), (5, 7)])
+        assert (summary.min, summary.median, summary.max) == (3, 6.0, 9)
+        ```
+    """
+    pooled = [count for vector in vectors for count in vector]
+    if not pooled:
+        raise ValueError(
+            "no counts to summarize — a group without a resolved expert "
+            "stack records no summary (ADR-0026, #201 amendment)"
+        )
+    return ImatrixCountSummary(
+        min=min(pooled),
+        median=float(statistics.median(pooled)),
+        max=max(pooled),
+    )
+
+
 def assemble_map(
     model_id: str,
     meta: ScanMeta,
@@ -348,7 +411,8 @@ def assemble_map(
 
     Each spec's per-tensor sizes ride into its map group unchanged
     (ADR-0022) — a meter that reports them makes the map
-    protection-ready.
+    protection-ready. A spec's imatrix count summary rides through
+    the same way (ADR-0026 decision 4).
 
     Args:
         model_id: The scanned model's identifier.
@@ -406,6 +470,7 @@ def assemble_map(
                 bytes_fp16=spec.bytes_fp16,
                 sensitivity=curves[spec.name],
                 tensor_bytes=spec.tensor_bytes,
+                imatrix_counts=spec.imatrix_counts,
             )
             for spec in spec_list
         ),

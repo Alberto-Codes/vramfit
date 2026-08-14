@@ -4,7 +4,7 @@ from typing import Any
 
 import pytest
 
-from vramfit.domain.model import ScanMeta
+from vramfit.domain.model import ImatrixCountSummary, ScanMeta
 from vramfit.domain.scan import (
     GroupSpec,
     Measurement,
@@ -13,6 +13,7 @@ from vramfit.domain.scan import (
     matches_a_layer,
     plan_measurements,
     scan_fingerprint,
+    summarize_imatrix_counts,
 )
 
 pytestmark = pytest.mark.unit
@@ -299,3 +300,69 @@ class TestGroupKey:
     def test_matches_a_layer_separates_layer_weights_from_edges(self) -> None:
         assert matches_a_layer("model.layers.0.mlp.up_proj.weight")
         assert not matches_a_layer("model.embed_tokens.weight")
+
+
+class TestSummarizeImatrixCounts:
+    def test_pooled_reduction_spans_all_vectors(self) -> None:
+        summary = summarize_imatrix_counts([(3, 9), (5, 7)])
+
+        assert (summary.min, summary.median, summary.max) == (3, 6.0, 9)
+
+    def test_median_is_a_float_for_an_odd_pool(self) -> None:
+        # statistics.median returns an int here — one field must not
+        # write two JSON types (the PR #195 round-trip trap).
+        summary = summarize_imatrix_counts([(1, 2, 3)])
+
+        assert summary.median == 2.0
+        assert isinstance(summary.median, float)
+
+    def test_zero_counts_pool_like_any_other(self) -> None:
+        # Decision 1 trusts any nonzero count, and the summary is
+        # provenance — a zero stays visible as the minimum.
+        summary = summarize_imatrix_counts([(0, 8)])
+
+        assert summary.min == 0
+
+    def test_empty_pool_raises_value_error(self) -> None:
+        with pytest.raises(ValueError, match="no counts"):
+            summarize_imatrix_counts([])
+
+    def test_summary_rides_through_assemble_map(self) -> None:
+        summary = ImatrixCountSummary(min=3, median=6.0, max=9)
+        specs = (
+            GroupSpec(
+                name="g0", tensors=("g0.w",), bytes_fp16=1000, imatrix_counts=summary
+            ),
+            GroupSpec(name="g1", tensors=("g1.w",), bytes_fp16=2000),
+        )
+        measurements = [
+            Measurement(group, bits, 0.1) for group in ("g0", "g1") for bits in (8, 4)
+        ]
+
+        map_ = assemble_map("m", make_meta(), specs, measurements)
+
+        assert map_.groups[0].imatrix_counts == summary
+        assert map_.groups[1].imatrix_counts is None
+
+
+class TestImatrixCountSummaryInvariants:
+    def test_ordered_summary_constructs(self) -> None:
+        summary = ImatrixCountSummary(min=426, median=18114.0, max=192191)
+
+        assert summary.min <= summary.median <= summary.max
+
+    def test_unordered_summary_rejected(self) -> None:
+        with pytest.raises(ValueError, match="ordered"):
+            ImatrixCountSummary(min=10, median=5.0, max=20)
+
+    def test_median_above_max_rejected(self) -> None:
+        with pytest.raises(ValueError, match="ordered"):
+            ImatrixCountSummary(min=1, median=30.0, max=20)
+
+    def test_negative_min_rejected(self) -> None:
+        with pytest.raises(ValueError, match="negative"):
+            ImatrixCountSummary(min=-1, median=0.0, max=1)
+
+    def test_non_finite_median_rejected(self) -> None:
+        with pytest.raises(ValueError, match="finite"):
+            ImatrixCountSummary(min=0, median=float("nan"), max=1)

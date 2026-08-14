@@ -41,7 +41,10 @@ GGUF imatrix file that loads before the model. Construction refuses
 weights the
 model cannot consume — wrong names, wrong lengths, misaligned rows,
 non-finite values — before the scan spends an hour, and reports the
-coverage split for the run log.
+coverage split for the run log. A file-resolved meter also reads
+the matrix's counts and pools each group's expert-stack vectors
+into the map's count summary (ADR-0026 decision 4, the #201
+amendment).
 
 See Also:
     - [vramfit.ports.outbound][]: `DamageMeter`, the port this
@@ -65,8 +68,10 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from vramfit.adapters.outbound.scan.calibration import load_calibration
 from vramfit.adapters.outbound.scan.imatrix import (
     check_imatrix_weights,
+    expert_stack_count_vectors,
     load_imatrix,
     resolve_assisted_weights,
+    resolve_imatrix_counts,
 )
 from vramfit.adapters.outbound.scan.kl import mean_kl, reference_log_probs
 from vramfit.adapters.outbound.scan.kquant import kquant_quantize_dequantize
@@ -84,7 +89,13 @@ from vramfit.adapters.outbound.scan.quantize import (
     MIN_BITS,
     rtn_quantize_dequantize,
 )
-from vramfit.domain.scan import GroupSpec, group_key, matches_a_layer
+from vramfit.domain.model import ImatrixCountSummary
+from vramfit.domain.scan import (
+    GroupSpec,
+    group_key,
+    matches_a_layer,
+    summarize_imatrix_counts,
+)
 
 
 class TorchDamageMeter:
@@ -178,7 +189,11 @@ class TorchDamageMeter:
                 two exclude each other. The file loads before the
                 model, so a malformed imatrix refuses in
                 milliseconds. Name resolution runs after group
-                discovery, when the parameter shapes exist.
+                discovery, when the parameter shapes exist. A
+                file-resolved meter also reads the counts and pools
+                each group's expert-stack vectors into its map
+                summary (ADR-0026 decision 4) — all or nothing per
+                group, absent on an empty resolution.
 
         Raises:
             ValueError: If ``within_group`` is not a known method —
@@ -257,7 +272,24 @@ class TorchDamageMeter:
             for members in self._groups.values()
             for name in members
         }
+        # Decision 4's count summary per group (ADR-0026, the #201
+        # amendment): expert-stack vectors only, all or nothing per
+        # group. An empty resolution leaves every summary absent and
+        # never refuses (the #198 amendment).
+        self._imatrix_count_summaries: dict[str, ImatrixCountSummary] = {}
         if pending_imatrix is not None:
+            shapes_by_param = {
+                name: tuple(self._param(name).shape) for name in rows_by_param
+            }
+            resolved_counts, _ = resolve_imatrix_counts(
+                pending_imatrix, shapes_by_param
+            )
+            self._imatrix_count_summaries = {
+                group: summarize_imatrix_counts(vectors)
+                for group, members in self._groups.items()
+                if (vectors := expert_stack_count_vectors(resolved_counts, members))
+                is not None
+            }
             self._imatrix_weights, _ = resolve_assisted_weights(
                 pending_imatrix, rows_by_param
             )
@@ -282,7 +314,9 @@ class TorchDamageMeter:
         Returns:
             All groups in module order, sized at 2 bytes per parameter
             (the bf16 reference), with per-tensor sizes for the
-            protection pricing (ADR-0022).
+            protection pricing (ADR-0022) and, on an assisted meter,
+            each group's pooled expert-stack count summary (ADR-0026
+            decision 4).
         """
         return tuple(
             GroupSpec(
@@ -292,6 +326,7 @@ class TorchDamageMeter:
                 # Per-tensor sizes ride into the map so protections
                 # can price against them (ADR-0022).
                 tensor_bytes={t: self._param(t).numel() * 2 for t in tensors},
+                imatrix_counts=self._imatrix_count_summaries.get(name),
             )
             for name, tensors in self._groups.items()
         )

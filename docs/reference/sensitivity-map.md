@@ -98,6 +98,23 @@ below remain, the sub-4-bit pricing claims do not.
   older maps, `scripts/backfill_tensor_sizes.py` reads the
   checkpoint's safetensors headers — a JSON parse, no torch — and
   writes an annotated map copy.
+- **`imatrix_counts`** — the group's pooled imatrix count
+  distribution: `{"min": ..., "median": ..., "max": ...}`
+  ([ADR-0026](../adr/0026-moe-expert-pricing.md) decision 4, scoped
+  by the 2026-08-13 #201 amendment). An assisted scan reads each
+  fused expert stack's count vector through
+  `resolve_imatrix_counts` and pools the group's vectors into three
+  numbers. Provenance, not a gate. A scalar chunk tally never
+  enters the reduction, so the router, the shared experts, and
+  every dense member stay out. The field is all-or-nothing per
+  group: it appears only when every expert-stack member resolved
+  its full count vector, and a group without an expert stack never
+  carries it. `median` is always a float. The field is additive and
+  informational, so the schema holds at 3: the loader accepts an
+  absent field as no summary, and a present field must hold exactly
+  the three keys, ordered `min <= median <= max`. An absent field
+  leaves a dense-only group and an unresolved group alike — #194
+  owns the map's coverage record.
 - **`scan.within_group`** — the within-group method token
   ([ADR-0018](../adr/0018-kquant-within-group-method.md)):
   `rtn-block32` (round-to-nearest, the v1 default), `kquant-ref`

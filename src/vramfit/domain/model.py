@@ -5,7 +5,8 @@ The dataclasses enforce their own structural invariants in
 unique group names, sensitivity keys matching the scan, imatrix
 provenance pairing with the assisted method token, tensor sizes
 covering exactly the group's tensors, protection records pairing
-with their resolved pairs — ADR-0022) so an instance
+with their resolved pairs — ADR-0022 — and an ordered imatrix
+count summary — ADR-0026 decision 4) so an instance
 that exists is safe for the solver — however it was constructed. The
 within-group method tokens live here — `SCAN_METHOD` beside the
 `ScanMeta` field it is the default for (ADR-0018), and the kquant
@@ -50,6 +51,7 @@ See Also:
 from __future__ import annotations
 
 import itertools
+import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
@@ -159,6 +161,55 @@ class ScanMeta:
 
 
 @dataclass(frozen=True, slots=True)
+class ImatrixCountSummary:
+    """A group's pooled imatrix count distribution (ADR-0026 decision 4).
+
+    The reduction pools the count vectors of the group's fused
+    expert stacks and nothing else (ADR-0026, 2026-08-13 #201
+    amendment). The numbers are provenance, not a gate — they let a
+    later data point challenge decision 1 with evidence instead of
+    re-deriving the distribution.
+
+    Attributes:
+        min (int): The smallest pooled count.
+        median (float): The pooled median. A float in every case —
+            ``statistics.median`` returns an ``int`` for odd-length
+            integer input, and one field must not write two JSON
+            types.
+        max (int): The largest pooled count.
+
+    Examples:
+        The published matrix's routed-expert distribution:
+
+        ```python
+        from vramfit.domain.model import ImatrixCountSummary
+
+        summary = ImatrixCountSummary(min=426, median=18114.0, max=192191)
+        ```
+    """
+
+    min: int
+    median: float
+    max: int
+
+    def __post_init__(self) -> None:
+        """Enforce the summary invariants.
+
+        Raises:
+            ValueError: If ``min`` is negative, ``median`` is not
+                finite, or the three values are not ordered
+                ``min <= median <= max`` — an unordered summary
+                cannot come from one pooled distribution.
+        """
+        if self.min < 0:
+            raise ValueError("min must not be negative")
+        if not math.isfinite(self.median):
+            raise ValueError("median must be finite")
+        if not self.min <= self.median <= self.max:
+            raise ValueError("summary must be ordered: min <= median <= max")
+
+
+@dataclass(frozen=True, slots=True)
 class LayerGroup:
     """One scanned layer group and its damage curve.
 
@@ -173,6 +224,13 @@ class LayerGroup:
             reference precision (ADR-0022), or empty when the map
             predates the field. Protections price against these — a
             plan refuses a protection on a group without them.
+        imatrix_counts (ImatrixCountSummary | None): The pooled count
+            distribution of the group's fused expert stacks (ADR-0026
+            decision 4), or None. The field is all-or-nothing per
+            group: it appears only when every expert-stack member
+            resolved its full count vector, and a group without an
+            expert stack never carries it (the 2026-08-13 #201
+            amendment).
 
     Examples:
         A group whose damage doubles from 4-bit to 2-bit:
@@ -194,6 +252,7 @@ class LayerGroup:
     bytes_fp16: int
     sensitivity: Mapping[int, float] = field(hash=False)
     tensor_bytes: Mapping[str, int] = field(hash=False, default_factory=dict)
+    imatrix_counts: ImatrixCountSummary | None = None
 
     def __post_init__(self) -> None:
         """Enforce group invariants and freeze the mappings.

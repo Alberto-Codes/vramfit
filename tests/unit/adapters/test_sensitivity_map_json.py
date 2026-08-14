@@ -359,3 +359,91 @@ class TestTensorBytes:
 
         with pytest.raises(ArtifactError, match="tensor_bytes"):
             map_from_dict(raw)
+
+
+@pytest.mark.unit
+class TestImatrixCounts:
+    def make_summarized_dict(self) -> dict:
+        raw = make_map([("model.layers.0", 1_000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.4})])
+        raw["groups"][0]["imatrix_counts"] = {
+            "min": 426,
+            "median": 18114.0,
+            "max": 192191,
+        }
+        return raw
+
+    def test_imatrix_counts_round_trip(self) -> None:
+        raw = self.make_summarized_dict()
+
+        map_ = map_from_dict(raw)
+        again = map_from_dict(map_to_dict(map_))
+
+        assert again == map_
+        summary = map_.groups[0].imatrix_counts
+        assert summary is not None
+        assert (summary.min, summary.median, summary.max) == (426, 18114.0, 192191)
+
+    def test_median_writes_a_float_for_an_integer_value(self) -> None:
+        # statistics.median returns an int for odd-length integer
+        # input, and one field must not write two JSON types.
+        raw = self.make_summarized_dict()
+
+        written = map_to_dict(map_from_dict(raw))["groups"][0]["imatrix_counts"]
+
+        assert isinstance(written["median"], float)
+
+    def test_absent_imatrix_counts_loads_none(self) -> None:
+        raw = self.make_summarized_dict()
+        del raw["groups"][0]["imatrix_counts"]
+
+        map_ = map_from_dict(raw)
+
+        assert map_.groups[0].imatrix_counts is None
+        # The writer omits the absent field instead of writing null.
+        assert "imatrix_counts" not in map_to_dict(map_)["groups"][0]
+
+    def test_null_imatrix_counts_rejected(self) -> None:
+        # The writer omits the field when absent and never writes
+        # null — an explicit null is a hand-edit (ADR-0026).
+        raw = self.make_summarized_dict()
+        raw["groups"][0]["imatrix_counts"] = None
+
+        with pytest.raises(ArtifactError, match="imatrix_counts"):
+            map_from_dict(raw)
+
+    def test_extra_summary_key_rejected(self) -> None:
+        # PR #195's proposed fourth field stays out (the #201
+        # amendment): decision 4 is three numbers.
+        raw = self.make_summarized_dict()
+        raw["groups"][0]["imatrix_counts"]["covered"] = 128
+
+        with pytest.raises(ArtifactError, match="exactly"):
+            map_from_dict(raw)
+
+    def test_missing_summary_key_rejected(self) -> None:
+        raw = self.make_summarized_dict()
+        del raw["groups"][0]["imatrix_counts"]["median"]
+
+        with pytest.raises(ArtifactError, match="exactly"):
+            map_from_dict(raw)
+
+    def test_unordered_summary_rejected(self) -> None:
+        raw = self.make_summarized_dict()
+        raw["groups"][0]["imatrix_counts"]["min"] = 200_000
+
+        with pytest.raises(ArtifactError, match="ordered"):
+            map_from_dict(raw)
+
+    def test_negative_min_rejected(self) -> None:
+        raw = self.make_summarized_dict()
+        raw["groups"][0]["imatrix_counts"]["min"] = -1
+
+        with pytest.raises(ArtifactError, match="negative"):
+            map_from_dict(raw)
+
+    def test_non_integer_min_rejected(self) -> None:
+        raw = self.make_summarized_dict()
+        raw["groups"][0]["imatrix_counts"]["min"] = 426.5
+
+        with pytest.raises(ArtifactError, match="min"):
+            map_from_dict(raw)
