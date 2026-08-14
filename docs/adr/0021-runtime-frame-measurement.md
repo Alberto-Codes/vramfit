@@ -80,7 +80,7 @@ arithmetic.
   **Resolved (2026-08-14, #163 and #220): they do not.** The
   instruments disagree 0.3–10.6 % per cell with zero
   same-instrument noise, and ordering survives.
-  [ADR-0027](0027-instrument-frame-matching.md) rules the
+  [ADR-0027](0027-instrument-frame-matching.md) states the
   frame-match rule, the ordering bar for rented maps, and the
   per-instrument noise floor.
 - Whether `plan` grows a precision-exclusion flag, or map copies
