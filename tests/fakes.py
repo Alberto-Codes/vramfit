@@ -207,6 +207,27 @@ class MemoryRecipePacker:
 
 
 @dataclass
+class MemoryImatrixCountSource:
+    """In-memory `ImatrixCountSource`. Counts are configured per stack.
+
+    Like the real adapter, an unvouchable source raises `PackError`
+    rather than returning an empty mapping — an empty report is what
+    a healthy matrix returns, so a silent failure would read as a
+    clean bill of health (ADR-0026, #198 amendment).
+    """
+
+    stack_counts: dict[str, tuple[int, ...]] = field(default_factory=dict)
+    fail: bool = False
+    reads: int = 0
+
+    def expert_stack_counts(self) -> dict[str, tuple[int, ...]]:
+        if self.fail:
+            raise PackError("imatrix.gguf is not an imatrix GGUF: configured failure")
+        self.reads += 1
+        return dict(self.stack_counts)
+
+
+@dataclass
 class MemoryReconstructionChecker:
     """In-memory `ReconstructionChecker`. Errors are configured per tensor.
 

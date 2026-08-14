@@ -6,8 +6,12 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from tests.fakes import MemoryRecipePacker, MemorySmokeTester
-from vramfit.adapters.inbound import cli_pack, cli_pack_smoke
+from tests.fakes import (
+    MemoryImatrixCountSource,
+    MemoryRecipePacker,
+    MemorySmokeTester,
+)
+from vramfit.adapters.inbound import cli_pack, cli_pack_imatrix, cli_pack_smoke
 from vramfit.adapters.inbound.cli import app
 from vramfit.adapters.outbound.recipe_json import save_recipe
 from vramfit.adapters.outbound.run_log_jsonl import read_run_log
@@ -71,6 +75,15 @@ def recipe_path(tmp_path: Path) -> Path:
 
 def patch_packer(monkeypatch, fake: MemoryRecipePacker) -> None:
     monkeypatch.setattr(cli_pack, "_build_packer", lambda *args: fake)
+
+
+@pytest.fixture(autouse=True)
+def count_source(monkeypatch) -> MemoryImatrixCountSource:
+    # Every --imatrix pack reads the matrix's counts (ADR-0026
+    # decision 5), and these tests' matrix files are not GGUF.
+    fake = MemoryImatrixCountSource()
+    monkeypatch.setattr(cli_pack_imatrix, "_build_count_source", lambda *args: fake)
+    return fake
 
 
 def patch_smoke_tester(monkeypatch, fake: MemorySmokeTester) -> None:
@@ -749,6 +762,104 @@ class TestPackSmokeAndImatrix:
 
         assert result.exit_code == 1
         assert tester.runs == 0
+
+
+class TestZeroCountExpertReport:
+    STACK = "blk.0.ffn_up_exps.weight"
+
+    def _invoke(self, recipe_path, llama_cpp_dir, out, *extra):
+        return runner.invoke(
+            app,
+            [
+                "pack",
+                str(recipe_path),
+                "--llama-cpp",
+                str(llama_cpp_dir),
+                "--out",
+                str(out),
+                *extra,
+            ],
+        )
+
+    def test_zero_count_experts_reach_the_log_and_the_console(
+        self, tmp_path, monkeypatch, llama_cpp_dir, recipe_path, count_source
+    ) -> None:
+        imatrix = tmp_path / "model.imatrix.gguf"
+        imatrix.write_bytes(b"GGUF")
+        patch_packer(
+            monkeypatch,
+            MemoryRecipePacker(packed_bytes=100, imatrix=str(imatrix)),
+        )
+        count_source.stack_counts = {self.STACK: (3, 0)}
+        out = tmp_path / "packed.gguf"
+
+        result = self._invoke(
+            recipe_path, llama_cpp_dir, out, "--imatrix", str(imatrix)
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "zero samples" in result.output
+        assert f"{self.STACK} expert 1" in result.output
+        log = read_run_log(out.with_name(out.stem + ".runlog.jsonl"))
+        packed = next(line for line in log if line["event"] == "model_packed")
+        assert packed["imatrix_zero_count_experts"] == [[self.STACK, 1]]
+
+    def test_healthy_matrix_reports_nothing(
+        self, tmp_path, monkeypatch, llama_cpp_dir, recipe_path, count_source
+    ) -> None:
+        imatrix = tmp_path / "model.imatrix.gguf"
+        imatrix.write_bytes(b"GGUF")
+        patch_packer(
+            monkeypatch,
+            MemoryRecipePacker(packed_bytes=100, imatrix=str(imatrix)),
+        )
+        count_source.stack_counts = {self.STACK: (3, 9)}
+        out = tmp_path / "packed.gguf"
+
+        result = self._invoke(
+            recipe_path, llama_cpp_dir, out, "--imatrix", str(imatrix)
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "zero samples" not in result.output
+        log = read_run_log(out.with_name(out.stem + ".runlog.jsonl"))
+        packed = next(line for line in log if line["event"] == "model_packed")
+        assert packed["imatrix_zero_count_experts"] == []
+        assert count_source.reads == 1
+
+    def test_matrix_less_pack_reads_no_counts(
+        self, tmp_path, monkeypatch, llama_cpp_dir, recipe_path, count_source
+    ) -> None:
+        patch_packer(monkeypatch, MemoryRecipePacker(packed_bytes=100))
+        out = tmp_path / "packed.gguf"
+
+        result = self._invoke(recipe_path, llama_cpp_dir, out)
+
+        assert result.exit_code == 0, result.output
+        assert count_source.reads == 0
+        log = read_run_log(out.with_name(out.stem + ".runlog.jsonl"))
+        packed = next(line for line in log if line["event"] == "model_packed")
+        assert packed["imatrix_zero_count_experts"] == []
+
+    def test_unvouchable_matrix_halts_before_the_quantizer(
+        self, tmp_path, monkeypatch, llama_cpp_dir, recipe_path, count_source
+    ) -> None:
+        imatrix = tmp_path / "model.imatrix.gguf"
+        imatrix.write_bytes(b"not a gguf")
+        fake = MemoryRecipePacker(packed_bytes=100, imatrix=str(imatrix))
+        patch_packer(monkeypatch, fake)
+        count_source.fail = True
+        out = tmp_path / "packed.gguf"
+
+        result = self._invoke(
+            recipe_path, llama_cpp_dir, out, "--imatrix", str(imatrix)
+        )
+
+        assert result.exit_code == 1
+        assert fake.packed == []
+        log = read_run_log(out.with_name(out.stem + ".runlog.jsonl"))
+        assert log[-1]["event"] == "pack_halted"
+        assert log[-1]["stage"] == "imatrix_counts"
 
 
 class TestSmokeWiring:

@@ -4,7 +4,9 @@ The pack step hands a recipe to a runtime's quantizer and gets a file
 back. The domain owns what survives that exchange without IO: the
 record of what was driven (`PackResult`), the arithmetic that
 re-checks real bytes against the planned budget (ADR-0012), the
-smoke-test verdict against the perplexity ceiling (ADR-0017), and
+smoke-test verdict against the perplexity ceiling (ADR-0017), the
+zero-count judgment on the imatrix counts the pack reads
+(`zero_count_experts`, ADR-0026 decision 5), and
 the reconstruction-check verdict on protected packs — the stripped
 reference recipe and the collapsed-tensor judgment (ADR-0022). Type
 tables and subprocess details live in
@@ -28,7 +30,7 @@ See Also:
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 
 from vramfit.domain.model import Recipe
@@ -102,6 +104,13 @@ class PackResult:
             rows the pack dropped on the recipe's instruction
             (ADR-0023). Empty without an imatrix — an exclusion
             without a matrix is a no-op.
+        imatrix_zero_count_experts (tuple[tuple[str, int], ...]):
+            ``(stack, expert)`` pairs the importance matrix counts
+            zero times (ADR-0026 decision 5), sorted. The quantizer
+            fills such an expert's row with ones and prints no
+            warning, so only this record names the case. A report,
+            never a gate. Separate from ``imatrix_uncovered``, which
+            names whole tensors. Empty without an imatrix.
 
     Examples:
         Inspect the real size of a packed model:
@@ -119,6 +128,7 @@ class PackResult:
     imatrix_path: str | None = None
     imatrix_uncovered: tuple[str, ...] = ()
     imatrix_excluded: tuple[str, ...] = ()
+    imatrix_zero_count_experts: tuple[tuple[str, int], ...] = ()
 
     def __post_init__(self) -> None:
         """Enforce the result invariants.
@@ -127,9 +137,11 @@ class PackResult:
             ValueError: If ``packed_bytes`` is not positive,
                 ``base_type`` is empty, ``token_embedding_type``,
                 ``output_tensor_type``, or ``imatrix_path`` is empty,
-                ``imatrix_uncovered`` or ``imatrix_excluded`` is set
-                without an ``imatrix_path``, or two overrides share a
-                pattern.
+                ``imatrix_uncovered``, ``imatrix_excluded``, or
+                ``imatrix_zero_count_experts`` is set without an
+                ``imatrix_path``, a zero-count pair names an empty
+                stack or a negative expert index, or two overrides
+                share a pattern.
         """
         if self.packed_bytes <= 0:
             raise ValueError("packed_bytes must be positive")
@@ -145,9 +157,70 @@ class PackResult:
             raise ValueError("imatrix_uncovered requires an imatrix_path")
         if self.imatrix_excluded and self.imatrix_path is None:
             raise ValueError("imatrix_excluded requires an imatrix_path")
+        if self.imatrix_zero_count_experts and self.imatrix_path is None:
+            raise ValueError("imatrix_zero_count_experts requires an imatrix_path")
+        _check_zero_count_pairs(self.imatrix_zero_count_experts)
         patterns = [override.pattern for override in self.overrides]
         if len(set(patterns)) != len(patterns):
             raise ValueError("override patterns must be unique")
+
+
+def _check_zero_count_pairs(pairs: tuple[tuple[str, int], ...]) -> None:
+    """Refuse a malformed zero-count report entry.
+
+    Args:
+        pairs: The ``(stack, expert)`` pairs a `PackResult` records.
+
+    Raises:
+        ValueError: If a pair names an empty stack or a negative
+            expert index — neither can come from a real read.
+    """
+    for stack, expert in pairs:
+        if not stack:
+            raise ValueError("a zero-count pair's stack must not be empty")
+        if expert < 0:
+            raise ValueError("a zero-count pair's expert index must not be negative")
+
+
+def zero_count_experts(
+    stack_counts: Mapping[str, Sequence[int]],
+) -> tuple[tuple[str, int], ...]:
+    """Name every expert an importance matrix counts zero times.
+
+    The judgment behind ADR-0026 decision 5: the quantizer fills a
+    zero-count expert's row with ones and prints no warning, so the
+    pack path reads the counts itself and reports. The counts arrive
+    rounded (`ImatrixCountSource`), so zero here is the same zero
+    the C loader tests.
+
+    Args:
+        stack_counts: One rounded count vector per expert-stack
+            entry, keyed by GGUF tensor name. Element ``i`` is
+            expert ``i``'s tally.
+
+    Returns:
+        ``(stack, expert)`` pairs, sorted by stack name then expert
+        index. Empty when every expert holds a nonzero count — the
+        healthy case.
+
+    Examples:
+        One starved expert inside a covered stack:
+
+        ```python
+        from vramfit.domain.pack import zero_count_experts
+
+        pairs = zero_count_experts({"blk.3.ffn_up_exps.weight": (7, 0, 12)})
+        assert pairs == (("blk.3.ffn_up_exps.weight", 1),)
+        ```
+    """
+    return tuple(
+        sorted(
+            (stack, expert)
+            for stack, counts in stack_counts.items()
+            for expert, count in enumerate(counts)
+            if count == 0
+        )
+    )
 
 
 def weight_budget_margin(recipe: Recipe, packed_bytes: int) -> int:

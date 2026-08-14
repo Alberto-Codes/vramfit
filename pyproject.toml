@@ -213,15 +213,17 @@ extra-paths = ["scripts"]
 
 # The scan adapter and its torch-tier tests import torch and
 # transformers, which CI and torch-less dev boxes do not install
-# (ADR-0005). The reconstruction adapter and its contract suite
-# import gguf-py the same way (ADR-0022). Everything else still
-# type-checks strictly.
+# (ADR-0005). The reconstruction adapter (ADR-0022), the imatrix
+# count reader (ADR-0026), and their contract suites import gguf-py
+# the same way. Everything else still type-checks strictly.
 [[tool.ty.overrides]]
 include = [
     "src/vramfit/adapters/outbound/scan/**",
+    "src/vramfit/adapters/outbound/gguf/imatrix_counts.py",
     "src/vramfit/adapters/outbound/gguf/reconstruction.py",
     "tests/conftest.py",
     "tests/contract/test_damage_meter_contract.py",
+    "tests/contract/test_imatrix_count_source_contract.py",
     "tests/contract/test_reconstruction_checker_contract.py",
     "tests/integration/test_offload.py",
     "tests/integration/test_torch_scan_adapter.py",

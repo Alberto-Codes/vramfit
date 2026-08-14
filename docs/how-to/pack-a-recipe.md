@@ -82,6 +82,16 @@ measured pipeline. The quantizer embeds the matrix's provenance in
 the packed file, and the `model_packed` run-log event records the
 path.
 
+The command also reads the matrix's `.counts` tensors against the
+base GGUF before quantizing
+([ADR-0026](../adr/0026-moe-expert-pricing.md) decision 5). An
+expert the matrix counts zero times quantizes at the unassisted
+fit with no warning from the quantizer, so pack warns instead and
+records the `(stack, expert)` pairs under
+`imatrix_zero_count_experts`. A matrix the reader cannot vouch for
+halts the pack. The read needs gguf-py, which the pack extra
+already provisions.
+
 ## The smoke test
 
 A packed artifact can pass the solver, the validation pass, and the

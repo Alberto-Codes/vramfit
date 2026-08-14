@@ -323,8 +323,11 @@ change.
 :   The pack step's accounting record: real packed bytes plus the type
     mapping driven into the quantizer — base type, embedding and
     output-head flag types, the pattern overrides, the importance
-    matrix path when one was used, and the imatrix coverage record
-    (uncovered tensors, and the exclusions the recipe instructed).
+    matrix path when one was used, the imatrix coverage record
+    (uncovered tensors, and the exclusions the recipe instructed),
+    and the zero-count expert report — `(stack, expert)` pairs the
+    matrix counts zero times
+    ([ADR-0026](../adr/0026-moe-expert-pricing.md) decision 5).
     Code type `vramfit.domain.pack.PackResult`.
 
 **Importance matrix** (short: **imatrix**)

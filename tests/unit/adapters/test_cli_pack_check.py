@@ -14,8 +14,12 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from tests.fakes import MemoryRecipePacker, MemoryReconstructionChecker
-from vramfit.adapters.inbound import cli_pack, cli_pack_check
+from tests.fakes import (
+    MemoryImatrixCountSource,
+    MemoryRecipePacker,
+    MemoryReconstructionChecker,
+)
+from vramfit.adapters.inbound import cli_pack, cli_pack_check, cli_pack_imatrix
 from vramfit.adapters.inbound.cli import app
 from vramfit.adapters.outbound.recipe_json import save_recipe
 from vramfit.adapters.outbound.run_log_jsonl import read_run_log
@@ -29,6 +33,16 @@ from vramfit.domain.model import (
 pytestmark = pytest.mark.unit
 
 runner = CliRunner()
+
+
+@pytest.fixture(autouse=True)
+def count_source(monkeypatch) -> MemoryImatrixCountSource:
+    # Every --imatrix pack reads the matrix's counts (ADR-0026
+    # decision 5), and these tests' matrix files are not GGUF.
+    fake = MemoryImatrixCountSource()
+    monkeypatch.setattr(cli_pack_imatrix, "_build_count_source", lambda *args: fake)
+    return fake
+
 
 WEIGHT_BUDGET = 3_000
 PROTECTED_HF = "model.layers.0.self_attn.v_proj.weight"
