@@ -295,6 +295,61 @@
     builds the slice path and runs the probe through the rented-GPU
     lane, behind #163.
 
+- **Amendment (2026-08-13, issue #201):** decision 4's summary
+  reduces expert-stack count vectors only. A `layer`-keyed group's
+  count minimum, median, and maximum pool the count vectors of its
+  fused expert stacks. A scalar chunk tally never enters the
+  reduction, so the router, the shared-expert tensors, and every
+  dense member stay out. A group that holds no expert stack records
+  no summary. The fields stay additive and optional, so absence is
+  well-formed and `vramfit_schema` holds.
+
+    Decision 4 assumed a `stack`-keyed group, where every member is
+    a routed expert. The chart's first scan keys groups by layer.
+    After #186, a MoE layer group also resolves the router and both
+    shared-expert tensors, at 421,370 counts each against a
+    routed-expert mean of 19,752. On all 23 MoE groups, a mixed
+    reduction reports the 421,370 dense count as the maximum. That
+    maximum names no expert. The 29 Mamba and attention groups
+    would carry a field that records no routing frequency.
+
+    The #193 contract makes the rule mechanical.
+    `resolve_imatrix_counts` returns one count vector for a fused
+    expert stack and a scalar tally for a dense name. The reduction
+    consumes vectors and ignores scalars. The up and down stacks in
+    one layer carry identical counts on this model, and the pooled
+    reduction does not depend on that identity.
+
+    The summary keys on resolution, not on pricing mode.
+    `resolve_imatrix_counts` applies no super-block gate. ADR-0020
+    fences that gate to assisted pricing. So a stack that prices
+    unassisted still resolves counts. On this model all 46 stacks
+    price unassisted, and each MoE group still records its summary.
+    Under an assisted-only rule, decision 4 would have no input on
+    this chart's target. The numbers are provenance for decisions 1
+    and 2, not evidence of an assisted fit. mlx-lm documents the
+    same reasoning: `dynamic_quant` saves each layer's sensitivities
+    to a JSON file, so later decisions skip the re-measurement
+    (ml-explore/mlx-lm, `mlx_lm/LEARNED_QUANTS.md`). The statistic
+    outlives the pricing decision it fed.
+
+    The summary is all-or-nothing per group. It appears only when
+    every expert-stack member resolves its full count vector.
+    Otherwise the fields are absent. PR #195 proposed a fourth
+    field, `covered`. It stays out. Under all-or-nothing it repeats
+    the member count the reader already holds, so decision 4 stays
+    three numbers. ADR-0022's `tensor_bytes` sets the shape: its
+    loader requires the sizes to cover exactly the group's tensors.
+
+    Coverage stays #194's question, and this clause adds no coverage
+    field. llama.cpp records imatrix coverage at artifact scope
+    only. `llama-quantize` writes `quantize.imatrix.entries_count`
+    beside the `file` and `dataset` keys (ggml-org/llama.cpp#6656).
+    No per-group coverage record exists there. An absent summary
+    leaves a dense-only group and an unresolved group alike, and
+    #194's coverage record can separate them. #194 rules whether the
+    map records its assisted-coverage split, and under which field.
+
 ## Context
 
 Issue #162 asked how the solver prices an expert that the imatrix
@@ -442,6 +497,9 @@ fit the packer does not ship. ADR-0021 recorded that failure.
 - The 2026-08-13 (#200) amendment adds a slice perturbation path to
   the meter. #210 builds it and runs the probe. #178 consumes the
   band term when the ranking holds.
+- The 2026-08-13 (#201) amendment scopes decision 4's reduction to
+  expert-stack count vectors. #179 builds the map fields under that
+  clause and adds no coverage field.
 - **ADR-0023 cannot reach inside a stack.** `--exclude-weights` matches
   by substring against imatrix entry names
   (`tools/quantize/quantize.cpp:274`), and a fused expert stack is one
