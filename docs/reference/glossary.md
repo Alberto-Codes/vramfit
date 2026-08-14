@@ -149,9 +149,20 @@ change.
 **Reference**
 :   The unquantized (bf16) model that perturbed models are compared against.
 
+**Instrument**
+:   The hardware and numerics half of a measurement frame: GPU
+    model, streaming-multiprocessor count, torch build, and offload
+    split ([ADR-0027](../adr/0027-instrument-frame-matching.md)).
+    cuBLAS repeats bit-wise only on one architecture and SM count
+    under one toolkit, so an H100 and a 4090 are two instruments.
+    An **instrument check** re-measures hold-out cells across
+    instruments ([ADR-0021](../adr/0021-runtime-frame-measurement.md)
+    decision 3). Not "device", "card", or "machine".
+
 **Measurement frame** (short: **frame**)
 :   The whole apparatus a damage number is measured inside: process,
-    quantization path, calibration text, token count, and numerics.
+    quantization path, calibration text, token count, instrument,
+    and numerics.
     Damage values compare only within one frame — cross-process
     re-measurement of identical cells moved values 2.7–4.1x (the
     [ninth data point](../explanation/evaluating-packed-models.md)).
