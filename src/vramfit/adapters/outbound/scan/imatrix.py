@@ -24,12 +24,18 @@ that shape. llama.cpp declares ``in_sum2`` with ``ne`` of
 float per matrix.
 
 A dense tensor holds one matrix. An expert stack holds one matrix
-per expert, and the HF checkpoint spells those experts as separate
-parameters. So `resolve_assisted_weights` reads an expert stack's
-row by expert index, not by row length (#177).
+per expert. The checkpoint spells those experts as separate
+parameters, and transformers may fuse them into one 3D parameter
+at load (#202). The resolvers key on the names the loaded model
+reports and never construct indexed names — constructed names are
+how #177 missed the fusion. An indexed 2D parameter reads its own
+row by expert index, not by row length (#177). A fused 3D
+parameter reads its whole entry as one expert stack.
 `resolve_imatrix_counts` reads the same entries for their counts.
 The counts record routing frequency and price nothing (ADR-0026
-decisions 4 and 5).
+decisions 4 and 5). `resolve_assisted_weights` refuses a fused
+expert stack by rule. The expert stacks stay unassisted until a
+non-k-quant assisted fit exists (ADR-0026, 2026-08-13 amendment).
 
 Examples:
     Load weights for the parameters a meter discovered:
@@ -49,7 +55,7 @@ from __future__ import annotations
 
 import math
 import re
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -102,6 +108,20 @@ _EXPERT_PROJ_TO_GGUF = {
     "up_proj": "ffn_up_exps",
     "down_proj": "ffn_down_exps",
 }
+# A fused expert stack's module suffix -> its GGUF expert-stack
+# stem. transformers 5 fuses a supported MoE model's routed experts
+# into one 3D parameter at load, so the loaded module reports no
+# indexed expert name (#202). Checkpoints stay indexed, and a
+# custom-code model loads unfused, so both layouts persist. #202
+# measured the fused names under the model root. The backbone root
+# joins because #186 pairs both roots for this family's dense
+# names. Nemotron 3.5 Lightning's experts are ungated at two
+# matrices each (#160), so a fused gate stays out until a loaded
+# model reports one.
+_FUSED_EXPERT_TO_GGUF = {
+    "mixer.experts.up_proj": "ffn_up_exps",
+    "mixer.experts.down_proj": "ffn_down_exps",
+}
 _DIRECT_TO_GGUF = {
     "lm_head.weight": "output.weight",
     "model.embed_tokens.weight": "token_embd.weight",
@@ -124,6 +144,13 @@ _LAYER_PARAM = re.compile(r"^(?:model|backbone)\.layers\.(\d+)\.(.+)\.weight$")
 # The routed-expert index, spelled between ".experts." and the
 # projection by every family the domain groups (#160, #161).
 _EXPERT_INDEX = re.compile(r"\.experts\.(\d+)\.")
+# A fused expert stack, as the loaded module reports it. It is a
+# raw 3D parameter rather than a Linear, so it carries no ".weight"
+# suffix and no ".experts.N." index (#202).
+_FUSED_PARAM = re.compile(r"^(?:model|backbone)\.layers\.(\d+)\.(.+)$")
+# A fused expert stack shapes as (experts, rows, columns). Any other
+# rank under a fused name is a layout mismatch.
+_FUSED_STACK_DIMS = 3
 
 
 @dataclass(frozen=True, slots=True)
@@ -151,26 +178,33 @@ class ImatrixEntry:
     counts: torch.Tensor
 
 
-def _resolve_name(param_name: str) -> tuple[str, int | None] | None:
-    """Map a parameter to its GGUF tensor and its row in that tensor.
+def _resolve_name(param_name: str) -> tuple[str, int | None, bool] | None:
+    """Map a parameter to its GGUF tensor, its row, and its layout.
 
-    One parse serves both lookups. Parsing the name twice let the
+    One parse serves every lookup. Parsing the name twice let the
     tensor name and the expert index disagree on the same string.
 
     Args:
-        param_name: The HF dotted parameter name.
+        param_name: The dotted parameter name the loaded model
+            reports.
 
     Returns:
-        ``(gguf_name, expert)``, or None when the table has no
-        mapping. `expert` is the routed-expert index, or None when
-        the parameter is not one expert of an expert stack.
+        ``(gguf_name, expert, fused)``, or None when the table has
+        no mapping. `expert` is the routed-expert index, or None
+        when the parameter is not one expert of an expert stack.
+        `fused` is True when the parameter is a whole fused expert
+        stack (#202).
     """
     direct = _DIRECT_TO_GGUF.get(param_name)
     if direct is not None:
-        return direct, None
+        return direct, None, False
     match = _LAYER_PARAM.match(param_name)
     if match is None:
-        return None
+        fused = _FUSED_PARAM.match(param_name)
+        stem = None if fused is None else _FUSED_EXPERT_TO_GGUF.get(fused.group(2))
+        if fused is None or stem is None:
+            return None
+        return f"blk.{fused.group(1)}.{stem}.weight", None, True
     suffix = match.group(2)
     expert = _EXPERT_INDEX.search(suffix)
     if expert is None:
@@ -181,17 +215,19 @@ def _resolve_name(param_name: str) -> tuple[str, int | None] | None:
         index = int(expert.group(1))
     if stem is None:
         return None
-    return f"blk.{match.group(1)}.{stem}.weight", index
+    return f"blk.{match.group(1)}.{stem}.weight", index, False
 
 
 def gguf_tensor_name(param_name: str) -> str | None:
     """Map an HF parameter name to its GGUF tensor name.
 
     A routed expert maps to the expert stack that holds it. All 128
-    experts of a projection share one name (#159).
+    experts of a projection share one name (#159). A fused expert
+    stack maps to the same name (#202).
 
     Args:
-        param_name: The HF dotted parameter name.
+        param_name: The dotted parameter name the loaded model
+            reports.
 
     Returns:
         The GGUF tensor name, or None when the table has no mapping —
@@ -381,9 +417,11 @@ def _zero_coverage_message(
 ) -> str:
     """Report why an imatrix covered no parameter.
 
-    Three causes reach the same empty result. Naming the file alone
+    Four causes reach the same empty result. Naming the file alone
     sends an operator to regenerate a correct matrix, which costs
     GPU hours and fails the same way. The counts point at the cause.
+    The fused cause is a rule, not a defect: the expert stacks stay
+    unassisted until a non-k-quant assisted fit exists (ADR-0026).
 
     Args:
         by_gguf_name: Entries keyed by GGUF tensor name.
@@ -393,23 +431,28 @@ def _zero_coverage_message(
         The message, counting the parameters under each cause.
     """
     unmapped = 0
+    fused = 0
     absent = 0
     misaligned = 0
     for name, rows in rows_by_param.items():
-        gguf_name = gguf_tensor_name(name)
-        if gguf_name is None:
+        resolved = _resolve_name(name)
+        if resolved is None:
             unmapped += 1
-        elif gguf_name not in by_gguf_name:
+        elif resolved[2]:
+            fused += 1
+        elif resolved[0] not in by_gguf_name:
             absent += 1
         elif rows % SUPER_BLOCK:
             misaligned += 1
     return (
         f"the imatrix covers none of the {len(rows_by_param)} parameters. "
         f"{unmapped} names have no GGUF mapping, so check the name table "
-        f"covers this family. {absent} mapped to a tensor the file does not "
-        f"hold, so check the file matches this model. {misaligned} have rows "
-        f"that do not divide into {SUPER_BLOCK}-element super-blocks, which "
-        "no k-quant fit can price (ADR-0020)."
+        f"covers this family. {fused} are fused expert stacks, which stay "
+        f"unassisted by rule (ADR-0026). {absent} mapped to a tensor the "
+        f"file does not hold, so check the file matches this model. "
+        f"{misaligned} have rows that do not divide into "
+        f"{SUPER_BLOCK}-element super-blocks, which no k-quant fit can "
+        "price (ADR-0020)."
     )
 
 
@@ -422,7 +465,9 @@ def resolve_assisted_weights(
     first, so a malformed file refuses before the load burns
     minutes. A routed expert reads its own row of the expert stack,
     so all 128 experts of a projection resolve against one entry
-    (#177).
+    (#177). A fused expert stack reports uncovered by rule
+    (ADR-0026, 2026-08-13 amendment). The expert stacks stay
+    unassisted until a non-k-quant assisted fit exists.
 
     Args:
         by_gguf_name: Entries keyed by GGUF tensor name, from
@@ -443,23 +488,39 @@ def resolve_assisted_weights(
             match the parameter's row length. A silent mismatch
             would price against the wrong columns. The refusal also
             covers an entry whose matrix count does not fit the
-            parameter, and a run where no parameter is covered at
-            all. A scan on zero coverage would price every cell
+            parameter, two parameters that claim one imatrix row
+            (#193), and a run where no parameter is covered at all.
+            A scan on zero coverage would price every cell
             unassisted under the assisted label.
     """
     covered: dict[str, torch.Tensor] = {}
     uncovered: list[str] = []
+    claimed: dict[tuple[str, int], str] = {}
     for name, rows in rows_by_param.items():
         resolved = _resolve_name(name)
         if resolved is None:
             uncovered.append(name)
             continue
-        gguf_name, expert = resolved
+        gguf_name, expert, fused = resolved
+        # The rule fires before the entry lookup and the super-block
+        # gate. Either would refuse with a wrong diagnosis. A fused
+        # expert stack with 256-divisible rows would reach
+        # _matrix_row and fail as a dense mismatch.
+        if fused:
+            uncovered.append(name)
+            continue
         entry = by_gguf_name.get(gguf_name)
         if entry is None or rows % SUPER_BLOCK:
             uncovered.append(name)
             continue
-        weight = entry.column_weights[_matrix_row(entry, name, gguf_name, expert)]
+        row = _matrix_row(entry, name, gguf_name, expert)
+        claimant = claimed.setdefault((gguf_name, row), name)
+        if claimant != name:
+            raise ValueError(
+                f"{name} and {claimant} both claim {gguf_name} row {row}. "
+                "One of them would price against the wrong columns."
+            )
+        weight = entry.column_weights[row]
         if weight.numel() != rows:
             raise ValueError(
                 f"imatrix weights for {name} ({gguf_name}) have "
@@ -471,63 +532,108 @@ def resolve_assisted_weights(
     return covered, tuple(uncovered)
 
 
+def _lround(value: float) -> int:
+    """Round a stored count the C loader's way.
+
+    torch.round breaks a tie to even. ``std::lround``
+    (``imatrix-loader.cpp:158``) breaks it away from zero, and
+    counts are never negative here.
+
+    Args:
+        value: The float32 count the file stores.
+
+    Returns:
+        The rounded count.
+    """
+    return math.floor(value + 0.5)
+
+
 def resolve_imatrix_counts(
-    by_gguf_name: Mapping[str, ImatrixEntry], param_names: Iterable[str]
-) -> tuple[dict[str, int], tuple[str, ...]]:
-    """Match each parameter to its imatrix count.
+    by_gguf_name: Mapping[str, ImatrixEntry], shapes: Mapping[str, Sequence[int]]
+) -> tuple[dict[str, int | tuple[int, ...]], tuple[str, ...]]:
+    """Match each parameter to its imatrix count or count vector.
 
-    A routed expert reads its own count, which is how often the
-    router fired it over the calibration corpus (ADR-0026). The
-    counts record routing frequency and price nothing. So this
-    resolver applies no super-block gate. An expert stack whose rows
-    refuse a k-quant fit still reports its counts.
+    The return shape separates the two quantities an imatrix counts
+    (ADR-0026, 2026-08-13 amendment). A dense name keeps its scalar
+    chunk tally, which is no routing frequency — folding it into an
+    expert distribution would add a phantom expert (#193). An
+    indexed 2D parameter reads its own scalar count by expert index
+    (#187). A fused 3D parameter reads its whole entry as one count
+    vector, keyed by the loaded parameter name. Element ``i`` is
+    expert ``i``'s routing frequency: transformers stacks checkpoint
+    experts in numeric order, the same order the imatrix rows keep.
+    The read never constructs indexed names for a fused parameter.
 
-    ADR-0026 decisions 4 and 5 read these counts. Decision 2 stays
-    Proposed and no caller may weight damage by them until #178
-    reports.
+    Routing frequency prices nothing. So this resolver applies no
+    super-block gate, and an expert stack whose rows refuse a
+    k-quant fit still reports its counts. ADR-0026 decisions 4 and 5
+    read these counts. Decision 2 stays Proposed and no caller may
+    weight damage by them until #178 reports.
 
     Args:
         by_gguf_name: Entries keyed by GGUF tensor name, from
             `load_imatrix`.
-        param_names: HF parameter names to read counts for.
+        shapes: Parameter shapes keyed by the names the loaded
+            model reports.
 
     Returns:
-        ``(covered, uncovered)`` — the chunk count per parameter
-        name, and the names the imatrix does not cover, both in
-        input order. An uncovered name stays out of the mapping
-        rather than reading zero. Zero is a real count that ADR-0026
-        decision 5 reports. Each count rounds half away from zero,
-        which is what the C loader's ``std::lround`` does with the
-        float the file stores (``imatrix-loader.cpp:158``).
+        ``(covered, uncovered)`` — a count per parameter name, and
+        the names the imatrix does not cover, both in input order.
+        A dense name holds a scalar chunk count. A fused expert
+        stack holds its count vector. An uncovered name stays out
+        of the mapping rather than reading zero. Zero is a real
+        count that ADR-0026 decision 5 reports. Each count rounds
+        half away from zero, per `_lround`.
 
     Raises:
         ValueError: If the entry's matrix count does not fit the
-            parameter.
+            parameter. For a fused expert stack the shape must be
+            3D and the entry's count length must equal the
+            parameter's first dimension. A mismatch means the
+            imatrix and the checkpoint describe different models.
 
     Examples:
-        Read one expert stack's routing distribution:
+        Read one fused expert stack's routing distribution:
 
         ```python
         entries = load_imatrix(Path("model.imatrix.gguf"))
-        experts = [
-            f"backbone.layers.3.mixer.experts.{i}.up_proj.weight" for i in range(128)
-        ]
-        counts, uncovered = resolve_imatrix_counts(entries, experts)
+        stack = "model.layers.3.mixer.experts.up_proj"
+        counts, uncovered = resolve_imatrix_counts(entries, {stack: (128, 1856, 2688)})
+        assert len(counts[stack]) == 128
         ```
     """
-    covered: dict[str, int] = {}
+    covered: dict[str, int | tuple[int, ...]] = {}
     uncovered: list[str] = []
-    for name in param_names:
+    for name, shape in shapes.items():
         resolved = _resolve_name(name)
         entry = None if resolved is None else by_gguf_name.get(resolved[0])
         if resolved is None or entry is None:
             uncovered.append(name)
             continue
-        gguf_name, expert = resolved
+        gguf_name, expert, fused = resolved
+        if fused:
+            # The name decides the fused fork, and the shape vouches
+            # for it. Indexing dimension 0 blind would read a 2D
+            # shape as a stack and refuse an empty one as IndexError.
+            if len(shape) != _FUSED_STACK_DIMS:
+                raise ValueError(
+                    f"{name} names a fused expert stack, and its shape "
+                    f"{tuple(shape)} has {len(shape)} dimensions, not "
+                    f"{_FUSED_STACK_DIMS}"
+                )
+            experts = int(shape[0])
+            matrices = int(entry.counts.numel())
+            if matrices != experts:
+                raise ValueError(
+                    f"{name} holds {experts} experts on its first "
+                    f"dimension, and {gguf_name} counts {matrices} "
+                    "matrices. The imatrix does not describe this "
+                    "checkpoint."
+                )
+            covered[name] = tuple(_lround(c) for c in entry.counts.tolist())
+            continue
         count = entry.counts[_matrix_row(entry, name, gguf_name, expert)]
-        # torch.round breaks a tie to even. std::lround breaks it
-        # away from zero, and counts are never negative here.
-        covered[name] = math.floor(float(count.item()) + 0.5)
+        covered[name] = _lround(float(count.item()))
     return covered, tuple(uncovered)
 
 
