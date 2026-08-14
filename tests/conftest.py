@@ -117,6 +117,53 @@ def tiny_model_dir(tmp_path_factory) -> Path:
 
 
 @pytest.fixture(scope="session")
+def tiny_moe_model_dir(tmp_path_factory) -> Path:
+    """A tiny MoE checkpoint whose routed experts load as fused stacks.
+
+    Qwen3Moe declares its routed experts as 3D parameters, expert-
+    indexed on dim 0 — the same fused layout the 30B target loads
+    with (ADR-0026, the #202 amendment). The slice perturbation
+    tests need that layout, and ``tiny_model_dir`` is dense. Each
+    expert's slice holds a multiple of 256 elements, so a K-quant
+    round trip of a slice reproduces the whole tensor's blocks —
+    the alignment test in the slice suite pins that property.
+    Skips when the scan extra is not installed.
+    """
+    torch = pytest.importorskip("torch", reason="scan extra not installed")
+    pytest.importorskip("transformers", reason="scan extra not installed")
+    from tokenizers import Tokenizer, models, pre_tokenizers, trainers
+    from transformers import (
+        PreTrainedTokenizerFast,
+        Qwen3MoeConfig,
+        Qwen3MoeForCausalLM,
+    )
+
+    directory = tmp_path_factory.mktemp("tiny-moe-model")
+    tokenizer = Tokenizer(models.BPE(unk_token="<unk>"))
+    tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel()
+    trainer = trainers.BpeTrainer(vocab_size=384, special_tokens=["<unk>"])
+    tokenizer.train_from_iterator([CALIBRATION_TEXT], trainer)
+    fast = PreTrainedTokenizerFast(tokenizer_object=tokenizer, unk_token="<unk>")
+    fast.save_pretrained(directory)
+    config = Qwen3MoeConfig(
+        vocab_size=512,
+        hidden_size=32,
+        intermediate_size=64,
+        moe_intermediate_size=16,
+        num_hidden_layers=2,
+        num_attention_heads=4,
+        num_key_value_heads=2,
+        num_experts=8,
+        num_experts_per_tok=2,
+        decoder_sparse_step=1,
+        max_position_embeddings=4096,
+    )
+    torch.manual_seed(0)
+    Qwen3MoeForCausalLM(config).save_pretrained(directory)
+    return directory
+
+
+@pytest.fixture(scope="session")
 def aligned_model_dir(tmp_path_factory) -> Path:
     """A tiny Llama checkpoint whose rows divide the K-quant super-block.
 

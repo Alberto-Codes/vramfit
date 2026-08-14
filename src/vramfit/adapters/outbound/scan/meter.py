@@ -8,6 +8,12 @@ the same machinery with every group perturbed at once
 are cached on the CPU in float16 (~0.25 GiB per 1024 tokens at a 128k
 vocabulary) so the reference model runs exactly once.
 
+`TorchDamageMeter.measure_slices` reuses the same machinery on a
+dim-0 expert range of a fused expert stack — the slice perturbation
+path (ADR-0026, the 2026-08-13 #200 amendment). Slice cells rank and
+weight in the scan frame and never set a recipe's price, so the path
+sits on the adapter only. The `DamageMeter` port does not carry it.
+
 Only floating-point tensors with 2+ dimensions join layer groups —
 norms and biases stay at reference precision and are not scanned.
 Tied names that alias one storage collapse to one group.
@@ -43,8 +49,9 @@ model cannot consume — wrong names, wrong lengths, misaligned rows,
 non-finite values — before the scan spends an hour, and reports the
 coverage split for the run log. A file-resolved meter also reads
 the matrix's counts and pools each group's expert-stack vectors
-into the map's count summary through `_group_count_summaries`
-(ADR-0026 decision 4, the #201 amendment).
+into the map's count summary through
+[vramfit.adapters.outbound.scan.discovery][] (ADR-0026 decision 4,
+the #201 amendment).
 
 See Also:
     - [vramfit.ports.outbound][]: `DamageMeter`, the port this
@@ -66,14 +73,18 @@ import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from vramfit.adapters.outbound.scan.calibration import load_calibration
+from vramfit.adapters.outbound.scan.discovery import (
+    discover_groups,
+    group_count_summaries,
+    max_memory_map,
+)
 from vramfit.adapters.outbound.scan.imatrix import (
     check_imatrix_weights,
-    expert_stack_count_vectors,
     load_imatrix,
     resolve_assisted_weights,
     resolve_imatrix_counts,
 )
-from vramfit.adapters.outbound.scan.kl import mean_kl, reference_log_probs
+from vramfit.adapters.outbound.scan.kl import mean_damage, reference_pass
 from vramfit.adapters.outbound.scan.kquant import kquant_quantize_dequantize
 from vramfit.adapters.outbound.scan.kquant_assisted import (
     kquant_assisted_quantize_dequantize,
@@ -89,13 +100,14 @@ from vramfit.adapters.outbound.scan.quantize import (
     MIN_BITS,
     rtn_quantize_dequantize,
 )
+from vramfit.adapters.outbound.scan.slices import check_slice_cell
 from vramfit.domain.model import ImatrixCountSummary
-from vramfit.domain.scan import (
-    GroupSpec,
-    group_key,
-    matches_a_layer,
-    summarize_imatrix_counts,
-)
+from vramfit.domain.scan import GroupSpec
+
+# One weight perturbation: parameter name, candidate precision, and
+# the dim-0 expert range for a slice cell (None perturbs the whole
+# tensor).
+_Perturbation = tuple[str, int, tuple[int, int] | None]
 
 
 class TorchDamageMeter:
@@ -103,12 +115,14 @@ class TorchDamageMeter:
 
     Holds the loaded model, the tokenized calibration batches, the
     cached reference distributions, and a poisoned flag set when a
-    failed measurement leaves the weights unrestored. `measure` and
-    `measure_recipe` share one perturb-measure-restore path — a
-    single-group recipe measures exactly like the scan's cell. Both
-    quantize through the configured within-group method (ADR-0018) —
-    with per-parameter imatrix column weights when assisted pricing
-    is on (ADR-0020).
+    failed measurement leaves the weights unrestored. `measure`,
+    `measure_recipe`, and `measure_slices` share one
+    perturb-measure-restore path — a single-group recipe measures
+    exactly like the scan's cell, and a slice cell perturbs a dim-0
+    expert range instead of whole tensors (ADR-0026, the #200
+    amendment). All three quantize through the configured
+    within-group method (ADR-0018) — with per-parameter imatrix
+    column weights when assisted pricing is on (ADR-0020).
     A single group's originals stay on their device. A multi-group
     perturbation stages GPU-resident originals on the CPU and
     restores offloaded originals from the safetensors shards
@@ -154,9 +168,11 @@ class TorchDamageMeter:
     ) -> None:
         """Load the model, tokenize the calibration set, discover groups.
 
-        Offloaded parameters resolve to their weights-map backing
-        tensors, and tied names that alias one storage collapse to
-        one group (ADR-0015).
+        Discovery and the count pooling live in
+        [vramfit.adapters.outbound.scan.discovery][]. Offloaded
+        parameters resolve to their weights-map backing tensors, and
+        tied names that alias one storage collapse to one group
+        (ADR-0015).
 
         Args:
             model_id: Hugging Face model id or local checkpoint path.
@@ -249,7 +265,7 @@ class TorchDamageMeter:
             model_id,
             dtype=torch.bfloat16,
             device_map=device,
-            max_memory=_max_memory(device, max_gpu_memory),
+            max_memory=max_memory_map(device, max_gpu_memory),
             trust_remote_code=trust_remote_code,
         )
         self._model.eval()
@@ -261,7 +277,7 @@ class TorchDamageMeter:
             calibration_path, tokenizer, max_tokens
         )
         self._block_size = block_size
-        groups = _discover_groups(self._model, group_by)
+        groups = discover_groups(self._model, group_by)
         backing = resolve_offloaded_params(self._model, groups)
         self._groups, self._offloaded = dedupe_aliased_groups(groups, backing)
         self.offloaded_group_count = sum(
@@ -288,7 +304,7 @@ class TorchDamageMeter:
             resolved_counts, _ = resolve_imatrix_counts(
                 pending_imatrix, shapes_by_param
             )
-            self._imatrix_count_summaries = _group_count_summaries(
+            self._imatrix_count_summaries = group_count_summaries(
                 resolved_counts, self._groups
             )
             self._imatrix_weights, _ = resolve_assisted_weights(
@@ -346,9 +362,10 @@ class TorchDamageMeter:
         """Measure one group's damage at one candidate precision.
 
         A one-assignment case of the shared perturb-measure-restore
-        path. The group's originals stay on their own device — no
-        host round-trip on the scan's hot path. An offloaded group's
-        own device is host RAM, so its originals clone there.
+        path, expanded to whole-tensor targets by `_measure_groups`.
+        The group's originals stay on their own device — no host
+        round-trip on the scan's hot path. An offloaded group's own
+        device is host RAM, so its originals clone there.
 
         Args:
             group: Name of the group to perturb.
@@ -368,12 +385,13 @@ class TorchDamageMeter:
         self._refuse_poisoned()
         if group not in self._groups:
             raise ValueError(f'unknown group "{group}"')
-        return self._measure_perturbed({group: bits})
+        return self._measure_groups({group: bits})
 
     def measure_recipe(self, assignments: Mapping[str, int]) -> float:
         """Measure whole-recipe damage: all groups perturbed at once.
 
-        The validation-pass measurement (ADR-0006). GPU-resident
+        The validation-pass measurement (ADR-0006), expanded to
+        whole-tensor targets by `_measure_groups`. GPU-resident
         originals stage on the CPU during this pass — the card must
         keep its workspace. Offloaded originals are not staged at
         all: they restore from the model's safetensors shards
@@ -400,7 +418,55 @@ class TorchDamageMeter:
         unknown = sorted(set(assignments) - set(self._groups))
         if unknown:
             raise ValueError(f'unknown group "{unknown[0]}"')
-        return self._measure_perturbed(dict(assignments))
+        return self._measure_groups(dict(assignments))
+
+    def measure_slices(self, slices: Mapping[str, tuple[int, int]], bits: int) -> float:
+        """Measure one slice cell: expert ranges quantized at ``bits``.
+
+        The slice perturbation path (ADR-0026, the 2026-08-13 #200
+        amendment). On a fused expert layout a per-expert cell is a
+        dim-0 slice of the parameter, not a name. The meter quantizes
+        each named range in place through the configured within-group
+        method, keeps every other weight at reference precision, and
+        measures damage as usual. A slice cell ranks or weights in
+        the scan frame — its damage never sets a recipe's price.
+        Validation resolves only the named parameters, so a probe
+        pays no per-cell walk over the whole model.
+
+        Args:
+            slices: Half-open expert index range per fused expert
+                stack, keyed by the loaded parameter name. A
+                single-expert cell names one expert's range in both
+                projections. A band cell names one contiguous range
+                in one projection.
+            bits: Candidate precision for every named range.
+
+        Returns:
+            Token-weighted mean KL divergence against the reference.
+            Always finite and non-negative.
+
+        Raises:
+            ValueError: If ``slices`` is empty, names an unknown or
+                non-3D parameter, a range is empty or out of bounds,
+                ``bits`` is below 2, or the perturbed forward pass
+                is numerically unstable.
+            RuntimeError: If a prior measurement failed to restore
+                the model — the meter refuses to produce corrupt
+                numbers.
+        """
+        self._refuse_poisoned()
+        # Resolve only the named parameters — a probe calls this per
+        # cell, and a name outside the discovered set stays absent,
+        # which is the validator's unknown-parameter refusal.
+        known = {name for members in self._groups.values() for name in members}
+        check_slice_cell(
+            slices,
+            {name: self._param(name) for name in slices if name in known},
+        )
+        targets: list[_Perturbation] = [
+            (name, bits, expert_range) for name, expert_range in slices.items()
+        ]
+        return self._measure_perturbed(targets, stage_on_cpu=False, shard_plan=None)
 
     def _refuse_poisoned(self) -> None:
         """Refuse to measure on a meter with unrestored weights.
@@ -417,12 +483,10 @@ class TorchDamageMeter:
                 "measuring again"
             )
 
-    def _measure_perturbed(self, assignments: dict[str, int]) -> float:
-        """Quantize the assigned groups in place, measure, restore.
+    def _measure_groups(self, assignments: dict[str, int]) -> float:
+        """Measure whole groups: expand each group to its member tensors.
 
-        The perturbation runs through the configured within-group
-        method (ADR-0018), keyed by parameter name so assisted
-        pricing can select each tensor's column weights (ADR-0020).
+        Bits validate here, before shard planning spends any I/O.
         A single group's originals stay on their own device — the card
         already keeps workspace for one group, and a host round-trip
         per scan cell would cost hours over a full scan. A multi-group
@@ -431,8 +495,7 @@ class TorchDamageMeter:
         footprint. Offloaded originals in a multi-group pass are not
         staged at all — staging them would double the model's host
         footprint — and restore from the safetensors shards instead
-        (ADR-0015). The restore runs in a finally clause, so every
-        exit either restores the weights or poisons the meter.
+        (ADR-0015).
 
         Args:
             assignments: Assigned precision per validated group name.
@@ -447,32 +510,83 @@ class TorchDamageMeter:
             RuntimeError: If the restore fails after a completed
                 measurement.
         """
+        # Bits validate before shard planning: rejecting a bad input
+        # must not first spend shard I/O on `reader.verify` (the
+        # contract pins names before bits, and bits precede the plan).
         if any(bits < MIN_BITS for bits in assignments.values()):
             raise ValueError(f"bits must be at least {MIN_BITS}")
-        reference = self._ensure_reference()
+        targets: list[_Perturbation] = [
+            (name, bits, None)
+            for group, bits in assignments.items()
+            for name in self._groups[group]
+        ]
         stage_on_cpu = len(assignments) > 1
         shard_plan = self._plan_shard_restore(assignments) if stage_on_cpu else None
+        return self._measure_perturbed(targets, stage_on_cpu, shard_plan)
+
+    def _measure_perturbed(
+        self,
+        targets: list[_Perturbation],
+        stage_on_cpu: bool,
+        shard_plan: tuple[ShardReader, set[str]] | None,
+    ) -> float:
+        """Quantize the targeted weights in place, measure, restore.
+
+        The perturbation runs through the configured within-group
+        method (ADR-0018), keyed by parameter name so assisted
+        pricing can select each tensor's column weights (ADR-0020).
+        A target carrying an expert range perturbs only that dim-0
+        slice, and only the slice is saved and restored (ADR-0026,
+        the #200 amendment). The restore runs in a finally clause, so
+        every exit either restores the weights or poisons the meter.
+
+        Args:
+            targets: The weight perturbations to apply.
+            stage_on_cpu: Stage saved originals on the CPU instead of
+                their own device.
+            shard_plan: The verified reader and the parameter names
+                that restore from the safetensors shards, or None.
+
+        Returns:
+            Token-weighted mean KL divergence against the reference.
+
+        Raises:
+            ValueError: If any assigned bits are below 2, or the
+                perturbed forward pass is numerically unstable.
+            RuntimeError: If the restore fails after a completed
+                measurement.
+        """
+        if any(bits < MIN_BITS for _, bits, _ in targets):
+            raise ValueError(f"bits must be at least {MIN_BITS}")
+        reference = self._ensure_reference()
         from_shards = shard_plan[1] if shard_plan else set()
+        ranges = {name: rng for name, _, rng in targets if rng is not None}
         originals: dict[str, torch.Tensor] = {}
         # The restore runs in a finally so no exception — including an
         # interrupt between measurement and restore — can leave the
         # weights perturbed without either restoring or poisoning.
         try:
             with torch.no_grad():
-                for group, bits in assignments.items():
-                    for name in self._groups[group]:
-                        param = self._param(name)
-                        if name not in from_shards:
-                            saved = param.detach()
-                            originals[name] = (
-                                saved.to("cpu", copy=True)
-                                if stage_on_cpu
-                                else saved.clone()
-                            )
-                        param.copy_(self._quantize_dequantize(param, bits, name))
-            damage = self._mean_damage(reference)
+                for name, bits, expert_range in targets:
+                    param = self._param(name)
+                    view = (
+                        param
+                        if expert_range is None
+                        else param[expert_range[0] : expert_range[1]]
+                    )
+                    if name not in from_shards:
+                        saved = view.detach()
+                        originals[name] = (
+                            saved.to("cpu", copy=True)
+                            if stage_on_cpu
+                            else saved.clone()
+                        )
+                    view.copy_(self._quantize_dequantize(view, bits, name))
+            damage = mean_damage(self._model, self._batches, reference)
         finally:
-            self._restore(originals, shard_plan, in_flight=sys.exception() is not None)
+            self._restore(
+                originals, ranges, shard_plan, in_flight=sys.exception() is not None
+            )
         return damage
 
     def _quantize_dequantize(
@@ -561,6 +675,7 @@ class TorchDamageMeter:
     def _restore(
         self,
         originals: dict[str, torch.Tensor],
+        ranges: dict[str, tuple[int, int]],
         shard_plan: tuple[ShardReader, set[str]] | None,
         in_flight: bool,
     ) -> None:
@@ -576,6 +691,8 @@ class TorchDamageMeter:
 
         Args:
             originals: Saved tensors keyed by parameter name.
+            ranges: Perturbed dim-0 expert range per sliced parameter
+                name — its saved original covers only that range.
             shard_plan: The verified reader and the names that restore
                 from the safetensors shards, or None.
             in_flight: True when the caller is unwinding another
@@ -588,7 +705,11 @@ class TorchDamageMeter:
         try:
             with torch.no_grad():
                 for name, original in originals.items():
-                    self._param(name).copy_(original)
+                    target = self._param(name)
+                    expert_range = ranges.get(name)
+                    if expert_range is not None:
+                        target = target[expert_range[0] : expert_range[1]]
+                    target.copy_(original)
             if shard_plan is not None:
                 reader, from_shards = shard_plan
                 reader.read_into({name: self._param(name) for name in from_shards})
@@ -610,119 +731,11 @@ class TorchDamageMeter:
                 )
 
     def _ensure_reference(self) -> list[torch.Tensor]:
-        """Run the unperturbed model once and cache its distributions.
+        """Run `reference_pass` on the first call and cache its result.
 
         Returns:
             The cached per-batch reference log-probabilities.
         """
         if self._reference is None:
-            reference: list[torch.Tensor] = []
-            with torch.inference_mode():
-                for batch in self._batches:
-                    logits = self._model(batch.to(self._model.device)).logits
-                    reference.append(reference_log_probs(logits))
-            self._reference = reference
+            self._reference = reference_pass(self._model, self._batches)
         return self._reference
-
-    def _mean_damage(self, reference: list[torch.Tensor]) -> float:
-        """Run the perturbed model over all batches and average KL.
-
-        Args:
-            reference: Cached per-batch reference log-probabilities.
-
-        Returns:
-            Token-weighted mean KL divergence.
-        """
-        total = 0.0
-        tokens = 0
-        with torch.inference_mode():
-            for batch, ref in zip(self._batches, reference, strict=True):
-                logits = self._model(batch.to(self._model.device)).logits
-                total += mean_kl(ref, logits) * batch.numel()
-                tokens += batch.numel()
-        return total / tokens
-
-
-def _max_memory(device: str, max_gpu_memory: int | None) -> dict[int | str, int] | None:
-    """Build the accelerate ``max_memory`` map for a GPU shard cap.
-
-    The cap applies to GPU 0 only — the reference box has one card.
-    The integer device key is required: accelerate rejects ``"0"``.
-
-    Args:
-        device: The ``device_map`` value.
-        max_gpu_memory: Byte cap on GPU 0 shards, or None for no cap.
-
-    Returns:
-        The map for ``auto`` sharding with a cap, otherwise None.
-    """
-    if max_gpu_memory is None or device != "auto":
-        return None
-    return {0: max_gpu_memory, "cpu": 999 * 2**30}
-
-
-def _group_count_summaries(
-    counts: Mapping[str, int | tuple[int, ...]],
-    groups: Mapping[str, list[str]],
-) -> dict[str, ImatrixCountSummary]:
-    """Pool each group's resolved expert-stack vectors into a summary.
-
-    The meter's half of ADR-0026 decision 4: select each group's
-    vectors through `expert_stack_count_vectors` (all or nothing per
-    group, the #201 amendment) and reduce through
-    `summarize_imatrix_counts`. A group that selects nothing records
-    no entry, so its map field stays absent.
-
-    Args:
-        counts: Resolved counts per parameter name, from
-            `resolve_imatrix_counts`.
-        groups: Member parameter names per group name.
-
-    Returns:
-        One summary per group that resolved every expert-stack
-        member. Empty when nothing resolved.
-    """
-    return {
-        group: summarize_imatrix_counts(vectors)
-        for group, members in groups.items()
-        if (vectors := expert_stack_count_vectors(counts, members)) is not None
-    }
-
-
-def _discover_groups(
-    model: torch.nn.Module, group_by: Literal["layer", "tensor", "stack"]
-) -> dict[str, list[str]]:
-    """Group the model's quantizable parameters.
-
-    Discovery walks the parameters and filters them. The naming rule
-    itself lives in [vramfit.domain.scan][] (`group_key`), so the
-    fast suite covers every granularity without torch.
-
-    Args:
-        model: The loaded model.
-        group_by: Grouping granularity, passed through to `group_key`.
-
-    Returns:
-        Ordered mapping of group name to member parameter names. Only
-        floating-point tensors with 2+ dimensions are included.
-
-    Raises:
-        ValueError: If no quantizable parameters are found, or
-            ``layer`` grouping finds no per-layer structure — silently
-            degrading to per-tensor groups would misrepresent the map.
-    """
-    groups: dict[str, list[str]] = {}
-    layer_matches = 0
-    for name, param in model.named_parameters():
-        if param.ndim < 2 or not param.is_floating_point():  # noqa: PLR2004
-            continue
-        layer_matches += group_by == "layer" and matches_a_layer(name)
-        groups.setdefault(group_key(name, group_by), []).append(name)
-    if not groups:
-        raise ValueError(f"no quantizable parameters found in {model.__class__}")
-    if group_by == "layer" and layer_matches == 0:
-        raise ValueError(
-            "no per-layer structure found in this model's parameter names — "
-            "pass --group-by tensor"
-        )
-    return groups
