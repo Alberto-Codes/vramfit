@@ -328,14 +328,14 @@ against the base GGUF, between the convert and quantize stages
 quantizer fills a zero-count expert's row with ones and prints no
 warning, so only this read finds the case. Each zero-count expert
 warns on the console and lands in the `model_packed` event under
-`imatrix_zero_count_experts`, as `(stack, expert)` pairs — a
-report, never a gate. A matrix the reader cannot vouch for halts
-the pack before the quantizer runs: not an imatrix, no counts, an
-unknown tensor suffix, a sums tensor without its counts twin, a
-count that is negative or not finite, or a count length that
-contradicts the base tensor. The read needs gguf-py, which the
-pack extra provisions — a matrix-less pack touches neither the
-library nor the file.
+`imatrix_zero_count_experts`, as two-element `[stack, expert]`
+arrays — a report, never a gate. A matrix the reader cannot vouch
+for halts the pack before the quantizer runs. The refusals form a
+closed list: not an imatrix, no counts, an unknown tensor suffix,
+a sums tensor without its counts twin, a count that is negative or
+not finite, or a count length that contradicts the base tensor.
+The read needs gguf-py, which the pack extra provisions — a
+matrix-less pack touches neither the library nor the file.
 
 A protected recipe drives its resolved (tensor, precision) pairs as
 extra overrides, placed *before* the group overrides — the quantizer

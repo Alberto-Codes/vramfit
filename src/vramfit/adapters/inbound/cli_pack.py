@@ -203,7 +203,8 @@ def pack(
     expert the matrix counts zero times — the quantizer fits such
     an expert unassisted and prints no warning (ADR-0026 decision
     5). A matrix the reader cannot vouch for halts before the
-    quantizer runs. The read needs gguf-py, which the pack extra
+    quantizer runs, and the report lands in the result only beside
+    its matrix path. The read needs gguf-py, which the pack extra
     provisions. A recipe priced on an assisted map records
     its imatrix — the command warns when ``--imatrix`` is absent or
     names a different file, because the pack would not match the
@@ -322,7 +323,11 @@ def pack(
         result = packer.pack(recipe)
     except (RuntimeError, ValueError, OSError) as exc:
         raise _halt(run_log, "quantize", exc) from exc
-    result = replace(result, imatrix_zero_count_experts=zero_counts)
+    # The result's own imatrix_path gates the merge: PackResult
+    # refuses the field without a matrix, and an unguarded replace
+    # would trade the run log's clean halt for a traceback.
+    if zero_counts and result.imatrix_path is not None:
+        result = replace(result, imatrix_zero_count_experts=zero_counts)
     run_log.emit(
         "model_packed",
         {
