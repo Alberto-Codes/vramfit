@@ -124,9 +124,10 @@ def tiny_moe_model_dir(tmp_path_factory) -> Path:
     indexed on dim 0 — the same fused layout the 30B target loads
     with (ADR-0026, the #202 amendment). The slice perturbation
     tests need that layout, and ``tiny_model_dir`` is dense. Each
-    expert's slice holds a multiple of 256 elements, so a slice
-    round trip and a whole-tensor round trip see the same K-quant
-    block alignment. Skips when the scan extra is not installed.
+    expert's slice holds a multiple of 256 elements, so a K-quant
+    round trip of a slice reproduces the whole tensor's blocks —
+    the alignment test in the slice suite pins that property.
+    Skips when the scan extra is not installed.
     """
     torch = pytest.importorskip("torch", reason="scan extra not installed")
     pytest.importorskip("transformers", reason="scan extra not installed")

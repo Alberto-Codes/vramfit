@@ -826,10 +826,9 @@ class TestMeasureSlices:
     def test_full_range_slice_equals_the_whole_tensor_measure(
         self, tiny_moe_meter, tiny_moe_model_dir, tmp_path
     ) -> None:
-        # One expert slice holds a multiple of 256 elements, so the
-        # slice sees the same block alignment as the whole tensor —
-        # the full range and the whole-tensor cell must agree
-        # exactly, or the slice path measures something else.
+        # A full range names the same tensor the whole-tensor cell
+        # perturbs, so the two entry points must agree exactly — a
+        # difference means the slice path measures something else.
         from vramfit.adapters.outbound.scan.meter import TorchDamageMeter
 
         calibration = tmp_path / "calib-tensor.txt"
@@ -884,6 +883,64 @@ class TestMeasureSlices:
         all_eight = tiny_moe_meter.measure_slices({self.UP: (0, 8)}, bits=2)
 
         assert one <= all_eight
+
+    def test_expert_band_kquant_round_trip_matches_the_whole_tensor(
+        self, tiny_moe_meter
+    ) -> None:
+        # The fixture sizes each expert's slice at a multiple of 256
+        # elements, so a band's K-quant blocks are the whole tensor's
+        # blocks and every fit is block-local — a band slice cell
+        # quantizes the same values the whole-stack cell quantizes.
+        from vramfit.adapters.outbound.scan.kquant import kquant_quantize_dequantize
+
+        param = tiny_moe_meter._param(self.UP).detach()
+
+        whole = kquant_quantize_dequantize(param, 2)
+        band = kquant_quantize_dequantize(param[2:6], 2)
+
+        assert torch.equal(whole[2:6], band)
+
+    def test_measurement_failure_restores_and_does_not_poison(
+        self, tiny_moe_meter, monkeypatch
+    ) -> None:
+        from vramfit.adapters.outbound.scan import meter as meter_module
+
+        before = tiny_moe_meter._param(self.UP).clone()
+
+        def unstable(model, batches, reference) -> float:
+            raise ValueError("numerically unstable")
+
+        monkeypatch.setattr(meter_module, "mean_damage", unstable)
+        with pytest.raises(ValueError, match="numerically unstable"):
+            tiny_moe_meter.measure_slices({self.UP: (2, 4)}, bits=2)
+
+        assert not tiny_moe_meter._poisoned
+        assert torch.equal(tiny_moe_meter._param(self.UP), before)
+        monkeypatch.undo()
+        assert tiny_moe_meter.measure_slices({self.UP: (2, 4)}, bits=8) >= 0.0
+
+    def test_restore_failure_through_the_slice_path_poisons(
+        self, tiny_moe_meter, monkeypatch
+    ) -> None:
+        # Fail the sliced restore itself: swap the parameter lookup
+        # to a mismatched tensor mid-measurement, so the range copy
+        # raises inside the finally clause. The in-flight
+        # measurement error must keep the stage and the meter must
+        # poison with a recorded reason.
+        from vramfit.adapters.outbound.scan import meter as meter_module
+
+        def unstable(model, batches, reference) -> float:
+            tiny_moe_meter._offloaded[self.UP] = torch.zeros(1, 2, 2)
+            raise ValueError("numerically unstable")
+
+        monkeypatch.setattr(meter_module, "mean_damage", unstable)
+        with pytest.raises(ValueError, match="numerically unstable"):
+            tiny_moe_meter.measure_slices({self.UP: (2, 4)}, bits=2)
+
+        assert tiny_moe_meter._poisoned
+        assert tiny_moe_meter._poisoned_reason
+        with pytest.raises(RuntimeError, match="rebuild the meter"):
+            tiny_moe_meter.measure_slices({self.UP: (2, 4)}, bits=2)
 
     def test_unknown_parameter_refuses_through_the_meter(self, tiny_moe_meter) -> None:
         with pytest.raises(ValueError, match="unknown parameter"):

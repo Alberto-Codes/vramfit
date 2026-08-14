@@ -484,6 +484,7 @@ class TorchDamageMeter:
     def _measure_groups(self, assignments: dict[str, int]) -> float:
         """Measure whole groups: expand each group to its member tensors.
 
+        Bits validate here, before shard planning spends any I/O.
         A single group's originals stay on their own device — the card
         already keeps workspace for one group, and a host round-trip
         per scan cell would cost hours over a full scan. A multi-group
@@ -507,6 +508,11 @@ class TorchDamageMeter:
             RuntimeError: If the restore fails after a completed
                 measurement.
         """
+        # Bits validate before shard planning: rejecting a bad input
+        # must not first spend shard I/O on `reader.verify` (the
+        # contract pins names before bits, and bits precede the plan).
+        if any(bits < MIN_BITS for bits in assignments.values()):
+            raise ValueError(f"bits must be at least {MIN_BITS}")
         targets: list[_Perturbation] = [
             (name, bits, None)
             for group, bits in assignments.items()
