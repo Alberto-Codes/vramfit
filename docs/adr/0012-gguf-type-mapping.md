@@ -1,8 +1,9 @@
 # ADR-0012: The GGUF backend maps nominal bits to K-quant types
 
 - **Status:** Accepted, amended by
-  [ADR-0013](0013-runtime-capability-in-recipes.md) and
-  [ADR-0022](0022-within-layer-protections.md)
+  [ADR-0013](0013-runtime-capability-in-recipes.md),
+  [ADR-0022](0022-within-layer-protections.md), and
+  [ADR-0028](0028-expert-stack-type-table.md)
 - **Date:** 2026-07-28 (accepted 2026-07-28)
 - **Amendment (2026-07-28):** the type tables in decisions 1 and 3
   gain 6- and 5-bit rows (6→`Q6_K`, 5→`Q5_K`, base ftype
@@ -65,6 +66,13 @@
     class outside this mapping — the Mamba `in_proj`, `out_proj`,
     and `conv1d`, the attention projections, the router, the shared
     experts. Issue #183 carries those.
+
+- **Amendment (2026-08-14, ADR-0028):** decision 1's table does not
+  reach a routed-expert stack. The quantizer rejects every k-quant
+  on the expert rows and substitutes on a zero exit. Expert-stack
+  groups map through [ADR-0028](0028-expert-stack-type-table.md)'s
+  table, pack halts on the quantizer's type-fallback warning, and
+  decision 5's halt stages gain `type_fallback`.
 
 ## Context
 
@@ -167,7 +175,11 @@ scan does not produce one today. K-quants need no extra input.
   table itself stays open there.
 - Whether pack persists the toolchain's own output as a sidecar
   artifact. Today a zero-exit tool's warnings (for example an
-  override pattern that matched no tensor) are discarded.
+  override pattern that matched no tensor) are discarded. Narrowed
+  by [ADR-0028](0028-expert-stack-type-table.md): the type-fallback
+  warning now halts the pack, and the imatrix-miss warning was
+  already recorded (ADR-0016). The sidecar question itself stays
+  open.
 - ~~Whether the solver should consume per-type effective-bit tables
   instead of one `format_overhead` fraction (ties to the
   runtime-capability milestone from ADR-0010).~~ Resolved by

@@ -48,7 +48,7 @@ ADR that supersedes the old one.
 | [0009](0009-testing-strategy.md) | Testing strategy — pyramid, verified fakes, properties | Accepted |
 | [0010](0010-sub-4-bit-serving-path.md) | The sub-4-bit serving path runs through GGUF | Accepted, amended 2026-07-29, noted 2026-08-09 |
 | [0011](0011-run-logs-and-error-root.md) | Run logs as artifacts, and one error root | Accepted |
-| [0012](0012-gguf-type-mapping.md) | The GGUF backend maps nominal bits to K-quant types | Accepted, amended by 0013 + 0022 |
+| [0012](0012-gguf-type-mapping.md) | The GGUF backend maps nominal bits to K-quant types | Accepted, amended by 0013 + 0022 + 0028 |
 | [0013](0013-runtime-capability-in-recipes.md) | Recipes record their target runtime | Accepted, amended by 0014 |
 | [0014](0014-per-type-effective-bits.md) | The solver predicts sizes from per-type effective bits | Accepted |
 | [0015](0015-offload-aware-scanning.md) | The meter perturbs offloaded groups through accelerate's weights map | Accepted |
@@ -64,6 +64,7 @@ ADR that supersedes the old one.
 | [0025](0025-evals-sidecar.md) | Evaluation results ship as a versioned evals sidecar | Accepted |
 | [0026](0026-moe-expert-pricing.md) | Expert pricing trusts any nonzero imatrix count | Accepted, except decision 2 (demoted 2026-08-14) |
 | [0027](0027-instrument-frame-matching.md) | Damage numbers compare only within one instrument | Accepted |
+| [0028](0028-expert-stack-type-table.md) | Expert stacks map through their own GGUF type table | Accepted |
 
 ## Template
 
