@@ -43,8 +43,8 @@ model cannot consume — wrong names, wrong lengths, misaligned rows,
 non-finite values — before the scan spends an hour, and reports the
 coverage split for the run log. A file-resolved meter also reads
 the matrix's counts and pools each group's expert-stack vectors
-into the map's count summary (ADR-0026 decision 4, the #201
-amendment).
+into the map's count summary through `_group_count_summaries`
+(ADR-0026 decision 4, the #201 amendment).
 
 See Also:
     - [vramfit.ports.outbound][]: `DamageMeter`, the port this
@@ -193,7 +193,9 @@ class TorchDamageMeter:
                 file-resolved meter also reads the counts and pools
                 each group's expert-stack vectors into its map
                 summary (ADR-0026 decision 4) — all or nothing per
-                group, absent on an empty resolution.
+                group, absent on an empty resolution. A fused entry
+                whose shape or count length contradicts the model
+                still refuses, the #202 vouching rule.
 
         Raises:
             ValueError: If ``within_group`` is not a known method —
@@ -274,8 +276,10 @@ class TorchDamageMeter:
         }
         # Decision 4's count summary per group (ADR-0026, the #201
         # amendment): expert-stack vectors only, all or nothing per
-        # group. An empty resolution leaves every summary absent and
-        # never refuses (the #198 amendment).
+        # group. An empty resolution leaves every summary absent —
+        # no zero-coverage refusal (the #198 amendment). A fused
+        # entry whose shape or count length contradicts the model
+        # still refuses, the #202 vouching rule.
         self._imatrix_count_summaries: dict[str, ImatrixCountSummary] = {}
         if pending_imatrix is not None:
             shapes_by_param = {
@@ -284,12 +288,9 @@ class TorchDamageMeter:
             resolved_counts, _ = resolve_imatrix_counts(
                 pending_imatrix, shapes_by_param
             )
-            self._imatrix_count_summaries = {
-                group: summarize_imatrix_counts(vectors)
-                for group, members in self._groups.items()
-                if (vectors := expert_stack_count_vectors(resolved_counts, members))
-                is not None
-            }
+            self._imatrix_count_summaries = _group_count_summaries(
+                resolved_counts, self._groups
+            )
             self._imatrix_weights, _ = resolve_assisted_weights(
                 pending_imatrix, rows_by_param
             )
@@ -314,9 +315,11 @@ class TorchDamageMeter:
         Returns:
             All groups in module order, sized at 2 bytes per parameter
             (the bf16 reference), with per-tensor sizes for the
-            protection pricing (ADR-0022) and, on an assisted meter,
-            each group's pooled expert-stack count summary (ADR-0026
-            decision 4).
+            protection pricing (ADR-0022) and, on a file-resolved
+            assisted meter, each group's pooled expert-stack count
+            summary (ADR-0026 decision 4). A meter built from
+            in-memory weights records no summary — the counts live
+            in the file.
         """
         return tuple(
             GroupSpec(
@@ -656,6 +659,34 @@ def _max_memory(device: str, max_gpu_memory: int | None) -> dict[int | str, int]
     if max_gpu_memory is None or device != "auto":
         return None
     return {0: max_gpu_memory, "cpu": 999 * 2**30}
+
+
+def _group_count_summaries(
+    counts: Mapping[str, int | tuple[int, ...]],
+    groups: Mapping[str, list[str]],
+) -> dict[str, ImatrixCountSummary]:
+    """Pool each group's resolved expert-stack vectors into a summary.
+
+    The meter's half of ADR-0026 decision 4: select each group's
+    vectors through `expert_stack_count_vectors` (all or nothing per
+    group, the #201 amendment) and reduce through
+    `summarize_imatrix_counts`. A group that selects nothing records
+    no entry, so its map field stays absent.
+
+    Args:
+        counts: Resolved counts per parameter name, from
+            `resolve_imatrix_counts`.
+        groups: Member parameter names per group name.
+
+    Returns:
+        One summary per group that resolved every expert-stack
+        member. Empty when nothing resolved.
+    """
+    return {
+        group: summarize_imatrix_counts(vectors)
+        for group, members in groups.items()
+        if (vectors := expert_stack_count_vectors(counts, members)) is not None
+    }
 
 
 def _discover_groups(

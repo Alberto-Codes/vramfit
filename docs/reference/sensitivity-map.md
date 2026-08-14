@@ -110,11 +110,11 @@ below remain, the sub-4-bit pricing claims do not.
   group: it appears only when every expert-stack member resolved
   its full count vector, and a group without an expert stack never
   carries it. `median` is always a float. The field is additive and
-  informational, so the schema holds at 3: the loader accepts an
-  absent field as no summary, and a present field must hold exactly
-  the three keys, ordered `min <= median <= max`. An absent field
-  leaves a dense-only group and an unresolved group alike — #194
-  owns the map's coverage record.
+  informational, so the schema holds at 3. The loader accepts an
+  absent field as no summary. A present field must hold exactly the
+  three keys, with values ordered `min <= median <= max`. An absent
+  field leaves a dense-only group and an unresolved group alike —
+  #194 owns the map's coverage record.
 - **`scan.within_group`** — the within-group method token
   ([ADR-0018](../adr/0018-kquant-within-group-method.md)):
   `rtn-block32` (round-to-nearest, the v1 default), `kquant-ref`

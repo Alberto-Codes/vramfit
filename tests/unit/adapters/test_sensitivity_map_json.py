@@ -385,8 +385,10 @@ class TestImatrixCounts:
 
     def test_median_writes_a_float_for_an_integer_value(self) -> None:
         # statistics.median returns an int for odd-length integer
-        # input, and one field must not write two JSON types.
+        # input, and one field must not write two JSON types. The
+        # fixture stores the median as an int to force the coercion.
         raw = self.make_summarized_dict()
+        raw["groups"][0]["imatrix_counts"]["median"] = 18114
 
         written = map_to_dict(map_from_dict(raw))["groups"][0]["imatrix_counts"]
 
