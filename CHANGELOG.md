@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.2.0](https://github.com/Alberto-Codes/vramfit/compare/v0.1.0...v0.2.0) (2026-08-15)
+
+
+### Features
+
+* **adapters:** read an evals sidecar back through a port ([#259](https://github.com/Alberto-Codes/vramfit/issues/259)) ([a68390b](https://github.com/Alberto-Codes/vramfit/commit/a68390bbb716dd652f4fbf1951bc04006e774715))
+* **cli:** state coverage counts in the pack echo, not every name ([#226](https://github.com/Alberto-Codes/vramfit/issues/226)) ([9d4401a](https://github.com/Alberto-Codes/vramfit/commit/9d4401af700208d9f9a334d1a773578644284479))
+* **cli:** state the uncovered imatrix count instead of every name ([#224](https://github.com/Alberto-Codes/vramfit/issues/224)) ([b8ae709](https://github.com/Alberto-Codes/vramfit/commit/b8ae7098b96b0518ec50732fcecc78fdb231d8da))
+* **config:** match guard rules on tokens rather than raw text ([04e544b](https://github.com/Alberto-Codes/vramfit/commit/04e544b25746a25dce755461b1e7d24f28918f55))
+* **config:** route each guard rule by whether its check is mechanical ([#269](https://github.com/Alberto-Codes/vramfit/issues/269)) ([04e544b](https://github.com/Alberto-Codes/vramfit/commit/04e544b25746a25dce755461b1e7d24f28918f55)), closes [#246](https://github.com/Alberto-Codes/vramfit/issues/246)
+* **pack:** map expert stacks and every layer naming family ([979bf40](https://github.com/Alberto-Codes/vramfit/commit/979bf40fdcdbc7b5e75dad342a15d01548216582)), closes [#180](https://github.com/Alberto-Codes/vramfit/issues/180)
+* **pack:** map expert stacks through the ADR-0028 type table ([#231](https://github.com/Alberto-Codes/vramfit/issues/231)) ([a415cf9](https://github.com/Alberto-Codes/vramfit/commit/a415cf9400d444484f7aecc891870cfbc51e47fb)), closes [#228](https://github.com/Alberto-Codes/vramfit/issues/228)
+* **pack:** report zero-count experts from the imatrix ([#218](https://github.com/Alberto-Codes/vramfit/issues/218)) ([9ed0c7b](https://github.com/Alberto-Codes/vramfit/commit/9ed0c7b9817081821e29d0d217507c24117acddf)), closes [#179](https://github.com/Alberto-Codes/vramfit/issues/179)
+* **scan:** add the slice perturbation path to the meter ([#222](https://github.com/Alberto-Codes/vramfit/issues/222)) ([8788d4c](https://github.com/Alberto-Codes/vramfit/commit/8788d4cfb0559e9d9228cd40b39e037669800135))
+* **scan:** key the sensitivity map on the pack-addressable stack ([#181](https://github.com/Alberto-Codes/vramfit/issues/181)) ([48ad52c](https://github.com/Alberto-Codes/vramfit/commit/48ad52cec39cce9d7219f5ced3f65322b6b4aa69))
+* **scan:** map Nemotron-H dense tensor names to their imatrix entries ([8a6f374](https://github.com/Alberto-Codes/vramfit/commit/8a6f3741453ef690f11d7898380aef8bdd6b2a10)), closes [#186](https://github.com/Alberto-Codes/vramfit/issues/186)
+* **scan:** read a fused expert stack's counts as one vector ([#214](https://github.com/Alberto-Codes/vramfit/issues/214)) ([fe8f478](https://github.com/Alberto-Codes/vramfit/commit/fe8f47841ef8b95848042b0ec43cee271b1b8806))
+* **scan:** read an expert stack's imatrix rows ([#187](https://github.com/Alberto-Codes/vramfit/issues/187)) ([a3c7b92](https://github.com/Alberto-Codes/vramfit/commit/a3c7b92346bf57e3cfab694615e34c67a6263099)), closes [#177](https://github.com/Alberto-Codes/vramfit/issues/177)
+* **scan:** record per-stack imatrix count summaries on the map ([#217](https://github.com/Alberto-Codes/vramfit/issues/217)) ([315d790](https://github.com/Alberto-Codes/vramfit/commit/315d7904dbdfb6fcbea65aaba5cf0798360321f8)), closes [#179](https://github.com/Alberto-Codes/vramfit/issues/179)
+
+
+### Bug Fixes
+
+* **adapters:** keep the map's derived note across a save ([#254](https://github.com/Alberto-Codes/vramfit/issues/254)) ([be37d61](https://github.com/Alberto-Codes/vramfit/commit/be37d615a4bab13a6e8855e96806a37912a2293a)), closes [#136](https://github.com/Alberto-Codes/vramfit/issues/136)
+* **pack:** decode toolchain output with a replacing handler ([#250](https://github.com/Alberto-Codes/vramfit/issues/250)) ([de2590e](https://github.com/Alberto-Codes/vramfit/commit/de2590ea346e709e85413a7930f21e40bb504671)), closes [#247](https://github.com/Alberto-Codes/vramfit/issues/247)
+* **pack:** report an unnamed signal by number, not a ValueError ([#258](https://github.com/Alberto-Codes/vramfit/issues/258)) ([d079c04](https://github.com/Alberto-Codes/vramfit/commit/d079c04fd9e1112fc4ce6dcb231f3a8e4243e81c))
+* **scan:** close the imatrix reader's silent-mispricing paths ([a3c7b92](https://github.com/Alberto-Codes/vramfit/commit/a3c7b92346bf57e3cfab694615e34c67a6263099))
+
 ## 0.1.0 (2026-08-11)
 
 First published release.
