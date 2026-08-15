@@ -148,8 +148,10 @@ the clone:
   `gh pr ready` ask the maintainer. `gh pr create` without
   `--body-file` refuses, and the agent reads why. `gh issue create`
   runs the tracker search itself and hands the matches to the agent,
-  because the guard cannot verify a claim that a search ran.
-  The guard reminds rather than enforces, and it fails open.
+  because the guard cannot verify a claim that a search ran. No rule
+  emits `allow`, which would skip the permission flow and widen what
+  a fresh clone runs unprompted. The guard reminds rather than
+  enforces, and it fails open.
 - `rules/` — `pytest.md` scopes to test paths. `charting.md` applies
   only to chart sessions.
 

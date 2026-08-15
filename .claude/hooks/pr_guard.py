@@ -27,11 +27,18 @@ routes by whether its check is mechanical.
 | `gh pr merge` | `ask` | the maintainer |
 | `gh pr ready` | `ask` | the maintainer |
 | `gh pr create` without `--body-file` | `deny` | the agent |
-| `gh issue create` | `allow` plus context | the agent |
+| `gh issue create` | context, no decision | the agent |
 
 The two merge-shaped rules stay questions, because they are the
 maintainer's decision and they fire about once per pull request.
-`allow` would grant permission outright, which suits neither.
+
+No rule emits `allow`. `allow` skips the normal permission flow, so a
+guard that used it to reach the agent would also grant permission the
+settings never granted. `.claude/settings.json` ships with this
+repository and a fresh clone carries no allowlist, so that would widen
+what an agent runs unprompted on every other contributor's machine.
+The `gh issue create` rule therefore emits `additionalContext` with no
+decision at all.
 
 The `--body-file` rule became a refusal. Its condition is a property
 of the command line and needs no judgment.
@@ -40,11 +47,11 @@ The `gh issue create` rule stopped asking and started answering. It
 runs the tracker search itself and hands the matches to the agent, so
 nothing depends on a claim nobody can verify.
 
-Field routing measured on Claude Code 2.1.233 (#246). `allow` plus
-`additionalContext` reaches the agent. `deny` plus
-`permissionDecisionReason` reaches the agent. `ask` reaches only the
-maintainer, and `systemMessage` reaches nobody. Re-measure before
-changing a decision value.
+Field routing measured on Claude Code 2.1.233 (#246).
+`additionalContext` reaches the agent with `allow` and with no
+decision at all. `deny` plus `permissionDecisionReason` reaches the
+agent. `ask` reaches only the maintainer, and `systemMessage` reaches
+nobody. Re-measure before changing a decision value.
 
 The guard still reminds rather than enforces. `gh api --method PUT
 repos/o/r/pulls/N/merge` reaches the same endpoint and matches no rule
@@ -89,9 +96,16 @@ import sys
 from typing import Final, NamedTuple
 
 # Most restrictive wins when one command matches several rules. The
-# guard emits one decision, and `additionalContext` rides only on
-# `allow` (#246), so a stricter match drops the search report.
-_RANK: Final[dict[str, int]] = {"allow": 1, "ask": 2, "deny": 3}
+# guard emits one decision, so a stricter match drops the search
+# report (#246).
+#
+# `inform` is not a Claude Code decision value. It names a payload
+# that carries `additionalContext` and **no** `permissionDecision`.
+# Measured 2026-08-15 on 2.1.233: context arrives that way. Emitting
+# `allow` instead would deliver the same text and also skip the normal
+# permission flow, which would grant a permission the guard was never
+# asked to grant.
+_RANK: Final[dict[str, int]] = {"inform": 1, "ask": 2, "deny": 3}
 
 # The tracker search runs inside a PreToolUse hook, and
 # `.claude/settings.json` allows the hook 5 seconds. Leave room for
@@ -150,12 +164,13 @@ class Rule(NamedTuple):
     Attributes:
         verb (tuple[str, ...]): The command words, matched as
             consecutive tokens.
-        pattern (re.Pattern[str]): The same words as a regex, used
-            only when a segment cannot be tokenized.
+        pattern (re.Pattern[str]): The same words anchored to the
+            start of a segment, used only when a segment cannot be
+            tokenized.
         disarm (str | None): A flag that silences the rule when it
             appears as its own token in the same segment.
-        decision (str): The permission decision this rule asks for,
-            one of ``ask``, ``deny``, or ``allow``.
+        decision (str): ``ask``, ``deny``, or ``inform``. Only the
+            first two name a Claude Code permission decision.
         text (str): The text the decision carries.
     """
 
@@ -172,7 +187,7 @@ def rule(verb: str, disarm: str | None, decision: str, text: str) -> Rule:
     Args:
         verb: The command words, space separated, e.g. ``gh pr merge``.
         disarm: A flag that silences the rule, or None.
-        decision: ``ask``, ``deny``, or ``allow``.
+        decision: ``ask``, ``deny``, or ``inform``.
         text: The text the decision carries.
 
     Returns:
@@ -180,7 +195,12 @@ def rule(verb: str, disarm: str | None, decision: str, text: str) -> Rule:
     """
     words = tuple(verb.split())
     escaped = r"\s+".join(re.escape(w) for w in words)
-    return Rule(words, re.compile(rf"\b{escaped}\b"), disarm, decision, text)
+    # Anchored on purpose. The fallback runs on raw text, where an
+    # unanchored search matches a mention inside prose or backticks.
+    # A heredoc with an apostrophe defeats `shlex`, and the old
+    # unanchored fallback then fired on documentation that merely
+    # named the command (#246). A real command opens its segment.
+    return Rule(words, re.compile(rf"^\s*{escaped}\b"), disarm, decision, text)
 
 
 def has_verb(present: list[str], verb: tuple[str, ...]) -> bool:
@@ -253,7 +273,7 @@ _RULES: Final[tuple[Rule, ...]] = (
     rule(
         "gh issue create",
         None,
-        "allow",
+        "inform",
         "",
     ),
 )
@@ -381,9 +401,9 @@ class Verdict(NamedTuple):
     """What the guard decided about one command.
 
     Attributes:
-        decision (str): ``ask``, ``deny``, or ``allow``.
+        decision (str): ``ask``, ``deny``, or ``inform``.
         reasons (list[str]): Text for an ``ask`` or ``deny``.
-        context (list[str]): Text for the agent under ``allow``.
+        context (list[str]): Text for the agent under ``inform``.
     """
 
     decision: str
@@ -408,8 +428,9 @@ def inspect(command: str) -> Verdict | None:
         present = tokens(segment)
         for candidate in _RULES:
             # Tokens decide when the segment parses. A segment with
-            # unbalanced quotes yields none, and the regex then keeps
-            # the rule loud rather than silent.
+            # unbalanced quotes yields none, and the anchored regex
+            # then keeps the rule loud rather than silent, without
+            # firing on a mention inside the text.
             hit = (
                 has_verb(present, candidate.verb)
                 if present
@@ -453,22 +474,19 @@ def main() -> int:
     if verdict is None:
         return 0
 
-    out: dict[str, str] = {
-        "hookEventName": "PreToolUse",
-        "permissionDecision": verdict.decision,
-    }
-    if verdict.reasons:
-        out["permissionDecisionReason"] = "\n\n".join(verdict.reasons)
-    # `additionalContext` rides only on `allow` (#246). A stricter
-    # match drops the search report rather than mislabel the decision.
-    if verdict.decision == "allow":
-        # An `allow` grants permission outright. Emitting one with no
-        # text would bypass the settings and say nothing, so the guard
-        # stays out of the way instead.
+    out: dict[str, str] = {"hookEventName": "PreToolUse"}
+    if verdict.decision == "inform":
+        # No `permissionDecision`, so the normal permission flow still
+        # decides. With nothing to say the guard stays silent rather
+        # than emit an empty payload.
         context = "\n\n".join(text for text in verdict.context if text)
         if not context:
             return 0
         out["additionalContext"] = context
+    else:
+        out["permissionDecision"] = verdict.decision
+        if verdict.reasons:
+            out["permissionDecisionReason"] = "\n\n".join(verdict.reasons)
 
     print(json.dumps({"hookSpecificOutput": out}))
     return 0

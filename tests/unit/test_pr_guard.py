@@ -66,7 +66,7 @@ def test_inspect_issue_create_allows_and_carries_the_search(monkeypatch) -> None
     verdict = guard.inspect('gh issue create --title "a new symptom"')
 
     assert verdict is not None
-    assert verdict.decision == "allow"
+    assert verdict.decision == "inform"
     assert verdict.reasons == []
     assert verdict.context == [STUB_REPORT]
 
@@ -102,6 +102,27 @@ def test_inspect_quoted_mention_of_a_command_does_not_fire(command) -> None:
     assert guard.inspect(command) is None
 
 
+def test_inspect_prose_naming_a_command_in_an_unparseable_segment_is_silent() -> None:
+    # A heredoc carrying an apostrophe defeats `shlex`, so the regex
+    # fallback runs on raw text. Unanchored, it fired on documentation
+    # that merely named the command. This shape hit the guard live
+    # while the guard was being written (#246).
+    command = (
+        "python3 - <<'EOF'\n"
+        "s = s.replace('the maintainer's call', 'x')\n"
+        "# `gh issue create` runs the tracker search itself\n"
+        "EOF"
+    )
+
+    assert guard.inspect(command) is None
+
+
+def test_inspect_command_at_segment_start_survives_unbalanced_quotes() -> None:
+    # The anchor must not cost a real command its rule.
+    assert decision('gh pr create --body "oops') == "deny"
+    assert decision("   gh pr merge 1") == "ask"
+
+
 def test_inspect_deny_outranks_ask_when_both_match() -> None:
     # One decision travels to the caller, so the strictest wins.
     verdict = guard.inspect("gh pr create --body x && gh pr ready")
@@ -111,7 +132,7 @@ def test_inspect_deny_outranks_ask_when_both_match() -> None:
     assert len(verdict.reasons) == 2
 
 
-def test_inspect_ask_outranks_allow_when_both_match() -> None:
+def test_inspect_ask_outranks_inform_when_both_match() -> None:
     verdict = guard.inspect("gh issue create --title x && gh pr merge 1")
 
     assert verdict is not None
@@ -304,23 +325,29 @@ def test_main_deny_command_emits_a_deny_decision(monkeypatch, capsys) -> None:
     assert "--body-file" in output["permissionDecisionReason"]
 
 
-def test_main_issue_create_emits_allow_with_context(monkeypatch, capsys) -> None:
-    # `additionalContext` reaches the agent only under `allow`,
-    # measured on Claude Code 2.1.233 (#246).
+def test_main_issue_create_emits_context_without_a_decision(
+    monkeypatch, capsys
+) -> None:
+    # `additionalContext` reaches the agent with no decision at all,
+    # measured on Claude Code 2.1.233 (#246). Emitting `allow` would
+    # deliver the same text and also skip the permission flow, which
+    # would grant a permission this guard was never asked to grant.
     payload = json.dumps({"tool_input": {"command": "gh issue create --title x"}})
     monkeypatch.setattr("sys.stdin", io.StringIO(payload))
 
     guard.main()
 
     output = json.loads(capsys.readouterr().out)["hookSpecificOutput"]
-    assert output["permissionDecision"] == "allow"
     assert output["additionalContext"] == STUB_REPORT
+    assert "permissionDecision" not in output, (
+        "a decision here would bypass the settings a fresh clone relies on"
+    )
     assert "permissionDecisionReason" not in output
 
 
-def test_main_allow_without_context_emits_nothing(monkeypatch, capsys) -> None:
-    # An `allow` carrying no text would grant permission outright and
-    # say nothing, which is worse than staying out of the way.
+def test_main_inform_without_context_emits_nothing(monkeypatch, capsys) -> None:
+    # An empty payload says nothing and risks being read as a
+    # decision. Staying silent is the honest outcome.
     monkeypatch.setattr(guard, "duplicate_report", lambda title: "")
     payload = json.dumps({"tool_input": {"command": "gh issue create --title x"}})
     monkeypatch.setattr("sys.stdin", io.StringIO(payload))
