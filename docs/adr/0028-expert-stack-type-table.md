@@ -6,6 +6,16 @@
   and 5. Decision 1's table keeps every group that is not a
   routed-expert stack. Decision 5's halt stages gain
   `type_fallback`.
+- **Note (2026-08-14, issue #248):** the #229 gate measured both
+  open questions on Nemotron 3.5 Lightning 30B-A3B, and both
+  resolve below. `Q2_0` does not hold quality post-hoc. MXFP4 does
+  not take the 4-bit row. Maintainer ruling (2026-08-14): decision
+  1's table stands unchanged, including its nominal-2 row. The
+  table states what a nominal width **means** on a stack.
+  [ADR-0021](0021-runtime-frame-measurement.md) decision 4 rules
+  whether a solver may buy that width, and after its own
+  2026-08-14 amendment it bars 2-bit on this target. Record:
+  [#229 closing comment](https://github.com/Alberto-Codes/vramfit/issues/229#issuecomment-5300460635).
 
 ## Context
 
@@ -86,14 +96,32 @@ Facts verified upstream on 2026-08-14 (#189):
 
 ## Open questions
 
-- Whether Q2_0 holds quality on a bf16 expert stack. Upstream
+- ~~Whether Q2_0 holds quality on a bf16 expert stack. Upstream
   validated the type on ternary QAT models only. The runtime-frame
-  lane (#40, ADR-0021) measures this before the solver may buy it.
-- Whether MXFP4 replaces Q4_0 in the 4-bit row. MXFP4 saves 0.25
+  lane (#40, ADR-0021) measures this before the solver may buy
+  it.~~ **Measured (2026-08-14, #229): it does not.** A
+  whole-frontier `Q2_0` pack scores **27.9380 PPL** against the f16
+  reference's 6.8192, which is **4.097 times**. Mean KLD is
+  1.604130, the 99.9th percentile is 12.3312, and the maximum is
+  22.206. The pack agrees with the reference's top token on
+  **51.65 %** of positions, against 94.42 % for `Q4_0`. That is
+  **90.0 times** `Q4_0`'s mean KLD, on one text and one instrument.
+  The measurement covers post-hoc bf16 use, which no upstream
+  number reached.
+- ~~Whether MXFP4 replaces Q4_0 in the 4-bit row. MXFP4 saves 0.25
   bits per weight and drops the per-expert importance weighting.
   Upstream's `MXFP4_MOE` ftype targets exactly the 3D expert
   tensors, so precedent exists. A runtime-frame comparison on this
-  target decides the swap.
+  target decides the swap.~~ **Measured (2026-08-14, #229): it does
+  not. `Q4_0` keeps the 4-bit row.** MXFP4 packs 17,980,129,184
+  bytes against `Q4_0`'s 18,898,091,936, which is **4.86 % fewer**.
+  Its mean KLD is 0.030277 against 0.017825, which is **1.699
+  times**, and its 99.9th percentile is 0.9003 against 0.5416.
+  Decision 1's stated rationale survives measurement, because
+  `quantize_q4_0` consumed the per-expert importance matrix and
+  `quantize_mxfp4` ignored it. One number runs the other way.
+  MXFP4's maximum KLD is 3.183 against `Q4_0`'s 4.703, so its worst
+  token is better while its bulk is worse.
 - Whether the decision 2 refusal also lands at plan time. Today the
   plan step knows no type table, and pack refuses first.
 
@@ -103,12 +131,33 @@ Facts verified upstream on 2026-08-14 (#189):
   effective bits (ADR-0014): 2.25 at nominal 2, not Q2_K's 2.625.
   Without that entry the size prediction drifts and the ADR-0012
   decision 4 re-check fails late. #228 carries the build.
-- ADR-0021 decision 4 stands. This table states what nominal 2
-  means on a stack. The solver still buys no 2-bit until a
-  runtime-frame price exists.
+- **Superseded 2026-08-14 (#248):** ADR-0021 decision 4 now buys a
+  width against a measured bar. This table still states what nominal
+  2 means on a stack. The runtime-frame price arrived and refused the
+  width on this target (#229).
 - On this target the decision 3 scan detects nothing, because
   every table entry's block size divides the stack rows. The scan
   guards every other tensor class and every future target.
+  **Confirmed 2026-08-14 (#229) by reading the packed files rather
+  than the log.** All 46 expert stacks carried the recipe's type in
+  each of the three gate packs, at `Q2_0`, `Q4_0`, and MXFP4.
+  MXFP4's block of 32 divides both 2688 and 1856, so it fires no
+  fallback either. The packs stayed pod-side and the pod is
+  terminated, so the #229 record carries that check and no file on
+  the box repeats it.
+- The decision 3 scan did not run during the #229 gate, and #247
+  carries the reason (noted 2026-08-14). `run_tool` decodes the
+  quantizer's merged output as strict UTF-8, and llama.cpp
+  truncates its `tokenizer.ggml.merges` preview inside a character.
+  The decode raises before any scan reads the output. Read a packed
+  GGUF's real tensor types to check a pack until #247 lands.
+- The nominal-2 row now means a width the solver may not buy on
+  this target (noted 2026-08-14). The empty band from 2.25 to 4.25
+  bits per weight therefore separates the only width that fits a
+  10.5 GiB budget from the cheapest width that holds quality. That
+  width packs at 17.600 GiB. #249 carries what the campaign does
+  about the gap. #232 carries the missing 5- and 6-bit rows, and
+  neither falls inside the band.
 - At nominal 2 and 8 the importance matrix does not shape the
   stack quantization. At nominal 4 it does, per expert, through
   `quantize_q4_0`. The imatrix counts keep their provenance role

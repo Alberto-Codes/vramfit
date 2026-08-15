@@ -170,9 +170,12 @@ change.
 :   The unquantized (bf16) model that perturbed models are compared against.
 
 **Instrument**
-:   The hardware half of a measurement frame: GPU model,
-    streaming-multiprocessor count, torch build, and offload
-    split ([ADR-0027](../adr/0027-instrument-frame-matching.md)).
+:   The execution half of a measurement frame, hardware and compute
+    stack together: the accelerator, its streaming-multiprocessor
+    count, the stack's **build identity**, and the offload split
+    ([ADR-0027](../adr/0027-instrument-frame-matching.md)).
+    The build identity is the torch build in the scan frame and the
+    llama.cpp release in the runtime frame.
     The instrument fixes the frame's numerics. cuBLAS repeats
     bitwise only on one architecture and SM count under one
     toolkit, so an H100 and a 4090 are two instruments.
@@ -208,8 +211,8 @@ change.
     The lane quantizes the candidate group to its real packed type
     inside a real GGUF. It measures damage under the runtime's own
     numerics ([ADR-0021](../adr/0021-runtime-frame-measurement.md)
-    decision 2, #40). The solver buys no 2-bit until this lane
-    reports a price (ADR-0021 decision 4). It names what a
+    decision 2, #40). The solver buys a width only against this
+    lane's price (ADR-0021 decision 4). It names what a
     measurement runs through, not where it runs. Always write the
     term in full (the #213 ruling, under **Harness lane**). Not
     "packed lane" or "GGUF lane".

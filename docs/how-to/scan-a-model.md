@@ -70,9 +70,10 @@ bought more 2-bit and packed worse
 ([ADR-0021](../adr/0021-runtime-frame-measurement.md) supersedes
 [ADR-0019](../adr/0019-kquant-priced-maps.md) and
 [ADR-0020](../adr/0020-imatrix-assisted-pricing.md)). Sub-4-bit
-damage is measured in the runtime frame, and the solver does not
-buy 2-bit without a runtime-frame price — current practice plans
-on a map copy without the 2-bit column. The kquant method itself
+damage is measured in the runtime frame, and the solver buys a
+width only against that frame's price. The 30B target's 2-bit price
+arrived 2026-08-14 and failed, so current practice there plans on a
+map copy without the 2-bit column. The kquant method itself
 remains available
 ([ADR-0018](../adr/0018-kquant-within-group-method.md)):
 
