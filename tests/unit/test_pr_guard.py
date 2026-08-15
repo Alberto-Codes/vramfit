@@ -117,6 +117,23 @@ def test_inspect_prose_naming_a_command_in_an_unparseable_segment_is_silent() ->
     assert guard.inspect(command) is None
 
 
+@pytest.mark.parametrize(
+    "command",
+    [
+        'git commit -m "one\ngh issue create rule used it\nend"',
+        'git commit -m "one\ngh pr create refuses now\nend"',
+        'gh issue comment 246 --body "gh pr merge asks the maintainer"',
+    ],
+    ids=["issue-create-line", "pr-create-line", "body-mentions-merge"],
+)
+def test_inspect_multi_line_quoted_argument_is_one_token(command) -> None:
+    # Splitting raw text on newlines tore a quoted argument into fake
+    # segments, and a prose line opening with the verb then matched.
+    # This fired live on a commit message, and under `deny` it would
+    # have refused the commit (#246). Tokenizing first is the fix.
+    assert guard.inspect(command) is None
+
+
 def test_inspect_command_at_segment_start_survives_unbalanced_quotes() -> None:
     # The anchor must not cost a real command its rule.
     assert decision('gh pr create --body "oops') == "deny"

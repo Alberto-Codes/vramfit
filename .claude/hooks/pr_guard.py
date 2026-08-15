@@ -224,13 +224,23 @@ def has_verb(present: list[str], verb: tuple[str, ...]) -> bool:
     )
 
 
-# Shell operators that separate one command from the next. The guard
-# reads each segment alone, so a later command never disarms an
-# earlier one.
+# Shell operators that separate one command from the next, as tokens.
+# The guard reads each segment alone, so a later command never disarms
+# an earlier one.
+#
+# A newline is absent on purpose. `shlex` reads an unescaped newline
+# as whitespace, so the only `\n` token it emits comes from a
+# backslash continuation, which joins one command rather than ending
+# it. Treating it as a separator put a continued command's flags in a
+# different segment, where they no longer disarmed their rule.
+_SEPARATOR_TOKENS: Final[frozenset[str]] = frozenset({"&&", "||", ";", "|"})
+
+# The same operators as raw text, for the fallback path only.
 _SEPARATORS: Final[re.Pattern[str]] = re.compile(r"&&|\|\||;|\n|\|")
 
 # A backslash before a newline continues one command onto the next
-# line. It joins rather than separates, so it resolves first.
+# line. It joins rather than separates, so it resolves first. `shlex`
+# already does this, so only the fallback needs it.
 _CONTINUATION: Final[re.Pattern[str]] = re.compile(r"\\\s*\n")
 
 _ISSUE_CREATE_VERB: Final[tuple[str, ...]] = ("gh", "issue", "create")
@@ -301,6 +311,40 @@ def tokens(segment: str) -> list[str]:
         return shlex.split(segment)
     except ValueError:
         return []
+
+
+def segments(command: str) -> list[tuple[str, list[str]]]:
+    """Split one command line into its independent commands.
+
+    Tokenizing first is what makes this safe. A quoted argument stays
+    one token however many newlines or operators it carries, so a
+    commit message or heredoc naming a guarded command never reads as
+    that command. Splitting raw text first tore such an argument into
+    fake segments, and a prose line opening with the verb then matched
+    (#246).
+
+    Args:
+        command: The full command line the tool would run.
+
+    Returns:
+        One ``(segment, tokens)`` pair per command. A command the
+        shell grammar cannot parse yields raw segments with no tokens,
+        which sends the caller to the anchored regex.
+    """
+    present = tokens(command)
+    if not present:
+        joined = _CONTINUATION.sub(" ", command)
+        return [(segment, []) for segment in _SEPARATORS.split(joined)]
+    out: list[tuple[str, list[str]]] = []
+    current: list[str] = []
+    for token in present:
+        if token in _SEPARATOR_TOKENS:
+            out.append((" ".join(current), current))
+            current = []
+        else:
+            current.append(token)
+    out.append((" ".join(current), current))
+    return out
 
 
 def title_of(present: list[str]) -> str | None:
@@ -423,14 +467,12 @@ def inspect(command: str) -> Verdict | None:
     reasons: list[str] = []
     context: list[str] = []
     decision: str | None = None
-    joined = _CONTINUATION.sub(" ", command)
-    for segment in _SEPARATORS.split(joined):
-        present = tokens(segment)
+    for segment, present in segments(command):
         for candidate in _RULES:
-            # Tokens decide when the segment parses. A segment with
-            # unbalanced quotes yields none, and the anchored regex
-            # then keeps the rule loud rather than silent, without
-            # firing on a mention inside the text.
+            # Tokens decide when the command parses. An unparseable
+            # command yields none, and the anchored regex then keeps
+            # the rule loud rather than silent, without firing on a
+            # mention inside the text.
             hit = (
                 has_verb(present, candidate.verb)
                 if present
