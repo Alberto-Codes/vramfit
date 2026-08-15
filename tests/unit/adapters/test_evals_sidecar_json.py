@@ -307,8 +307,12 @@ class TestLoadEvalsSidecar:
         # JSONDecodeError, so the load step must catch it too (#260).
         source = PUBLISHED / "baseline-iq3-xs.gguf.evals.json"
         text = source.read_text(encoding="utf-8")
+        # A literal past the limit cannot survive `json.dumps`, so this
+        # test edits the text. Assert the target first: a replacement
+        # that silently missed would fail as a bare "DID NOT RAISE".
+        assert text.count("8.5543") == 1
         path = tmp_path / "baseline-iq3-xs.gguf.evals.json"
-        path.write_text(text.replace("8.5543", "1" + "0" * 5000), encoding="utf-8")
+        path.write_text(text.replace("8.5543", "1" + "0" * 5000, 1), encoding="utf-8")
 
         with pytest.raises(ArtifactError, match="cannot parse JSON"):
             load_evals_sidecar(path)
