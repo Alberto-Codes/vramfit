@@ -113,7 +113,7 @@ exclude = [".venv", "__pycache__", "*.egg-info"]
 # TRY (exception hygiene), S (bandit), PERF, RUF, UP, G on top of the
 # house baseline E501/I/D.
 extend-select = [
-    "E402",  # module-level import not at top of file
+    "E402",  # ruff 0.16.0 dropped it from the default set — keep it on
     "E501",
     "I",
     "D",
