@@ -1834,16 +1834,26 @@ on the 4090 (issue #163) and on the H100 (issue #220). That matters
 because the ninth data point's 2.7–4.1× cross-process drift is what
 put the instrument in the frame in the first place.
 
-**The budget arithmetic is where this hurts.** Chart #158 wants
-roughly 2.9 bits per parameter to fit a 12 GiB card, which is a
-10.5 GiB weight budget. The whole frontier at `Q2_0` *fits*, at
-9.906 GiB with 0.594 GiB to spare. The cheapest cell that holds
-quality needs 17.600 GiB. There is nothing between them, because the
-expert-stack palette holds no type at all between 2.25 and 4.25 bits
-per weight on rows of 2688 and 1856. So the empty band is no longer a
-gap between two usable widths. It is the entire distance between a
-pack that fits and a pack that works, and no allocation policy can
-cross it.
+**The budget arithmetic is where this hurts.** When the gate ran,
+chart #158 wanted roughly 2.9 bits per parameter to fit a 12 GiB card,
+which is a 10.5 GiB weight budget. The whole frontier at `Q2_0`
+*fits*, at 9.906 GiB with 0.594 GiB to spare. The cheapest cell that
+holds quality needs 17.600 GiB. There is nothing between them, because
+the expert-stack palette holds no type at all between 2.25 and 4.25
+bits per weight on rows of 2688 and 1856. So the empty band is no
+longer a gap between two usable widths. It is the entire distance
+between a pack that fits and a pack that works, and no allocation
+policy can cross it.
+
+That arithmetic moved the target rather than the recipe. On 2026-08-15
+the maintainer ruled the card up to 16 GiB (issue #257), which sets a
+14.5 GiB weight budget at 3.9 bits per parameter. The reasoning is
+worth stating, because this is the rarer case where a measurement
+kills a *parameter* instead of a design. No runtime-overhead figure
+could rescue 12 GiB. Even at zero overhead, a physically impossible
+budget of the whole card, 26 of the 46 expert stacks still take
+`Q2_0`. The card was the binding constraint the whole time, and the
+gate is what made that visible.
 
 RunPod billed **$2.16** for the pod, which is the cheapest decisive
 result on this page. The gate work itself ran in under ten minutes —
@@ -1853,12 +1863,16 @@ fifteen-minute f16 conversion dominated the bill, and it amortizes
 across every later cell on this target.
 
 One caveat bounds all of it. A whole-frontier pack sets every stack to
-one width, and the recipe chart #158 wants is a *mix* — roughly 82 %
-of stacks at the cheap width and the rest higher. The gate prices the
-corners of that space and not its interior. Nothing here measures
-whether a mixed recipe's damage interpolates between the corners or
-sits somewhere worse, and the gap between 1.604130 and 0.017825 is
-wide enough that the shape of the curve between them matters. Issue
+one width, and the recipe chart #158 wants is a *mix*. At the budget
+that followed the card move, that means roughly 33 of 46 stacks at
+`Q4_0` and the rest at `Q2_0`, which inverts the mostly-cheap mix the
+old budget forced. Either way, the gate prices the corners of that
+space and not its interior. Nothing here measures whether a mixed
+recipe's damage interpolates between the corners or sits somewhere
+worse, and the gap between 1.604130 and 0.017825 is wide enough that
+the shape of the curve between them matters. No published evaluation
+fills it either — the most recent unified survey of llama.cpp
+quantization stops at 3 bits and runs no mixed recipe at all. Issue
 #249 carries what the campaign buys next.
 
 ## Provenance is not evidence
