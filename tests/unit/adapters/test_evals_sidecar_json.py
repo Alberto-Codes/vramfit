@@ -191,6 +191,18 @@ class TestSidecarFromDict:
         with pytest.raises(ArtifactError, match="finite"):
             sidecar_from_dict(data)
 
+    def test_number_too_large_for_a_float_names_its_path(self) -> None:
+        # `float()` on such an int raises OverflowError, an
+        # ArithmeticError that escapes the VramfitError root (#260).
+        data = sidecar_to_dict(full_sidecar())
+        data["tier1"]["ppl"] = 10**400
+
+        with pytest.raises(ArtifactError) as caught:
+            sidecar_from_dict(data)
+
+        assert caught.value.json_path == "$.tier1.ppl"
+        assert "too large for a float" in caught.value.message
+
     @pytest.mark.parametrize("block", ["artifact", "toolchain"])
     def test_missing_required_block_reports_it_as_missing(self, block: str) -> None:
         # `dict.get` would turn the absent key into None and report
@@ -272,6 +284,37 @@ class TestLoadEvalsSidecar:
         path.write_text("{not json", encoding="utf-8")
 
         with pytest.raises(ArtifactError, match="invalid JSON"):
+            load_evals_sidecar(path)
+
+    def test_huge_number_literal_raises_artifact_error(self, tmp_path) -> None:
+        # `json.loads` parses a 400-digit literal to a Python int, which
+        # passes the number check. Only a file proves that — a dict
+        # fixture cannot show what the parser produces (#260).
+        source = PUBLISHED / "baseline-iq3-xs.gguf.evals.json"
+        data = json.loads(source.read_text(encoding="utf-8"))
+        data["tier1"]["ppl"] = 10**400
+        path = tmp_path / "baseline-iq3-xs.gguf.evals.json"
+        path.write_text(json.dumps(data), encoding="utf-8")
+
+        with pytest.raises(ArtifactError, match="too large for a float"):
+            load_evals_sidecar(path)
+
+    def test_number_literal_past_the_digit_limit_raises_artifact_error(
+        self, tmp_path
+    ) -> None:
+        # `sys.get_int_max_str_digits` caps integer-string conversion at
+        # 4300 digits. `json.loads` raises a plain ValueError, not a
+        # JSONDecodeError, so the load step must catch it too (#260).
+        source = PUBLISHED / "baseline-iq3-xs.gguf.evals.json"
+        text = source.read_text(encoding="utf-8")
+        # A literal past the limit cannot survive `json.dumps`, so this
+        # test edits the text. Assert the target first: a replacement
+        # that silently missed would fail as a bare "DID NOT RAISE".
+        assert text.count("8.5543") == 1
+        path = tmp_path / "baseline-iq3-xs.gguf.evals.json"
+        path.write_text(text.replace("8.5543", "1" + "0" * 5000, 1), encoding="utf-8")
+
+        with pytest.raises(ArtifactError, match="cannot parse JSON"):
             load_evals_sidecar(path)
 
     def test_adapter_load_matches_the_module_function(self, tmp_path) -> None:

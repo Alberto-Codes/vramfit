@@ -5,7 +5,10 @@ Every extractor takes a JSON path string so validation errors read like
 ``$.groups[3].sensitivity: key "4x" is not an integer precision``.
 Numeric extractors reject booleans (JSON ``true`` is a valid Python int)
 and non-finite floats (``json.loads`` accepts ``NaN``/``Infinity``, which
-would poison solver comparisons downstream). The boolean extractor
+would poison solver comparisons downstream). A number written as an
+integer literal too large for a float fails as an `ArtifactError`, not
+an `OverflowError` (#260). A literal past the parser's own digit limit
+fails the same way, at the load step. The boolean extractor
 accepts only real booleans, and the string extractors reject the
 empty string. Schema versions advance
 per artifact (ADR-0013) — each adapter owns its version constant and
@@ -234,12 +237,15 @@ def _as_float(value: Any, path: str) -> float:
         The numeric value as a float.
 
     Raises:
-        ArtifactError: If the value is a bool, not a number, or not
-            finite.
+        ArtifactError: If the value is a bool, not a number, too large
+            for a float, or not finite.
     """
     _require(not isinstance(value, bool), path, "expected a number, got a boolean")
     _require(isinstance(value, (int, float)), path, "expected a number")
-    result = float(value)
+    try:
+        result = float(value)
+    except OverflowError as exc:
+        raise ArtifactError(path, "number is too large for a float") from exc
     _require(math.isfinite(result), path, "must be a finite number")
     return result
 
@@ -256,8 +262,8 @@ def _get_float(obj: dict[str, Any], key: str, path: str) -> float:
         The numeric value.
 
     Raises:
-        ArtifactError: If the key is missing, not a number, or not
-            finite.
+        ArtifactError: If the key is missing, not a number, too large
+            for a float, or not finite.
     """
     _require(key in obj, path, f'missing required field "{key}"')
     return _as_float(obj[key], f"{path}.{key}")
@@ -373,7 +379,8 @@ def _load_json(path: Path, root: str) -> dict[str, Any]:
 
     Raises:
         ArtifactError: If the file cannot be read, is not UTF-8, is not
-            valid JSON, or its top level is not an object.
+            valid JSON, carries a number literal the parser refuses, or
+            its top level is not an object.
     """
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -381,6 +388,12 @@ def _load_json(path: Path, root: str) -> dict[str, Any]:
         raise ArtifactError(root, f"invalid JSON: {exc}") from exc
     except UnicodeDecodeError as exc:
         raise ArtifactError(root, f"not valid UTF-8: {exc}") from exc
+    except ValueError as exc:
+        # An integer literal past `sys.get_int_max_str_digits` (4300 by
+        # default) fails here, before any extractor sees it (#260). The
+        # clause sits below the two ValueError subclasses above, which
+        # carry their own messages.
+        raise ArtifactError(root, f"cannot parse JSON: {exc}") from exc
     except OSError as exc:
         raise ArtifactError(root, f"cannot read file: {exc}") from exc
     return _get_dict(data, root)
