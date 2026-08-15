@@ -1847,13 +1847,15 @@ policy can cross it.
 
 That arithmetic moved the target rather than the recipe. On 2026-08-15
 the maintainer ruled the card up to 16 GiB (issue #257), which sets a
-14.5 GiB weight budget at 3.9 bits per parameter. The reasoning is
-worth stating, because this is the rarer case where a measurement
-kills a *parameter* instead of a design. No runtime-overhead figure
-could rescue 12 GiB. Even at zero overhead, a physically impossible
-budget of the whole card, 26 of the 46 expert stacks still take
-`Q2_0`. The card was the binding constraint the whole time, and the
-gate is what made that visible.
+14.5 GiB weight budget at 3.9 bits per parameter. Why the *card* moved
+and not the recipe is the part worth recording, because no
+runtime-overhead figure could rescue 12 GiB. Take the counterfactual
+as far as it goes: grant the weights the entire card, all 12 GiB at
+zero runtime overhead, which no real deployment achieves. Drop every
+quantizable dense group to nominal 4 on top of that. 26 of the 46
+expert stacks still land on `Q2_0`. The gate ruled out a target
+parameter rather than a design, and the card turns out to have been
+the binding constraint the whole time.
 
 RunPod billed **$2.16** for the pod, which is the cheapest decisive
 result on this page. The gate work itself ran in under ten minutes —
