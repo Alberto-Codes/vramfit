@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import signal
 import sys
 from pathlib import Path
 
@@ -8,6 +9,7 @@ import pytest
 from vramfit.adapters.outbound.gguf.pack import _TYPE_FALLBACK
 from vramfit.adapters.outbound.gguf.toolrun import (
     _TAIL_LINES,
+    _signal_name,
     run_tool,
     sized_file,
     tail_of,
@@ -15,6 +17,12 @@ from vramfit.adapters.outbound.gguf.toolrun import (
 from vramfit.adapters.outbound.gguf.types import PackError
 
 pytestmark = pytest.mark.unit
+
+# A realtime signal one above SIGRTMIN. `signal.Signals` names
+# SIGRTMIN and SIGRTMAX and nothing between them, so this number has
+# no enum member (#253). The project supports Linux only, which always
+# defines SIGRTMIN, so this needs no platform guard.
+UNNAMED_SIGNAL = int(signal.SIGRTMIN) + 1
 
 # llama.cpp previews the merges array and truncates the string inside
 # a character, so the stream carries a lead byte with no continuation
@@ -91,6 +99,31 @@ def test_run_tool_signal_death_names_the_signal(tmp_path: Path) -> None:
 
     with pytest.raises(PackError, match="quantize killed by signal SIGKILL"):
         run_tool(command, stage="quantize")
+
+
+def test_run_tool_realtime_signal_death_reports_the_number(tmp_path: Path) -> None:
+    # `signal.Signals` carries SIGRTMIN and SIGRTMAX and no member
+    # between them, so this lookup used to raise `ValueError` straight
+    # past every `except PackError` handler above (#253).
+    command = emitter(
+        tmp_path,
+        b"loading model\n",
+        then="os.kill(os.getpid(), signal.SIGRTMIN + 1)",
+    )
+
+    expected = rf"quantize killed by signal {UNNAMED_SIGNAL} \(unnamed\)"
+    with pytest.raises(PackError, match=expected):
+        run_tool(command, stage="quantize")
+
+
+def test_signal_name_standard_signal_returns_the_enum_name() -> None:
+    assert _signal_name(signal.SIGKILL) == "SIGKILL"
+
+
+def test_signal_name_unnamed_signal_returns_the_number_and_says_unnamed() -> None:
+    # A bare number would read as a signal vramfit knows and chose to
+    # print numerically. The word says the enum had no member.
+    assert _signal_name(UNNAMED_SIGNAL) == f"{UNNAMED_SIGNAL} (unnamed)"
 
 
 def test_run_tool_timeout_carries_the_output_the_tool_wrote(tmp_path: Path) -> None:
