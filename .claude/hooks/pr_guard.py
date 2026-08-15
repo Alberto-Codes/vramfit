@@ -127,9 +127,13 @@ def main() -> int:
         payload = json.load(sys.stdin)
         command = payload.get("tool_input", {}).get("command", "")
         text = question(command) if isinstance(command, str) else None
-    except Exception:
-        # A broken guard must not block work. Any failure here allows
-        # the command.
+    except (ValueError, AttributeError, TypeError):
+        # A malformed payload allows the command. These three cover
+        # every shape stdin can arrive in: `json.JSONDecodeError`
+        # subclasses `ValueError`, a non-mapping payload raises
+        # `AttributeError` on `.get`, and a non-mapping `tool_input`
+        # raises `TypeError`. Anything else exits non-zero, which
+        # Claude Code reports without blocking the tool.
         return 0
 
     if text is None:
