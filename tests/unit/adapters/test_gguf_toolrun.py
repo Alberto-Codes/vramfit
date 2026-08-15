@@ -102,7 +102,7 @@ def test_run_tool_timeout_carries_the_output_the_tool_wrote(tmp_path: Path) -> N
         run_tool(command, stage="smoke", timeout_seconds=0.5)
 
 
-def test_tail_of_long_output_keeps_the_last_lines(tmp_path: Path) -> None:
+def test_tail_of_long_output_keeps_the_last_lines() -> None:
     lines = [f"line {index}" for index in range(_TAIL_LINES * 2)]
 
     tail = tail_of("\n".join(lines))
