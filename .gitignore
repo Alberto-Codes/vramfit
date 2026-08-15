@@ -19,3 +19,14 @@ coverage.xml
 # Scratch probes. The ruff hook checks the whole tree, so an
 # untracked .py file otherwise fails a commit that never staged it.
 /scratch/
+
+# Session harness: the repository carries .claude/, so name the
+# per-machine parts a contributor must not commit.
+.claude/settings.local.json
+.claude/worktrees/
+.claude/scheduled_tasks.lock
+.claude/scheduled_tasks.json
+.claude/routines/.state/
+.claude/checkpoints/
+.claude/mailbox/
+.claude/agent-registry.json

@@ -1,9 +1,17 @@
 ---
 description: Rank the whole tracker by distance to a chart Destination and surface rot
-allowed-tools: Bash(gh issue list:*), Bash(gh issue view:*), Bash(gh api:*), Bash(gh pr list:*), Bash(git log:*)
+allowed-tools: Bash(gh issue list:*), Bash(gh issue view:*), Bash(gh pr list:*), Bash(git log:*)
 ---
 
 # Board
+
+Status: draft — this command shares the charting page's status and
+promotes or demotes with it.
+
+`gh api` is deliberately absent from `allowed-tools`. The pattern
+`Bash(gh api:*)` would also pre-approve `--method POST`, `PATCH`, and
+`DELETE`, which is every write this command forbids below. The two
+dependency queries prompt instead.
 
 Rank every open issue, not one chart's sub-issues. Report what moves a
 Destination, what blocks it, and what is rotting.
@@ -11,8 +19,10 @@ Destination, what blocks it, and what is rotting.
 `chart-triage` answers a different question: what the next chart
 session should claim, and it emits session prompts. This command
 answers what matters across the whole tracker, including the issues no
-chart owns. Run this to decide where a session goes. Run `chart-triage`
-once that decision lands on a chart.
+chart owns. Type `/board` to decide where a session goes, then ask for
+`chart-triage` once that decision lands on a chart. Nothing enforces
+that order — a skill fires on its description, and this command fires
+only when typed.
 
 Report state and rank it. Resolve nothing. Claim nothing. Close
 nothing.
@@ -23,9 +33,11 @@ Run the queries. Never answer from memory or conversation history,
 because parallel sessions move the state.
 
 ```bash
-# every open issue with labels, age, and assignees
+# every open issue with labels, age, assignees, and body. Step 2 and
+# Step 4 read prose for reopen triggers and blocker claims, so the
+# body comes down in this one call rather than in 30 later ones.
 gh issue list --state open --limit 200 \
-  --json number,title,labels,createdAt,updatedAt,assignees \
+  --json number,title,labels,createdAt,updatedAt,assignees,body \
   --jq '.[] | "#\(.number)\t\(.createdAt[0:10])\t\(.updatedAt[0:10])\t\([.labels[].name]|join(","))\tassignees:\(.assignees|length)\t\(.title)"'
 
 # the live charts and their Destinations
@@ -70,15 +82,14 @@ Judgment, not query. In order:
 
 ## Step 4 — report the rot
 
-Name each of these, or state that none exists:
+`chart-triage` Step 2 already defines the stale-claim and merge-rot
+checks. Apply them across the whole tracker rather than restating
+them, and add the two checks that only a whole-board view can make:
 
 - A parked issue whose reopen trigger has fired.
-- An issue whose prose claims a block with no dependency edge.
-- An assigned issue older than one day with no comment since
-  assignment.
 - A correctness defect older than seven days.
-- A merged PR that rots an open issue's body. Check `gh pr list
-  --state merged --limit 10` against the top-ranked issues.
+
+Name each finding, or state that none exists.
 
 ## Step 5 — say what to do next
 

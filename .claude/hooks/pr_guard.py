@@ -4,23 +4,28 @@
 Four failures cost this project real work, and every one of them is a
 shell command an agent runs without stopping:
 
-- `gh pr ready` with no review cycle. The maintainer caught the cycle
-  skipped twice, on PR #64 and PR #100. Both times it found defects.
+- `gh pr ready` with no review cycle. PR #64 and PR #100 both reached
+  ready without one, and both cycles then found defects.
 - `gh pr merge` before the Copilot review is read. PR #156 merged 54
   seconds after the review posted, PR #176 five minutes after, and
-  #176's flag was real (filed as #206).
+  #176's flag was real.
 - `gh pr create --body`, which bypasses the template silently. The
   title becomes the squash subject and release-please parses the body
   footers, so a freeform body breaks machinery rather than style.
-- `gh issue create` with no prior search. One runlog bug was filed five
-  times (#151, #155, #157, #185, #205) by five sessions.
+- `gh issue create` with no prior search. Five sessions filed one
+  runlog bug five times (#151, #155, #157, #185, #205).
 
 The guard asks rather than blocks. A hook that cries wolf gets
-disabled, and every one of these commands has a legitimate use the
-guard cannot see. Answering the question is the point.
+disabled, and every guarded command has a legitimate use the guard
+cannot see. Answering the question is the point.
 
-It fails open. Any error here allows the command, because a broken
-guard must not stop the work.
+The guard reminds. It does not enforce. `gh api --method PUT
+repos/o/r/pulls/N/merge` reaches the same endpoint and matches no rule
+here. Chasing every bypass is how a reminder becomes noise.
+
+It fails open. A malformed payload allows the command, and an uncaught
+error exits non-zero, which Claude Code reports without blocking the
+tool.
 
 Examples:
     The guard reads one PreToolUse payload on stdin and answers with a
@@ -50,93 +55,143 @@ from __future__ import annotations
 
 import json
 import re
+import shlex
 import sys
-from typing import Final
+from typing import Final, NamedTuple
 
-# Each rule pairs a command pattern with the question to ask. Order
-# matters: the first match wins, so the narrower pattern comes first.
-_RULES: Final[tuple[tuple[re.Pattern[str], str], ...]] = (
-    (
+
+class Rule(NamedTuple):
+    """One guarded command shape.
+
+    Attributes:
+        pattern (re.Pattern[str]): Matches the command inside one
+            shell segment.
+        disarm (str | None): A flag that silences the rule when it
+            appears as its own token in the same segment.
+        text (str): The question to put to the user.
+    """
+
+    pattern: re.Pattern[str]
+    disarm: str | None
+    text: str
+
+
+# Shell operators that separate one command from the next. The guard
+# reads each segment alone, so a later command never disarms an
+# earlier one.
+_SEPARATORS: Final[re.Pattern[str]] = re.compile(r"&&|\|\||;|\n|\|")
+
+# A backslash before a newline continues one command onto the next
+# line. It joins rather than separates, so it resolves first.
+_CONTINUATION: Final[re.Pattern[str]] = re.compile(r"\\\s*\n")
+
+_RULES: Final[tuple[Rule, ...]] = (
+    Rule(
         re.compile(r"\bgh\s+pr\s+merge\b"),
+        None,
         (
-            "Merging a PR. Has the Copilot review posted, and have you read "
-            "and answered every comment? PR #156 merged 54 seconds after the "
-            "review posted and PR #176 five minutes after, and #176's flag "
-            "was real (#206). Confirm the review is triaged, or cancel and "
-            "wait for it."
+            "Has the Copilot review posted, and is every comment answered?\n"
+            "PR #156 merged 54 seconds after the review posted. PR #176 "
+            "merged five minutes after, and its flag was real."
         ),
     ),
-    (
+    Rule(
         re.compile(r"\bgh\s+pr\s+ready\b"),
+        None,
         (
-            "Marking a PR ready. Has the review cycle run on this diff — a "
-            "fact-check pass over every number and claim, and a peer-review "
-            "pass for strict-mode style and overstatement? Docs-only PRs are "
-            "not exempt, because their sha256s, dates, and issue refs are "
-            "load-bearing. The maintainer caught this skipped on PR #64 and "
-            "PR #100, and both times it found defects."
+            "Has the review cycle run on this diff?\n"
+            "Fact-check every number, then peer-review for strict-mode "
+            "style. Docs-only PRs are not exempt. PR #64 and PR #100 "
+            "skipped it, and both times it found defects."
         ),
     ),
-    (
-        re.compile(r"\bgh\s+pr\s+create\b(?!.*--body-file)"),
+    Rule(
+        re.compile(r"\bgh\s+pr\s+create\b"),
+        "--body-file",
         (
-            "Creating a PR without --body-file. `gh pr create` bypasses "
-            ".github/PULL_REQUEST_TEMPLATE.md silently. The title becomes the "
-            "squash commit subject and release-please parses the body footers, "
-            "so a freeform body breaks the changelog machinery. Write the body "
-            "to a file against the template, then pass --body-file."
+            "Does this body follow .github/PULL_REQUEST_TEMPLATE.md?\n"
+            "`gh pr create` bypasses the template silently. The title "
+            "becomes the squash subject and release-please parses the "
+            "body footers. Write the body to a file, then pass "
+            "--body-file."
         ),
     ),
-    (
+    Rule(
         re.compile(r"\bgh\s+issue\s+create\b"),
+        None,
         (
-            "Filing an issue. Have you searched the tracker for the symptom "
-            "first — the filename or the error string, over all states, not "
-            "the guessed cause? One runlog bug was filed five times (#151, "
-            "#155, #157, #185, #205) by five sessions that never looked. If a "
-            "match exists, comment there with the new evidence instead."
+            "Did you search the tracker for this symptom first?\n"
+            "Search the filename or the error string, over all states, "
+            "not the guessed cause. Five sessions filed one runlog bug "
+            "five times. Comment on the match instead."
         ),
     ),
 )
 
 
-def question(command: str) -> str | None:
-    """Find the question one shell command should answer first.
+def tokens(segment: str) -> list[str]:
+    """Split one shell segment into tokens.
+
+    Quoting matters here. A `--body-file` inside a quoted message is
+    one token's content, never a flag.
 
     Args:
-        command: The full command line the tool would run. A compound
-            command is matched anywhere, so `a && gh pr merge` counts.
+        segment: One shell command, without separators.
 
     Returns:
-        The question to put to the user, or None when no rule matches.
+        The tokens, or the whitespace split when the segment carries
+        unbalanced quotes. The fallback over-reports a flag, so the
+        guard asks rather than stays silent.
     """
-    for pattern, text in _RULES:
-        if pattern.search(command):
-            return text
-    return None
+    try:
+        return shlex.split(segment)
+    except ValueError:
+        return segment.split()
+
+
+def questions(command: str) -> list[str]:
+    """Find every question one shell command should answer first.
+
+    Args:
+        command: The full command line the tool would run.
+
+    Returns:
+        One question per matched rule, in rule order, without
+        duplicates. An empty list means no rule matched.
+    """
+    found: list[str] = []
+    joined = _CONTINUATION.sub(" ", command)
+    for segment in _SEPARATORS.split(joined):
+        present = tokens(segment)
+        for rule in _RULES:
+            if not rule.pattern.search(segment):
+                continue
+            if rule.disarm is not None and rule.disarm in present:
+                continue
+            if rule.text not in found:
+                found.append(rule.text)
+    return found
 
 
 def main() -> int:
     """Read one PreToolUse payload from stdin and decide on it.
 
     Returns:
-        Always 0. The decision travels in the JSON on stdout, and an
-        error path allows the command rather than stopping the work.
+        Always 0. The decision travels in the JSON on stdout, and a
+        malformed payload allows the command rather than stopping the
+        work.
     """
     try:
         payload = json.load(sys.stdin)
         command = payload.get("tool_input", {}).get("command", "")
-        text = question(command) if isinstance(command, str) else None
-    except (ValueError, AttributeError, TypeError):
-        # A malformed payload allows the command. These three cover
-        # every shape stdin can arrive in: `json.JSONDecodeError`
-        # subclasses `ValueError`, a non-mapping payload raises
-        # `AttributeError` on `.get`, and a non-mapping `tool_input`
-        # raises `TypeError`. Anything else exits non-zero, which
-        # Claude Code reports without blocking the tool.
+        found = questions(command) if isinstance(command, str) else []
+    except (ValueError, AttributeError, OSError):
+        # `json.JSONDecodeError` and `UnicodeDecodeError` subclass
+        # `ValueError`. A payload that is not a mapping raises
+        # `AttributeError` on `.get`. A broken pipe raises `OSError`.
         return 0
 
-    if text is None:
+    if not found:
         return 0
 
     print(
@@ -145,7 +200,7 @@ def main() -> int:
                 "hookSpecificOutput": {
                     "hookEventName": "PreToolUse",
                     "permissionDecision": "ask",
-                    "permissionDecisionReason": text,
+                    "permissionDecisionReason": "\n\n".join(found),
                 }
             }
         )
