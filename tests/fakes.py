@@ -291,13 +291,14 @@ class MemoryRunLog:
 
 
 @dataclass
-class MemoryEvalsSidecarSink:
-    """In-memory `EvalsSidecarSink` and `EvalsSidecarSource`.
+class MemoryEvalsSidecarStore:
+    """In-memory `EvalsSidecarSource` and `EvalsSidecarSink`.
 
-    Every save is captured and the last one wins, so `load` returns
-    what `save` last accepted. An unsaved fake refuses `load` the way
-    the JSON adapter refuses an absent file: with an `ArtifactError`,
-    which is a `ValueError`.
+    Named `Store` because it serves both ports, matching
+    `MemoryScanCheckpointStore`. Every save is captured and the last
+    one wins, so `load` returns what `save` last accepted. An empty
+    store refuses `load` with `ArtifactError`, which is the error type
+    the JSON adapter raises for an unreadable source.
     """
 
     saved: list[EvalsSidecar] = field(default_factory=list)
@@ -307,7 +308,7 @@ class MemoryEvalsSidecarSink:
 
     def load(self) -> EvalsSidecar:
         if not self.saved:
-            raise ArtifactError("$", "cannot read file: no sidecar was saved")
+            raise ArtifactError("$", "no evals sidecar configured")
         return self.saved[-1]
 
     @property

@@ -17,10 +17,11 @@ from typing import Any
 
 import pytest
 
-from tests.fakes import MemoryEvalsSidecarSink
+from tests.fakes import MemoryEvalsSidecarStore
 from vramfit.adapters.outbound.evals_sidecar_json import (
     EVALS_SIDECAR_SCHEMA_VERSION,
     JsonEvalsSidecarFile,
+    save_evals_sidecar,
     sidecar_to_dict,
 )
 from vramfit.adapters.outbound.json_common import ArtifactError
@@ -92,7 +93,7 @@ def _real_sink(
 def _fake_sink(
     tmp_path: Path,
 ) -> tuple[EvalsSidecarSink, Callable[[], dict[str, Any]]]:
-    sink = MemoryEvalsSidecarSink()
+    sink = MemoryEvalsSidecarStore()
     return sink, lambda: sidecar_to_dict(sink.last)
 
 
@@ -135,49 +136,62 @@ class TestEvalsSidecarSinkContract:
         assert readback() == sidecar_to_dict(tier1_only_sidecar())
 
 
-def _real_source(tmp_path: Path) -> EvalsSidecarSource:
-    return JsonEvalsSidecarFile(tmp_path / "model.gguf.evals.json")
+# --- EvalsSidecarSource ---------------------------------------------------- #
+#
+# Each side is seeded through its own natural mechanism and the tests
+# then call `load` only. `save` is not on this Protocol, so seeding
+# through it would test a capability the port does not promise.
 
 
-def _fake_source(tmp_path: Path) -> EvalsSidecarSource:
-    return MemoryEvalsSidecarSink()
+def _real_sidecar_source(tmp_path: Path, sidecar: EvalsSidecar | None):
+    path = tmp_path / "model.gguf.evals.json"
+    if sidecar is None:
+        path.write_text("{}", encoding="utf-8")
+    else:
+        save_evals_sidecar(sidecar, path)
+    return JsonEvalsSidecarFile(path)
+
+
+def _fake_sidecar_source(tmp_path: Path, sidecar: EvalsSidecar | None):
+    store = MemoryEvalsSidecarStore()
+    if sidecar is not None:
+        store.save(sidecar)
+    return store
 
 
 @pytest.mark.contract
 @pytest.mark.parametrize(
-    "build", [_real_source, _fake_source], ids=["real-json", "fake-memory"]
+    "build",
+    [_real_sidecar_source, _fake_sidecar_source],
+    ids=["real-json", "fake-memory"],
 )
 class TestEvalsSidecarSourceContract:
-    def test_saved_sidecar_loads_back_equal(self, build, tmp_path) -> None:
-        source = build(tmp_path)
-        sidecar = sample_sidecar()
+    def test_load_returns_the_configured_sidecar(self, build, tmp_path) -> None:
+        expected = sample_sidecar()
+        source: EvalsSidecarSource = build(tmp_path, expected)
 
-        source.save(sidecar)
+        assert source.load() == expected
 
-        assert source.load() == sidecar
-
-    def test_absent_tiers_load_back_as_none(self, build, tmp_path) -> None:
-        source = build(tmp_path)
-
-        source.save(tier1_only_sidecar())
+    def test_load_returns_absent_tiers_as_none(self, build, tmp_path) -> None:
+        source: EvalsSidecarSource = build(tmp_path, tier1_only_sidecar())
 
         loaded = source.load()
+
         assert loaded.tier1 is not None
         assert loaded.tier2 is None
         assert loaded.tier3 is None
 
-    def test_load_without_a_saved_sidecar_raises_artifact_error(
+    def test_load_without_valid_sidecar_raises_artifact_error(
         self, build, tmp_path
     ) -> None:
-        source = build(tmp_path)
+        source: EvalsSidecarSource = build(tmp_path, None)
 
         with pytest.raises(ArtifactError):
             source.load()
 
-    def test_load_after_a_second_save_returns_the_second(self, build, tmp_path) -> None:
-        source = build(tmp_path)
+    def test_load_is_repeatable(self, build, tmp_path) -> None:
+        # The real adapter re-reads the file each time. The fake
+        # returns a held object. Both must answer the same twice.
+        source: EvalsSidecarSource = build(tmp_path, sample_sidecar())
 
-        source.save(sample_sidecar())
-        source.save(tier1_only_sidecar())
-
-        assert source.load() == tier1_only_sidecar()
+        assert source.load() == source.load()

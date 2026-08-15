@@ -8,21 +8,23 @@ key set. The domain types (`vramfit.domain.evals`) enforce the value
 invariants, and the reader restates a domain refusal as an
 `ArtifactError` naming the JSON path.
 
-The reader landed with #137. Until then this adapter was the only
-published artifact with no way back in, so the five shipped sidecars
-could not be verified by loading them (ADR-0025).
+The reader landed with #137. The sidecar was the last published
+artifact with no reader, so nobody could verify the five shipped
+files by loading them (ADR-0025).
+
+The reader drops a key it does not know. Do not load a published
+sidecar and save it over itself. #261 carries that gap, and it
+reaches every artifact reader.
 
 Examples:
-    Read a sidecar back, then write it beside its artifact:
+    Read a published sidecar:
 
     ```python
     from vramfit.adapters.outbound.evals_sidecar_json import (
         load_evals_sidecar,
-        save_evals_sidecar,
     )
 
     sidecar = load_evals_sidecar(path)
-    save_evals_sidecar(sidecar, path)
     ```
 
 See Also:
@@ -172,24 +174,25 @@ def _built[T](path: str, build: Callable[[], T]) -> T:
     """Construct a domain value, reporting its invariants by JSON path.
 
     The domain types enforce the value rules in ``__post_init__``
-    (ADR-0008). A reader must not leak a bare `ValueError` that names
-    no field, so this restates the failure as an `ArtifactError`.
+    (ADR-0008). A reader must not leak a bare `ValueError` naming no
+    field. This restates the failure as an `ArtifactError`.
 
-    An `ArtifactError` passes through unchanged. It is a `ValueError`,
-    and the nested calls that build a sidecar would otherwise stack
-    one path prefix per level onto a message that already names the
-    exact field.
+    Every caller extracts its fields first and passes ``build`` a
+    constructor call and nothing else. That keeps this ``except``
+    narrow. A ``build`` that also parsed would relabel any unrelated
+    `ValueError` as the reader's fault, at the enclosing block's path
+    rather than the failing field's — the error-labeling bug class
+    ADR-0011 exists to prevent.
 
     Args:
         path: JSON path of the object being built.
-        build: Zero-argument constructor call.
+        build: Zero-argument constructor call. It must not parse.
 
     Returns:
         The constructed domain value.
 
     Raises:
-        ArtifactError: If the domain type rejects the values, or
-            unchanged from a nested parser.
+        ArtifactError: If the domain type rejects the values.
     """
     try:
         return build()
@@ -226,6 +229,9 @@ def _get_opt_str(obj: dict[str, Any], key: str, path: str) -> str | None:
 def _artifact_from_dict(obj: dict[str, Any], path: str) -> EvaluatedArtifact:
     """Parse the ``artifact`` block.
 
+    Extracts every field first, then constructs. `_built` wraps the
+    constructor alone, so it never relabels a parse failure.
+
     Args:
         obj: The block's JSON object.
         path: Its JSON path.
@@ -236,18 +242,17 @@ def _artifact_from_dict(obj: dict[str, Any], path: str) -> EvaluatedArtifact:
     Raises:
         ArtifactError: If a field is missing or invalid.
     """
-    return _built(
-        path,
-        lambda: EvaluatedArtifact(
-            file=_get_str(obj, "file", path),
-            sha256=_get_str(obj, "sha256", path),
-            size_bytes=_get_int(obj, "size_bytes", path),
-        ),
-    )
+    file = _get_str(obj, "file", path)
+    sha256 = _get_str(obj, "sha256", path)
+    size_bytes = _get_int(obj, "size_bytes", path)
+    return _built(path, lambda: EvaluatedArtifact(file, sha256, size_bytes))
 
 
 def _toolchain_from_dict(obj: dict[str, Any], path: str) -> EvalToolchain:
     """Parse the ``toolchain`` block.
+
+    Extracts every field first, then constructs. `_built` wraps the
+    constructor alone, so it never relabels a parse failure.
 
     The three tier-3 fields serialize as null on a tiers-1-2 sidecar,
     so each reads as optional here. `EvalsSidecar` enforces their
@@ -263,19 +268,18 @@ def _toolchain_from_dict(obj: dict[str, Any], path: str) -> EvalToolchain:
     Raises:
         ArtifactError: If a field is missing or invalid.
     """
-    return _built(
-        path,
-        lambda: EvalToolchain(
-            llama_cpp_build=_get_str(obj, "llama_cpp_build", path),
-            lm_eval=_get_opt_str(obj, "lm_eval", path),
-            llama_cpp_python=_get_opt_str(obj, "llama_cpp_python", path),
-            lane=_get_opt_str(obj, "lane", path),
-        ),
-    )
+    build = _get_str(obj, "llama_cpp_build", path)
+    lm_eval = _get_opt_str(obj, "lm_eval", path)
+    binding = _get_opt_str(obj, "llama_cpp_python", path)
+    lane = _get_opt_str(obj, "lane", path)
+    return _built(path, lambda: EvalToolchain(build, lm_eval, binding, lane))
 
 
 def _tier1_from_dict(obj: dict[str, Any], path: str) -> Tier1Result:
     """Parse the ``tier1`` block.
+
+    Extracts every field first, then constructs. `_built` wraps the
+    constructor alone, so it never relabels a parse failure.
 
     Args:
         obj: The block's JSON object.
@@ -287,20 +291,19 @@ def _tier1_from_dict(obj: dict[str, Any], path: str) -> Tier1Result:
     Raises:
         ArtifactError: If a field is missing or invalid.
     """
-    return _built(
-        path,
-        lambda: Tier1Result(
-            date=_get_str(obj, "date", path),
-            dataset=_get_str(obj, "dataset", path),
-            chunks=_get_int(obj, "chunks", path),
-            ppl=_get_float(obj, "ppl", path),
-            ppl_stderr=_get_float(obj, "ppl_stderr", path),
-        ),
-    )
+    date = _get_str(obj, "date", path)
+    dataset = _get_str(obj, "dataset", path)
+    chunks = _get_int(obj, "chunks", path)
+    ppl = _get_float(obj, "ppl", path)
+    ppl_stderr = _get_float(obj, "ppl_stderr", path)
+    return _built(path, lambda: Tier1Result(date, dataset, chunks, ppl, ppl_stderr))
 
 
 def _tier2_window_from_dict(obj: dict[str, Any], path: str) -> Tier2Window:
     """Parse one ``tier2.windows`` entry.
+
+    Extracts every field first, then constructs. `_built` wraps the
+    constructor alone, so it never relabels a parse failure.
 
     Args:
         obj: The window's JSON object.
@@ -312,21 +315,25 @@ def _tier2_window_from_dict(obj: dict[str, Any], path: str) -> Tier2Window:
     Raises:
         ArtifactError: If a field is missing or invalid.
     """
+    date = _get_str(obj, "date", path)
+    chunks = _get_int(obj, "chunks", path)
+    mean_kld = _get_float(obj, "mean_kld", path)
+    kld_stderr = _get_float(obj, "kld_stderr", path)
+    same_top = _get_float(obj, "same_top_pct", path)
+    same_top_stderr = _get_float(obj, "same_top_stderr_pct", path)
     return _built(
         path,
         lambda: Tier2Window(
-            date=_get_str(obj, "date", path),
-            chunks=_get_int(obj, "chunks", path),
-            mean_kld=_get_float(obj, "mean_kld", path),
-            kld_stderr=_get_float(obj, "kld_stderr", path),
-            same_top_pct=_get_float(obj, "same_top_pct", path),
-            same_top_stderr_pct=_get_float(obj, "same_top_stderr_pct", path),
+            date, chunks, mean_kld, kld_stderr, same_top, same_top_stderr
         ),
     )
 
 
 def _tier2_from_dict(obj: dict[str, Any], path: str) -> Tier2Result:
     """Parse the ``tier2`` block.
+
+    Extracts every field first, then constructs. `_built` wraps the
+    constructor alone, so it never relabels a parse failure.
 
     Args:
         obj: The block's JSON object.
@@ -346,18 +353,16 @@ def _tier2_from_dict(obj: dict[str, Any], path: str) -> Tier2Result:
         )
         for index, entry in enumerate(raw)
     )
-    return _built(
-        path,
-        lambda: Tier2Result(
-            reference=_get_str(obj, "reference", path),
-            dataset=_get_str(obj, "dataset", path),
-            windows=windows,
-        ),
-    )
+    reference = _get_str(obj, "reference", path)
+    dataset = _get_str(obj, "dataset", path)
+    return _built(path, lambda: Tier2Result(reference, dataset, windows))
 
 
 def _tier3_task_from_dict(obj: dict[str, Any], path: str) -> Tier3Task:
     """Parse one ``tier3.tasks`` entry.
+
+    Extracts every field first, then constructs. `_built` wraps the
+    constructor alone, so it never relabels a parse failure.
 
     Args:
         obj: The task's JSON object.
@@ -369,18 +374,19 @@ def _tier3_task_from_dict(obj: dict[str, Any], path: str) -> Tier3Task:
     Raises:
         ArtifactError: If a field is missing or invalid.
     """
+    date = _get_str(obj, "date", path)
+    name = _get_str(obj, "name", path)
+    version = _get_str(obj, "version", path)
+    few_shot = _get_int(obj, "few_shot", path)
+    n = _get_int(obj, "n", path)
+    metric = _get_str(obj, "metric", path)
+    score = _get_float(obj, "score", path)
+    stderr = _get_float(obj, "stderr", path)
+    seconds = _get_float(obj, "wall_clock_seconds", path)
     return _built(
         path,
         lambda: Tier3Task(
-            date=_get_str(obj, "date", path),
-            name=_get_str(obj, "name", path),
-            version=_get_str(obj, "version", path),
-            few_shot=_get_int(obj, "few_shot", path),
-            n=_get_int(obj, "n", path),
-            metric=_get_str(obj, "metric", path),
-            score=_get_float(obj, "score", path),
-            stderr=_get_float(obj, "stderr", path),
-            wall_clock_seconds=_get_float(obj, "wall_clock_seconds", path),
+            date, name, version, few_shot, n, metric, score, stderr, seconds
         ),
     )
 
@@ -407,6 +413,32 @@ def _tier3_from_dict(obj: dict[str, Any], path: str) -> Tier3Result:
         for index, entry in enumerate(raw)
     )
     return _built(path, lambda: Tier3Result(tasks=tasks))
+
+
+def _required_block[T](
+    obj: dict[str, Any], key: str, root: str, parse: Callable[[dict[str, Any], str], T]
+) -> T:
+    """Parse a block that every sidecar carries.
+
+    The missing case reports itself as missing. `dict.get` would turn
+    an absent key into None and report the wrong reason, which sends
+    the reader hunting for a type error in a block that is not there.
+
+    Args:
+        obj: Top-level artifact object.
+        key: The block's key, e.g. ``artifact``.
+        root: JSON path of the artifact root.
+        parse: The block's parser.
+
+    Returns:
+        The parsed block.
+
+    Raises:
+        ArtifactError: If the key is missing or is not a JSON object.
+    """
+    _require(key in obj, root, f'missing required field "{key}"')
+    path = f"{root}.{key}"
+    return parse(_get_dict(obj[key], path), path)
 
 
 def _optional_block[T](
@@ -438,9 +470,9 @@ def _optional_block[T](
 def sidecar_from_dict(data: dict[str, Any]) -> EvalsSidecar:
     """Validate a JSON dict and build the sidecar it describes.
 
-    The inverse of `sidecar_to_dict`. Every tier key must be present,
-    because the writer emits the same key set at every schema-2
-    sidecar — a null value means the tier did not run.
+    The inverse of `sidecar_to_dict`. Every tier key must be present.
+    The writer emits one key set in every schema-2 sidecar, so a null
+    value means the tier did not run.
 
     Args:
         data: The artifact's top-level JSON object.
@@ -464,22 +496,12 @@ def sidecar_from_dict(data: dict[str, Any]) -> EvalsSidecar:
     root = "$"
     obj = _get_dict(data, root)
     _check_schema_version(obj, root, EVALS_SIDECAR_SCHEMA_VERSION)
-    artifact_path = f"{root}.artifact"
-    toolchain_path = f"{root}.toolchain"
-    return _built(
-        root,
-        lambda: EvalsSidecar(
-            artifact=_artifact_from_dict(
-                _get_dict(obj.get("artifact"), artifact_path), artifact_path
-            ),
-            toolchain=_toolchain_from_dict(
-                _get_dict(obj.get("toolchain"), toolchain_path), toolchain_path
-            ),
-            tier1=_optional_block(obj, "tier1", root, _tier1_from_dict),
-            tier2=_optional_block(obj, "tier2", root, _tier2_from_dict),
-            tier3=_optional_block(obj, "tier3", root, _tier3_from_dict),
-        ),
-    )
+    artifact = _required_block(obj, "artifact", root, _artifact_from_dict)
+    toolchain = _required_block(obj, "toolchain", root, _toolchain_from_dict)
+    tier1 = _optional_block(obj, "tier1", root, _tier1_from_dict)
+    tier2 = _optional_block(obj, "tier2", root, _tier2_from_dict)
+    tier3 = _optional_block(obj, "tier3", root, _tier3_from_dict)
+    return _built(root, lambda: EvalsSidecar(artifact, toolchain, tier1, tier2, tier3))
 
 
 def load_evals_sidecar(path: Path) -> EvalsSidecar:

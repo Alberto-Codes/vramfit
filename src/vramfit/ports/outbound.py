@@ -434,10 +434,9 @@ class SmokeTester(Protocol):
 class EvalsSidecarSource(Protocol):
     """Supplies one artifact's evals sidecar.
 
-    The reader half of ADR-0025. ADR-0025 binds the rule that a card
-    number without a sidecar entry is a defect, and nothing could
-    check that rule while the sidecar was the one published artifact
-    with no reader (#137).
+    The reader half of ADR-0025. Decision 4 binds the rule that a card
+    number without a sidecar entry is a defect. Nothing could check
+    that rule while the sidecar had no reader (#137).
 
     Examples:
         The JSON file adapter satisfies this port:

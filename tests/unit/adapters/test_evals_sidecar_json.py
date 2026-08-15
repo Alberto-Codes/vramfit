@@ -1,8 +1,8 @@
 """Serialization of the evals-sidecar JSON adapter (ADR-0025).
 
-The published fixtures in ``tests/data/published-evals`` are the
-shipped sidecars, byte for byte. #137 added the reader precisely
-because nothing could execute against them before.
+The fixtures in ``tests/data/published-evals`` are all five shipped
+sidecars, byte for byte. #137 added the reader precisely because
+nothing could execute against them before.
 """
 
 from __future__ import annotations
@@ -126,10 +126,18 @@ class TestSaveEvalsSidecar:
 
 
 PUBLISHED = Path(__file__).parents[2] / "data" / "published-evals"
+
+# All five sidecars publication #1 ships: the certified artifact and
+# the four baselines. #137 named their unverifiability as the cost of
+# having no reader, so the fixture set is the whole set, not a sample.
 PUBLISHED_SIDECARS = [
     "fit24gib.gguf.evals.json",
     "baseline-iq3-xs.gguf.evals.json",
+    "baseline-iq3-xxs.gguf.evals.json",
+    "baseline-q3-k-s.gguf.evals.json",
+    "baseline-ud-iq3-xxs.gguf.evals.json",
 ]
+PUBLISHED_IDS = ["certified", "iq3-xs", "iq3-xxs", "q3-k-s", "ud-iq3-xxs"]
 
 
 class TestSidecarFromDict:
@@ -183,9 +191,56 @@ class TestSidecarFromDict:
         with pytest.raises(ArtifactError, match="finite"):
             sidecar_from_dict(data)
 
+    @pytest.mark.parametrize("block", ["artifact", "toolchain"])
+    def test_missing_required_block_reports_it_as_missing(self, block: str) -> None:
+        # `dict.get` would turn the absent key into None and report
+        # "expected a JSON object", sending the reader after a type
+        # error in a block that is not there.
+        data = sidecar_to_dict(full_sidecar())
+        del data[block]
+
+        with pytest.raises(ArtifactError) as caught:
+            sidecar_from_dict(data)
+
+        assert caught.value.json_path == "$"
+        assert f'missing required field "{block}"' in caught.value.message
+
+    @pytest.mark.parametrize("block", ["artifact", "toolchain"])
+    def test_null_required_block_reports_the_wrong_type(self, block: str) -> None:
+        data = sidecar_to_dict(full_sidecar())
+        data[block] = None
+
+        with pytest.raises(ArtifactError) as caught:
+            sidecar_from_dict(data)
+
+        assert caught.value.json_path == f"$.{block}"
+        assert "expected a JSON object" in caught.value.message
+
+    def test_every_tier_null_is_refused_at_the_root(self) -> None:
+        # `EvalsSidecar.__post_init__` owns this rule, and the root
+        # `_built` is the only thing that restates it by path.
+        data = sidecar_to_dict(tier1_only_sidecar())
+        data["tier1"] = None
+
+        with pytest.raises(ArtifactError) as caught:
+            sidecar_from_dict(data)
+
+        assert caught.value.json_path == "$"
+        assert "at least one tier must be present" in caught.value.message
+
+    def test_tier3_without_the_harness_toolchain_is_refused_at_the_root(self) -> None:
+        data = sidecar_to_dict(full_sidecar())
+        data["toolchain"]["lm_eval"] = None
+
+        with pytest.raises(ArtifactError) as caught:
+            sidecar_from_dict(data)
+
+        assert caught.value.json_path == "$"
+        assert "tier3 requires the toolchain's lm_eval" in caught.value.message
+
 
 class TestLoadEvalsSidecar:
-    @pytest.mark.parametrize("name", PUBLISHED_SIDECARS, ids=["certified", "baseline"])
+    @pytest.mark.parametrize("name", PUBLISHED_SIDECARS, ids=PUBLISHED_IDS)
     def test_published_sidecar_round_trips_byte_for_byte(
         self, name: str, tmp_path
     ) -> None:
@@ -200,7 +255,7 @@ class TestLoadEvalsSidecar:
 
         assert out.read_text(encoding="utf-8") == source.read_text(encoding="utf-8")
 
-    @pytest.mark.parametrize("name", PUBLISHED_SIDECARS, ids=["certified", "baseline"])
+    @pytest.mark.parametrize("name", PUBLISHED_SIDECARS, ids=PUBLISHED_IDS)
     def test_published_sidecar_names_its_artifact_and_build(self, name: str) -> None:
         sidecar = load_evals_sidecar(PUBLISHED / name)
 
