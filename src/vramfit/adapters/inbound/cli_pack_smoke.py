@@ -41,9 +41,9 @@ def _halt_type_fallback(run_log: SafeRunLog, exc: TypeFallbackError) -> typer.Ex
     """Report the type-fallback halt with its rewrites (ADR-0028).
 
     A rewritten type breaks the recipe the artifact claims to carry,
-    so this scan halts where the imatrix-miss scan records and
-    continues. The event carries every rewritten tensor and the
-    substituted types (ADR-0028 decision 3).
+    so the pack's fallback scan halts where its imatrix-miss scan
+    records and continues. The event carries every rewritten tensor
+    and the substituted types (ADR-0028 decision 3).
 
     Args:
         run_log: Sink for the ``pack_halted`` event.
