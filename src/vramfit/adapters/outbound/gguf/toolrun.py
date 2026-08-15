@@ -7,6 +7,11 @@ rejects a zero-exit tool that wrote no usable file. The pack and
 smoke adapters both drive tools through here, so their error
 messages cannot drift apart.
 
+Every failure here leaves as a `PackError` (ADR-0011). `signal_name`
+exists to hold that line. `signal.Signals` has no member between
+`SIGRTMIN` and `SIGRTMAX`, so naming a realtime signal death raised
+`ValueError` straight through the boundary (#253).
+
 `run_tool` replaces undecodable bytes instead of refusing them.
 llama.cpp truncates its metadata previews mid-character on a
 byte-level BPE tokenizer. A strict decode raised `UnicodeDecodeError`
@@ -40,6 +45,35 @@ from typing import Final
 from vramfit.adapters.outbound.gguf.types import PackError
 
 _TAIL_LINES: Final[int] = 15
+
+
+def signal_name(number: int) -> str:
+    """Name a signal, falling back to its number.
+
+    `signal.Signals` carries the standard signals and `SIGRTMIN` and
+    `SIGRTMAX`. It carries no member between them, so a realtime
+    signal raises `ValueError` on lookup. That escaped `run_tool` as a
+    `ValueError` and defeated every `except PackError` above it
+    (#253).
+
+    Args:
+        number: A positive signal number.
+
+    Returns:
+        The signal's enum name, or its number rendered as a string
+        when the enum has no member for it.
+
+    Examples:
+        A standard signal names itself:
+
+        ```python
+        assert signal_name(9) == "SIGKILL"
+        ```
+    """
+    try:
+        return signal.Signals(number).name
+    except ValueError:
+        return str(number)
 
 
 def tail_of(output: str) -> str:
@@ -78,8 +112,9 @@ def run_tool(
 
     Raises:
         PackError: If the tool cannot start, exits nonzero, dies to a
-            signal (named in the message), or exceeds the timeout.
-            The message carries the tool's last output lines.
+            signal (named in the message, or numbered when the enum
+            has no name for it), or exceeds the timeout. The message
+            carries the tool's last output lines.
     """
     try:
         completed = subprocess.run(  # noqa: S603 - fixed tool paths from the composition root, no shell
@@ -109,7 +144,7 @@ def run_tool(
     if completed.returncode != 0:
         code = completed.returncode
         died = (
-            f"killed by signal {signal.Signals(-code).name}"
+            f"killed by signal {signal_name(-code)}"
             if code < 0
             else f"failed with exit code {code}"
         )

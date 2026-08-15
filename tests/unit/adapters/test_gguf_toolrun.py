@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import signal
 import sys
 from pathlib import Path
 
@@ -9,12 +10,22 @@ from vramfit.adapters.outbound.gguf.pack import _TYPE_FALLBACK
 from vramfit.adapters.outbound.gguf.toolrun import (
     _TAIL_LINES,
     run_tool,
+    signal_name,
     sized_file,
     tail_of,
 )
 from vramfit.adapters.outbound.gguf.types import PackError
 
 pytestmark = pytest.mark.unit
+
+# A realtime signal one above SIGRTMIN. `signal.Signals` names
+# SIGRTMIN and SIGRTMAX and nothing between them, so this number has
+# no enum member (#253). Windows and macOS ship no realtime signals.
+_HAS_REALTIME_SIGNALS = hasattr(signal, "SIGRTMIN")
+UNNAMED_SIGNAL = int(signal.SIGRTMIN) + 1 if _HAS_REALTIME_SIGNALS else 0
+no_realtime_signals = pytest.mark.skipif(
+    not _HAS_REALTIME_SIGNALS, reason="platform has no realtime signals"
+)
 
 # llama.cpp previews the merges array and truncates the string inside
 # a character, so the stream carries a lead byte with no continuation
@@ -91,6 +102,30 @@ def test_run_tool_signal_death_names_the_signal(tmp_path: Path) -> None:
 
     with pytest.raises(PackError, match="quantize killed by signal SIGKILL"):
         run_tool(command, stage="quantize")
+
+
+@no_realtime_signals
+def test_run_tool_realtime_signal_death_reports_the_number(tmp_path: Path) -> None:
+    # `signal.Signals` carries SIGRTMIN and SIGRTMAX and no member
+    # between them, so this lookup used to raise `ValueError` straight
+    # past every `except PackError` handler above (#253).
+    command = emitter(
+        tmp_path,
+        b"loading model\n",
+        then="os.kill(os.getpid(), signal.SIGRTMIN + 1)",
+    )
+
+    with pytest.raises(PackError, match=f"quantize killed by signal {UNNAMED_SIGNAL}"):
+        run_tool(command, stage="quantize")
+
+
+def test_signal_name_standard_signal_returns_the_enum_name() -> None:
+    assert signal_name(signal.SIGKILL) == "SIGKILL"
+
+
+@no_realtime_signals
+def test_signal_name_realtime_signal_returns_the_number() -> None:
+    assert signal_name(UNNAMED_SIGNAL) == str(UNNAMED_SIGNAL)
 
 
 def test_run_tool_timeout_carries_the_output_the_tool_wrote(tmp_path: Path) -> None:
