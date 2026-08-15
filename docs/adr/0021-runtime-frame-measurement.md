@@ -4,6 +4,21 @@
 - **Date:** 2026-08-06 (accepted 2026-08-06)
 - **Supersedes:** [ADR-0019](0019-kquant-priced-maps.md),
   [ADR-0020](0020-imatrix-assisted-pricing.md)
+- **Amendment (2026-08-14, issue #248):** decision 4 changes shape.
+  The original clause barred the solver from 2-bit **until a
+  runtime-frame price exists**. The #229 gate produced that price, so
+  the condition discharged and the clause needed a successor rather
+  than a deletion. Maintainer ruling (2026-08-14): the bar becomes a
+  measured one. A price must show the width beats the alternatives
+  **available at or below the budget**. The bar reads per target and
+  per width, and it bans no number of bits anywhere. A first draft
+  compared at the same total packed size. That reading barred every
+  width on this target, because no two widths here pack to one size,
+  so the maintainer replaced it the same day. The same amendment
+  states the evaluation set as the full WikiText-2 test set rather
+  than a chunk count.
+  Record:
+  [#229 closing comment](https://github.com/Alberto-Codes/vramfit/issues/229#issuecomment-5300460635).
 
 ## Context
 
@@ -45,11 +60,29 @@ arithmetic.
    Cross-process re-measurement moved identical cells 2.7–4.1x
    (the ninth data point). The lane must measure its own noise
    floor first. Only frame-matched comparisons carry weight.
-4. **The solver does not buy 2-bit until a runtime-frame price
-   exists.** Recipes solve on maps without a 2-bit column. The
-   mechanism today is a copy of the sensitivity map with the 2-bit
-   column removed — the eleventh data point measures what the
-   constraint costs.
+4. **The solver buys a width only against a runtime-frame price.
+   That price must show the width beats the alternatives available
+   at or below the budget.** Amended 2026-08-14 (#248). Recipes
+   solve on maps with each barred width's column removed. The
+   mechanism today is a copy of the sensitivity map without those
+   columns — on the 30B target that is the 2-bit column (#229). The
+   eleventh data point measures what the constraint costs.
+
+   The bar reads per target and per width. It bans no number of bits
+   anywhere. It compares a width against what the budget can
+   actually buy, and not against a width the budget cannot reach.
+
+   Measured 2026-08-14 (#229) on Nemotron 3.5 Lightning 30B-A3B. A
+   whole-frontier `Q2_0` pack costs 4.097 times the reference
+   perplexity, at 9.906 GiB. `Q4_0` costs 1.009 times at 17.600 GiB,
+   which the chart's 10.5 GiB weight budget cannot reach. So `Q4_0`
+   is not an alternative the bar reads here.
+
+   `Q2_0` still fails. Mixed recipes also fit at or below 10.5 GiB,
+   at roughly 82 % of stacks cheap and the rest higher, and the gate
+   measured none of them. No price yet shows `Q2_0` beats those
+   alternatives, so the solver buys no 2-bit on this target. #249
+   carries the measurements that would settle it.
 
 ## Open questions
 
@@ -86,22 +119,34 @@ arithmetic.
 - Whether `plan` grows a precision-exclusion flag, or map copies
   with the excluded column removed stay the mechanism for
   decision 4.
+- Whether the bar needs a quality floor beside its comparison
+  (added 2026-08-14, #248). Decision 4 compares a width against the
+  alternatives a budget can buy. A width that is the only thing
+  fitting a budget therefore meets the bar by default, however bad
+  its measured damage. The #164 serve test catches that case today,
+  and no record says whether the solver should.
 - Evaluation breadth in the runtime-frame lane (added 2026-08-07).
   Two WikiText chunks carry the twelfth data point's full-set PPL
   loss. They sit at positions 347 and 502 of 564. The 100-chunk
   tier-2 window does not reach them. A runtime-frame damage
   measure needs evaluation text that reaches such instabilities.
   **Resolved (2026-08-14, #234): the runtime-frame lane evaluates
-  the full 564-chunk WikiText-2 test set per cell.** The damage
-  numbers are full-set PPL and KLD against the f16 reference. The
-  runtime-frame lane reports KLD as mean, 99.9th percentile, and
-  maximum. The tail-metric rationale and source links sit on #234.
+  the full WikiText-2 test set per cell.** The damage numbers are
+  full-set PPL and KLD against the f16 reference. The runtime-frame
+  lane reports KLD as mean, 99.9th percentile, and maximum. The
+  tail-metric rationale and source links sit on #234.
+
+  The chunk count belongs to the target's tokenizer and not to the
+  clause (amended 2026-08-14, #248). At `n_ctx` 512 the same file
+  tokenizes to 564 chunks on Nemotron Super 49B. It tokenizes to 594
+  chunks on Nemotron 3.5 Lightning 30B-A3B, which is 304,128 tokens.
+  Read the count the tool reports, and state it beside the numbers.
 
 ## Consequences
 
 - The sensitivity map keeps its pricing role at 3 bits and above —
-  the eleventh data point confirmed it. 2-bit assignment waits for
-  runtime-frame prices.
+  the eleventh data point confirmed it. The 30B target's 2-bit price
+  arrived 2026-08-14 and failed (#229).
 - The measurement bottleneck moves from GPU forward passes to CPU
   quantize passes — a different resource, and one that rents
   cheaply.
@@ -115,5 +160,18 @@ arithmetic.
   recipe, `attn_v` protection crossed the baseline's mean KLD
   (the twelfth data point).
 - Full-set KLD needs a saved f16 base-logits file per model
-  (noted 2026-08-14). The 30B target's file lands near 76 GB
-  (estimate) and stays pod-side.
+  (noted 2026-08-14). The 30B target's file measures
+  **39,709,379,972 bytes** over 594 chunks (#229), against the 76 GB
+  this record first estimated. llama.cpp stores about one byte per
+  vocabulary entry, so an estimate at two bytes doubles the real
+  size. The 49B's file measures 36,893,861,492 bytes over 564
+  chunks. Both stay pod-side.
+- The measured bar in decision 4 costs one whole-frontier pack per
+  width per target, before any per-cell grid (noted 2026-08-14).
+  The #229 gate's own work ran in under 10 minutes. Three parallel
+  quantize passes took 1 minute 56 seconds. The f16 base-logits pass
+  took 2 minutes 24 seconds. Four evaluations took 5 minutes 22
+  seconds, one of them the noise-floor repeat. One f16 convert at 15
+  minutes 3 seconds dominates the bill, and it amortizes across
+  every later cell on that target. RunPod billed the pod $2.16, at
+  38.6 minutes of an H100 at $3.29 per hour.

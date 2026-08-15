@@ -594,11 +594,17 @@ fit the packer does not ship. ADR-0021 recorded that failure.
 - Does calibration routing match serving routing? Decision 2 assumes a
   stable routing distribution across texts. The counts above come from
   one calibration corpus.
-- ADR-0021 decision 4 blocks the chart's destination. That decision
+- ~~ADR-0021 decision 4 blocks the chart's destination. That decision
   bars the solver from buying 2-bit until a runtime-frame price
   exists. Chart #158 needs about 82 % of stacks at `Q2_0`, which is
   2.25 bits. The chart cannot reach 10.5 GiB until the runtime-frame
-  lane reports.
+  lane reports.~~ **Measured (2026-08-14, #229): the lane reported
+  and `Q2_0` failed.** A whole-frontier `Q2_0` pack costs 4.097
+  times the reference perplexity, at 90.0 times `Q4_0`'s mean KLD.
+  ADR-0021 decision 4 became a measured bar on the same date (#248),
+  and it bars 2-bit on this target. The 10.5 GiB budget now sits
+  further from the chart's destination rather than nearer. #249
+  carries what the campaign buys next.
 
 ## Consequences
 

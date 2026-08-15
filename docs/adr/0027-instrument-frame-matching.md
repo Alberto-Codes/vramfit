@@ -5,6 +5,18 @@
 - **Extends:** [ADR-0021](0021-runtime-frame-measurement.md)
   decision 3. This record resolves that ADR's open question on where
   the lane runs.
+- **Amendment (2026-08-14, issue #248):** decision 1 generalizes.
+  The original clause named the torch build as one of an
+  instrument's four parts. The runtime frame runs llama.cpp and
+  loads no torch, so two of the four did not apply there. The #229
+  gate recorded its instrument by reading rather than by rule.
+  Maintainer ruling (2026-08-14): one definition covers both frames.
+  The third part becomes the compute stack's **build identity**. It
+  reads as the torch build in the scan frame and as the llama.cpp
+  release in the runtime frame. The first part becomes the
+  **accelerator**, so the definition names no vendor. The
+  streaming-multiprocessor count keeps its NVIDIA spelling. No
+  instrument identity measured before this date changes.
 
 ## Context
 
@@ -57,14 +69,20 @@ frame's identity and rules how a rented map earns trust.
 
 ## Decision
 
-1. **The instrument joins the frame.** An instrument is the GPU
-   model, its streaming-multiprocessor count, the torch build, and
-   the offload split. The torch build string carries the CUDA
-   toolkit, as `2.13.0+cu130` does. Two instruments differ when any
-   part differs. A resident run's offload split is empty. So two
-   resident pods on one GPU model, SM count, and torch build are
-   one instrument, and decision 5 confirms that identity by
-   measurement.
+1. **The instrument joins the frame.** An instrument is the
+   accelerator, its streaming-multiprocessor count, the compute
+   stack's build identity, and the offload split. Generalized
+   2026-08-14 (#248).
+
+   The build identity names the software that computes the numbers.
+   It is the torch build in the scan frame, as `2.13.0+cu130` is,
+   and the llama.cpp release in the runtime frame, as `b10326` is.
+   Either string carries its own toolchain version.
+
+   Two instruments differ when any part differs. A resident run's
+   offload split is empty. So two resident pods on one accelerator,
+   SM count, and build identity are one instrument, and decision 5
+   confirms that identity by measurement.
 2. **A map's instrument governs the map's comparisons.** The
    solver, the validation pass, and any within-map ranking read one
    map measured on one instrument. Validation runs frame-matched to
@@ -112,20 +130,27 @@ frame's identity and rules how a rented map earns trust.
   group kinds come from #163's selection. No rule sizes the
   hold-out.
 - Whether the map records its instrument. No artifact field names
-  the GPU, the torch build, or the offload split today. Adding one
+  the accelerator, the build identity, or the offload split today. Adding one
   is a schema decision this record does not take.
 
 ## Consequences
 
 - The #163 H100 map prices the 30B scan-frame decisions. ADR-0021
-  decision 4 still bars 2-bit purchases until the runtime frame
-  reports.
+  decision 4 now reads a measured bar, and the #229 gate supplied
+  its first price.
 - The #210 probe runs on the rented instrument. A probe produces a
   ranking, and decision 3 lets orderings cross.
 - The serve test's measured damage stays a box number and stays
   the final bar (#164). It compares against its own frame's
   reference, never against a scan-frame prediction from another
   instrument.
+- The #229 gate names the first runtime-frame instrument under
+  decision 1's generalized wording. It is an H100 80 GB HBM3 running
+  llama.cpp release `b10326`, built for CUDA sm_90, with every layer
+  on the GPU and an empty offload split. The gate read no
+  streaming-multiprocessor count, so that part of the identity rests
+  on the card model alone. Its noise floor measured zero across all
+  594 chunks and every summary statistic.
 - ADR-0021's open question on where the lane runs closes: the lane
   runs rented, and rented magnitudes never compare with box
   magnitudes.

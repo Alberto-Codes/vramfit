@@ -79,6 +79,16 @@ status: stable
 > public writeup cites this page as its record. The page is now
 > `stable` — the f16 control closed the last open question, and the
 > record carries none.
+> Note 2026-08-14: the ledger leaves the 49B. On a rented H100 the
+> runtime-frame lane priced the 2-bit frontier of the 30B MoE target
+> and **`Q2_0` lost by 4.097x perplexity**, which is the measurement
+> ADR-0021 decision 4 had been waiting for since 2026-08-06
+> ([the eighteenth data point](#the-eighteenth-data-point-2-bit-fails-its-gate-on-a-new-target)).
+> MXFP4 lost the 4-bit row to `Q4_0` on the same runs. The page stays
+> `stable` and gains one open question, on whether a whole-frontier
+> gate price predicts a mixed recipe. The 2026-08-12 note above holds
+> for the 49B lane it describes, and this entry supersedes its
+> "carries none" clause.
 
 Scanning and planning happen inside vramfit's own frame: damage,
 measured per cell, on our calibration set. The moment a packed model
@@ -1750,6 +1760,107 @@ candidate's `48271199…0122` is the published file, and the f16's is
 `a16d46d3…3638d`. `SHA256SUMS` covers the set. The unrecorded earlier
 pass left only its runner (`informal-pass-runner.sh`).
 
+## The eighteenth data point: 2-bit fails its gate on a new target
+
+The first seventeen entries all measure Nemotron Super 49B. This one
+does not. It ran 2026-08-14 on NVIDIA Nemotron 3.5 Lightning 30B-A3B,
+the MoE target of chart #158, and it is the first runtime-frame price
+this project has ever put on a 2-bit width.
+
+That price is the whole point.
+[ADR-0021](../adr/0021-runtime-frame-measurement.md) decision 4 had
+barred the solver from 2-bit until a runtime-frame measurement
+existed, because the scan frame's 2-bit prices kept transferring
+badly — three consecutive packed losers, the eighth through the tenth
+data points. The bar was a promise to measure rather than a verdict.
+This is the measurement.
+
+**The method is a gate, not a grid.** The maintainer ruled
+(issue #233) that three whole-frontier packs run before any per-cell
+spend: every one of the 46 routed-expert stacks at `Q2_0`, then every
+stack at `Q4_0`, then every stack at MXFP4, with all 52 dense layer
+groups pinned at nominal 8. Three packs answer the question three
+hundred would, and they answer it in an afternoon.
+
+Everything ran on one instrument, which for the runtime frame means
+one llama.cpp release on one card. That is an H100 80 GB HBM3 on
+rented hardware, llama.cpp release **b10326** built for CUDA sm_90,
+every layer on the GPU at `-ngl 99`. Damage is full-set PPL and
+KLD against the f16 reference over the whole WikiText-2 test set,
+which tokenizes to **594 chunks** on this target — 304,128 tokens,
+against the 49B's 564. The f16 base-logits file is 39,709,379,972
+bytes.
+
+Two notes on reading the table. The f16 base run's own headline is
+`Final estimate: PPL = 6.8314`, a token-weighted figure over all 594
+chunks. The table instead uses **6.8192**, the per-chunk mean that the
+KLD runs print beside every cell, because the ratios come from the
+same paired statistic. Both describe the same reference. Bits per
+parameter divides packed bytes by the **31,577,554,944**-parameter
+backbone, which excludes the MTP block the converter drops.
+
+| cell | bytes | GiB | bits/param | PPL | PPL / f16 | mean KLD | 99.9 % KLD | max KLD | top-1 agree |
+|---|---|---|---|---|---|---|---|---|---|
+| f16 reference | 63,181,504,640 | 58.842 | 16.007 | 6.8192 | — | — | — | — | — |
+| `Q2_0` | 10,636,427,168 | 9.906 | 2.695 | **27.9380** | **4.097** | 1.604130 | 12.3312 | 22.206 | 51.65 % |
+| MXFP4 | 17,980,129,184 | 16.745 | 4.555 | 6.9087 | 1.013 | 0.030277 | 0.9003 | 3.183 | 92.79 % |
+| `Q4_0` | 18,898,091,936 | 17.600 | 4.788 | 6.8784 | 1.009 | 0.017825 | 0.5416 | 4.703 | 94.42 % |
+
+**`Q2_0` does not survive contact with a bf16 checkpoint.** It costs
+4.097 times the reference perplexity and ninety times `Q4_0`'s mean
+KLD. It agrees with the reference's top token barely more often than
+it disagrees. This is not a marginal loss to be recovered by a better
+allocation — it is a different model. The type landed upstream in July
+2026 as a carrier for ternary QAT weights, where the weights were
+already ternary before anyone quantized them, and no upstream number
+had ever covered post-hoc use. Now one does.
+
+**MXFP4 loses the 4-bit row it was auditioning for.** It packs 4.86 %
+fewer bytes and carries 1.699 times `Q4_0`'s mean KLD.
+[ADR-0028](../adr/0028-expert-stack-type-table.md) had guessed the
+reason in advance and the guess held: `quantize_q4_0` consumes the
+per-expert importance matrix and `quantize_mxfp4` ignores it, so the
+cheaper format throws away the one signal the expensive one uses. One
+number runs the other way, and it is worth keeping — MXFP4's *maximum*
+KLD is 3.183 against `Q4_0`'s 4.703. Its worst token is better while
+its bulk is worse, which is the signature of a format that clips
+outliers well and models the body poorly.
+
+**The instrument's noise floor is zero.** The `Q2_0` evaluation ran
+twice, back to back, as the first measured cell. All 594 per-chunk
+rows matched, and so did every summary statistic. The runtime frame
+on one instrument repeats itself exactly, the way the scan frame did
+on the 4090 (issue #163) and on the H100 (issue #220). That matters
+because the ninth data point's 2.7–4.1× cross-process drift is what
+put the instrument in the frame in the first place.
+
+**The budget arithmetic is where this hurts.** Chart #158 wants
+roughly 2.9 bits per parameter to fit a 12 GiB card, which is a
+10.5 GiB weight budget. The whole frontier at `Q2_0` *fits*, at
+9.906 GiB with 0.594 GiB to spare. The cheapest cell that holds
+quality needs 17.600 GiB. There is nothing between them, because the
+expert-stack palette holds no type at all between 2.25 and 4.25 bits
+per weight on rows of 2688 and 1856. So the empty band is no longer a
+gap between two usable widths. It is the entire distance between a
+pack that fits and a pack that works, and no allocation policy can
+cross it.
+
+RunPod billed **$2.16** for the pod, which is the cheapest decisive
+result on this page. The gate work itself ran in under ten minutes —
+two minutes for three parallel quantize passes, two and a half for
+the base-logits pass, five and a half for four evaluations. The
+fifteen-minute f16 conversion dominated the bill, and it amortizes
+across every later cell on this target.
+
+One caveat bounds all of it. A whole-frontier pack sets every stack to
+one width, and the recipe chart #158 wants is a *mix* — roughly 82 %
+of stacks at the cheap width and the rest higher. The gate prices the
+corners of that space and not its interior. Nothing here measures
+whether a mixed recipe's damage interpolates between the corners or
+sits somewhere worse, and the gap between 1.604130 and 0.017825 is
+wide enough that the shape of the curve between them matters. Issue
+#249 carries what the campaign buys next.
+
 ## Provenance is not evidence
 
 Hashes answer a different question and must not be confused with
@@ -1966,3 +2077,11 @@ either. Numbers without framing invite the hostile reading.
   for the candidate, RoPE for the baseline. The control ran on a
   split lane, 14 layers on the GPU and the rest on the CPU, because
   the f16 is 92.9 GiB and does not fit the 24 GiB card.
+- Whether a whole-frontier gate price predicts a mixed recipe's
+  damage (added 2026-08-14, the eighteenth data point). The gate sets
+  every expert stack to one width and measures the corners. A recipe
+  that fits chart #158's budget mixes widths across stacks, and the
+  corners sit 90 times apart on mean KLD. Nothing measures the shape
+  of the curve between them. Issue #249 rules what the campaign
+  spends next, and the answer decides whether that shape gets
+  measured directly or inferred.

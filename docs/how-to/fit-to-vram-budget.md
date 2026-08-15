@@ -46,8 +46,9 @@ extremes before packing:
 - Groups pinned at high precision are where your budget went — sanity-check
   they match known-fragile structures (first/last blocks, attention).
 - Since [ADR-0021](../adr/0021-runtime-frame-measurement.md) the
-  solver does not buy 2-bit without a runtime-frame price — current
-  practice plans on a map copy without the 2-bit column. If a group
+  solver buys a width only against a runtime-frame price. The 30B
+  target's 2-bit price arrived 2026-08-14 and failed, so current
+  practice there plans on a map copy without that column. If a group
   still looks load-bearing for your workload, pin it:
   `--pin "*.layers.0=8"` (patterns match the full group name,
   `model.layers.0`).

@@ -103,9 +103,10 @@ guards additivity, not the frame transfer
    fits four plus a minimum. Kquant-priced and imatrix-assisted
    maps then packed worse anyway — every in-frame refinement bought
    more 2-bit breadth and lost. Sub-4-bit damage is now measured in
-   the runtime frame, and 2-bit stays out of the solve without a
-   runtime-frame price — current practice plans on a map copy
-   without the 2-bit column
+   the runtime frame, and the solver buys a width only against that
+   frame's price — the 30B target's 2-bit price arrived 2026-08-14
+   and failed, so current practice there plans on a map copy without
+   the 2-bit column
    ([ADR-0021](../adr/0021-runtime-frame-measurement.md) supersedes
    [ADR-0019](../adr/0019-kquant-priced-maps.md) and
    [ADR-0020](../adr/0020-imatrix-assisted-pricing.md)).
