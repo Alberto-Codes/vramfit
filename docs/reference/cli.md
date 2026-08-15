@@ -82,9 +82,9 @@ runtime without a table (vLLM, or `--runtime` omitted via the API)
 keeps the nominal-bits prediction and the 0.05 scalar. A
 routed-expert-stack group prices through the expert-stack type
 table instead ([ADR-0028](../adr/0028-expert-stack-type-table.md)):
-2.25 bits at nominal 2, not Q2_K's 2.625. Nominal 3 on a stack
-keeps the dense 3.4375 — pack refuses it, and the plan-time refusal
-stays an open question in ADR-0028.
+2.25 bits at nominal 2, not Q2_K's 2.625. A stack precision without
+a table row (3, 5, 6) keeps its dense entry — pack refuses it, and
+the plan-time refusal stays an open question in ADR-0028.
 
 Pin semantics: patterns are case-sensitive `fnmatch` globs matched against
 the full group name (`--pin "model.layers.0.*=8"`). A pattern that matches
@@ -302,9 +302,12 @@ no heuristic mixing leaks in.
 A routed-expert-stack group maps through its own type table
 ([ADR-0028](../adr/0028-expert-stack-type-table.md)): 8 to `Q8_0`, 4
 to `Q4_0`, 2 to `Q2_0`. K-quant super-blocks do not divide the
-stack rows, so the dense table cannot reach them. Nominal 3 on a
-stack refuses, and the refusal names the group, the empty 2.25–4.25
-bits-per-weight gap, and both neighboring table entries.
+stack rows, so the dense table cannot reach them. The backend
+refuses every stack precision without a table row. Nominal 3 draws
+the dedicated refusal: it names the group, the empty 2.25–4.25
+bits-per-weight gap, and both neighboring table entries. Nominal 6
+and 5 draw the table-bounds refusal — whether the table gains those
+rows is #232's question.
 
 ```
 vramfit pack RECIPE

@@ -71,6 +71,16 @@ FALLBACK_WARNING = (
 )
 FALLBACK_REWRITE = ("blk.1.ffn_up_exps.weight", "q3_K", "q4_0")
 
+# The rare second shape: the fallback type also misses the row, so
+# the quantizer interjects its F16 warning between the pair's halves
+# (llama.cpp src/llama-quant.cpp, the unusual-shape branch).
+FALLBACK_WARNING_F16 = (
+    "warning: blk.2.ssm_in.weight                 - ncols   1857 not "
+    "divisible by 256 (required for type    q3_K) "
+    "(WARNING: must use F16 due to unusual shape) -> falling back to     f16"
+)
+FALLBACK_REWRITE_F16 = ("blk.2.ssm_in.weight", "q3_K", "f16")
+
 _FAILING_STUB = """\
 #!/usr/bin/env python3
 import sys
@@ -174,6 +184,7 @@ def _real_packer(  # noqa: PLR0913 - the contract fixture surface: one flag per 
     with_uncovered: bool = False,
     with_excluded_miss: bool = False,
     with_type_fallback: bool = False,
+    with_f16_fallback: bool = False,
 ) -> RecipePacker:
     def stub_body(stage: str, template: str) -> str:
         if fail_stage == stage:
@@ -187,6 +198,8 @@ def _real_packer(  # noqa: PLR0913 - the contract fixture surface: one flag per 
             lines.append(EXCLUDED_MISS_WARNING)
         if with_type_fallback:
             lines.append(FALLBACK_WARNING)
+        if with_f16_fallback:
+            lines.append(FALLBACK_WARNING_F16)
         return template.format(
             argv_log=str(tmp_path / f"{stage}-argv.json"),
             extra_line="\n".join(lines),
@@ -222,10 +235,14 @@ def _fake_packer(  # noqa: PLR0913 - mirrors _real_packer's fixture surface
     with_uncovered: bool = False,
     with_excluded_miss: bool = False,
     with_type_fallback: bool = False,
+    with_f16_fallback: bool = False,
 ) -> RecipePacker:
     uncovered = ("token_embd.weight",) if with_uncovered else ()
     if with_excluded_miss:
         uncovered += ("blk.0.attn_v.weight",)
+    fallbacks = (FALLBACK_REWRITE,) if with_type_fallback else ()
+    if with_f16_fallback:
+        fallbacks += (FALLBACK_REWRITE_F16,)
     return MemoryRecipePacker(
         base_bytes=BASE_BYTES,
         packed_bytes=PACKED_BYTES,
@@ -233,7 +250,7 @@ def _fake_packer(  # noqa: PLR0913 - mirrors _real_packer's fixture surface
         has_base=base_exists,
         imatrix=str(tmp_path / "imatrix.gguf") if with_imatrix else None,
         imatrix_uncovered=uncovered,
-        type_fallbacks=(FALLBACK_REWRITE,) if with_type_fallback else (),
+        type_fallbacks=fallbacks,
     )
 
 
@@ -310,6 +327,27 @@ class TestRecipePackerContract:
 
         assert caught.value.rewritten == (FALLBACK_REWRITE,)
         assert "kept at" in str(caught.value)
+
+    def test_pack_with_two_fallback_warnings_carries_both_rewrites_in_order(
+        self, build, tmp_path
+    ) -> None:
+        # Two rewrites in one run, the second through the quantizer's
+        # F16 interjection, beside an imatrix miss. The halt wins
+        # over the ADR-0016 record-and-continue path, and the payload
+        # keeps every triple in output order (ADR-0028 decision 3).
+        packer: RecipePacker = build(
+            tmp_path,
+            with_imatrix=True,
+            with_uncovered=True,
+            with_type_fallback=True,
+            with_f16_fallback=True,
+        )
+        packer.convert()
+
+        with pytest.raises(TypeFallbackError) as caught:
+            packer.pack(sample_pack_recipe())
+
+        assert caught.value.rewritten == (FALLBACK_REWRITE, FALLBACK_REWRITE_F16)
 
     def test_pack_stack_recipe_binds_the_nemotron_embedding_group(
         self, build, tmp_path

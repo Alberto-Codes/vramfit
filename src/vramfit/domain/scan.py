@@ -120,7 +120,9 @@ def is_expert_stack(group: str) -> bool:
 
     The solver prices such a group through the expert-stack
     effective-bits table (ADR-0028), so the predicate must recognize
-    exactly the groups the GGUF backend maps through the stack table.
+    exactly the groups the GGUF backend treats as expert stacks. The
+    backend then maps or refuses each by its projection and its
+    precision — recognition here, vocabulary there.
 
     Args:
         group: Group name, as `group_key` produces it.
