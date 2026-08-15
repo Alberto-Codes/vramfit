@@ -1,0 +1,44 @@
+{
+  "vramfit_schema": 2,
+  "artifact": {
+    "file": "nvidia_Llama-3_3-Nemotron-Super-49B-v1_5-IQ3_XXS.gguf",
+    "sha256": "d414bc968051b5dfb807fb6042371fff2cf8da31109c4e2cf7664f55eb241c35",
+    "size_bytes": 19519022592
+  },
+  "toolchain": {
+    "llama_cpp_build": "b10172-bc71c24c9 (prebuilt Vulkan, ubuntu-x64)",
+    "lm_eval": null,
+    "llama_cpp_python": null,
+    "lane": null
+  },
+  "tier1": {
+    "date": "2026-08-10",
+    "dataset": "wikitext-2-test",
+    "chunks": 564,
+    "ppl": 8.7229,
+    "ppl_stderr": 0.0649
+  },
+  "tier2": {
+    "reference": "f16",
+    "dataset": "wikitext-2-test",
+    "windows": [
+      {
+        "date": "2026-08-10",
+        "chunks": 100,
+        "mean_kld": 0.230193,
+        "kld_stderr": 0.002959,
+        "same_top_pct": 80.914,
+        "same_top_stderr_pct": 0.246
+      },
+      {
+        "date": "2026-08-10",
+        "chunks": 564,
+        "mean_kld": 0.3665,
+        "kld_stderr": 0.003227,
+        "same_top_pct": 80.136,
+        "same_top_stderr_pct": 0.105
+      }
+    ]
+  },
+  "tier3": null
+}

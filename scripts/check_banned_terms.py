@@ -42,6 +42,7 @@ ALLOWLIST: dict[str, str] = {
         "The envelope-key guard (#154 tier 2). The guard names the key it "
         "rejects, so the literal is the check."
     ),
+    "tests/unit/adapters/test_evals_sidecar_json.py": "Proves the guard fires.",
     "tests/unit/adapters/test_recipe_json.py": "Proves the guard fires.",
     "tests/unit/adapters/test_scan_checkpoint_json.py": "Proves the guard fires.",
     "tests/unit/adapters/test_sensitivity_map_json.py": "Proves the guard fires.",

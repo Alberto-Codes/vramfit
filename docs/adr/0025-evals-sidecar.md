@@ -85,6 +85,17 @@ and versioned. The evidence deserves the same treatment.
   bump it.
 - One more artifact rides every publication. The upload checklist
   grows by one file.
+- **The reader landed 2026-08-15 (issue #137).** Decision 4 binds
+  the rule that a card number without a sidecar entry is a defect.
+  Nothing could execute that rule while the sidecar had no reader.
+  `EvalsSidecarSource` is the reader port and `JsonEvalsSidecarFile`
+  satisfies it. All five sidecars publication #1 ships now sit in
+  `tests/data/published-evals`, and each one loads and re-serializes
+  byte for byte.
+- The reader drops a key it does not know (noted 2026-08-15). A load
+  followed by a save deletes that key. #261 carries the gap and it
+  reaches every artifact reader, so decision 4's rule is checkable
+  but a round trip is not yet lossless.
 
 ## Open questions
 

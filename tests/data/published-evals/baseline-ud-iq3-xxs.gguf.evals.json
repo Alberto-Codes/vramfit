@@ -1,0 +1,44 @@
+{
+  "vramfit_schema": 2,
+  "artifact": {
+    "file": "Llama-3_3-Nemotron-Super-49B-v1_5-UD-IQ3_XXS.gguf",
+    "sha256": "9cf6d4221bd7763e98371bb5359b262ae59e3da9962f0bcd0876077499f54c59",
+    "size_bytes": 19692431264
+  },
+  "toolchain": {
+    "llama_cpp_build": "b10172-bc71c24c9 (prebuilt Vulkan, ubuntu-x64)",
+    "lm_eval": null,
+    "llama_cpp_python": null,
+    "lane": null
+  },
+  "tier1": {
+    "date": "2026-08-10",
+    "dataset": "wikitext-2-test",
+    "chunks": 564,
+    "ppl": 8.6974,
+    "ppl_stderr": 0.06534
+  },
+  "tier2": {
+    "reference": "f16",
+    "dataset": "wikitext-2-test",
+    "windows": [
+      {
+        "date": "2026-08-10",
+        "chunks": 100,
+        "mean_kld": 0.180505,
+        "kld_stderr": 0.002467,
+        "same_top_pct": 82.945,
+        "same_top_stderr_pct": 0.236
+      },
+      {
+        "date": "2026-08-10",
+        "chunks": 564,
+        "mean_kld": 0.343885,
+        "kld_stderr": 0.003485,
+        "same_top_pct": 82.019,
+        "same_top_stderr_pct": 0.101
+      }
+    ]
+  },
+  "tier3": null
+}
