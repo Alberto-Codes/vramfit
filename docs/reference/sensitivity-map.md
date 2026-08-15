@@ -134,8 +134,10 @@ below remain, the sub-4-bit pricing claims do not.
   imatrix file. The loader accepts an absent field as null.
 - **`derived`** — why this map is not a scan artifact: the edit that
   produced it and what it is for (#136). `vramfit scan` never writes
-  the field. The author of a hand-made copy adds it. The published
-  `sensitivity-64k-kquant-imx-no2.json` reads:
+  the field. The author of a hand-made copy adds it. Two published maps
+  carry it: `sensitivity-64k-kquant-imx-no2.json` and the
+  `-no2-sized.json` copy `vramfit plan` solved the published recipe
+  from. Both read:
 
     ```json
     "derived": "Derived from sensitivity-64k-kquant-imx.json by removing the 2-bit column. Not a scan artifact. Diagnostic for the 2-bit-specific frame-transfer hypothesis (eleventh data point)."
@@ -147,7 +149,7 @@ below remain, the sub-4-bit pricing claims do not.
     non-empty string. The writer omits the field when the map carries
     no note and never writes null, so an explicit null is a hand-edit
     — rejected, not normalized. A load then save preserves the note.
-    It deleted the note before #136.
+    A load then save deleted the note before #136.
 - **`groups`** — granularity is set by `--group-by`. Marginal (one group at a
   time) measurement is assumed — interaction effects between groups are a
   known blind spot recorded in ADR-0006. Group names must be unique, and

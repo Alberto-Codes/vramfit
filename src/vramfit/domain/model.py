@@ -1,14 +1,14 @@
 """Domain types for the two pipeline artifacts.
 
 The dataclasses enforce their own structural invariants in
-``__post_init__`` (positive sizes, strictly descending precisions,
-unique group names, sensitivity keys matching the scan, imatrix
-provenance pairing with the assisted method token, tensor sizes
-covering exactly the group's tensors, protection records pairing
-with their resolved pairs — ADR-0022 — an ordered imatrix
-count summary — ADR-0026 decision 4 — and a non-empty derived
-note, #136) so an instance
-that exists is safe for the solver — however it was constructed. The
+``__post_init__``, so an instance that exists is safe for the solver,
+however it was constructed. The checks cover positive sizes, strictly
+descending precisions, unique group names, sensitivity keys matching
+the scan, imatrix provenance pairing with the assisted method token,
+tensor sizes covering exactly the group's tensors, protection records
+pairing with their resolved pairs (ADR-0022), an ordered imatrix
+count summary (ADR-0026 decision 4), and a non-empty derived note
+(#136). The
 within-group method tokens live here — `SCAN_METHOD` beside the
 `ScanMeta` field it is the default for (ADR-0018), and the kquant
 tokens beside the `imatrix` invariant they anchor (ADR-0020).
@@ -325,7 +325,7 @@ class SensitivityMap:
     derived: str | None = None
 
     def __post_init__(self) -> None:
-        """Enforce the cross-group invariants the solver relies on.
+        """Enforce the map's cross-group invariants and its derived note.
 
         Raises:
             ValueError: If ``groups`` is empty, group names collide,

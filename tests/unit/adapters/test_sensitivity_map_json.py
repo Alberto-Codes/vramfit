@@ -476,6 +476,21 @@ class TestDerived:
         assert map_.derived == self.NOTE
         assert again == map_
 
+    def test_schema_two_map_keeps_the_note(self) -> None:
+        # The published dataset ships version 2, and both carriers of
+        # the note sit at that version.
+        raw = self.make_derived_dict()
+        raw["vramfit_schema"] = 2
+
+        assert map_from_dict(raw).derived == self.NOTE
+
+    def test_derived_writes_last_to_match_the_published_maps(self) -> None:
+        # Key order is deliberate: a republished map should differ from
+        # its source in content, never in field order.
+        map_ = map_from_dict(self.make_derived_dict())
+
+        assert list(map_to_dict(map_))[-1] == "derived"
+
     def test_save_after_load_keeps_the_note(self, tmp_path) -> None:
         path = tmp_path / "map.json"
         out = tmp_path / "resaved.json"

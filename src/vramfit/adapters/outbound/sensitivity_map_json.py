@@ -9,7 +9,8 @@ with the ``stack`` value (#161). One file class serves both directions:
 through the source face. Validation is strict: artifacts are rejected,
 never normalized — ``scan.precisions`` must arrive strictly descending,
 ``group_by`` must be a known granularity, and every group's sensitivity
-keys must equal it exactly. Two fields are additive rather than strict:
+keys must equal it exactly. Several fields are additive rather than
+strict:
 ``scan.within_group`` (ADR-0018) defaults to ``rtn-block32`` when
 absent, because every map written before the field existed measured
 with that method, and ``scan.imatrix`` (ADR-0020) defaults to None,
