@@ -118,11 +118,24 @@ def test_questions_spaced_command_still_asks(command) -> None:
     assert len(guard.questions(command)) == 1
 
 
-def test_questions_unbalanced_quotes_still_asks() -> None:
-    # shlex raises on this. The fallback must not go silent.
-    found = guard.questions('gh pr create --body "unterminated')
+@pytest.mark.parametrize(
+    "command",
+    [
+        'gh pr create --body "unterminated',
+        'gh pr create --body "use --body-file',
+        "gh pr create --body 'mentions --body-file and never closes",
+    ],
+    ids=["no-flag", "flag-after-open-quote", "flag-in-single-quote"],
+)
+def test_questions_unbalanced_quotes_still_asks(command) -> None:
+    # shlex raises on these. A whitespace fallback would hand back
+    # `--body-file` as a token and silence the rule, which is the
+    # wrong direction for a flag that disarms.
+    assert len(guard.questions(command)) == 1
 
-    assert len(found) == 1
+
+def test_tokens_unbalanced_quotes_reports_nothing() -> None:
+    assert guard.tokens('--body "unterminated') == []
 
 
 def test_main_guarded_command_emits_an_ask_decision(monkeypatch, capsys) -> None:

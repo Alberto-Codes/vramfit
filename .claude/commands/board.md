@@ -10,8 +10,8 @@ promotes or demotes with it.
 
 `gh api` is deliberately absent from `allowed-tools`. The pattern
 `Bash(gh api:*)` would also pre-approve `--method POST`, `PATCH`, and
-`DELETE`, which is every write this command forbids below. The two
-dependency queries prompt instead.
+`DELETE`, which is every write this command forbids below. The
+dependency query in Step 1 prompts instead, once per issue it checks.
 
 Rank every open issue, not one chart's sub-issues. Report what moves a
 Destination, what blocks it, and what is rotting.

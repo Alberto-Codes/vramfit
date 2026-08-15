@@ -135,18 +135,22 @@ def tokens(segment: str) -> list[str]:
     Quoting matters here. A `--body-file` inside a quoted message is
     one token's content, never a flag.
 
+    A caller reads these tokens to find a flag that *silences* a rule,
+    so an over-reported flag makes the guard quiet rather than loud. A
+    segment this cannot tokenize therefore yields nothing, and every
+    matching rule asks.
+
     Args:
         segment: One shell command, without separators.
 
     Returns:
-        The tokens, or the whitespace split when the segment carries
-        unbalanced quotes. The fallback over-reports a flag, so the
-        guard asks rather than stays silent.
+        The tokens, or an empty list when the segment carries
+        unbalanced quotes.
     """
     try:
         return shlex.split(segment)
     except ValueError:
-        return segment.split()
+        return []
 
 
 def questions(command: str) -> list[str]:
