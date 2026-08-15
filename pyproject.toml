@@ -113,7 +113,7 @@ exclude = [".venv", "__pycache__", "*.egg-info"]
 # TRY (exception hygiene), S (bandit), PERF, RUF, UP, G on top of the
 # house baseline E501/I/D.
 extend-select = [
-    "E402",  # enabled explicitly: hook and locked ruff versions differ on the default
+    "E402",  # module-level import not at top of file
     "E501",
     "I",
     "D",
@@ -340,4 +340,8 @@ dev = [
     "ruff>=0.11",
     "ty>=0.0.1a33",
     "uv-secure>=0.17.0",
+    # Runs from the lockfile in both pre-commit and CI. A pinned
+    # pre-commit mirror plus a pinned `uvx` call is two versions to
+    # keep equal by hand.
+    "yamllint>=1.38",
 ]

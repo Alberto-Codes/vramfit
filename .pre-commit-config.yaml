@@ -1,37 +1,59 @@
 # Commit stage = fast hermetic gates; push stage = full suite with
 # thorough hypothesis profile, e2e, and the coverage gate (ADR-0009).
+#
+# Every Python tool runs from the project environment through
+# `uv run`, so the lockfile is the only place a version is pinned.
+# A pre-commit mirror carries its own pin, which drifts from the
+# lockfile CI installs and makes the two gates disagree. That drift
+# once forced `E402` into `extend-select` and once required
+# contradictory code for `BLE001`.
+#
+# actionlint stays a mirror: it is a Go binary with no entry in the
+# lockfile, so there is no project version for it to align to.
 default_stages: [pre-commit]
 
 repos:
-  - repo: https://github.com/adrienverge/yamllint
-    rev: v1.38.0
-    hooks:
-      - id: yamllint
-        args: [-c, .yamllint.yaml]
-
   - repo: https://github.com/rhysd/actionlint
     rev: v1.7.11
     hooks:
       - id: actionlint
 
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.4
-    hooks:
-      - id: ruff-check
-      - id: ruff-format
-
-  - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.10.7
-    hooks:
-      - id: uv-lock
-
-  - repo: https://github.com/owenlamont/uv-secure
-    rev: 0.17.0
-    hooks:
-      - id: uv-secure
-
   - repo: local
     hooks:
+      - id: yamllint
+        name: yamllint
+        entry: uv run yamllint -c .yamllint.yaml
+        language: system
+        types: [yaml]
+
+      - id: ruff-check
+        name: ruff check
+        entry: uv run ruff check .
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: ruff-format
+        name: ruff format
+        entry: uv run ruff format --check .
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: uv-lock
+        name: uv lock is current
+        entry: uv lock --check
+        language: system
+        pass_filenames: false
+        files: ^(pyproject\.toml|uv\.lock)$
+
+      - id: uv-secure
+        name: uv-secure
+        entry: uv run uv-secure
+        language: system
+        pass_filenames: false
+        files: ^(pyproject\.toml|uv\.lock)$
+
       - id: ty-check
         name: ty type check
         entry: uv run ty check
