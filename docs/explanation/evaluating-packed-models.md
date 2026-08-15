@@ -1872,8 +1872,9 @@ recipe's damage interpolates between the corners or sits somewhere
 worse, and the gap between 1.604130 and 0.017825 is wide enough that
 the shape of the curve between them matters. No published evaluation
 fills it either — the most recent unified survey of llama.cpp
-quantization stops at 3 bits and runs no mixed recipe at all. Issue
-#249 carries what the campaign buys next.
+quantization ([arXiv 2601.14277](https://arxiv.org/abs/2601.14277), on
+Llama-3.1-8B-Instruct) stops at 3 bits and runs no mixed recipe at
+all. Issue #249 carries what the campaign buys next.
 
 ## Provenance is not evidence
 
