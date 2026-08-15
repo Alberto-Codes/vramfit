@@ -7,6 +7,16 @@ rejects a zero-exit tool that wrote no usable file. The pack and
 smoke adapters both drive tools through here, so their error
 messages cannot drift apart.
 
+`run_tool` replaces undecodable bytes instead of refusing them.
+llama.cpp truncates its metadata previews mid-character on a
+byte-level BPE tokenizer. A strict decode raised `UnicodeDecodeError`
+out of a successful quantize and skipped every guard that reads the
+output (#247). Replacement never invents a scanner match. It can
+delete one, but only inside the line that carried the bad bytes.
+#252 carries that residual risk. `surrogateescape` instead writes
+unpaired surrogates into the run log. RFC 8259 section 8.2 leaves a
+reader's handling of those undefined.
+
 Examples:
     Run one tool and keep its output for inspection:
 
@@ -51,7 +61,9 @@ def run_tool(
     """Run one toolchain subprocess, translating failure to `PackError`.
 
     stderr merges into stdout so the failure tail is the tool's real
-    last words, whichever stream carried them.
+    last words, whichever stream carried them. A killed tool's
+    partial output decodes here, because CPython hands that stream
+    over as raw bytes.
 
     Args:
         command: Argument vector. The first element is the tool path.
@@ -62,7 +74,7 @@ def run_tool(
             time, and a wrong guess kills real work.
 
     Returns:
-        The tool's merged output.
+        The tool's merged output. Undecodable bytes become U+FFFD.
 
     Raises:
         PackError: If the tool cannot start, exits nonzero, dies to a
@@ -74,14 +86,23 @@ def run_tool(
             command,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
-            text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
             timeout=timeout_seconds,
         )
     except OSError as exc:
         raise PackError(f"{stage}: cannot run {command[0]}: {exc}") from exc
     except subprocess.TimeoutExpired as exc:
-        output = exc.stdout if isinstance(exc.stdout, str) else ""
+        # CPython builds this exception from the raw read chunks on
+        # POSIX, so the encoding above never reaches it. Decode here
+        # or the killed tool's last words reach nobody.
+        captured = exc.stdout or b""
+        output = (
+            captured
+            if isinstance(captured, str)
+            else captured.decode("utf-8", errors="replace")
+        )
         raise PackError(
             f"{stage} exceeded {timeout_seconds:g} s and was killed:\n{tail_of(output)}"
         ) from exc
