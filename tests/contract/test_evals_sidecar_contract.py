@@ -1,9 +1,11 @@
-"""Verified-fake contract suite for `EvalsSidecarSink` (ADR-0009).
+"""Verified-fake contract suites for the evals sidecar ports (ADR-0009).
 
-The port is writer-only (ADR-0025, issue #65), so readback goes
-through the serialized dict: the real adapter's file parses back to
+Two ports, two suites. `EvalsSidecarSink` readback goes through the
+serialized dict: the real adapter's file parses back to
 `sidecar_to_dict` of what was saved, and the fake's captured value
-serializes to the same dict.
+serializes to the same dict. `EvalsSidecarSource` (#137) round-trips
+the domain value itself, and both implementations refuse an
+unreadable source with the same error type.
 """
 
 from __future__ import annotations
@@ -21,6 +23,7 @@ from vramfit.adapters.outbound.evals_sidecar_json import (
     JsonEvalsSidecarFile,
     sidecar_to_dict,
 )
+from vramfit.adapters.outbound.json_common import ArtifactError
 from vramfit.domain.evals import (
     EvalsSidecar,
     EvalToolchain,
@@ -31,7 +34,7 @@ from vramfit.domain.evals import (
     Tier3Result,
     Tier3Task,
 )
-from vramfit.ports.outbound import EvalsSidecarSink
+from vramfit.ports.outbound import EvalsSidecarSink, EvalsSidecarSource
 
 
 def sample_sidecar() -> EvalsSidecar:
@@ -130,3 +133,51 @@ class TestEvalsSidecarSinkContract:
         sink.save(tier1_only_sidecar())
 
         assert readback() == sidecar_to_dict(tier1_only_sidecar())
+
+
+def _real_source(tmp_path: Path) -> EvalsSidecarSource:
+    return JsonEvalsSidecarFile(tmp_path / "model.gguf.evals.json")
+
+
+def _fake_source(tmp_path: Path) -> EvalsSidecarSource:
+    return MemoryEvalsSidecarSink()
+
+
+@pytest.mark.contract
+@pytest.mark.parametrize(
+    "build", [_real_source, _fake_source], ids=["real-json", "fake-memory"]
+)
+class TestEvalsSidecarSourceContract:
+    def test_saved_sidecar_loads_back_equal(self, build, tmp_path) -> None:
+        source = build(tmp_path)
+        sidecar = sample_sidecar()
+
+        source.save(sidecar)
+
+        assert source.load() == sidecar
+
+    def test_absent_tiers_load_back_as_none(self, build, tmp_path) -> None:
+        source = build(tmp_path)
+
+        source.save(tier1_only_sidecar())
+
+        loaded = source.load()
+        assert loaded.tier1 is not None
+        assert loaded.tier2 is None
+        assert loaded.tier3 is None
+
+    def test_load_without_a_saved_sidecar_raises_artifact_error(
+        self, build, tmp_path
+    ) -> None:
+        source = build(tmp_path)
+
+        with pytest.raises(ArtifactError):
+            source.load()
+
+    def test_load_after_a_second_save_returns_the_second(self, build, tmp_path) -> None:
+        source = build(tmp_path)
+
+        source.save(sample_sidecar())
+        source.save(tier1_only_sidecar())
+
+        assert source.load() == tier1_only_sidecar()

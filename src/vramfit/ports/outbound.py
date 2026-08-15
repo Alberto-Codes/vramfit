@@ -13,9 +13,10 @@ the reconstruction port (`ReconstructionChecker`) carries the
 per-tensor measurement that guards protected packs against fit
 collapse (ADR-0022), the count port (`ImatrixCountSource`) carries
 the importance matrix's per-expert tallies to the pack step's
-zero-count report (ADR-0026 decision 5), and the evals port
-(`EvalsSidecarSink`) carries one evaluated artifact's scoreboard
-evidence to its published sidecar (ADR-0025).
+zero-count report (ADR-0026 decision 5), and the evals ports
+(`EvalsSidecarSource`, `EvalsSidecarSink`) carry one evaluated
+artifact's scoreboard evidence to and from its published sidecar
+(ADR-0025).
 Concrete implementations live in [vramfit.adapters.outbound][].
 
 Examples:
@@ -430,13 +431,45 @@ class SmokeTester(Protocol):
         ...
 
 
+class EvalsSidecarSource(Protocol):
+    """Supplies one artifact's evals sidecar.
+
+    The reader half of ADR-0025. ADR-0025 binds the rule that a card
+    number without a sidecar entry is a defect, and nothing could
+    check that rule while the sidecar was the one published artifact
+    with no reader (#137).
+
+    Examples:
+        The JSON file adapter satisfies this port:
+
+        ```python
+        from vramfit.adapters.outbound.evals_sidecar_json import (
+            JsonEvalsSidecarFile,
+        )
+
+        source: EvalsSidecarSource = JsonEvalsSidecarFile(path)
+        ```
+    """
+
+    def load(self) -> EvalsSidecar:
+        """Read and validate the sidecar.
+
+        Returns:
+            The validated evidence record.
+
+        Raises:
+            ValueError: If the source is unreadable or invalid. The
+                JSON adapter raises `ArtifactError`, which is a
+                `ValueError`.
+        """
+        ...
+
+
 class EvalsSidecarSink(Protocol):
     """Accepts one artifact's evals sidecar for persistence.
 
     The writer half of ADR-0025: one call persists one evaluated
-    artifact's complete scoreboard evidence. The reader path for card
-    tooling is deferred — the rule that card numbers trace to a
-    sidecar binds without it.
+    artifact's complete scoreboard evidence.
 
     Examples:
         The JSON file adapter satisfies this port:

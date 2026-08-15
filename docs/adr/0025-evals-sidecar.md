@@ -85,6 +85,13 @@ and versioned. The evidence deserves the same treatment.
   bump it.
 - One more artifact rides every publication. The upload checklist
   grows by one file.
+- **The reader landed 2026-08-15 (issue #137).** Decision 4 binds
+  the rule that a card number without a sidecar entry is a defect.
+  Nothing could execute that rule while the sidecar was the one
+  published artifact with no way back in. `EvalsSidecarSource` is
+  the reader port, `JsonEvalsSidecarFile` satisfies it, and both
+  published sidecars in `tests/data/published-evals` load and
+  re-serialize byte for byte.
 
 ## Open questions
 

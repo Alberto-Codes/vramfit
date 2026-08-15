@@ -292,12 +292,23 @@ class MemoryRunLog:
 
 @dataclass
 class MemoryEvalsSidecarSink:
-    """In-memory `EvalsSidecarSink` capturing every save. Last one wins."""
+    """In-memory `EvalsSidecarSink` and `EvalsSidecarSource`.
+
+    Every save is captured and the last one wins, so `load` returns
+    what `save` last accepted. An unsaved fake refuses `load` the way
+    the JSON adapter refuses an absent file: with an `ArtifactError`,
+    which is a `ValueError`.
+    """
 
     saved: list[EvalsSidecar] = field(default_factory=list)
 
     def save(self, sidecar: EvalsSidecar) -> None:
         self.saved.append(sidecar)
+
+    def load(self) -> EvalsSidecar:
+        if not self.saved:
+            raise ArtifactError("$", "cannot read file: no sidecar was saved")
+        return self.saved[-1]
 
     @property
     def last(self) -> EvalsSidecar:
