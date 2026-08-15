@@ -20,7 +20,7 @@ from typing import Literal
 import pytest
 
 from tests.fakes import MemoryRecipePacker
-from vramfit.adapters.outbound.gguf.pack import LlamaCppPacker
+from vramfit.adapters.outbound.gguf.pack import LlamaCppPacker, TypeFallbackError
 from vramfit.adapters.outbound.gguf.types import PackError
 from vramfit.domain.model import Assignment, PlanMeta, ProtectedTensor, Recipe
 from vramfit.domain.pack import TypeOverride
@@ -61,6 +61,15 @@ UNCOVERED_WARNING = (
 EXCLUDED_MISS_WARNING = (
     "====== llama_tensor_get_wanted_type: did not find weights for blk.0.attn_v.weight"
 )
+
+# The zero-exit type-fallback warning pair, one merged output line
+# (`tensor_type_fallback`, llama.cpp src/llama-quant.cpp): the ncols
+# report, then the substituted type (ADR-0028 decision 3).
+FALLBACK_WARNING = (
+    "warning: blk.1.ffn_up_exps.weight            - ncols   2688 not "
+    "divisible by 256 (required for type    q3_K) -> falling back to    q4_0"
+)
+FALLBACK_REWRITE = ("blk.1.ffn_up_exps.weight", "q3_K", "q4_0")
 
 _FAILING_STUB = """\
 #!/usr/bin/env python3
@@ -155,14 +164,16 @@ def _write_stub(path: Path, body: str) -> Path:
     return path
 
 
-def _real_packer(
+def _real_packer(  # noqa: PLR0913 - the contract fixture surface: one flag per stub behavior
     tmp_path: Path,
+    *,
     fail_stage: Literal["convert", "quantize"] | None = None,
     base_exists: bool = False,
     silent_stage: str | None = None,
     with_imatrix: bool = False,
     with_uncovered: bool = False,
     with_excluded_miss: bool = False,
+    with_type_fallback: bool = False,
 ) -> RecipePacker:
     def stub_body(stage: str, template: str) -> str:
         if fail_stage == stage:
@@ -174,6 +185,8 @@ def _real_packer(
             lines.append(UNCOVERED_WARNING)
         if with_excluded_miss:
             lines.append(EXCLUDED_MISS_WARNING)
+        if with_type_fallback:
+            lines.append(FALLBACK_WARNING)
         return template.format(
             argv_log=str(tmp_path / f"{stage}-argv.json"),
             extra_line="\n".join(lines),
@@ -199,14 +212,16 @@ def _real_packer(
     )
 
 
-def _fake_packer(
+def _fake_packer(  # noqa: PLR0913 - mirrors _real_packer's fixture surface
     tmp_path: Path,
+    *,
     fail_stage: Literal["convert", "quantize"] | None = None,
     base_exists: bool = False,
     silent_stage: str | None = None,
     with_imatrix: bool = False,
     with_uncovered: bool = False,
     with_excluded_miss: bool = False,
+    with_type_fallback: bool = False,
 ) -> RecipePacker:
     uncovered = ("token_embd.weight",) if with_uncovered else ()
     if with_excluded_miss:
@@ -218,6 +233,7 @@ def _fake_packer(
         has_base=base_exists,
         imatrix=str(tmp_path / "imatrix.gguf") if with_imatrix else None,
         imatrix_uncovered=uncovered,
+        type_fallbacks=(FALLBACK_REWRITE,) if with_type_fallback else (),
     )
 
 
@@ -276,9 +292,24 @@ class TestRecipePackerContract:
         result = packer.pack(stack_pack_recipe())
 
         assert result.overrides == (
-            TypeOverride(pattern=r"blk\.1\.ffn_up_exps\.", quant_type="q4_k"),
-            TypeOverride(pattern=r"blk\.1\.ffn_down_exps\.", quant_type="q2_k"),
+            TypeOverride(pattern=r"blk\.1\.ffn_up_exps\.", quant_type="q4_0"),
+            TypeOverride(pattern=r"blk\.1\.ffn_down_exps\.", quant_type="q2_0"),
         )
+
+    def test_pack_with_a_type_fallback_warning_raises_with_the_rewrites(
+        self, build, tmp_path
+    ) -> None:
+        # The quantizer substitutes a type on a zero exit, so the
+        # artifact ignores the recipe. The pack halts and keeps the
+        # file — never record-and-continue (ADR-0028 decision 3).
+        packer: RecipePacker = build(tmp_path, with_type_fallback=True)
+        packer.convert()
+
+        with pytest.raises(TypeFallbackError) as caught:
+            packer.pack(sample_pack_recipe())
+
+        assert caught.value.rewritten == (FALLBACK_REWRITE,)
+        assert "kept at" in str(caught.value)
 
     def test_pack_stack_recipe_binds_the_nemotron_embedding_group(
         self, build, tmp_path
@@ -480,8 +511,8 @@ class TestLlamaCppCommandLines:
         argv = json.loads((tmp_path / "quantize-argv.json").read_text())
         pairs = [argv[i + 1] for i, flag in enumerate(argv) if flag == "--tensor-type"]
         assert pairs == [
-            r"blk\.1\.ffn_up_exps\.=q4_k",
-            r"blk\.1\.ffn_down_exps\.=q2_k",
+            r"blk\.1\.ffn_up_exps\.=q4_0",
+            r"blk\.1\.ffn_down_exps\.=q2_0",
         ]
 
     def test_quantize_argv_orders_stack_patterns_before_layer_patterns(
@@ -509,7 +540,7 @@ class TestLlamaCppCommandLines:
 
         argv = json.loads((tmp_path / "quantize-argv.json").read_text())
         pairs = [argv[i + 1] for i, flag in enumerate(argv) if flag == "--tensor-type"]
-        assert pairs == [r"blk\.1\.ffn_up_exps\.=q2_k", r"blk\.1\.=q8_0"]
+        assert pairs == [r"blk\.1\.ffn_up_exps\.=q2_0", r"blk\.1\.=q8_0"]
 
     def test_quantize_argv_orders_protection_then_stack_then_layer(
         self, tmp_path
@@ -545,7 +576,7 @@ class TestLlamaCppCommandLines:
         pairs = [argv[i + 1] for i, flag in enumerate(argv) if flag == "--tensor-type"]
         assert pairs == [
             r"blk\.1\.attn_v\.=q5_k",
-            r"blk\.1\.ffn_up_exps\.=q2_k",
+            r"blk\.1\.ffn_up_exps\.=q2_0",
             r"blk\.1\.=q8_0",
         ]
 

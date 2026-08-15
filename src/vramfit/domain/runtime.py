@@ -18,6 +18,11 @@ Attributes:
         bits per weight, per nominal precision, per runtime. Only
         runtimes with a measured pack path have an entry — a runtime
         with a table covers its full capability set.
+    EXPERT_STACK_EFFECTIVE_BITS (Mapping[str, Mapping[int, float]]):
+        Effective bits per weight for a routed-expert-stack group,
+        per nominal precision, per runtime. Expert stacks map
+        through their own type table (ADR-0028), so their per-weight
+        costs differ from the dense table's.
 
 Examples:
     Filter a scanned candidate set for vLLM:
@@ -69,6 +74,25 @@ EFFECTIVE_BITS: Final[Mapping[str, Mapping[int, float]]] = MappingProxyType(
             }
         ),
     }
+)
+
+# Effective bits per weight for the expert-stack type table (Q8_0,
+# Q4_0, Q2_0 — ADR-0028 decision 1). Exact block-layout constants.
+# The table carries no 3-bit row: no GGUF type lands between 2.25 and
+# 4.25 bits per weight on the stack rows, and pack refuses nominal 3
+# there (ADR-0028 decision 2).
+EXPERT_STACK_EFFECTIVE_BITS: Final[Mapping[str, Mapping[int, float]]] = (
+    MappingProxyType(
+        {
+            LLAMA_CPP: MappingProxyType(
+                {
+                    8: 8.5,
+                    4: 4.5,
+                    2: 2.25,
+                }
+            ),
+        }
+    )
 )
 
 
@@ -154,3 +178,34 @@ def effective_bits(runtime: str | None) -> Mapping[int, float] | None:
     if runtime is None:
         return None
     return EFFECTIVE_BITS.get(runtime)
+
+
+def expert_stack_effective_bits(runtime: str | None) -> Mapping[int, float] | None:
+    """Look up a runtime's expert-stack effective-bits table.
+
+    A routed-expert-stack group maps through its own type table
+    (ADR-0028), so the plan step prices it at that table's per-weight
+    costs — 2.25 bits at nominal 2, not Q2_K's 2.625.
+
+    Args:
+        runtime: Target runtime name, or None for an unconstrained
+            plan.
+
+    Returns:
+        The nominal-to-effective bits mapping for expert-stack
+        groups, or None when the runtime is None or has no table.
+        Runtime name validation stays with `servable_precisions`.
+
+    Examples:
+        llama.cpp spends 2.25 bits on a 2-bit expert stack:
+
+        ```python
+        from vramfit.domain.runtime import expert_stack_effective_bits
+
+        assert expert_stack_effective_bits("llama.cpp")[2] == 2.25
+        assert expert_stack_effective_bits(None) is None
+        ```
+    """
+    if runtime is None:
+        return None
+    return EXPERT_STACK_EFFECTIVE_BITS.get(runtime)

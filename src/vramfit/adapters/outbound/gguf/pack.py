@@ -9,9 +9,12 @@ recorded for a foreign runtime (ADR-0013), then runs
 [vramfit.adapters.outbound.gguf.types][]: protection overrides
 first (ADR-0022 — the quantizer applies the first matching
 pattern), then pattern overrides per
-layer group, plus dedicated embedding and output-head flags. With an
-importance matrix (ADR-0016) the adapter also scans the quantizer's
-zero-exit output for tensors the matrix did not cover — the
+layer group, plus dedicated embedding and output-head flags. The
+adapter scans the quantizer's zero-exit output for the type-fallback
+warning pair and halts on a match (`TypeFallbackError`) — a rewritten
+type breaks the recipe the artifact claims to carry (ADR-0028). With
+an importance matrix (ADR-0016) it also scans that output for
+tensors the matrix did not cover — there the
 quantizer only warns, and a silently unassisted tensor must not
 pass unrecorded. The recipe's imatrix exclusions become
 ``--exclude-weights`` flags, and their intentional misses stay out
@@ -66,6 +69,55 @@ from vramfit.domain.pack import PackResult
 # matrix does not cover (llama.cpp src/llama-quant.cpp). The tensor
 # is then quantized without importance data.
 _IMATRIX_MISS: Final[re.Pattern[str]] = re.compile(r"did not find weights for (\S+)")
+
+# The quantizer's zero-exit type-fallback warning pair
+# (`tensor_type_fallback`, llama.cpp src/llama-quant.cpp): an
+# ``ncols … not divisible`` report, then ``falling back to`` with the
+# substituted type on the same output line. A rewritten type breaks
+# the recipe the artifact claims to carry, so a match halts the pack
+# (ADR-0028 decision 3).
+_TYPE_FALLBACK: Final[re.Pattern[str]] = re.compile(
+    r"warning: +(\S+) +- ncols +\d+ not divisible by +\d+ "
+    r"\(required for type +(\S+)\).*?falling back to +(\S+)"
+)
+
+
+class TypeFallbackError(PackError):
+    """The quantizer rewrote tensor types the recipe assigned.
+
+    Attributes:
+        rewritten (tuple[tuple[str, str, str], ...]): One
+            ``(tensor, requested_type, substituted_type)`` triple per
+            rewritten tensor, in output order.
+
+    Examples:
+        The CLI reads the triples into the halt event:
+
+        ```python
+        for tensor, requested, substituted in exc.rewritten:
+            ...
+        ```
+    """
+
+    def __init__(self, rewritten: tuple[tuple[str, str, str], ...], out: Path) -> None:
+        """Build the halt message from the parsed warning pairs.
+
+        Args:
+            rewritten: The parsed ``(tensor, requested, substituted)``
+                triples.
+            out: The packed file, kept for inspection.
+        """
+        details = ", ".join(
+            f"{tensor}: {requested} -> {substituted}"
+            for tensor, requested, substituted in rewritten
+        )
+        super().__init__(
+            f"the quantizer rewrote {len(rewritten)} tensor type"
+            f"{'' if len(rewritten) == 1 else 's'} the recipe assigned "
+            f"(ADR-0028): {details}. The packed file no longer carries "
+            f"the recipe and is kept at {out} for inspection"
+        )
+        self.rewritten = rewritten
 
 
 @dataclass(frozen=True, slots=True)
@@ -165,6 +217,10 @@ class LlamaCppPacker:
                 (ADR-0013), the base GGUF is missing, the recipe
                 cannot be mapped (ADR-0012), the quantizer fails, or
                 it writes no usable file.
+            TypeFallbackError: If the quantizer's output carries the
+                type-fallback warning pair — the artifact ignored
+                the recipe on a zero exit (ADR-0028). The file is
+                kept for inspection.
         """
         check_runtime(recipe)
         if not self.base_gguf.exists():
@@ -194,6 +250,12 @@ class LlamaCppPacker:
             command += ["--tensor-type", f"{override.pattern}={override.quant_type}"]
         command += [str(self.base_gguf), str(self.out_path), base, str(self.threads)]
         quantize_output = run_tool(command, stage="quantize")
+        # A type-fallback warning means the artifact ignored the
+        # recipe on a zero exit — halt, never record-and-continue
+        # (ADR-0028 decision 3).
+        rewritten = tuple(_TYPE_FALLBACK.findall(quantize_output))
+        if rewritten:
+            raise TypeFallbackError(rewritten, self.out_path)
         # An excluded tensor's row is gone from the loaded matrix, so
         # the quantizer reports it as a miss — an intentional one,
         # recorded in imatrix_excluded instead (ADR-0023).

@@ -437,6 +437,52 @@ class TestSolve:
         # Q8_0 spends 8.5 bits per weight, not the nominal 8.
         assert recipe.assignments[0].bytes == 850
 
+    def test_expert_stack_group_prices_at_the_stack_table(self) -> None:
+        # An expert-stack group maps through the ADR-0028 type table,
+        # so nominal 2 spends Q2_0's 2.25 bits, not Q2_K's 2.625.
+        stack = "model.layers.0.mlp.experts.up_proj"
+        map_ = load(make_map([(stack, 1600, CONVEX_CURVE)]))
+
+        recipe = solve_simple(
+            map_,
+            budget=10_000,
+            runtime="llama.cpp",
+            format_overhead=0.0,
+            pins={stack: 2},
+        )
+
+        assert recipe.assignments[0].bytes == 225
+
+    def test_expert_stack_group_at_nominal_3_keeps_the_dense_entry(self) -> None:
+        # The ADR-0028 stack table has no 3-bit row and the plan-time
+        # refusal is an open question there — pack refuses first, so
+        # the plan still prices the assignment at Q3_K's 3.4375.
+        stack = "model.layers.0.mlp.experts.up_proj"
+        map_ = load(make_map([(stack, 1600, CONVEX_CURVE)]))
+
+        recipe = solve_simple(
+            map_,
+            budget=10_000,
+            runtime="llama.cpp",
+            format_overhead=0.0,
+            pins={stack: 3},
+        )
+
+        assert recipe.assignments[0].bytes == 344
+
+    def test_dense_group_at_nominal_2_keeps_the_q2_k_pricing(self) -> None:
+        map_ = load(make_map([("model.layers.0", 1600, CONVEX_CURVE)]))
+
+        recipe = solve_simple(
+            map_,
+            budget=10_000,
+            runtime="llama.cpp",
+            format_overhead=0.0,
+            pins={"model.layers.0": 2},
+        )
+
+        assert recipe.assignments[0].bytes == 263
+
     def test_no_runtime_keeps_nominal_bit_pricing(self) -> None:
         map_ = load(make_map([("g0", 1600, CONVEX_CURVE)]))
 

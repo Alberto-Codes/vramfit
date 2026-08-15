@@ -8,9 +8,11 @@ import pytest
 from vramfit.domain.errors import VramfitError
 from vramfit.domain.runtime import (
     EFFECTIVE_BITS,
+    EXPERT_STACK_EFFECTIVE_BITS,
     RUNTIME_CAPABILITIES,
     RuntimeCapabilityError,
     effective_bits,
+    expert_stack_effective_bits,
     servable_precisions,
 )
 
@@ -94,3 +96,40 @@ class TestEffectiveBits:
         inner = cast("MutableMapping[int, float]", EFFECTIVE_BITS["llama.cpp"])
         with pytest.raises(TypeError):
             inner[16] = 16.5
+
+
+class TestExpertStackEffectiveBits:
+    def test_llama_cpp_table_carries_the_adr_0028_rows(self) -> None:
+        # Q8_0 at 8.50, Q4_0 at 4.50, Q2_0 at 2.25 — exact
+        # block-layout constants for the expert-stack type table.
+        assert expert_stack_effective_bits("llama.cpp") == {8: 8.5, 4: 4.5, 2: 2.25}
+
+    def test_table_has_no_3_bit_row(self) -> None:
+        # No GGUF type lands between 2.25 and 4.25 bits per weight on
+        # the stack rows — pack refuses nominal 3 there (ADR-0028
+        # decision 2).
+        assert 3 not in EXPERT_STACK_EFFECTIVE_BITS["llama.cpp"]
+
+    def test_none_runtime_returns_none(self) -> None:
+        assert expert_stack_effective_bits(None) is None
+
+    def test_runtime_without_a_table_returns_none(self) -> None:
+        assert expert_stack_effective_bits("vllm") is None
+
+    def test_stack_bits_never_exceed_the_dense_entry(self) -> None:
+        # The stack table exists because k-quants are unreachable on
+        # the stack rows — every replacement row must not price above
+        # its dense counterpart, or the solver would overshoot.
+        for runtime, table in EXPERT_STACK_EFFECTIVE_BITS.items():
+            for bits, spent in table.items():
+                assert spent <= EFFECTIVE_BITS[runtime][bits]
+
+    def test_stack_tables_are_read_only(self) -> None:
+        outer = cast("MutableMapping[str, object]", EXPERT_STACK_EFFECTIVE_BITS)
+        with pytest.raises(TypeError):
+            outer["new"] = {}
+        inner = cast(
+            "MutableMapping[int, float]", EXPERT_STACK_EFFECTIVE_BITS["llama.cpp"]
+        )
+        with pytest.raises(TypeError):
+            inner[3] = 3.0

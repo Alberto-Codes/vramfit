@@ -11,6 +11,7 @@ from vramfit.adapters.outbound.gguf.types import (
     PackError,
     base_type,
     check_runtime,
+    expert_stack_type_for,
     ggml_type_for,
     gguf_stack_prefix,
     gguf_tensor_name,
@@ -263,7 +264,7 @@ def test_tensor_overrides_map_a_routed_expert_stack_to_its_fused_tensor(
 
     assert len(overrides) == 1
     assert re.search(overrides[0].pattern, tensor)
-    assert overrides[0].quant_type == "q4_k"
+    assert overrides[0].quant_type == "q4_0"
 
 
 def test_tensor_overrides_escape_the_stack_pattern_so_layer_1_never_matches_11() -> (
@@ -289,7 +290,7 @@ def test_tensor_overrides_put_stacks_before_layers_so_the_stack_wins() -> None:
 
     overrides = tensor_overrides(recipe)
 
-    assert [o.quant_type for o in overrides] == ["q2_k", "q8_0"]
+    assert [o.quant_type for o in overrides] == ["q2_0", "q8_0"]
     assert re.search(overrides[0].pattern, "blk.1.ffn_up_exps.weight")
 
 
@@ -299,7 +300,50 @@ def test_tensor_overrides_keep_recipe_order_within_the_stack_bucket() -> None:
         ("backbone.layers.1.mixer.experts.up_proj", 8),
     )
 
-    assert [o.quant_type for o in tensor_overrides(recipe)] == ["q2_k", "q8_0"]
+    assert [o.quant_type for o in tensor_overrides(recipe)] == ["q2_0", "q8_0"]
+
+
+@pytest.mark.parametrize(
+    ("bits", "quant_type"), [(8, "q8_0"), (4, "q4_0"), (2, "q2_0")]
+)
+def test_expert_stack_type_for_maps_the_adr_0028_table(
+    bits: int, quant_type: str
+) -> None:
+    # Every k-quant packs 256-element super-blocks and the stack rows
+    # (2688, 1856) do not divide by 256, so the stack table carries
+    # only types whose block size divides both (ADR-0028).
+    assert expert_stack_type_for(bits, "model.layers.0.mlp.experts.up_proj") == (
+        quant_type
+    )
+
+
+def test_tensor_overrides_refuse_nominal_3_on_an_expert_stack_naming_the_gap() -> None:
+    # No GGUF type lands between 2.25 and 4.25 bits per weight on the
+    # stack rows (ADR-0028 decision 2). The refusal names the group,
+    # the gap, and both neighboring table entries.
+    recipe = make_recipe(("backbone.layers.3.mixer.experts.up_proj", 3))
+
+    with pytest.raises(PackError) as caught:
+        tensor_overrides(recipe)
+
+    message = str(caught.value)
+    assert '"backbone.layers.3.mixer.experts.up_proj"' in message
+    assert "2.25" in message
+    assert "4.25" in message
+    assert "q2_0" in message
+    assert "q4_0" in message
+
+
+def test_expert_stack_type_for_refuses_a_precision_outside_the_table() -> None:
+    # The dense table maps 6-bit to Q6_K, but the stack table has no
+    # 6-bit row — silently keeping the k-quant would let the
+    # quantizer substitute (ADR-0028 decision 1).
+    with pytest.raises(PackError) as caught:
+        expert_stack_type_for(6, "model.layers.0.mlp.experts.up_proj")
+
+    message = str(caught.value)
+    assert '"model.layers.0.mlp.experts.up_proj"' in message
+    assert "[2, 4, 8]" in message
 
 
 def test_tensor_overrides_reject_an_expert_projection_outside_the_stack_table() -> None:

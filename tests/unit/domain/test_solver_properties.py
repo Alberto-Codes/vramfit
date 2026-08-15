@@ -8,9 +8,11 @@ from hypothesis import event, given
 from hypothesis import strategies as st
 
 from tests.strategies import raw_protected_maps, raw_sensitivity_maps
+from tests.unit.conftest import make_map
 from vramfit.adapters.outbound.sensitivity_map_json import map_from_dict
 from vramfit.domain.runtime import (
     EFFECTIVE_BITS,
+    EXPERT_STACK_EFFECTIVE_BITS,
     RUNTIME_CAPABILITIES,
     RuntimeCapabilityError,
 )
@@ -281,3 +283,42 @@ class TestProtectionProperties:
                 assert resolved[tensor] == floor
             else:
                 assert tensor not in resolved
+
+
+@pytest.mark.unit
+class TestExpertStackPricingProperties:
+    @given(
+        bytes_fp16=st.integers(min_value=1, max_value=10**9),
+        bits=st.sampled_from([8, 4, 3, 2]),
+        overhead=overheads,
+    )
+    def test_expert_stack_assignment_always_prices_at_the_stack_table(
+        self, bytes_fp16: int, bits: int, overhead: float
+    ) -> None:
+        # An expert-stack group prices at the ADR-0028 row where one
+        # exists, and at the dense ADR-0014 entry otherwise (nominal
+        # 3 — the plan-time refusal is an open question there). A
+        # dense group beside it never moves off the dense table.
+        stack = "model.layers.0.mlp.experts.up_proj"
+        dense = "model.layers.1"
+        curve = {8: 0.001, 4: 0.01, 3: 0.1, 2: 1.0}
+        raw = make_map([(stack, bytes_fp16, curve), (dense, bytes_fp16, curve)])
+
+        recipe = solve_simple(
+            map_from_dict(raw),
+            budget=10**12,
+            overhead=overhead,
+            runtime="llama.cpp",
+            pins={stack: bits, dense: bits},
+        )
+
+        table = {
+            **EFFECTIVE_BITS["llama.cpp"],
+            **EXPERT_STACK_EFFECTIVE_BITS["llama.cpp"],
+        }
+        by_group = {a.group: a.bytes for a in recipe.assignments}
+        event(f"stack row: {bits in EXPERT_STACK_EFFECTIVE_BITS['llama.cpp']}")
+        assert by_group[stack] == group_bytes(bytes_fp16, table[bits], overhead)
+        assert by_group[dense] == group_bytes(
+            bytes_fp16, EFFECTIVE_BITS["llama.cpp"][bits], overhead
+        )

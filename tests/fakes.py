@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Literal
 
+from vramfit.adapters.outbound.gguf.pack import TypeFallbackError
 from vramfit.adapters.outbound.gguf.types import (
     PackError,
     base_type,
@@ -171,6 +173,7 @@ class MemoryRecipePacker:
     has_base: bool = False
     imatrix: str | None = None
     imatrix_uncovered: tuple[str, ...] = ()
+    type_fallbacks: tuple[tuple[str, str, str], ...] = ()
     packed: list[Recipe] = field(default_factory=list)
 
     def convert(self) -> int:
@@ -188,12 +191,22 @@ class MemoryRecipePacker:
         if self.fail_stage == "quantize":
             raise PackError("quantize failed with exit code 3:\nconfigured failure")
         excluded = imatrix_exclusion_names(recipe) if self.imatrix is not None else ()
+        # The mapping evaluates in the real adapter's order, so the
+        # same malformed recipe raises the same refusal first. A
+        # configured type-fallback pair then halts after the mapping
+        # proved drivable (ADR-0028 decision 3).
+        base = base_type(recipe)
+        embedding = token_embedding_type(recipe)
+        output = output_tensor_type(recipe)
+        overrides = protection_overrides(recipe) + tensor_overrides(recipe)
+        if self.type_fallbacks:
+            raise TypeFallbackError(self.type_fallbacks, Path("packed.gguf"))
         result = PackResult(
             packed_bytes=self.packed_bytes,
-            base_type=base_type(recipe),
-            token_embedding_type=token_embedding_type(recipe),
-            output_tensor_type=output_tensor_type(recipe),
-            overrides=protection_overrides(recipe) + tensor_overrides(recipe),
+            base_type=base,
+            token_embedding_type=embedding,
+            output_tensor_type=output,
+            overrides=overrides,
             imatrix_path=self.imatrix,
             imatrix_uncovered=(
                 tuple(n for n in self.imatrix_uncovered if n not in excluded)

@@ -11,7 +11,10 @@ ADR-0023) — emitting one run-log event per stage. Between the
 stages an ``--imatrix`` pack reads the matrix's counts and reports
 every zero-count expert (ADR-0026 decision 5) — the imatrix
 warnings, the count read, and the echoes live in
-[vramfit.adapters.inbound.cli_pack_imatrix][]. After
+[vramfit.adapters.inbound.cli_pack_imatrix][]. A type-fallback
+warning in the quantizer's output halts the quantize stage with the
+file kept, and the ``pack_halted`` event carries stage
+``type_fallback`` and every rewrite (ADR-0028). After
 packing it re-checks the real bytes against the recipe's weight
 budget, gates a protected imatrix pack on the reconstruction check
 (ADR-0022 — the stage lives in
@@ -56,10 +59,11 @@ from vramfit.adapters.inbound.cli_pack_imatrix import (
 from vramfit.adapters.inbound.cli_pack_smoke import (
     _check_inputs,
     _halt,
+    _halt_type_fallback,
     _run_smoke,
 )
 from vramfit.adapters.inbound.run_log import SafeRunLog
-from vramfit.adapters.outbound.gguf.pack import LlamaCppPacker
+from vramfit.adapters.outbound.gguf.pack import LlamaCppPacker, TypeFallbackError
 from vramfit.adapters.outbound.json_common import ArtifactError
 from vramfit.adapters.outbound.recipe_json import load_recipe
 from vramfit.adapters.outbound.run_log_jsonl import JsonlRunLogFile
@@ -210,7 +214,14 @@ def pack(
     names a different file, because the pack would not match the
     map's frame (ADR-0020). A recipe with imatrix exclusions packs
     the marked tensors on the unweighted fit, and the command warns
-    when no matrix makes the exclusions inert (ADR-0023). The
+    when no matrix makes the exclusions inert (ADR-0023). An
+    expert-stack group maps through its own type table (ADR-0028):
+    8 to Q8_0, 4 to Q4_0, 2 to Q2_0. Nominal 3 refuses there — no
+    GGUF type lands between 2.25 and 4.25 bits per weight on the
+    stack rows. The quantizer's output is scanned for the
+    type-fallback warning pair, and a match halts with the file
+    kept — a rewritten type breaks the recipe the artifact claims
+    to carry (ADR-0028). The
     command re-checks the packed file's real
     bytes against the recipe's weight budget — nominal-bit
     predictions undershoot GGUF's effective bits. A protected
@@ -321,6 +332,8 @@ def pack(
     started = time.monotonic()
     try:
         result = packer.pack(recipe)
+    except TypeFallbackError as exc:
+        raise _halt_type_fallback(run_log, exc) from exc
     except (RuntimeError, ValueError, OSError) as exc:
         raise _halt(run_log, "quantize", exc) from exc
     # The result's own imatrix_path gates the merge: PackResult
