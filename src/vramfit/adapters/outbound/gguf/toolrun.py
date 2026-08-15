@@ -7,7 +7,7 @@ rejects a zero-exit tool that wrote no usable file. The pack and
 smoke adapters both drive tools through here, so their error
 messages cannot drift apart.
 
-Every failure here raises `PackError` (ADR-0011). `signal_name`
+Every failure here raises `PackError` (ADR-0011). `_signal_name`
 exists to hold that line. `signal.Signals` has no member between
 `SIGRTMIN` and `SIGRTMAX`, so naming a realtime signal death raised
 `ValueError` straight through the boundary (#253).
