@@ -91,6 +91,11 @@ arithmetic.
   loss. They sit at positions 347 and 502 of 564. The 100-chunk
   tier-2 window does not reach them. A runtime-frame damage
   measure needs evaluation text that reaches such instabilities.
+  **Resolved (2026-08-14, #234): the runtime-frame lane evaluates
+  the full 564-chunk WikiText-2 test set per cell.** The damage
+  numbers are full-set PPL and KLD against the f16 reference. The
+  runtime-frame lane reports KLD as mean, 99.9th percentile, and
+  maximum. The tail-metric rationale and source links sit on #234.
 
 ## Consequences
 
@@ -109,3 +114,6 @@ arithmetic.
   to the 2-bit lineage (noted 2026-08-07). On the 3-bit-floored
   recipe, `attn_v` protection crossed the baseline's mean KLD
   (the twelfth data point).
+- Full-set KLD needs a saved f16 base-logits file per model
+  (noted 2026-08-14). The 30B target's file lands near 76 GB
+  (estimate) and stays pod-side.
