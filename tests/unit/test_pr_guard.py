@@ -60,7 +60,7 @@ def test_inspect_guarded_command_routes_to_its_decision(
     assert expected_phrase in verdict.reasons[0]
 
 
-def test_inspect_issue_create_allows_and_carries_the_search(monkeypatch) -> None:
+def test_inspect_issue_create_informs_and_carries_the_search(monkeypatch) -> None:
     # The rule stopped asking whether a search ran and started running
     # it (#246). Nothing here depends on an unverifiable answer.
     verdict = guard.inspect('gh issue create --title "a new symptom"')
@@ -281,7 +281,7 @@ def test_duplicate_report_search_failure_says_so(monkeypatch) -> None:
 
     monkeypatch.setattr(guard.subprocess, "run", boom)
 
-    assert "failed to run" in REAL_DUPLICATE_REPORT("a real title here")
+    assert "timed out" in REAL_DUPLICATE_REPORT("a real title here")
 
 
 def test_duplicate_report_lists_every_match(monkeypatch) -> None:
@@ -302,7 +302,7 @@ def test_duplicate_report_lists_every_match(monkeypatch) -> None:
     assert "Duplicate keys" in report
 
 
-def test_duplicate_report_no_match_says_filing_looks_new(monkeypatch) -> None:
+def test_duplicate_report_no_match_states_only_what_it_checked(monkeypatch) -> None:
     monkeypatch.setattr(guard.shutil, "which", lambda name: "/usr/bin/gh")
     monkeypatch.setattr(
         guard.subprocess,
@@ -312,7 +312,14 @@ def test_duplicate_report_no_match_says_filing_looks_new(monkeypatch) -> None:
         ),
     )
 
-    assert "looks new" in REAL_DUPLICATE_REPORT("wholly novel symptom")
+    # "Filing looks new" asserted recall the search cannot support.
+    # #205 reworded #151 and this title search would have missed it,
+    # so the report states what it checked and what it misses (#246).
+    report = REAL_DUPLICATE_REPORT("wholly novel symptom")
+
+    assert "matched no open or closed issue" in report
+    assert "#205" in report
+    assert "looks new" not in report
 
 
 def test_main_ask_command_emits_an_ask_decision(monkeypatch, capsys) -> None:
@@ -442,3 +449,125 @@ def test_guard_run_as_a_process_exits_zero(payload, expects_output) -> None:
 
     assert done.returncode == 0
     assert bool(done.stdout.strip()) is expects_output
+
+
+@pytest.mark.parametrize(
+    "command",
+    ["gh pr create --help", "gh pr merge --help", "gh issue create -h"],
+    ids=["create", "merge", "issue-create"],
+)
+def test_inspect_help_flag_is_exempt(command) -> None:
+    # A refusal the agent cannot override must not stop it reading the
+    # flags this guard is about.
+    assert guard.inspect(command) is None
+
+
+def test_inspect_heredoc_payload_is_not_read_as_commands() -> None:
+    # shlex knows nothing about heredocs, so it tokenized the payload
+    # as commands and refused a script that merely quoted one (#246).
+    command = "python3 - <<'EOF'\ncases = ['cd /r && gh pr create --body x']\nEOF"
+
+    assert guard.inspect(command) is None
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "gh pr create --body-file b.md",
+        "gh pr create --body-file=b.md",
+        "gh pr create -F b.md",
+    ],
+    ids=["spaced", "equals", "short"],
+)
+def test_inspect_every_body_file_spelling_disarms(command) -> None:
+    # gh spells it three ways. An exact-token test saw one and hard
+    # refused a correctly formed command (#246).
+    assert guard.inspect(command) is None
+
+
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        ("/usr/bin/gh pr merge 5", "ask"),
+        ("./gh pr merge 5", "ask"),
+        ("/home/linuxbrew/.linuxbrew/bin/gh pr create --body x", "deny"),
+    ],
+    ids=["absolute", "relative", "brew"],
+)
+def test_inspect_path_qualified_gh_still_fires(command, expected) -> None:
+    # gh is not always on PATH as a bare name. Comparing the first
+    # token exactly lost every one of these.
+    assert decision(command) == expected
+
+
+def test_inspect_runs_one_search_per_command(monkeypatch) -> None:
+    # One search per matching segment could spend three times the
+    # hook's whole budget, and an overrun loses the decision too.
+    calls: list[str] = []
+    monkeypatch.setattr(
+        guard, "duplicate_report", lambda title: calls.append(title) or "x"
+    )
+
+    guard.inspect(
+        "gh issue create -t a && gh issue create -t b && gh issue create -t c"
+    )
+
+    assert len(calls) == 1
+
+
+def test_inspect_report_travels_with_a_stricter_decision() -> None:
+    # additionalContext is an independent key, so the search result no
+    # longer dies when an ask or deny outranks it.
+    verdict = guard.inspect("gh pr merge 1 && gh issue create --title x")
+
+    assert verdict is not None
+    assert verdict.decision == "ask"
+    assert verdict.context == [STUB_REPORT]
+
+
+def test_main_report_travels_with_a_stricter_decision(monkeypatch, capsys) -> None:
+    payload = json.dumps(
+        {"tool_input": {"command": "gh pr merge 1 && gh issue create --title x"}}
+    )
+    monkeypatch.setattr("sys.stdin", io.StringIO(payload))
+
+    guard.main()
+
+    output = json.loads(capsys.readouterr().out)["hookSpecificOutput"]
+    assert output["permissionDecision"] == "ask"
+    assert output["additionalContext"] == STUB_REPORT
+
+
+@pytest.mark.parametrize(
+    ("stdout", "returncode", "stderr", "phrase"),
+    [
+        ("{}", 0, "", "unexpected shape"),
+        ('{"message": "Not Found"}', 0, "", "unexpected shape"),
+        ("null", 0, "", "unexpected shape"),
+        ("not json", 0, "", "unparseable"),
+        ("", 4, "gh: run gh auth login", "gh auth login"),
+    ],
+    ids=["empty-object", "message-object", "null", "garbage", "auth-failure"],
+)
+def test_duplicate_report_malformed_output_never_reads_as_clean(
+    monkeypatch, stdout, returncode, stderr, phrase
+) -> None:
+    # A non-answer rendered as "found nothing" is the exact mislabel
+    # this rule exists to prevent.
+    monkeypatch.setattr(guard.shutil, "which", lambda name: "/usr/bin/gh")
+    monkeypatch.setattr(
+        guard.subprocess,
+        "run",
+        lambda *a, **k: subprocess.CompletedProcess(
+            args=[], returncode=returncode, stdout=stdout, stderr=stderr
+        ),
+    )
+
+    report = REAL_DUPLICATE_REPORT("duplicate json keys load silently")
+
+    assert phrase in report
+    assert "matched no open or closed issue" not in report
+
+
+def test_duplicate_report_without_a_title_says_so() -> None:
+    assert "names no title" in REAL_DUPLICATE_REPORT("")
