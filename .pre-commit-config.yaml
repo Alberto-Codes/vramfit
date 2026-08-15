@@ -1,37 +1,69 @@
 # Commit stage = fast hermetic gates; push stage = full suite with
 # thorough hypothesis profile, e2e, and the coverage gate (ADR-0009).
+#
+# Every Python tool here runs from the project environment through
+# `uv run`. The lockfile then pins one version for both this hook line
+# and CI. A pre-commit mirror carries its own pin. That pin drifts
+# from the lockfile CI installs, and the two gates disagree. The drift
+# once forced `E402` into `extend-select`. It later required
+# contradictory code for `BLE001`.
+#
+# Two tools stay unaligned, both tracked on #245:
+#
+# - actionlint is a Go binary. The lockfile names no version for it.
+#   The CI step pins the same 1.7.11 this mirror does.
+# - docvet runs here from the lockfile and in CI from a pinned action.
 default_stages: [pre-commit]
 
 repos:
-  - repo: https://github.com/adrienverge/yamllint
-    rev: v1.38.0
-    hooks:
-      - id: yamllint
-        args: [-c, .yamllint.yaml]
-
   - repo: https://github.com/rhysd/actionlint
     rev: v1.7.11
     hooks:
       - id: actionlint
 
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.4
-    hooks:
-      - id: ruff-check
-      - id: ruff-format
-
-  - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.10.7
-    hooks:
-      - id: uv-lock
-
-  - repo: https://github.com/owenlamont/uv-secure
-    rev: 0.17.0
-    hooks:
-      - id: uv-secure
-
   - repo: local
     hooks:
+      - id: yamllint
+        name: yamllint
+        entry: uv run yamllint -c .yamllint.yaml .
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: ruff-check
+        name: ruff check
+        entry: uv run ruff check .
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: ruff-format
+        name: ruff format
+        entry: uv run ruff format --check .
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      # Both filters restate the mirrors they replace. `uv lock
+      # --check` reports a stale lockfile where the mirror's bare
+      # `uv lock` rewrote it, matching CI.
+      - id: uv-lock
+        name: uv lock is current
+        entry: uv lock --check
+        language: system
+        pass_filenames: false
+        files: ^(uv\.lock|pyproject\.toml|uv\.toml)$
+
+      # A `pyproject.toml` edit changes no dependency without also
+      # changing `uv.lock`. Adding it here would run the scanner on a
+      # comment change, and the scanner crashes intermittently (#46).
+      - id: uv-secure
+        name: uv-secure
+        entry: uv run uv-secure
+        language: system
+        pass_filenames: false
+        files: (^|.*/)(uv\.lock|requirements\.txt)$
+
       - id: ty-check
         name: ty type check
         entry: uv run ty check

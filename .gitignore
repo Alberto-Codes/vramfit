@@ -15,3 +15,7 @@ coverage.xml
 
 # Default output of vramfit plan
 /recipe.json
+
+# Scratch probes. The ruff hook checks the whole tree, so an
+# untracked .py file otherwise fails a commit that never staged it.
+/scratch/
