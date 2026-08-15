@@ -1,7 +1,8 @@
 """Smoke-stage helpers for the ``vramfit pack`` command.
 
 The pack composition root splits here: input pre-flight, the halt
-path shared by every stage, and the smoke stage itself (ADR-0017).
+path shared by every stage, the type-fallback halt with its
+rewrite payload (ADR-0028), and the smoke stage itself (ADR-0017).
 `_run_smoke` wires the `SmokeTester` port to the llama.cpp adapter,
 emits the ``smoke_tested`` event — with the non-finite guard the
 run-log sink demands (ADR-0011) — and halts with the file kept when
@@ -30,9 +31,44 @@ from pathlib import Path
 import typer
 
 from vramfit.adapters.inbound.run_log import SafeRunLog
+from vramfit.adapters.outbound.gguf.pack import TypeFallbackError
 from vramfit.adapters.outbound.gguf.smoke import LlamaCppSmokeTester
 from vramfit.domain.pack import smoke_passed
 from vramfit.ports.outbound import SmokeTester
+
+
+def _halt_type_fallback(run_log: SafeRunLog, exc: TypeFallbackError) -> typer.Exit:
+    """Report the type-fallback halt with its rewrites (ADR-0028).
+
+    A rewritten type breaks the recipe the artifact claims to carry,
+    so the pack's fallback scan halts where its imatrix-miss scan
+    records and continues. The event carries every rewritten tensor
+    and the substituted types (ADR-0028 decision 3).
+
+    Args:
+        run_log: Sink for the ``pack_halted`` event.
+        exc: The failure, carrying the parsed rewrites.
+
+    Returns:
+        The exit to raise, code 1. The packed file is kept.
+    """
+    typer.echo(f"error: {exc}", err=True)
+    run_log.emit(
+        "pack_halted",
+        {
+            "stage": "type_fallback",
+            "error": str(exc),
+            "rewritten": [
+                {
+                    "tensor": tensor,
+                    "requested_type": requested,
+                    "substituted_type": substituted,
+                }
+                for tensor, requested, substituted in exc.rewritten
+            ],
+        },
+    )
+    return typer.Exit(code=1)
 
 
 def _halt(run_log: SafeRunLog, stage: str, exc: Exception) -> typer.Exit:

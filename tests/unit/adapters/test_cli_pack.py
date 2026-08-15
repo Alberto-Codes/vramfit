@@ -326,6 +326,46 @@ class TestPackCommand:
         log = read_run_log(out.with_name(out.stem + ".runlog.jsonl"))
         assert log[-1]["stage"] == "quantize"
 
+    def test_type_fallback_halts_with_stage_and_rewritten_tensors(
+        self, tmp_path, monkeypatch, llama_cpp_dir, recipe_path
+    ) -> None:
+        # A rewritten type breaks the recipe the artifact claims to
+        # carry, so the scan halts with exit 1 and the event carries
+        # every rewrite (ADR-0028 decision 3).
+        patch_packer(
+            monkeypatch,
+            MemoryRecipePacker(
+                type_fallbacks=(("blk.1.ffn_up_exps.weight", "q2_K", "q4_0"),)
+            ),
+        )
+        out = tmp_path / "packed.gguf"
+
+        result = runner.invoke(
+            app,
+            [
+                "pack",
+                str(recipe_path),
+                "--llama-cpp",
+                str(llama_cpp_dir),
+                "--out",
+                str(out),
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert "rewrote 1 tensor type" in result.output
+        log = read_run_log(out.with_name(out.stem + ".runlog.jsonl"))
+        assert log[-1]["event"] == "pack_halted"
+        assert log[-1]["stage"] == "type_fallback"
+        assert log[-1]["rewritten"] == [
+            {
+                "tensor": "blk.1.ffn_up_exps.weight",
+                "requested_type": "q2_K",
+                "substituted_type": "q4_0",
+            }
+        ]
+        assert all(entry["event"] != "model_packed" for entry in log)
+
     def test_llama_cpp_recipe_from_file_packs(
         self, tmp_path, monkeypatch, llama_cpp_dir
     ) -> None:

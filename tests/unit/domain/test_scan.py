@@ -10,6 +10,7 @@ from vramfit.domain.scan import (
     Measurement,
     assemble_map,
     group_key,
+    is_expert_stack,
     matches_a_layer,
     plan_measurements,
     scan_fingerprint,
@@ -374,3 +375,33 @@ class TestImatrixCountSummaryInvariants:
     def test_non_finite_median_rejected(self) -> None:
         with pytest.raises(ValueError, match="finite"):
             ImatrixCountSummary(min=0, median=float("nan"), max=1)
+
+
+class TestIsExpertStack:
+    @pytest.mark.parametrize(
+        "group",
+        [
+            "backbone.layers.3.mixer.experts.down_proj",
+            "model.layers.0.mlp.experts.up_proj",
+            "model.layers.2.block_sparse_moe.experts.gate_proj",
+            "transformer.h.4.experts.w1",
+        ],
+    )
+    def test_collapsed_stack_groups_match(self, group: str) -> None:
+        assert is_expert_stack(group)
+
+    @pytest.mark.parametrize(
+        "group",
+        [
+            "backbone.layers.3",
+            "model.embed_tokens",
+            "lm_head",
+            "model.layers.0.self_attn.q_proj",
+            # The shared experts are a different tensor class (#183).
+            "model.layers.0.mlp.shared_experts.up_proj",
+            # No decoder-layer prefix — the GGUF backend cannot map it.
+            "experts.up_proj",
+        ],
+    )
+    def test_other_groups_do_not_match(self, group: str) -> None:
+        assert not is_expert_stack(group)

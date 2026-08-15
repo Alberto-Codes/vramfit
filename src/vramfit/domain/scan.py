@@ -3,7 +3,9 @@
 The scan loop itself lives in the inbound adapter (it drives ports).
 This module holds the pure parts: which group a parameter belongs to
 under each granularity (`group_key`, the `layer`/`tensor`/`stack`
-naming rule that the torch meter applies but does not own),
+naming rule that the torch meter applies but does not own), which
+group names are routed-expert stacks (`is_expert_stack`, the
+predicate the solver prices through — ADR-0028),
 which (group x precision) cells still
 need measurement, how a finished pile of measurements becomes a
 `SensitivityMap` — per-tensor sizes and imatrix count summaries
@@ -68,6 +70,13 @@ _LAYER_PREFIX = re.compile(r"^(.*\.(?:layers|h|blocks)\.\d+)\.")
 # DeepSeek at ".mlp.experts.N.up_proj", and Nemotron 3.5 Lightning at
 # "backbone.layers.N.mixer.experts.M.down_proj" (#160).
 _EXPERT_INDEX = re.compile(r"\.experts\.\d+\.")
+# A collapsed routed-expert-stack group: a layer prefix, then
+# ".experts." with the index already collapsed by `group_key`, then
+# the projection. Mirrors the GGUF adapter's recognizer — issue #190
+# owns folding the duplicated naming rule into one place.
+_EXPERT_STACK_GROUP = re.compile(
+    r"^.+\.(?:layers|h|blocks)\.\d+\.(?:.*\.)?experts\.[A-Za-z0-9_]+$"
+)
 
 
 def group_key(name: str, group_by: Literal["layer", "tensor", "stack"]) -> str:
@@ -104,6 +113,33 @@ def group_key(name: str, group_by: Literal["layer", "tensor", "stack"]) -> str:
         return _EXPERT_INDEX.sub(".experts.", name).removesuffix(".weight")
     match = _LAYER_PREFIX.match(name)
     return match.group(1) if match else name.removesuffix(".weight")
+
+
+def is_expert_stack(group: str) -> bool:
+    """Report whether a group name is a routed-expert stack.
+
+    The solver prices such a group through the expert-stack
+    effective-bits table (ADR-0028), so the predicate must recognize
+    exactly the groups the GGUF backend treats as expert stacks. The
+    backend then maps or refuses each by its projection and its
+    precision — recognition here, vocabulary there.
+
+    Args:
+        group: Group name, as `group_key` produces it.
+
+    Returns:
+        True when the name is a collapsed routed-expert stack under
+        a decoder-layer prefix.
+
+    Examples:
+        ```python
+        from vramfit.domain.scan import is_expert_stack
+
+        assert is_expert_stack("backbone.layers.3.mixer.experts.down_proj")
+        assert not is_expert_stack("backbone.layers.3")
+        ```
+    """
+    return _EXPERT_STACK_GROUP.match(group) is not None
 
 
 def matches_a_layer(name: str) -> bool:

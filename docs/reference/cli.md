@@ -1,11 +1,13 @@
 ---
-status: draft
+status: stable
 ---
 
 # CLI reference
 
-> **Status: draft** — `version`, `budget`, `plan`, `scan`, `pack`,
-> and `validate` are implemented. `pack` covers the GGUF backend only
+> **Status: stable** — `version`, `budget`, `plan`, `scan`, `pack`,
+> and `validate` are implemented, and the flags and behaviors below
+> match the built commands (audited 2026-08-14 on #149, promoted
+> with the #228 build). `pack` covers the GGUF backend only
 > (ADR-0010).
 
 ## `vramfit version`
@@ -77,7 +79,12 @@ effective-bits table prices each precision at its real per-weight
 cost (llama.cpp: Q4_K spends 4.5 bits, not 4), and the overhead
 fraction covers only unquantized tensors and file metadata. A
 runtime without a table (vLLM, or `--runtime` omitted via the API)
-keeps the nominal-bits prediction and the 0.05 scalar.
+keeps the nominal-bits prediction and the 0.05 scalar. A
+routed-expert-stack group prices through the expert-stack type
+table instead ([ADR-0028](../adr/0028-expert-stack-type-table.md)):
+2.25 bits at nominal 2, not Q2_K's 2.625. A stack precision without
+a table row (3, 5, 6) keeps its dense entry — pack refuses it, and
+the plan-time refusal stays an open question in ADR-0028.
 
 Pin semantics: patterns are case-sensitive `fnmatch` globs matched against
 the full group name (`--pin "model.layers.0.*=8"`). A pattern that matches
@@ -292,6 +299,16 @@ embedding assignment pins an untied head (ADR-0012 as amended). The
 base type is the recipe's precision floor, applied with `--pure`, so
 no heuristic mixing leaks in.
 
+A routed-expert-stack group maps through its own type table
+([ADR-0028](../adr/0028-expert-stack-type-table.md)): 8 to `Q8_0`, 4
+to `Q4_0`, 2 to `Q2_0`. K-quant super-blocks do not divide the
+stack rows, so the dense table cannot reach them. The backend
+refuses every stack precision without a table row. Nominal 3 draws
+the dedicated refusal: it names the group, the empty 2.25–4.25
+bits-per-weight gap, and both neighboring table entries. Nominal 6
+and 5 draw the table-bounds refusal — whether the table gains those
+rows is #232's question.
+
 ```
 vramfit pack RECIPE
   --llama-cpp PATH       llama.cpp checkout with convert_hf_to_gguf.py
@@ -342,6 +359,16 @@ extra overrides, placed *before* the group overrides — the quantizer
 applies the first matching pattern
 ([ADR-0022](../adr/0022-within-layer-protections.md)).
 
+The command scans the quantizer's merged output for the
+type-fallback warning pair
+([ADR-0028](../adr/0028-expert-stack-type-table.md) decision 3). A
+match means the quantizer substituted a type on a zero exit, so the
+packed file no longer carries the recipe. The pack halts with exit
+1 and keeps the file. The `pack_halted` event carries stage
+`type_fallback`, every rewritten tensor, and the requested and
+substituted types. The ADR-0016 imatrix-miss scan records and
+continues — this scan halts.
+
 After quantizing, the command re-checks the packed file's real bytes
 against `plan.weight_budget_bytes` — nominal-bit predictions
 undershoot GGUF's effective bits (ADR-0012). On a protected pack made
@@ -380,11 +407,12 @@ protected and reference RMSE, `collapsed`, `passed`), smoke_tested
 when the smoke test ran (perplexity — null
 when non-finite, with a text copy — threshold, chunks, `passed`),
 then pack_finished (with `smoked`) or pack_halted (stage:
-convert, imatrix_counts, quantize, size_check, reconstruction, or
-smoke).
+convert, imatrix_counts, quantize, type_fallback, size_check,
+reconstruction, or smoke).
 
 Exit codes: 1 when the recipe is invalid, the model directory does
-not exist, a toolchain stage fails, the packed model exceeds the
+not exist, a toolchain stage fails, the quantizer substitutes a
+type (the file is kept), the packed model exceeds the
 weight budget, the reconstruction check finds a collapsed tensor
 (the file is kept), or the smoke test fails (the file is kept).
 Exit 2 when the llama.cpp checkout misses a needed tool,

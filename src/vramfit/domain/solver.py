@@ -14,7 +14,9 @@ Size predictions follow ADR-0014: a runtime with an effective-bits
 table prices each precision at its real per-weight cost, and the
 overhead fraction shrinks to a residual for what the table cannot
 see (unquantized tensors, file metadata). Without a table the
-nominal-bits prediction and the 0.05 scalar remain. Protections
+nominal-bits prediction and the 0.05 scalar remain. A routed-expert-
+stack group prices through the expert-stack table instead (ADR-0028)
+— 2.25 bits at nominal 2, not Q2_K's 2.625. Protections
 (ADR-0022) enter through the size model only: a protected tensor
 prices at the higher of the candidate precision and its floor
 ([vramfit.domain.protection][]), so downgrading a protected group
@@ -82,7 +84,12 @@ from vramfit.domain.protection import (
     refuse_dead_exclusions,
     resolve_protected,
 )
-from vramfit.domain.runtime import effective_bits, servable_precisions
+from vramfit.domain.runtime import (
+    effective_bits,
+    expert_stack_effective_bits,
+    servable_precisions,
+)
+from vramfit.domain.scan import is_expert_stack
 
 SOLVER_NAME: Final[str] = "greedy-damage-per-byte"
 DEFAULT_FORMAT_OVERHEAD: Final[float] = 0.05
@@ -388,7 +395,9 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
     runtime. An infeasible budget then names the precisions the
     runtime removed, so the reported floor is explainable. A runtime
     with an effective-bits table prices every candidate at its real
-    per-weight cost (ADR-0014) — Q4_K spends 4.5 bits, not 4. Every
+    per-weight cost (ADR-0014) — Q4_K spends 4.5 bits, not 4. A
+    routed-expert-stack group prices through the expert-stack table
+    instead (ADR-0028): 2.25 bits at nominal 2. Every
     group starts at the highest candidate precision (or its pin).
     While the total exceeds the budget, the solver applies the downgrade
     with the minimum ``(damage_delta / bytes_freed, group name, smallest
@@ -484,19 +493,48 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
     floors = expand_protections(protections, sensitivity_map, runtime)
     excluded = expand_exclusions(imatrix_exclusions, floors, sensitivity_map)
 
-    def price(bytes_fp16: int, bits: int) -> int:
-        """Shorthand for `group_bytes` with the solver's size model.
+    # An expert-stack group prices through the ADR-0028 table where it
+    # has a row (8, 4, 2). Nominal 3 keeps the dense entry: the
+    # plan-time refusal is an ADR-0028 open question, so pack refuses
+    # first and the plan still prices the assignment.
+    stack_table = expert_stack_effective_bits(runtime)
+    merged = (
+        {**table, **stack_table}
+        if table is not None and stack_table is not None
+        else None
+    )
+
+    def price_with(
+        spent_table: Mapping[int, float] | None,
+    ) -> Callable[[int, int], int]:
+        """Build a size predictor over one effective-bits table.
 
         Args:
-            bytes_fp16: Size at reference precision.
-            bits: Target nominal precision.
+            spent_table: Nominal-to-effective bits, or None to price
+                at nominal bits.
 
         Returns:
-            Predicted bytes at the target precision — priced at the
-            runtime's effective bits when a table exists.
+            A ``(bytes_fp16, bits) -> bytes`` predictor carrying the
+            solver's overhead setting.
         """
-        spent = table[bits] if table is not None else bits
-        return group_bytes(bytes_fp16, spent, format_overhead)
+
+        def price(bytes_fp16: int, bits: int) -> int:
+            """Predict bytes at one precision under the bound table.
+
+            Args:
+                bytes_fp16: Size at reference precision.
+                bits: Target nominal precision.
+
+            Returns:
+                Predicted bytes, rounded up.
+            """
+            spent = spent_table[bits] if spent_table is not None else bits
+            return group_bytes(bytes_fp16, spent, format_overhead)
+
+        return price
+
+    price = price_with(table)
+    stack_price = price_with(merged) if merged is not None else price
 
     def size(group: LayerGroup, bits: int) -> int:
         """Price one group, holding its protected tensors at floor.
@@ -506,9 +544,11 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
             bits: Candidate precision for the group.
 
         Returns:
-            Predicted bytes, protections included (ADR-0022).
+            Predicted bytes, protections included (ADR-0022). An
+            expert-stack group prices through the ADR-0028 table.
         """
-        return protected_group_bytes(group, bits, floors, price)
+        chosen = stack_price if is_expert_stack(group.name) else price
+        return protected_group_bytes(group, bits, floors, chosen)
 
     state: dict[str, int] = {}
     for group in sensitivity_map.groups:

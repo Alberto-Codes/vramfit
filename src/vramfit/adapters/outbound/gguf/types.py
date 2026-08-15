@@ -6,7 +6,10 @@ map to K-quant types (the full llama.cpp capability set since
 ADR-0013), layer groups map to escaped `blk.<n>.` regex patterns
 across the three naming families the scan produces, routed-expert
 stack groups map to their fused `blk.<n>.ffn_<proj>_exps.` tensor
-(#159, #161), protected tensors map through the fixed HF-to-GGUF class table to
+(#159, #161) through their own type table — k-quant super-blocks do
+not divide the stack rows, and nominal 3 refuses over the empty
+2.25-4.25 bits-per-weight gap (ADR-0028) — protected tensors map
+through the fixed HF-to-GGUF class table to
 per-tensor patterns (ADR-0022), excluded pairs map to the full GGUF
 tensor names ``--exclude-weights`` deletes by substring (ADR-0023),
 and the embedding and `lm_head` groups map to the quantizer's
@@ -49,6 +52,17 @@ GGML_TYPE_BY_BITS: Final[dict[int, str]] = {
     4: "q4_k",
     3: "q3_k",
     2: "q2_k",
+}
+
+# The expert-stack type table (ADR-0028). Every k-quant packs
+# 256-element super-blocks, and the expert-stack rows (2688, 1856) do
+# not divide by 256 — the quantizer would silently substitute. Every
+# entry here has a block size that divides both row widths. Effective
+# bits per weight: q8_0 at 8.50, q4_0 at 4.50, q2_0 at 2.25.
+EXPERT_STACK_TYPE_BY_BITS: Final[dict[int, str]] = {
+    8: "q8_0",
+    4: "q4_0",
+    2: "q2_0",
 }
 
 # The quantizer's positional type argument speaks ftype names, not
@@ -201,6 +215,44 @@ def ggml_type_for(bits: int) -> str:
         raise PackError(
             f"no GGUF type maps {bits}-bit — the ADR-0012 table covers "
             f"{sorted(GGML_TYPE_BY_BITS)}"
+        ) from None
+
+
+def expert_stack_type_for(bits: int, group: str) -> str:
+    """Map one expert-stack precision to its ADR-0028 tensor type.
+
+    Args:
+        bits: Nominal precision from a recipe assignment.
+        group: The expert-stack group, named in every refusal.
+
+    Returns:
+        The GGUF tensor-type name, e.g. ``q2_0``.
+
+    Raises:
+        PackError: If ``bits`` is 3 — no GGUF type lands between 2.25
+            and 4.25 bits per weight on the stack rows (ADR-0028
+            decision 2). Also if the table has no entry for ``bits``.
+
+    Examples:
+        The 2-bit entry of the table:
+
+        ```python
+        assert expert_stack_type_for(2, "m.layers.0.experts.up_proj") == "q2_0"
+        ```
+    """
+    if bits == 3:  # noqa: PLR2004 - the ADR-0028 decision 2 refusal is about exactly nominal 3
+        raise PackError(
+            f'expert stack "{group}" cannot pack at nominal 3 — no GGUF type '
+            f"lands between 2.25 and 4.25 bits per weight on the stack rows "
+            f"(ADR-0028). The neighboring table entries are 2 -> q2_0 "
+            f"(2.25 bits/weight) and 4 -> q4_0 (4.50 bits/weight)"
+        )
+    try:
+        return EXPERT_STACK_TYPE_BY_BITS[bits]
+    except KeyError:
+        raise PackError(
+            f'expert stack "{group}" has no type for {bits}-bit — the '
+            f"ADR-0028 table covers {sorted(EXPERT_STACK_TYPE_BY_BITS)}"
         ) from None
 
 
@@ -503,8 +555,10 @@ def tensor_overrides(recipe: Recipe) -> tuple[TypeOverride, ...]:
         PackError: If a group is not a layer group, a routed-expert
             stack, the embedding, or the output head. Also if a
             routed-expert stack names a projection outside the
-            fused-stack table, if the groups hang from two roots, or
-            if a precision has no table entry.
+            fused-stack table or a precision outside the ADR-0028
+            stack table (nominal 3 refuses over the empty 2.25-4.25
+            gap), if the groups hang from two roots, or if a
+            precision has no table entry.
 
     Examples:
         The group ``model.layers.7`` at 4-bit becomes an escaped
@@ -523,7 +577,7 @@ def tensor_overrides(recipe: Recipe) -> tuple[TypeOverride, ...]:
         _claim_root(assignment.group, roots)
         prefix = gguf_stack_prefix(assignment.group)
         if prefix is not None:
-            bits = ggml_type_for(assignment.bits)
+            bits = expert_stack_type_for(assignment.bits, assignment.group)
             stacks.append(TypeOverride(re.escape(prefix), bits))
             continue
         match = _LAYER_GROUP.match(assignment.group)
