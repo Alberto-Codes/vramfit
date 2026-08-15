@@ -132,6 +132,26 @@ The records carry the truth.
 Read the convention page before charting or working a chart ticket.
 Ignore the rules file in every other session.
 
+## Session harness
+
+The repository carries `.claude/`, so a contributor inherits it with
+the clone:
+
+- `commands/board.md` — `/board` ranks the whole tracker by distance to
+  a chart Destination and reports rot. Type it to pick where a session
+  goes. Ask for `chart-triage` once that lands on a chart.
+- `hooks/pr_guard.py` — a PreToolUse guard on `gh pr ready`,
+  `gh pr merge`, `gh pr create` without `--body-file`, and
+  `gh issue create`. Each command skipped a review step at least once
+  and cost real work, so the guard asks before it runs. It asks and
+  never blocks, it reminds rather than enforces, and it fails open.
+  #246 carries the review of its noise level.
+- `rules/` — `pytest.md` scopes to test paths. `charting.md` applies
+  only to chart sessions.
+
+`scripts/check_loc.py` runs on `src` only, so the 300/320 code-line cap
+does not reach `.claude/hooks/`. Keep a guard small anyway.
+
 ## Branching & Commits
 
 - Single default branch `main`; feature branches `feat/<scope>-<description>`

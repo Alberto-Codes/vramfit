@@ -196,6 +196,10 @@ docstring-code-line-length = "dynamic"
 # --------------------------------------------------------------------------- #
 [tool.docvet]
 fail-on = ["enrichment", "freshness", "coverage", "griffe", "presence"]
+# The default excludes `tests` and `scripts`. `.claude/hooks/` holds
+# session guards in the same class: they form no package, so the
+# mkdocs cross-reference rules cannot apply to them.
+exclude = ["tests", "scripts", ".claude"]
 
 [tool.docvet.presence]
 min-coverage = 100.0
@@ -206,10 +210,11 @@ min-coverage = 100.0
 [tool.ty.src]
 include = ["src", "tests"]
 
-# `scripts/` holds the gate scripts. They form no package, so name the
-# directory a search path to let their tests import them.
+# `scripts/` holds the gate scripts and `.claude/hooks/` holds the
+# session guards. Neither forms a package, so name both directories
+# search paths to let their tests import them.
 [tool.ty.environment]
-extra-paths = ["scripts"]
+extra-paths = ["scripts", ".claude/hooks"]
 
 # The scan adapter and its torch-tier tests import torch and
 # transformers, which CI and torch-less dev boxes do not install
@@ -238,10 +243,11 @@ unresolved-import = "ignore"
 # --------------------------------------------------------------------------- #
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-# `scripts/` holds the gate scripts. They form no package, so put the
-# directory on the import path for their tests, matching
+# `scripts/` holds the gate scripts and `.claude/hooks/` holds the
+# session guards. Neither forms a package, so put both directories on
+# the import path for their tests, matching
 # `[tool.ty.environment] extra-paths`.
-pythonpath = ["scripts"]
+pythonpath = ["scripts", ".claude/hooks"]
 markers = [
     "unit: Unit tests (fast, isolated, no GPU); includes hypothesis properties",
     "contract: Verified-fake port suites — real and fake adapters proven equivalent",
