@@ -7,6 +7,15 @@ rejects a zero-exit tool that wrote no usable file. The pack and
 smoke adapters both drive tools through here, so their error
 messages cannot drift apart.
 
+`run_tool` replaces undecodable bytes instead of refusing them.
+llama.cpp truncates its metadata previews mid-character on a
+byte-level BPE tokenizer, so a strict decode raised
+`UnicodeDecodeError` out of a successful quantize and skipped every
+guard that reads the output (#247). The scanners match ASCII
+patterns, so a replacement character changes no verdict.
+`surrogateescape` keeps the bytes and then raises
+`UnicodeEncodeError` where `typer.echo` prints the error message.
+
 Examples:
     Run one tool and keep its output for inspection:
 
@@ -62,7 +71,7 @@ def run_tool(
             time, and a wrong guess kills real work.
 
     Returns:
-        The tool's merged output.
+        The tool's merged output. Undecodable bytes become U+FFFD.
 
     Raises:
         PackError: If the tool cannot start, exits nonzero, dies to a
@@ -74,7 +83,8 @@ def run_tool(
             command,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
-            text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
             timeout=timeout_seconds,
         )
