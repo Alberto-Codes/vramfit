@@ -88,6 +88,7 @@ uv run pytest                  # fast suite; push gate adds thorough+e2e+cov
 uv run lint-imports            # hex layers + domain purity + no-torch (ADR-0008)
 uv run python scripts/check_loc.py src   # 300/320 code-line cap
 uv run python scripts/check_banned_terms.py  # pre-rename name stays out (#154)
+uv run python scripts/check_ty_overrides.py  # lazy optional imports carry a ty override
 uv run docvet check --all
 ```
 

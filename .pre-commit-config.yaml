@@ -103,6 +103,13 @@ repos:
         pass_filenames: false
         always_run: true
 
+      - id: ty-overrides
+        name: lazy optional imports carry a ty override entry
+        entry: uv run python scripts/check_ty_overrides.py
+        language: system
+        pass_filenames: false
+        always_run: true
+
       - id: doc-refs
         name: docs reference living module paths
         entry: uv run python scripts/check_doc_refs.py
