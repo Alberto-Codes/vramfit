@@ -15,17 +15,44 @@ shell command an agent runs without stopping:
 - `gh issue create` with no prior search. Five sessions filed one
   runlog bug five times (#151, #155, #157, #185, #205).
 
-The guard asks rather than blocks. A hook that cries wolf gets
-disabled, and every guarded command has a legitimate use the guard
-cannot see. Answering the question is the point.
+**One rule per verifiable check, ruled 2026-08-15 on #246.** The guard
+asked all four, and a measured session approved three prompts without
+reading them. An unverifiable question fails at any frequency: the
+guard cannot check whether a search ran, the maintainer cannot check
+it at the prompt, and answering yes costs nothing. So each rule now
+routes by whether its check is mechanical.
 
-The guard reminds. It does not enforce. `gh api --method PUT
+| rule | decision | who reads it |
+|------|----------|--------------|
+| `gh pr merge` | `ask` | the maintainer |
+| `gh pr ready` | `ask` | the maintainer |
+| `gh pr create` without `--body-file` | `deny` | the agent |
+| `gh issue create` | `allow` plus context | the agent |
+
+The two merge-shaped rules stay questions, because they are the
+maintainer's decision and they fire about once per pull request.
+`allow` would grant permission outright, which suits neither.
+
+The `--body-file` rule became a refusal. Its condition is a property
+of the command line and needs no judgment.
+
+The `gh issue create` rule stopped asking and started answering. It
+runs the tracker search itself and hands the matches to the agent, so
+nothing depends on a claim nobody can verify.
+
+Field routing measured on Claude Code 2.1.233 (#246). `allow` plus
+`additionalContext` reaches the agent. `deny` plus
+`permissionDecisionReason` reaches the agent. `ask` reaches only the
+maintainer, and `systemMessage` reaches nobody. Re-measure before
+changing a decision value.
+
+The guard still reminds rather than enforces. `gh api --method PUT
 repos/o/r/pulls/N/merge` reaches the same endpoint and matches no rule
 here. Chasing every bypass is how a reminder becomes noise.
 
-It fails open. A malformed payload allows the command, and an uncaught
-error exits non-zero, which Claude Code reports without blocking the
-tool.
+It still fails open. A malformed payload allows the command, a failed
+search reports that it failed, and an uncaught error exits non-zero,
+which Claude Code reports without blocking the tool.
 
 Examples:
     The guard reads one PreToolUse payload on stdin and answers with a
@@ -56,24 +83,125 @@ from __future__ import annotations
 import json
 import re
 import shlex
+import shutil
+import subprocess
 import sys
 from typing import Final, NamedTuple
+
+# Most restrictive wins when one command matches several rules. The
+# guard emits one decision, and `additionalContext` rides only on
+# `allow` (#246), so a stricter match drops the search report.
+_RANK: Final[dict[str, int]] = {"allow": 1, "ask": 2, "deny": 3}
+
+# The tracker search runs inside a PreToolUse hook, and
+# `.claude/settings.json` allows the hook 5 seconds. Leave room for
+# process start and JSON encoding.
+_SEARCH_TIMEOUT_SECONDS: Final[float] = 3.0
+_SEARCH_LIMIT: Final[int] = 5
+
+# Words too common to narrow a tracker search.
+_STOPWORDS: Final[frozenset[str]] = frozenset(
+    {
+        "a",
+        "an",
+        "and",
+        "are",
+        "as",
+        "at",
+        "be",
+        "but",
+        "by",
+        "does",
+        "for",
+        "from",
+        "has",
+        "have",
+        "in",
+        "into",
+        "is",
+        "it",
+        "its",
+        "no",
+        "not",
+        "of",
+        "on",
+        "or",
+        "so",
+        "than",
+        "that",
+        "the",
+        "then",
+        "to",
+        "was",
+        "what",
+        "when",
+        "which",
+        "with",
+        "without",
+    }
+)
+_MIN_TERM_LEN: Final[int] = 3
+_MAX_TERMS: Final[int] = 6
 
 
 class Rule(NamedTuple):
     """One guarded command shape.
 
     Attributes:
-        pattern (re.Pattern[str]): Matches the command inside one
-            shell segment.
+        verb (tuple[str, ...]): The command words, matched as
+            consecutive tokens.
+        pattern (re.Pattern[str]): The same words as a regex, used
+            only when a segment cannot be tokenized.
         disarm (str | None): A flag that silences the rule when it
             appears as its own token in the same segment.
-        text (str): The question to put to the user.
+        decision (str): The permission decision this rule asks for,
+            one of ``ask``, ``deny``, or ``allow``.
+        text (str): The text the decision carries.
     """
 
+    verb: tuple[str, ...]
     pattern: re.Pattern[str]
     disarm: str | None
+    decision: str
     text: str
+
+
+def rule(verb: str, disarm: str | None, decision: str, text: str) -> Rule:
+    """Build one rule from its command words.
+
+    Args:
+        verb: The command words, space separated, e.g. ``gh pr merge``.
+        disarm: A flag that silences the rule, or None.
+        decision: ``ask``, ``deny``, or ``allow``.
+        text: The text the decision carries.
+
+    Returns:
+        The rule, carrying both matchers.
+    """
+    words = tuple(verb.split())
+    escaped = r"\s+".join(re.escape(w) for w in words)
+    return Rule(words, re.compile(rf"\b{escaped}\b"), disarm, decision, text)
+
+
+def has_verb(present: list[str], verb: tuple[str, ...]) -> bool:
+    """Report whether the tokens carry the verb as consecutive words.
+
+    Token matching keeps a quoted mention from firing a rule.
+    ``echo "gh pr create"`` is one token after `shlex`, so it names no
+    command. A raw-text search matched it and refused the work, which
+    the `deny` decision made expensive (#246).
+
+    Args:
+        present: Tokens of one shell segment.
+        verb: The command words to find.
+
+    Returns:
+        True when the tokens contain the verb in order.
+    """
+    span = len(verb)
+    return any(
+        tuple(present[i : i + span]) == verb for i in range(len(present) - span + 1)
+    )
 
 
 # Shell operators that separate one command from the next. The guard
@@ -85,19 +213,23 @@ _SEPARATORS: Final[re.Pattern[str]] = re.compile(r"&&|\|\||;|\n|\|")
 # line. It joins rather than separates, so it resolves first.
 _CONTINUATION: Final[re.Pattern[str]] = re.compile(r"\\\s*\n")
 
+_ISSUE_CREATE_VERB: Final[tuple[str, ...]] = ("gh", "issue", "create")
+
 _RULES: Final[tuple[Rule, ...]] = (
-    Rule(
-        re.compile(r"\bgh\s+pr\s+merge\b"),
+    rule(
+        "gh pr merge",
         None,
+        "ask",
         (
             "Has the Copilot review posted, and is every comment answered?\n"
             "PR #156 merged 54 seconds after the review posted. PR #176 "
             "merged five minutes after, and its flag was real."
         ),
     ),
-    Rule(
-        re.compile(r"\bgh\s+pr\s+ready\b"),
+    rule(
+        "gh pr ready",
         None,
+        "ask",
         (
             "Has the review cycle run on this diff?\n"
             "Fact-check every number, then peer-review for strict-mode "
@@ -105,26 +237,24 @@ _RULES: Final[tuple[Rule, ...]] = (
             "skipped it, and both times it found defects."
         ),
     ),
-    Rule(
-        re.compile(r"\bgh\s+pr\s+create\b"),
+    rule(
+        "gh pr create",
         "--body-file",
+        "deny",
         (
-            "Does this body follow .github/PULL_REQUEST_TEMPLATE.md?\n"
-            "`gh pr create` bypasses the template silently. The title "
-            "becomes the squash subject and release-please parses the "
-            "body footers. Write the body to a file, then pass "
-            "--body-file."
+            "Refused: `gh pr create` without `--body-file`.\n"
+            "The flag bypasses .github/PULL_REQUEST_TEMPLATE.md "
+            "silently. The title becomes the squash subject and "
+            "release-please parses the body footers, so a freeform body "
+            "breaks machinery rather than style. Write the body to a "
+            "file, then pass --body-file."
         ),
     ),
-    Rule(
-        re.compile(r"\bgh\s+issue\s+create\b"),
+    rule(
+        "gh issue create",
         None,
-        (
-            "Did you search the tracker for this symptom first?\n"
-            "Search the filename or the error string, over all states, "
-            "not the guessed cause. Five sessions filed one runlog bug "
-            "five times. Comment on the match instead."
-        ),
+        "allow",
+        "",
     ),
 )
 
@@ -138,7 +268,7 @@ def tokens(segment: str) -> list[str]:
     A caller reads these tokens to find a flag that *silences* a rule,
     so an over-reported flag makes the guard quiet rather than loud. A
     segment this cannot tokenize therefore yields nothing, and every
-    matching rule asks.
+    matching rule fires.
 
     Args:
         segment: One shell command, without separators.
@@ -153,28 +283,153 @@ def tokens(segment: str) -> list[str]:
         return []
 
 
-def questions(command: str) -> list[str]:
-    """Find every question one shell command should answer first.
+def title_of(present: list[str]) -> str | None:
+    """Read the issue title from one segment's tokens.
+
+    Args:
+        present: Tokens of one shell segment.
+
+    Returns:
+        The title, or None when the segment names none.
+    """
+    for flag in ("--title", "-t"):
+        if flag in present:
+            index = present.index(flag)
+            if index + 1 < len(present):
+                return present[index + 1]
+    for token in present:
+        if token.startswith("--title="):
+            return token.split("=", 1)[1]
+    return None
+
+
+def search_terms(title: str) -> list[str]:
+    """Reduce a title to the words worth searching.
+
+    Args:
+        title: The issue title as written.
+
+    Returns:
+        Up to `_MAX_TERMS` lowercase words, longest first, without
+        stopwords. Empty when the title carries none.
+    """
+    words = re.findall(r"[A-Za-z_][A-Za-z0-9_]*", title.lower())
+    keep = [w for w in words if len(w) >= _MIN_TERM_LEN and w not in _STOPWORDS]
+    return sorted(set(keep), key=len, reverse=True)[:_MAX_TERMS]
+
+
+def duplicate_report(title: str) -> str:
+    """Search the tracker and describe what it found.
+
+    The rule this serves used to ask whether a search had run. Nobody
+    could verify that answer, so the guard runs the search instead
+    (#246).
+
+    Args:
+        title: The issue title the command would file.
+
+    Returns:
+        Text for the agent. It names the matches, or states that the
+        search could not run, which is itself worth knowing.
+    """
+    terms = search_terms(title)
+    if not terms:
+        return f'Tracker search skipped: no searchable words in "{title}".'
+    gh = shutil.which("gh")
+    if gh is None:
+        return "Tracker search skipped: gh is not on PATH. Search before filing."
+    try:
+        completed = subprocess.run(  # noqa: S603 - fixed argv, no shell
+            [
+                gh,
+                "issue",
+                "list",
+                "--state",
+                "all",
+                "--search",
+                " ".join(terms),
+                "--limit",
+                str(_SEARCH_LIMIT),
+                "--json",
+                "number,title,state",
+            ],
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+            timeout=_SEARCH_TIMEOUT_SECONDS,
+        )
+        matches = json.loads(completed.stdout) if completed.returncode == 0 else None
+    except (OSError, subprocess.SubprocessError, ValueError):
+        matches = None
+    if matches is None:
+        return "Tracker search failed to run. Search before filing."
+    if not matches:
+        return f"Tracker search for {terms} found nothing. Filing looks new."
+    listed = "\n".join(
+        f"  #{m['number']} [{m['state'].lower()}] {m['title']}" for m in matches
+    )
+    return (
+        f"Tracker search for {terms} found {len(matches)} match(es):\n{listed}\n"
+        "Read them before filing. Five sessions filed one runlog bug five "
+        "times (#151, #155, #157, #185, #205). Comment on a match instead, "
+        "or say in the body why this one is distinct."
+    )
+
+
+class Verdict(NamedTuple):
+    """What the guard decided about one command.
+
+    Attributes:
+        decision (str): ``ask``, ``deny``, or ``allow``.
+        reasons (list[str]): Text for an ``ask`` or ``deny``.
+        context (list[str]): Text for the agent under ``allow``.
+    """
+
+    decision: str
+    reasons: list[str]
+    context: list[str]
+
+
+def inspect(command: str) -> Verdict | None:
+    """Decide what one shell command needs before it runs.
 
     Args:
         command: The full command line the tool would run.
 
     Returns:
-        One question per matched rule, in rule order, without
-        duplicates. An empty list means no rule matched.
+        The verdict, or None when no rule matched.
     """
-    found: list[str] = []
+    reasons: list[str] = []
+    context: list[str] = []
+    decision: str | None = None
     joined = _CONTINUATION.sub(" ", command)
     for segment in _SEPARATORS.split(joined):
         present = tokens(segment)
-        for rule in _RULES:
-            if not rule.pattern.search(segment):
+        for candidate in _RULES:
+            # Tokens decide when the segment parses. A segment with
+            # unbalanced quotes yields none, and the regex then keeps
+            # the rule loud rather than silent.
+            hit = (
+                has_verb(present, candidate.verb)
+                if present
+                else candidate.pattern.search(segment) is not None
+            )
+            if not hit:
                 continue
-            if rule.disarm is not None and rule.disarm in present:
+            if candidate.disarm is not None and candidate.disarm in present:
                 continue
-            if rule.text not in found:
-                found.append(rule.text)
-    return found
+            if decision is None or _RANK[candidate.decision] > _RANK[decision]:
+                decision = candidate.decision
+            if candidate.verb == _ISSUE_CREATE_VERB:
+                report = duplicate_report(title_of(present) or "")
+                if report not in context:
+                    context.append(report)
+            elif candidate.text not in reasons:
+                reasons.append(candidate.text)
+    if decision is None:
+        return None
+    return Verdict(decision, reasons, context)
 
 
 def main() -> int:
@@ -188,27 +443,34 @@ def main() -> int:
     try:
         payload = json.load(sys.stdin)
         command = payload.get("tool_input", {}).get("command", "")
-        found = questions(command) if isinstance(command, str) else []
+        verdict = inspect(command) if isinstance(command, str) else None
     except (ValueError, AttributeError, OSError):
         # `json.JSONDecodeError` and `UnicodeDecodeError` subclass
         # `ValueError`. A payload that is not a mapping raises
         # `AttributeError` on `.get`. A broken pipe raises `OSError`.
         return 0
 
-    if not found:
+    if verdict is None:
         return 0
 
-    print(
-        json.dumps(
-            {
-                "hookSpecificOutput": {
-                    "hookEventName": "PreToolUse",
-                    "permissionDecision": "ask",
-                    "permissionDecisionReason": "\n\n".join(found),
-                }
-            }
-        )
-    )
+    out: dict[str, str] = {
+        "hookEventName": "PreToolUse",
+        "permissionDecision": verdict.decision,
+    }
+    if verdict.reasons:
+        out["permissionDecisionReason"] = "\n\n".join(verdict.reasons)
+    # `additionalContext` rides only on `allow` (#246). A stricter
+    # match drops the search report rather than mislabel the decision.
+    if verdict.decision == "allow":
+        # An `allow` grants permission outright. Emitting one with no
+        # text would bypass the settings and say nothing, so the guard
+        # stays out of the way instead.
+        context = "\n\n".join(text for text in verdict.context if text)
+        if not context:
+            return 0
+        out["additionalContext"] = context
+
+    print(json.dumps({"hookSpecificOutput": out}))
     return 0
 
 
