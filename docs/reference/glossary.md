@@ -510,6 +510,21 @@ change.
 > files in place, re-hashed, and re-uploaded them. A reader that meets
 > a pre-rename key names that key in the error (#154).
 
+**Optional root**
+:   A top-level import name a base install cannot resolve, because an
+    extra or a dependency group provides it
+    ([ADR-0005](../adr/0005-heavy-deps-as-extras.md)). Six today: gguf,
+    numpy, safetensors, tokenizers, torch, transformers. Not "heavy
+    dep" or "optional import" — the term names the import root, never
+    the distribution.
+
+**Ty override**
+:   One `[[tool.ty.overrides]]` block in pyproject.toml that silences
+    `unresolved-import` for the files allowed to import an optional
+    root. Gated by `scripts/check_ty_overrides.py`. Always the
+    two-word compound — the bare word "override" belongs to pack's
+    **Type override**.
+
 ## Planning
 
 **Chart**
