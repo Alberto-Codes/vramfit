@@ -449,3 +449,71 @@ class TestImatrixCounts:
 
         with pytest.raises(ArtifactError, match="min"):
             map_from_dict(raw)
+
+
+@pytest.mark.unit
+class TestDerived:
+    # The published no-2 maps carry this note, and a load-then-save
+    # deleted it (#136).
+    NOTE = (
+        "Derived from sensitivity-64k-kquant-imx.json by removing the "
+        "2-bit column. Not a scan artifact."
+    )
+
+    def make_derived_dict(self) -> dict:
+        raw = make_map(
+            [("model.layers.0", 1_000, {8: 0.0, 4: 0.1, 3: 0.2})], precisions=(8, 4, 3)
+        )
+        raw["derived"] = self.NOTE
+        return raw
+
+    def test_derived_round_trip(self) -> None:
+        raw = self.make_derived_dict()
+
+        map_ = map_from_dict(raw)
+        again = map_from_dict(map_to_dict(map_))
+
+        assert map_.derived == self.NOTE
+        assert again == map_
+
+    def test_save_after_load_keeps_the_note(self, tmp_path) -> None:
+        path = tmp_path / "map.json"
+        out = tmp_path / "resaved.json"
+        path.write_text(json.dumps(self.make_derived_dict()))
+
+        save_sensitivity_map(load_sensitivity_map(path), out)
+
+        assert json.loads(out.read_text())["derived"] == self.NOTE
+
+    def test_absent_derived_loads_none(self) -> None:
+        raw = self.make_derived_dict()
+        del raw["derived"]
+
+        map_ = map_from_dict(raw)
+
+        assert map_.derived is None
+        # The writer omits the absent note instead of writing null.
+        assert "derived" not in map_to_dict(map_)
+
+    def test_null_derived_rejected(self) -> None:
+        # The writer omits the note when absent and never writes null
+        # — an explicit null is a hand-edit (#136).
+        raw = self.make_derived_dict()
+        raw["derived"] = None
+
+        with pytest.raises(ArtifactError, match="derived"):
+            map_from_dict(raw)
+
+    def test_empty_derived_rejected(self) -> None:
+        raw = self.make_derived_dict()
+        raw["derived"] = ""
+
+        with pytest.raises(ArtifactError, match="derived"):
+            map_from_dict(raw)
+
+    def test_non_string_derived_rejected(self) -> None:
+        raw = self.make_derived_dict()
+        raw["derived"] = {"note": self.NOTE}
+
+        with pytest.raises(ArtifactError, match="derived"):
+            map_from_dict(raw)
