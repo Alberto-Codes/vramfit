@@ -274,6 +274,11 @@ def tokens(segment: str) -> list[str]:
     Quoting matters here. A `--body-file` inside a quoted message is
     one token's content, never a flag.
 
+    Operators tokenize on their own, so `segments` splits a compound
+    command whether or not it spaces them. `shlex.split` leaves
+    ``1&&gh`` as one token, and a later guarded command then hid
+    inside it.
+
     Args:
         segment: One shell command, without separators.
 
@@ -281,8 +286,10 @@ def tokens(segment: str) -> list[str]:
         The tokens, or an empty list when the segment carries
         unbalanced quotes.
     """
+    lexer = shlex.shlex(segment, posix=True, punctuation_chars=True)
+    lexer.whitespace_split = True
     try:
-        return shlex.split(segment)
+        return list(lexer)
     except ValueError:
         return []
 

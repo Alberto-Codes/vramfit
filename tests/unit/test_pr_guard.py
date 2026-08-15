@@ -60,7 +60,7 @@ def test_inspect_guarded_command_routes_to_its_decision(
     assert expected_phrase in verdict.reasons[0]
 
 
-def test_inspect_issue_create_informs_and_carries_the_search(monkeypatch) -> None:
+def test_inspect_issue_create_informs_and_carries_the_search() -> None:
     # The rule stopped asking whether a search ran and started running
     # it (#246). Nothing here depends on an unverifiable answer.
     verdict = guard.inspect('gh issue create --title "a new symptom"')
@@ -571,3 +571,26 @@ def test_duplicate_report_malformed_output_never_reads_as_clean(
 
 def test_duplicate_report_without_a_title_says_so() -> None:
     assert "names no title" in REAL_DUPLICATE_REPORT("")
+
+
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        ("gh pr merge 1&&gh pr ready", 2),
+        ("gh pr merge 1;gh pr ready", 2),
+        ("gh pr merge 1|tee log", 1),
+    ],
+    ids=["and", "semicolon", "pipe"],
+)
+def test_inspect_unspaced_operator_still_splits_segments(command, expected) -> None:
+    # `shlex.split` left `1&&gh` as one token, so a later guarded
+    # command hid inside it and its rule went silent. Raised by the
+    # Copilot review on PR #269.
+    assert len(reasons(command)) == expected
+
+
+def test_inspect_unspaced_operator_does_not_let_a_later_flag_disarm() -> None:
+    # The second command carries --body-file. Without operator
+    # splitting both commands shared one segment, and that flag
+    # silenced the first command's refusal.
+    assert decision("gh pr create --body x&&gh pr create --body-file b.md") == "deny"
