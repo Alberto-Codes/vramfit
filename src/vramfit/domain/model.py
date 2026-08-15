@@ -1,13 +1,14 @@
 """Domain types for the two pipeline artifacts.
 
 The dataclasses enforce their own structural invariants in
-``__post_init__`` (positive sizes, strictly descending precisions,
-unique group names, sensitivity keys matching the scan, imatrix
-provenance pairing with the assisted method token, tensor sizes
-covering exactly the group's tensors, protection records pairing
-with their resolved pairs — ADR-0022 — and an ordered imatrix
-count summary — ADR-0026 decision 4) so an instance
-that exists is safe for the solver — however it was constructed. The
+``__post_init__``, so an instance that exists is safe for the solver,
+however it was constructed. The checks cover positive sizes, strictly
+descending precisions, unique group names, sensitivity keys matching
+the scan, imatrix provenance pairing with the assisted method token,
+tensor sizes covering exactly the group's tensors, protection records
+pairing with their resolved pairs (ADR-0022), an ordered imatrix
+count summary (ADR-0026 decision 4), and a non-empty derived note
+(#136). The
 within-group method tokens live here — `SCAN_METHOD` beside the
 `ScanMeta` field it is the default for (ADR-0018), and the kquant
 tokens beside the `imatrix` invariant they anchor (ADR-0020).
@@ -304,6 +305,11 @@ class SensitivityMap:
         model_id (str): The scanned model's identifier.
         scan (ScanMeta): Scan provenance.
         groups (tuple[LayerGroup, ...]): All scanned layer groups.
+        derived (str | None): Why this map is not a scan artifact —
+            the edit that produced it and what it is for (#136), or
+            None for a map ``vramfit scan`` wrote. A hand-made copy
+            (a removed precision column, a backfilled size split)
+            reads as a scan artifact without it.
 
     Examples:
         Look up one group's damage at 4-bit:
@@ -316,17 +322,22 @@ class SensitivityMap:
     model_id: str
     scan: ScanMeta
     groups: tuple[LayerGroup, ...]
+    derived: str | None = None
 
     def __post_init__(self) -> None:
-        """Enforce the cross-group invariants the solver relies on.
+        """Enforce the map's cross-group invariants and its derived note.
 
         Raises:
-            ValueError: If ``groups`` is empty, group names collide, or
+            ValueError: If ``groups`` is empty, group names collide,
                 any group's sensitivity keys differ from
-                ``scan.precisions``.
+                ``scan.precisions``, or ``derived`` is empty — an
+                empty note records no provenance, so the map states
+                it is derived and then says nothing.
         """
         if not self.groups:
             raise ValueError("groups must not be empty")
+        if self.derived == "":
+            raise ValueError("derived must not be empty")
         names = [g.name for g in self.groups]
         if len(set(names)) != len(names):
             raise ValueError("group names must be unique")

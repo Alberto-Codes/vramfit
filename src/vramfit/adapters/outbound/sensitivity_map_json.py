@@ -9,15 +9,18 @@ with the ``stack`` value (#161). One file class serves both directions:
 through the source face. Validation is strict: artifacts are rejected,
 never normalized — ``scan.precisions`` must arrive strictly descending,
 ``group_by`` must be a known granularity, and every group's sensitivity
-keys must equal it exactly. Two fields are additive rather than strict:
+keys must equal it exactly. Several fields are additive rather than
+strict:
 ``scan.within_group`` (ADR-0018) defaults to ``rtn-block32`` when
 absent, because every map written before the field existed measured
 with that method, and ``scan.imatrix`` (ADR-0020) defaults to None,
 because every map written before the field existed was unassisted.
 A group's ``imatrix_counts`` summary (ADR-0026 decision 4) is
 additive the same way: absent means the group records no summary.
-A present ``imatrix`` must pair with the assisted method token —
-the loader rejects a map whose provenance contradicts itself.
+The top-level ``derived`` note (#136) is additive too: absent means
+the map is a scan artifact. A present ``imatrix`` must pair with the
+assisted method token — the loader rejects a map whose provenance
+contradicts itself.
 
 Examples:
     Round-trip a map through a file:
@@ -90,7 +93,8 @@ def map_from_dict(data: object) -> SensitivityMap:
             nor a version in `MAP_SCHEMA_ALSO_READS`, or
             any field is missing, mistyped, or violates a schema rule
             (duplicate group names, unknown ``group_by``, sensitivity
-            keys not matching ``scan.precisions``, and so on).
+            keys not matching ``scan.precisions``, an empty or
+            non-string ``derived`` note, and so on).
 
     Examples:
         Reject an unsupported schema version:
@@ -123,7 +127,13 @@ def map_from_dict(data: object) -> SensitivityMap:
         )
         seen.add(group.name)
         groups.append(group)
-    return SensitivityMap(model_id=model_id, scan=scan, groups=tuple(groups))
+    # Optional and additive (#136): a map without the note is a scan
+    # artifact. The writer omits the field then and never writes null,
+    # so an explicit null is a hand-edit — rejected, not normalized.
+    derived = _get_str(root, "derived", "$") if "derived" in root else None
+    return SensitivityMap(
+        model_id=model_id, scan=scan, groups=tuple(groups), derived=derived
+    )
 
 
 def map_to_dict(map_: SensitivityMap) -> dict[str, Any]:
@@ -141,7 +151,9 @@ def map_to_dict(map_: SensitivityMap) -> dict[str, Any]:
         unassisted (ADR-0020). Per-tensor sizes are written only
         when known — an absent field means unknown, never zero
         (ADR-0022). A group's imatrix count summary is written only
-        when the group records one (ADR-0026 decision 4).
+        when the group records one (ADR-0026 decision 4). The
+        ``derived`` note is written only when the map carries one —
+        a save never drops it and never invents it (#136).
     """
     return {
         "vramfit_schema": MAP_SCHEMA_VERSION,
@@ -189,6 +201,10 @@ def map_to_dict(map_: SensitivityMap) -> dict[str, Any]:
             }
             for g in map_.groups
         ],
+        # Written only when the map carries the note (#136) — absent
+        # means a scan artifact, so the schema holds at 3. The key
+        # trails ``groups`` to match the published maps.
+        **({"derived": map_.derived} if map_.derived is not None else {}),
     }
 
 

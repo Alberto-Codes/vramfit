@@ -8,6 +8,8 @@ from vramfit.domain.model import (
     PlanMeta,
     ProtectedTensor,
     Recipe,
+    ScanMeta,
+    SensitivityMap,
 )
 
 pytestmark = pytest.mark.unit
@@ -235,3 +237,39 @@ class TestRecipeProtectionInvariants:
 
     def test_exclude_imatrix_defaults_to_false(self) -> None:
         assert ProtectedTensor("t", 5).exclude_imatrix is False
+
+
+class TestSensitivityMapDerived:
+    def make_map(self, derived: str | None) -> SensitivityMap:
+        return SensitivityMap(
+            model_id="test/model",
+            scan=ScanMeta(
+                metric="kl_divergence",
+                calibration="wikitext",
+                calibration_tokens=1_024,
+                precisions=(8, 4),
+                group_by="layer",
+                started_at="2026-07-27T00:00:00Z",
+            ),
+            groups=(
+                LayerGroup(
+                    name="g0",
+                    tensors=("w",),
+                    bytes_fp16=1_000,
+                    sensitivity={8: 0.0, 4: 0.1},
+                ),
+            ),
+            derived=derived,
+        )
+
+    def test_derived_defaults_to_none(self) -> None:
+        assert self.make_map(None).derived is None
+
+    def test_derived_note_constructs(self) -> None:
+        assert self.make_map("Not a scan artifact.").derived == "Not a scan artifact."
+
+    def test_empty_derived_rejected(self) -> None:
+        # A map that states it is derived and then says nothing
+        # records no provenance (#136).
+        with pytest.raises(ValueError, match="derived"):
+            self.make_map("")
