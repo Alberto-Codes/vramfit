@@ -7,7 +7,8 @@ Numeric extractors reject booleans (JSON ``true`` is a valid Python int)
 and non-finite floats (``json.loads`` accepts ``NaN``/``Infinity``, which
 would poison solver comparisons downstream). A number written as an
 integer literal too large for a float fails as an `ArtifactError`, not
-an `OverflowError` (#260). The boolean extractor
+an `OverflowError` (#260). A literal past the parser's own digit limit
+fails the same way, at the load step. The boolean extractor
 accepts only real booleans, and the string extractors reject the
 empty string. Schema versions advance
 per artifact (ADR-0013) — each adapter owns its version constant and
@@ -378,7 +379,8 @@ def _load_json(path: Path, root: str) -> dict[str, Any]:
 
     Raises:
         ArtifactError: If the file cannot be read, is not UTF-8, is not
-            valid JSON, or its top level is not an object.
+            valid JSON, carries a number literal the parser refuses, or
+            its top level is not an object.
     """
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -386,6 +388,12 @@ def _load_json(path: Path, root: str) -> dict[str, Any]:
         raise ArtifactError(root, f"invalid JSON: {exc}") from exc
     except UnicodeDecodeError as exc:
         raise ArtifactError(root, f"not valid UTF-8: {exc}") from exc
+    except ValueError as exc:
+        # An integer literal past `sys.get_int_max_str_digits` (4300 by
+        # default) fails here, before any extractor sees it (#260). The
+        # clause sits below the two ValueError subclasses above, which
+        # carry their own messages.
+        raise ArtifactError(root, f"cannot parse JSON: {exc}") from exc
     except OSError as exc:
         raise ArtifactError(root, f"cannot read file: {exc}") from exc
     return _get_dict(data, root)
