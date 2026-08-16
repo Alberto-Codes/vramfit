@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from vramfit.adapters.outbound.json_common import ArtifactError
@@ -79,6 +81,25 @@ class TestRecipe:
         save_recipe(recipe, path)
 
         assert load_recipe(path) == recipe
+
+    def test_duplicate_key_raises_artifact_error(self, tmp_path) -> None:
+        # A repeated key needs raw text — `json.dumps` cannot write one.
+        # A duplicate that changes the recipe is the case that matters,
+        # so this one re-states the budget the solver planned against.
+        text = json.dumps(make_recipe_dict())
+        assert text.count('"vram_budget_bytes": 100') == 1
+        path = tmp_path / "recipe.json"
+        path.write_text(
+            text.replace(
+                '"vram_budget_bytes": 100',
+                '"vram_budget_bytes": 100, "vram_budget_bytes": 200',
+                1,
+            ),
+            encoding="utf-8",
+        )
+
+        with pytest.raises(ArtifactError, match='duplicate key "vram_budget_bytes"'):
+            load_recipe(path)
 
     def test_absent_within_group_defaults_to_none(self) -> None:
         raw = make_recipe_dict()

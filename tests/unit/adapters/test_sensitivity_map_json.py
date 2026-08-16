@@ -302,6 +302,32 @@ class TestSensitivityMap:
         with pytest.raises(ArtifactError, match="invalid JSON"):
             load_sensitivity_map(path)
 
+    def test_duplicate_key_in_a_list_element_raises_artifact_error(
+        self, tmp_path
+    ) -> None:
+        # The hook covers every object in the document, including one
+        # inside a list. A repeated key needs raw text. `json.dumps`
+        # cannot write one, so this test builds the map, then edits it.
+        raw = make_map([("model.layers.0", 1_000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.4})])
+        text = json.dumps(raw)
+        assert text.count('"name": "model.layers.0"') == 1
+        path = tmp_path / "map.json"
+        path.write_text(
+            text.replace(
+                '"name": "model.layers.0"',
+                '"name": "model.layers.1", "name": "model.layers.0"',
+                1,
+            ),
+            encoding="utf-8",
+        )
+
+        with pytest.raises(ArtifactError, match='duplicate key "name"') as caught:
+            load_sensitivity_map(path)
+
+        # The hook has no ancestry, so the path is the artifact root
+        # rather than the `$.groups[0].name` an extractor would report.
+        assert caught.value.json_path == "$"
+
     def test_non_object_top_level_rejected(self) -> None:
         with pytest.raises(ArtifactError, match="expected a JSON object"):
             map_from_dict([1, 2, 3])
