@@ -4,9 +4,15 @@ Reads each safetensors shard header of a model checkpoint — a JSON
 parse of the first bytes, no torch — and writes an annotated copy of
 the map with ``tensor_bytes`` on every group (the map-copy mechanism
 from ADR-0021 decision 4). Sizes are element counts at 2 bytes per
-parameter, matching the scan's bf16 reference convention. The script
-refuses a map whose tensors the checkpoint does not cover, and
-refuses to overwrite the input.
+parameter, matching the scan's bf16 reference convention.
+
+The script reports every refusal as ``error:`` on stderr and exits 1.
+It refuses a map whose tensors the checkpoint does not cover. It
+refuses a group whose checkpoint sizes disagree with its recorded
+``bytes_fp16``. It refuses to overwrite the input. It refuses a shard
+it cannot parse. It refuses a JSON document that defines the same key
+twice, under the rule #262 set for every vramfit reader. Both reads
+apply that rule: the map and each shard header.
 
 Examples:
     Annotate an existing map:
@@ -27,6 +33,11 @@ import struct
 import sys
 from pathlib import Path
 
+from vramfit.adapters.outbound.json_duplicate_key import (
+    DuplicateKeyError,
+    object_from_pairs,
+)
+
 # A safetensors file opens with a little-endian u64 header length.
 HEADER_PREFIX_BYTES = 8
 
@@ -41,8 +52,9 @@ def read_safetensors_header(path: Path) -> dict[str, dict]:
         The header mapping, metadata entry removed.
 
     Raises:
-        ValueError: If the file is too short or the header is not
-            valid JSON.
+        ValueError: If the file is too short, the header is not valid
+            UTF-8 or valid JSON, or the header defines the same key
+            twice.
     """
     with path.open("rb") as handle:
         prefix = handle.read(HEADER_PREFIX_BYTES)
@@ -50,9 +62,15 @@ def read_safetensors_header(path: Path) -> dict[str, dict]:
             raise ValueError(f"{path}: too short for a safetensors header")
         (header_bytes,) = struct.unpack("<Q", prefix)
         try:
-            header = json.loads(handle.read(header_bytes))
+            header = json.loads(
+                handle.read(header_bytes), object_pairs_hook=object_from_pairs
+            )
+        except DuplicateKeyError as exc:
+            raise ValueError(f"{path}: {exc.message}") from exc
         except json.JSONDecodeError as exc:
             raise ValueError(f"{path}: header is not valid JSON: {exc}") from exc
+        except UnicodeDecodeError as exc:
+            raise ValueError(f"{path}: header is not valid UTF-8: {exc}") from exc
     header.pop("__metadata__", None)
     return header
 
@@ -94,8 +112,19 @@ def main() -> int:
     if args.out.resolve() == args.map_path.resolve():
         print("error: --out must differ from the input map", file=sys.stderr)
         return 1
-    raw = json.loads(args.map_path.read_text())
-    sizes = checkpoint_tensor_bytes(args.model_dir)
+    try:
+        raw = json.loads(
+            args.map_path.read_text(encoding="utf-8"),
+            object_pairs_hook=object_from_pairs,
+        )
+    except DuplicateKeyError as exc:
+        print(f"error: {args.map_path}: {exc.message}", file=sys.stderr)
+        return 1
+    try:
+        sizes = checkpoint_tensor_bytes(args.model_dir)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
 
     tensor_count = 0
     for group in raw.get("groups", []):
@@ -120,7 +149,7 @@ def main() -> int:
         group["tensor_bytes"] = tensor_bytes
         tensor_count += len(group["tensors"])
 
-    args.out.write_text(json.dumps(raw, indent=2) + "\n")
+    args.out.write_text(json.dumps(raw, indent=2) + "\n", encoding="utf-8")
     print(
         f"backfilled {len(raw.get('groups', []))} groups "
         f"({tensor_count} tensors) -> {args.out}"

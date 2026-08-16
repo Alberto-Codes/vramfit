@@ -1,4 +1,4 @@
-"""Every reader in the vramfit package refuses a repeated JSON key.
+"""Every JSON reader in `src/` and `scripts/` refuses a repeated key.
 
 `json.loads` keeps the last value when a document repeats a key, and it
 reports nothing (#262). RFC 8259 permits the repeat and states that the
@@ -11,8 +11,10 @@ Four artifact readers apply the rule through `_load_json`. Three readers
 outside it apply the rule directly: the run log, a Hugging Face
 ``config.json``, and a safetensors shard index (#283).
 
-`scripts/backfill_tensor_sizes.py` reads a sensitivity map without the
-rule and stays outside the package (#286).
+`scripts/backfill_tensor_sizes.py` applies the rule directly too, at
+both of its reads: the sensitivity map it annotates, and the header
+inside each ``.safetensors`` shard (#286). The script stays outside the
+package, so this list crosses that boundary.
 
 The hook lives here rather than in `json_common`, because those three
 readers share nothing else with the artifact readers. `json_common`
@@ -38,6 +40,9 @@ Examples:
 See Also:
     - [vramfit.adapters.outbound.json_common][]: The artifact readers.
     - [vramfit.adapters.outbound.run_log_jsonl][]: The run-log reader.
+    - [vramfit.adapters.outbound.hf_config][]: The publisher's
+      ``config.json`` reader.
+    - [vramfit.adapters.outbound.scan.offload][]: The shard-index reader.
 """
 
 from __future__ import annotations
@@ -50,9 +55,10 @@ from vramfit.domain.errors import VramfitError
 class DuplicateKeyError(VramfitError):
     """One JSON object defined the same key twice.
 
-    `object_from_pairs` raises this. Each reader that installs the hook
-    converts it to the exception type its own callers already catch, and
-    prefixes `message` with the file the reader was reading.
+    `object_from_pairs` raises this. Each reader prefixes `message` with
+    the file it was reading. A reader with callers converts the error to
+    the type those callers already catch. A command-line entry point
+    prints the message and exits 1.
 
     The class sits under the `VramfitError` root per ADR-0011 decision 5.
     It does not subclass `ValueError`. A catch-all `ValueError` clause
