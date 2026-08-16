@@ -168,6 +168,20 @@ super-additive joint damage (×11.9) on a 2-bit-heavy recipe.
     artifacts for a specific card, a validation pass, and packed
     evidence.
 
+**[AlphaQ](https://arxiv.org/abs/2606.04980)** (2026)
+:   Calibration-free bit allocation across MoE experts under a matched
+    budget (added 2026-08-15 on #265). It is the closest published
+    shape to chart #158's target: per-expert widths, one average
+    bits-per-weight constraint, perplexity and zero-shot reporting.
+    vramfit takes two things from it. Its allocation reads no
+    calibration data, where vramfit measures damage per cell. Its
+    baseline names the construction vramfit calls a
+    [blind recipe](glossary.md). At a budget of x + 0.5 bits, AlphaQ
+    splits the MoE blocks in half. The first half takes x + 1 bits and
+    the second half takes x. AlphaQ calls that result "Uniform".
+    vramfit refuses that word, because its own target admits no
+    uniform-expert pack at the budget size.
+
 **[Mixed-precision quantization for language models: techniques and prospects](https://arxiv.org/abs/2510.16805)** (survey, 2025)
 :   The field map. It confirms two things about the landscape.
     Sensitivity-driven bit allocation is an active research area.

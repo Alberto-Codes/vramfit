@@ -461,6 +461,31 @@ change.
 
 ## Evaluation
 
+**Blind recipe**
+:   A recipe that assigns precision without reading a sensitivity map.
+    It holds a comparison's size constant, and the count of groups at
+    each precision, so the comparison isolates allocation. The
+    comparison tests whether the scan and the solver earn their cost.
+    A blind recipe is a scoreboard row and never a published claim. It
+    uses the recipe schema ([recipe format](recipe.md)). Not "uniform
+    pack" (the outside field's name for the same role, refused below).
+    Not the "size-matched baseline" (a published build the recipe may
+    beat in public).
+
+> **Ruled 2026-08-15 ([#265](https://github.com/Alberto-Codes/vramfit/issues/265)).**
+> The term exists because no uniform-expert pack sits at chart #158's
+> budget. The palette holds no type between 2.25 and 4.25 bits per
+> weight. Below the band, uniform `Q2_0` leaves 4.594 GiB of the 14.5
+> GiB unspent. Above it, the 46 expert stacks alone at `MXFP4` cost
+> 14.534 GiB, over the whole budget with every other tensor at zero
+> bytes. The MoE quantization literature calls a bit-blind split at a
+> matched budget "Uniform"
+> ([AlphaQ](https://arxiv.org/abs/2606.04980)). This project refuses
+> that word, because on this target it names an artifact that cannot
+> exist. The maintainer judged a self-authored opponent contrived as a
+> headline. The recipe's published claim runs against published
+> artifacts only.
+
 **Tier-3 slice**
 :   The fixed set of lm-evaluation-harness tasks and few-shot settings
     that certifies a publication candidate's capabilities: five tasks at
