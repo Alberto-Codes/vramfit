@@ -417,6 +417,9 @@ def _object_from_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     key alone. `_load_json` names the artifact root as the path. Neither
     can build the ``$.tier1.ppl`` path the extractors report.
 
+    The check reads the object under construction, so the hook walks the
+    pairs once. Every JSON object in every artifact passes through here.
+
     Args:
         pairs: The object's key-value pairs, in document order.
 
@@ -426,12 +429,12 @@ def _object_from_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     Raises:
         _DuplicateKey: If a key appears more than once in the object.
     """
-    seen: set[str] = set()
-    for key, _ in pairs:
-        if key in seen:
+    obj: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in obj:
             raise _DuplicateKey(key)
-        seen.add(key)
-    return dict(pairs)
+        obj[key] = value
+    return obj
 
 
 def _load_json(path: Path, root: str) -> dict[str, Any]:

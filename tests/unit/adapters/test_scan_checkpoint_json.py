@@ -67,10 +67,15 @@ def test_corrupt_json_raises_artifact_error(tmp_path) -> None:
 
 
 def test_duplicate_key_raises_artifact_error(tmp_path) -> None:
-    # A repeated key needs raw text — `json.dumps` cannot write one.
+    # A repeated key needs raw text. `json.dumps` cannot write one, so
+    # this test assembles the document, and encodes each value so a
+    # fingerprint carrying a quote stays valid JSON.
     path = tmp_path / "scan.checkpoint.json"
     path.write_text(
-        '{"vramfit_schema": 1, "fingerprint": "a", "fingerprint": "' + FP + '"}'
+        '{"vramfit_schema": 1, "fingerprint": "a", "fingerprint": '
+        + json.dumps(FP)
+        + "}",
+        encoding="utf-8",
     )
 
     with pytest.raises(ArtifactError, match='duplicate key "fingerprint"'):
