@@ -1846,16 +1846,38 @@ between a pack that fits and a pack that works, and no allocation
 policy can cross it.
 
 That arithmetic moved the target rather than the recipe. On 2026-08-15
-the maintainer ruled the card up to 16 GiB (issue #257), which sets a
-14.5 GiB weight budget at 3.9 bits per parameter. Why the *card* moved
-and not the recipe is the part worth recording, because no
+the maintainer ruled the card up to 16 GiB (issue #257). Why the *card*
+moved and not the recipe is the part worth recording, because no
 runtime-overhead figure could rescue 12 GiB. Take the counterfactual
 as far as it goes: grant the weights the entire card, all 12 GiB at
-zero runtime overhead, which no real deployment achieves. Drop every
-quantizable dense group to nominal 4 on top of that. 26 of the 46
-expert stacks still land on `Q2_0`. The gate ruled out a target
-parameter rather than a design, and the card turns out to have been
-the binding constraint the whole time.
+zero runtime overhead. Drop every quantizable dense group to nominal 4
+on top of that. 26 of the 46 expert stacks still land on `Q2_0`. The
+gate ruled out a target parameter rather than a design, and the card
+turns out to have been the binding constraint the whole time.
+
+The weight budget under that card took two rulings, and the second one
+is a lesson about assumptions. Issue #257 set 14.5 GiB by subtracting
+an *assumed* 1.5 GiB of runtime overhead, a figure no run had ever
+measured on this model. Issue #266 measured it on 2026-08-16 and it is
+**228.99 MiB**: 96.00 MiB of KV across the six layers that hold any,
+47.62 MiB of recurrent state that does not grow with context, and
+85.37 MiB of compute buffers. A Mamba-2 hybrid does not spend memory
+the way a dense transformer teaches. The assumption over-reserved by
+1.2764 GiB, which buys 7.63 expert-stack upgrades. Issue #284 ruled
+the budget to **15.776 GiB** on 2026-08-16, which the realized 35-stack
+mix spends at 4.287 bits per parameter, and the Destination's own text
+moved with it. The measurement is a single-sequence figure: the
+recurrent state allocates one cell per sequence, so `n_seq_max` 4 costs
+about 371.85 MiB rather than 228.99 MiB.
+
+The same run found a second thing worth keeping. llama.cpp reports
+`offloaded 53/53 layers to GPU` at `-ngl 99` and still leaves the
+357.00 MiB token embedding in host memory, because it assigns the
+input layer to the CPU buffer list unconditionally. So device VRAM
+runs *below* a pack's file size rather than above it. The ruling
+declined to bank that credit, since its size tracks whatever type the
+recipe packs the embedding at, and a budget that moves with the recipe
+cannot constrain it.
 
 RunPod billed **$2.16** for the pod, which is the cheapest decisive
 result on this page. The gate work itself ran in under ten minutes —
@@ -1865,11 +1887,12 @@ fifteen-minute f16 conversion dominated the bill, and it amortizes
 across every later cell on this target.
 
 One caveat bounds all of it. A whole-frontier pack sets every stack to
-one width, and the recipe chart #158 wants is a *mix*. At the budget
-that followed the card move, that means roughly 33 of 46 stacks at
-`Q4_0` and the rest at `Q2_0`, which inverts the mostly-cheap mix the
-old budget forced. Either way, the gate prices the corners of that
-space and not its interior. Nothing here measures whether a mixed
+one width, and the recipe chart #158 wants is a *mix*. At the measured
+budget, that means 35 of 46 stacks at `Q4_0` and the rest at `Q2_0`, or
+41 of 46 if issue #183 relieves the dense classes to nominal 4, which
+inverts the mostly-cheap mix the old budget forced. Either way, the
+gate prices the corners of that space and not its interior. Nothing
+here measures whether a mixed
 recipe's damage interpolates between the corners or sits somewhere
 worse, and the gap between 1.604130 and 0.017825 is wide enough that
 the shape of the curve between them matters. No published evaluation
