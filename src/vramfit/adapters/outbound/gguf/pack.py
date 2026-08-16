@@ -94,12 +94,11 @@ def _read_miss_names(output: str, out: Path) -> tuple[str, ...]:
     """Capture the imatrix-miss tensor names, refusing an unread one.
 
     ADR-0016 records a miss and continues, so a captured name reaches
-    `PackResult.imatrix_uncovered`, the pack artifact, and the
-    `model_packed` run-log event as fact. A name carrying U+FFFD was
-    never read, so it states nothing. Dropping it silently is no
-    better, because a real coverage gap must not pass unrecorded
-    (ADR-0016). Halting is the only answer that neither records an
-    unread name nor hides a miss.
+    `PackResult.imatrix_uncovered` and the `model_packed` run-log
+    event as fact. A name carrying U+FFFD was never read, so it
+    states nothing. Dropping it silently is no better, because a real
+    coverage gap must not pass unrecorded (ADR-0016). Halting is the
+    only answer that neither records an unread name nor hides a miss.
 
     The ADR-0023 exclusion discount compares exact strings, so a
     damaged name would also evade it and read as a coverage gap the
@@ -119,7 +118,10 @@ def _read_miss_names(output: str, out: Path) -> tuple[str, ...]:
         A clean run reports its misses in order:
 
         ```python
-        assert _read_miss_names("did not find weights for blk.0.attn_v.weight", out)
+        names = _read_miss_names(
+            "did not find weights for blk.0.attn_v.weight", Path("out.gguf")
+        )
+        assert names == ("blk.0.attn_v.weight",)
         ```
     """
     names = tuple(dict.fromkeys(_IMATRIX_MISS.findall(output)))
