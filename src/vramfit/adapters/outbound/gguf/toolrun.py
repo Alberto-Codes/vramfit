@@ -20,10 +20,18 @@ output (#247). Replacement never invents a scanner match. It can
 delete one, but only inside the line that carried the bad bytes.
 #252 measured that risk on 2026-08-15 and found no scanned line it
 reaches. The truncation lives only in llama.cpp's `- kv` dump loop
-(`src/llama-model-loader.cpp:791`), and no warning line passes
-through it. A pipe write of 4096 bytes or fewer is atomic under
-POSIX, and llama.cpp logs each message in one 118-byte write from
-one thread, so no concurrent writer splits a warning.
+(`src/llama-model-loader.cpp:791`). No warning line passes through
+it.
+
+Splitting a warning would need a second writer. Pipe-write
+atomicity does not supply that guarantee, because the type-fallback
+warning spans two or three separate log writes
+(`src/llama-quant.cpp:381`, `:415`, `:418`). Single-threadedness
+supplies it. `llama-quantize` installs no threaded log callback,
+and llama.cpp picks every tensor type in a metadata pass that ends
+before the first quantize worker starts. One worker-thread stderr
+writer exists, `ggml_validate_row_data`. It fires only on a NaN or
+an infinity, and the tool then exits nonzero.
 `surrogateescape` instead writes
 unpaired surrogates into the run log. RFC 8259 section 8.2 leaves a
 reader's handling of those undefined.

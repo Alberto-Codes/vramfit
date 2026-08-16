@@ -18,7 +18,8 @@ tensors the matrix did not cover — there the
 quantizer only warns, and a silently unassisted tensor must not
 pass unrecorded. A miss whose tensor name carries U+FFFD halts
 instead, because `run_tool` could not read that name and the
-record would state a name nobody read (#252). The recipe's imatrix
+record would state a name nobody read (#252). That halt reports
+stage ``quantize`` (ADR-0012 decision 5). The recipe's imatrix
 exclusions become ``--exclude-weights`` flags, and their
 intentional misses stay out
 of that coverage record (ADR-0023). Every failure — a tool that cannot start, exits
@@ -86,23 +87,38 @@ _TYPE_FALLBACK: Final[re.Pattern[str]] = re.compile(
 
 # `run_tool` replaces a byte it cannot decode with U+FFFD (#247).
 # U+FFFD is not whitespace, so `_IMATRIX_MISS`'s capture group takes
-# it like any other character (#252).
-_UNDECODED: Final[str] = "�"
+# it like any other character (#252). The escape keeps the sentinel
+# legible, because the glyph itself survives a re-encoding poorly.
+_REPLACEMENT_CHAR: Final[str] = "�"
 
 
 def _read_miss_names(output: str, out: Path) -> tuple[str, ...]:
     """Capture the imatrix-miss tensor names, refusing an unread one.
 
-    ADR-0016 records a miss and continues, so a captured name reaches
-    `PackResult.imatrix_uncovered` and the `model_packed` run-log
-    event as fact. A name carrying U+FFFD was never read, so it
-    states nothing. Dropping it silently is no better, because a real
-    coverage gap must not pass unrecorded (ADR-0016). Halting is the
-    only answer that neither records an unread name nor hides a miss.
+    The scan records a miss and continues (ADR-0028 decision 3), so
+    a captured name reaches `PackResult.imatrix_uncovered` and the
+    `model_packed` run-log event as fact. ADR-0023 decision 4 keeps
+    that field an honest record of unintentional gaps. A name
+    carrying U+FFFD was never read, so it records nothing. Dropping
+    it silently would instead hide a gap the field must carry.
+    Halting is the only answer that does neither.
 
-    The ADR-0023 exclusion discount compares exact strings, so a
-    damaged name would also evade it and read as a coverage gap the
+    The ADR-0023 exclusion discount compares exact strings. A damaged
+    name therefore evades it too. It then reads as a coverage gap the
     recipe meant to create.
+
+    #252 measured the decode route to this case on 2026-08-15 and
+    found it closed. llama.cpp truncates only inside its `- kv` dump
+    loop, which no miss warning passes through. `ggml_set_name` cuts
+    a name at 63 bytes, but the GGUF reader refuses an over-long
+    name first (`ggml/src/gguf.cpp:639-644`), so that cut never runs
+    here. The route that stays open is a GGUF file whose short
+    tensor name is already invalid UTF-8, which no reader checks
+    (`ggml/src/gguf.cpp:340-354`).
+
+    The guard sees damage inside a captured name only. Damage to the
+    surrounding literal deletes the match, and the miss then leaves
+    no trace here. `run_tool` carries that residual case.
 
     Args:
         output: The quantizer's merged output.
@@ -112,7 +128,10 @@ def _read_miss_names(output: str, out: Path) -> tuple[str, ...]:
         The miss names in output order, without repeats.
 
     Raises:
-        PackError: If any captured name carries U+FFFD.
+        PackError: If any captured name carries U+FFFD. The halt
+            reports stage ``quantize`` (ADR-0012 decision 5), which
+            also covers a quantizer that failed. #275 carries whether
+            a zero-exit halt earns its own stage.
 
     Examples:
         A clean run reports its misses in order:
@@ -125,14 +144,18 @@ def _read_miss_names(output: str, out: Path) -> tuple[str, ...]:
         ```
     """
     names = tuple(dict.fromkeys(_IMATRIX_MISS.findall(output)))
-    damaged = [name for name in names if _UNDECODED in name]
+    damaged = [name for name in names if _REPLACEMENT_CHAR in name]
     if damaged:
+        # `ascii` spells the replacement character as an escape. A log
+        # viewer that cannot render the glyph would otherwise show a
+        # box in an error that is about that exact byte.
+        details = ", ".join(ascii(name) for name in damaged)
         raise PackError(
-            f"quantize named {len(damaged)} tensor"
-            f"{'' if len(damaged) == 1 else 's'} the reader could not decode: "
-            f"{', '.join(repr(name) for name in damaged)}. An undecodable name "
-            f"records no imatrix coverage (ADR-0016). The packed file is kept "
-            f"at {out} for inspection"
+            f"quantize: run_tool could not decode {len(damaged)} imatrix-miss "
+            f"tensor name{'' if len(damaged) == 1 else 's'}: {details}. "
+            f"An undecodable name records no imatrix coverage (ADR-0023). "
+            f"The quantizer exited 0, and the packed file is kept at {out} "
+            f"for inspection"
         )
     return names
 

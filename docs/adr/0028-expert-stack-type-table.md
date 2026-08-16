@@ -156,11 +156,15 @@ Facts verified upstream on 2026-08-14 (#189):
 - A replaced byte can delete a decision 3 match, and #252 measured
   how far that reaches (2026-08-15). It reaches no scanned line.
   llama.cpp truncates only inside its `- kv` dump loop, and a
-  warning line never passes through it. A pipe write of 4096 bytes
-  or fewer is atomic under POSIX, and llama.cpp logs each message
-  in one 118-byte write from one thread, so no concurrent writer
-  splits a warning. 152 000 adversarial trials deleted no match.
-  Decision 3 needs no degraded-stream clause.
+  warning line never passes through it. Splitting a warning would
+  need a second writer. Pipe-write atomicity does not supply that
+  guarantee, because the warning spans two or three separate log
+  writes (`src/llama-quant.cpp:381`, `:415`, `:418`).
+  Single-threadedness supplies it. `llama-quantize` installs no
+  threaded log callback, and it picks every tensor type in a
+  metadata pass that ends before the first quantize worker starts.
+  The #252 measurement record carries the method and the trial
+  counts.
 - The nominal-2 row now means a width the solver may not buy on
   this target (noted 2026-08-14). The empty band from 2.25 to 4.25
   bits per weight therefore separates the only width that fits a

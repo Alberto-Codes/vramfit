@@ -369,6 +369,12 @@ packed file no longer carries the recipe. The pack halts with exit
 substituted types. The ADR-0016 imatrix-miss scan records and
 continues — this scan halts.
 
+The imatrix-miss scan halts on one input. A miss whose tensor name
+carries U+FFFD means `run_tool` could not decode that name, so the
+command refuses to record it as coverage (#252). The halt reports
+stage `quantize`, keeps the packed file, and names every
+undecodable tensor. A pack without `--imatrix` runs no such scan.
+
 After quantizing, the command re-checks the packed file's real bytes
 against `plan.weight_budget_bytes` — nominal-bit predictions
 undershoot GGUF's effective bits (ADR-0012). On a protected pack made

@@ -5,8 +5,10 @@ subprocess handling, error translation — against stub tools that
 stand in for the llama.cpp binaries, so the suite stays hermetic
 (ADR-0009). The type mapping itself is shared pure code, proven in
 its own unit suite. The stubs record their argv, so the real-only
-tests below the shared contract pin the exact command lines — the
-one seam the verified fake cannot reach.
+tests below the shared contract pin the exact command lines. Those
+tests also pin how the adapter reads the quantizer's output. Both
+are seams the verified fake cannot reach, because the fake receives
+structured values and never parses a stream.
 """
 
 from __future__ import annotations
@@ -53,20 +55,30 @@ with open(sys.argv[-3], "wb") as handle:
 """
 
 UNCOVERED_WARNING = (
-    "====== llama_tensor_get_wanted_type: did not find weights for token_embd.weight"
+    "====== llama_model_quantize_impl: did not find weights for token_embd.weight"
 )
 
 # The quantizer reports an excluded tensor's dropped row with the same
 # warning — the adapter must file it as intentional (ADR-0023).
 EXCLUDED_MISS_WARNING = (
-    "====== llama_tensor_get_wanted_type: did not find weights for blk.0.attn_v.weight"
+    "====== llama_model_quantize_impl: did not find weights for blk.0.attn_v.weight"
 )
 
 # The same miss warning after `run_tool` replaced a byte it could not
 # decode. U+FFFD is not whitespace, so `_IMATRIX_MISS` captures it as
 # part of the tensor name (#252).
-UNDECODED_MISS_WARNING = (
-    "====== llama_tensor_get_wanted_type: did not find weights for token_embd.wei�ght"
+UNDECODABLE_MISS_WARNING = (
+    "====== llama_model_quantize_impl: did not find weights for token_embd.wei�ght"
+)
+
+SECOND_UNDECODABLE_MISS_WARNING = (
+    "====== llama_model_quantize_impl: did not find weights for blk.3.ffn_up�.weight"
+)
+
+# The same damage on a name the recipe excludes. An exclusion is an
+# exact string, so the ADR-0023 discount cannot match a damaged name.
+UNDECODABLE_EXCLUDED_MISS_WARNING = (
+    "====== llama_model_quantize_impl: did not find weights for blk.0.attn_�.weight"
 )
 
 # The zero-exit type-fallback warning pair, one merged output line
@@ -192,11 +204,13 @@ def _real_packer(  # noqa: PLR0913 - the contract fixture surface: one flag per 
     with_excluded_miss: bool = False,
     with_type_fallback: bool = False,
     with_f16_fallback: bool = False,
-    with_undecoded_miss: bool = False,
+    with_undecodable_miss: bool = False,
+    with_second_undecodable_miss: bool = False,
+    with_undecodable_excluded_miss: bool = False,
 ) -> RecipePacker:
-    # `with_undecoded_miss` has no fake counterpart. The fake receives
-    # structured names and never decodes a stream, so the damaged-name
-    # case is real-adapter-only (#252).
+    # The undecodable-name flags have no fake counterpart. The fake
+    # receives structured names and never decodes a stream, so the
+    # damaged-name case is real-adapter-only (#252).
     def stub_body(stage: str, template: str) -> str:
         if fail_stage == stage:
             return _FAILING_STUB
@@ -205,8 +219,12 @@ def _real_packer(  # noqa: PLR0913 - the contract fixture surface: one flag per 
         lines = []
         if with_uncovered:
             lines.append(UNCOVERED_WARNING)
-        if with_undecoded_miss:
-            lines.append(UNDECODED_MISS_WARNING)
+        if with_undecodable_miss:
+            lines.append(UNDECODABLE_MISS_WARNING)
+        if with_second_undecodable_miss:
+            lines.append(SECOND_UNDECODABLE_MISS_WARNING)
+        if with_undecodable_excluded_miss:
+            lines.append(UNDECODABLE_EXCLUDED_MISS_WARNING)
         if with_excluded_miss:
             lines.append(EXCLUDED_MISS_WARNING)
         if with_type_fallback:
@@ -536,7 +554,7 @@ class TestLlamaCppCommandLines:
         # and the miss capture takes it as part of the tensor name.
         # Recording a name nobody read as coverage fact is the defect,
         # and dropping it silently would hide a real miss (ADR-0016).
-        packer = _real_packer(tmp_path, with_imatrix=True, with_undecoded_miss=True)
+        packer = _real_packer(tmp_path, with_imatrix=True, with_undecodable_miss=True)
         packer.convert()
 
         with pytest.raises(PackError, match="could not decode"):
@@ -545,33 +563,65 @@ class TestLlamaCppCommandLines:
     def test_pack_with_an_undecodable_miss_name_names_it_and_the_kept_file(
         self, tmp_path
     ) -> None:
-        packer = _real_packer(tmp_path, with_imatrix=True, with_undecoded_miss=True)
+        packer = _real_packer(tmp_path, with_imatrix=True, with_undecodable_miss=True)
         packer.convert()
 
         with pytest.raises(PackError) as caught:
             packer.pack(sample_pack_recipe())
 
-        assert "token_embd.wei�ght" in str(caught.value)
+        # The message escapes the replacement character, so a viewer
+        # that cannot render the glyph still reads the byte.
+        assert r"token_embd.wei\ufffdght" in str(caught.value)
         assert str(tmp_path / "out.gguf") in str(caught.value)
 
-    def test_pack_with_an_undecodable_miss_name_records_no_clean_name(
+    def test_pack_with_an_undecodable_miss_name_names_only_the_damaged_one(
         self, tmp_path
     ) -> None:
-        # The halt must not leave the clean miss recorded on its own.
+        # A clean miss beside a damaged one must not reach the record,
+        # and must not be blamed in the halt either.
         packer = _real_packer(
-            tmp_path, with_imatrix=True, with_uncovered=True, with_undecoded_miss=True
+            tmp_path, with_imatrix=True, with_uncovered=True, with_undecodable_miss=True
+        )
+        packer.convert()
+
+        with pytest.raises(PackError) as caught:
+            packer.pack(sample_pack_recipe())
+
+        assert r"token_embd.wei\ufffdght" in str(caught.value)
+        assert "1 imatrix-miss tensor name" in str(caught.value)
+        assert "'token_embd.weight'" not in str(caught.value)
+
+    def test_pack_with_two_undecodable_miss_names_counts_both(self, tmp_path) -> None:
+        packer = _real_packer(
+            tmp_path,
+            with_imatrix=True,
+            with_undecodable_miss=True,
+            with_second_undecodable_miss=True,
+        )
+        packer.convert()
+
+        with pytest.raises(PackError, match="2 imatrix-miss tensor names"):
+            packer.pack(sample_pack_recipe())
+
+    def test_pack_with_an_undecodable_excluded_name_still_halts(self, tmp_path) -> None:
+        # An exclusion is an exact string, so a damaged name can never
+        # match one. The adapter cannot tell an intentional miss from
+        # a real gap here, so it refuses rather than discount blindly
+        # (ADR-0023).
+        packer = _real_packer(
+            tmp_path, with_imatrix=True, with_undecodable_excluded_miss=True
         )
         packer.convert()
 
         with pytest.raises(PackError, match="could not decode"):
-            packer.pack(sample_pack_recipe())
+            packer.pack(excluded_pack_recipe())
 
     def test_pack_without_imatrix_ignores_an_undecodable_miss_name(
         self, tmp_path
     ) -> None:
         # Without a matrix there is no coverage record to corrupt, so
         # the scan never runs and the pack completes (ADR-0016).
-        packer = _real_packer(tmp_path, with_undecoded_miss=True)
+        packer = _real_packer(tmp_path, with_undecodable_miss=True)
         packer.convert()
 
         result = packer.pack(sample_pack_recipe())
