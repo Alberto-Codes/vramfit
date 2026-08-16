@@ -8,6 +8,12 @@ with uniform layers. Invalid
 geometry (non-divisible GQA group sizes, non-divisible head dimensions)
 is rejected rather than silently truncated.
 
+The model publisher owns this file. vramfit reads it and never writes
+it, and it still refuses a file that defines one key twice (#283). The
+alternative keeps the last value, so a repeated ``num_hidden_layers``
+would give a wrong `ModelShape` and a wrong weight budget with no
+report.
+
 Examples:
     Parse a downloaded config:
 
@@ -32,11 +38,20 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from vramfit.adapters.outbound.json_duplicate_key import (
+    DuplicateKeyError,
+    object_from_pairs,
+)
 from vramfit.domain.budget import ModelShape
 
 
 def shape_from_config_json(path: Path) -> ModelShape:
     """Build a `ModelShape` from a Hugging Face ``config.json``.
+
+    The publisher owns this file, so vramfit reads it and never writes
+    it. A repeated key still refuses (#283). `json.loads` would keep the
+    last value, and a repeated ``num_hidden_layers`` would then give a
+    wrong `ModelShape` and a wrong weight budget, with no report.
 
     Args:
         path: Path to the model's ``config.json``.
@@ -45,9 +60,9 @@ def shape_from_config_json(path: Path) -> ModelShape:
         The parsed shape.
 
     Raises:
-        ValueError: If the file is not UTF-8, is not valid JSON,
-            required fields are missing, or the attention geometry is
-            inconsistent.
+        ValueError: If the file is not UTF-8, is not valid JSON, defines
+            the same key twice, required fields are missing, or the
+            attention geometry is inconsistent.
 
     Examples:
         Standard llama-style configs parse to uniform layers:
@@ -58,7 +73,11 @@ def shape_from_config_json(path: Path) -> ModelShape:
         ```
     """
     try:
-        config = json.loads(path.read_text(encoding="utf-8"))
+        config = json.loads(
+            path.read_text(encoding="utf-8"), object_pairs_hook=object_from_pairs
+        )
+    except DuplicateKeyError as exc:
+        raise ValueError(f"{path}: {exc.message}") from exc
     except json.JSONDecodeError as exc:
         raise ValueError(f"{path}: invalid JSON: {exc}") from exc
     except UnicodeDecodeError as exc:

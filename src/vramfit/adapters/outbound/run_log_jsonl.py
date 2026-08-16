@@ -6,6 +6,12 @@ the event name, and the event's fields. Lines append — a crash keeps
 everything emitted before it, and a resumed run appends to the same
 file.
 
+`read_run_log` refuses a line that defines one key twice (#283). The
+writer cannot produce one, because a colliding field is a duplicate
+keyword argument at the `msg` call. So a repeat means a hand edit or a
+foreign writer, and it raises at every line position. ADR-0011's
+crash-tolerance rule stays scoped to a torn final line.
+
 Examples:
     Record a scan's first event:
 
@@ -29,6 +35,11 @@ from pathlib import Path
 from typing import Any, Final
 
 import structlog
+
+from vramfit.adapters.outbound.json_duplicate_key import (
+    DuplicateKeyError,
+    object_from_pairs,
+)
 
 RUNLOG_VERSION: Final[int] = 2
 
@@ -107,6 +118,14 @@ def read_run_log(path: Path) -> list[dict[str, Any]]:
     crash mid-write) is dropped, honoring the crash-tolerance rule of
     ADR-0011. A torn line anywhere else is corruption and raises.
 
+    A line that repeats a key raises at every position, including the
+    last (#283). `emit` cannot write one: a `fields` entry named
+    ``event`` or ``vramfit_runlog`` collides with the keyword argument
+    and raises `TypeError` at the call. So a repeat means a hand edit or
+    a foreign writer, never a crash, and the drop rule stays scoped to
+    truncation. The refusal names the file line, counting blank lines
+    that the reader itself skips.
+
     Args:
         path: The run-log file.
 
@@ -115,15 +134,24 @@ def read_run_log(path: Path) -> list[dict[str, Any]]:
 
     Raises:
         OSError: If the file cannot be read.
-        ValueError: If a non-final line is not valid JSON.
+        ValueError: If a non-final line is not valid JSON, or any line
+            defines the same key twice.
     """
+    # Each line keeps its file number, because the blank-line filter
+    # would otherwise make the refusal below name the wrong line. A hand
+    # edit is what writes a duplicate key, and it is what leaves a stray
+    # blank line too.
     lines = [
-        line for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
+        (number, line)
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
+        if line.strip()
     ]
     events: list[dict[str, Any]] = []
-    for i, line in enumerate(lines):
+    for i, (number, line) in enumerate(lines):
         try:
-            events.append(json.loads(line))
+            events.append(json.loads(line, object_pairs_hook=object_from_pairs))
+        except DuplicateKeyError as exc:
+            raise ValueError(f"{path}: line {number}: {exc.message}") from exc
         except ValueError:
             if i == len(lines) - 1:
                 break
