@@ -16,9 +16,9 @@ catches it sees no ancestry. That hook lives in
 `json_duplicate_key`, which three readers outside this module share
 (#283). A field the reader does not know warns and loads
 (#261) — `_warn_unknown_fields` reports it, and ADR-0013's
-2026-08-16 amendment sets that level. A reporter carries the report,
-default `report_through_warnings`, and the CLI installs its own.
-The boolean extractor
+2026-08-16 amendment sets that level. An `UnknownFieldReporter`
+carries the report — `report_through_warnings` by default, and the CLI
+installs its own. The boolean extractor
 accepts only real booleans, and the string extractors reject the
 empty string. Schema versions advance
 per artifact (ADR-0013) — each adapter owns its version constant and
@@ -142,8 +142,9 @@ class UnknownArtifactFieldWarning(UserWarning):
     """
 
 
+# Takes one report's text and delivers it. A plain comment, because no
+# other alias in this package carries an attribute docstring.
 UnknownFieldReporter = Callable[[str], None]
-"""Takes one report's text and delivers it."""
 
 
 # A source location the reader can honestly claim. `warn_explicit`

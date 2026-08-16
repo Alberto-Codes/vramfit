@@ -98,11 +98,13 @@ class TestPlanCommand:
         )
 
         assert result.exit_code == 0, result.output
-        assert (
-            "warning: $.notes: vramfit does not know this field. "
-            "A save drops it." in result.output
+        # Assert on stderr, not the combined stream: ADR-0011 puts the
+        # warning on the human channel, and stdout carries the report
+        # line a caller pipes.
+        assert result.stderr == (
+            "warning: $.notes: vramfit does not know this field. A save drops it.\n"
         )
-        assert "planned 2 groups" in result.output
+        assert "planned 2 groups" in result.stdout
         assert "UnknownArtifactFieldWarning" not in result.output
 
     def test_pin_flag_reaches_solver(self, tmp_path) -> None:
