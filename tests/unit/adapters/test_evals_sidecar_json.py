@@ -317,6 +317,25 @@ class TestLoadEvalsSidecar:
         with pytest.raises(ArtifactError, match="cannot parse JSON"):
             load_evals_sidecar(path)
 
+    def test_duplicate_key_raises_artifact_error(self, tmp_path) -> None:
+        # The realistic path is a re-measured tier pasted in beside the
+        # old line. `json.dumps` cannot write a repeated key, so this
+        # test edits the text. Assert the target first: a replacement
+        # that silently missed would fail as a bare "DID NOT RAISE".
+        source = PUBLISHED / "baseline-iq3-xs.gguf.evals.json"
+        text = source.read_text(encoding="utf-8")
+        assert text.count('"ppl": 8.5543,') == 1
+        path = tmp_path / "baseline-iq3-xs.gguf.evals.json"
+        path.write_text(
+            text.replace('"ppl": 8.5543,', '"ppl": 999.0,\n    "ppl": 8.5543,', 1),
+            encoding="utf-8",
+        )
+
+        with pytest.raises(ArtifactError, match='duplicate key "ppl"') as caught:
+            load_evals_sidecar(path)
+
+        assert "cannot parse JSON" not in str(caught.value)
+
     def test_adapter_load_matches_the_module_function(self, tmp_path) -> None:
         path = tmp_path / "model.gguf.evals.json"
         save_evals_sidecar(full_sidecar(), path)

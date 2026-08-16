@@ -66,6 +66,17 @@ def test_corrupt_json_raises_artifact_error(tmp_path) -> None:
         JsonScanCheckpointFile(path).load(FP)
 
 
+def test_duplicate_key_raises_artifact_error(tmp_path) -> None:
+    # A repeated key needs raw text — `json.dumps` cannot write one.
+    path = tmp_path / "scan.checkpoint.json"
+    path.write_text(
+        '{"vramfit_schema": 1, "fingerprint": "a", "fingerprint": "' + FP + '"}'
+    )
+
+    with pytest.raises(ArtifactError, match='duplicate key "fingerprint"'):
+        JsonScanCheckpointFile(path).load(FP)
+
+
 def test_unsupported_schema_version_raises(tmp_path) -> None:
     path = tmp_path / "scan.checkpoint.json"
     path.write_text(json.dumps({"vramfit_schema": 99, "fingerprint": FP}))
