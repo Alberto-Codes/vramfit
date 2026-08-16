@@ -16,7 +16,8 @@ type breaks the recipe the artifact claims to carry (ADR-0028). With
 an importance matrix (ADR-0016) it also scans that output for
 tensors the matrix did not cover — there the
 quantizer only warns, and a silently unassisted tensor must not
-pass unrecorded. A miss whose tensor name carries U+FFFD halts
+pass unrecorded (ADR-0023 decision 4). A miss whose tensor name
+carries U+FFFD halts
 instead, because `run_tool` could not read that name and the
 record would state a name nobody read (#252). That halt reports
 stage ``quantize`` (ADR-0012 decision 5). The recipe's imatrix
@@ -89,7 +90,7 @@ _TYPE_FALLBACK: Final[re.Pattern[str]] = re.compile(
 # U+FFFD is not whitespace, so `_IMATRIX_MISS`'s capture group takes
 # it like any other character (#252). The escape keeps the sentinel
 # legible, because the glyph itself survives a re-encoding poorly.
-_REPLACEMENT_CHAR: Final[str] = "�"
+_REPLACEMENT_CHAR: Final[str] = "\ufffd"
 
 
 def _read_miss_names(output: str, out: Path) -> tuple[str, ...]:
