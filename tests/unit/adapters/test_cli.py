@@ -73,6 +73,38 @@ class TestPlanCommand:
         assert recipe.plan.vram_budget_bytes == 200_000
         assert "planned 2 groups" in result.output
 
+    def test_unknown_map_field_warns_and_still_plans(self, tmp_path) -> None:
+        # The rendered line, not the interpreter's own warning format,
+        # which names a vramfit source file and tells the operator
+        # nothing about their map (#261).
+        raw = make_map([("g0", 160_000, CURVE), ("g1", 160_000, CURVE)])
+        raw["notes"] = "hand note"
+        map_path = tmp_path / "sensitivity.json"
+        map_path.write_text(json.dumps(raw))
+        out = tmp_path / "recipe.json"
+
+        result = runner.invoke(
+            app,
+            [
+                "plan",
+                str(map_path),
+                "--vram",
+                "200000",
+                "--kv-headroom",
+                "50000",
+                "--out",
+                str(out),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert (
+            "warning: $.notes: vramfit does not know this field. "
+            "A save drops it." in result.output
+        )
+        assert "planned 2 groups" in result.output
+        assert "UnknownArtifactFieldWarning" not in result.output
+
     def test_pin_flag_reaches_solver(self, tmp_path) -> None:
         map_path = self._write_map(tmp_path)
         out = tmp_path / "recipe.json"

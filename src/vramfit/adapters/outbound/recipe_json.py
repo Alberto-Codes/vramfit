@@ -11,7 +11,9 @@ strict: ``within_group`` (ADR-0019) and ``imatrix`` (ADR-0020)
 default to None when absent, because recipes written before the
 fields existed do not record which map priced them. A present
 ``imatrix`` must pair with the assisted method token — the loader
-rejects a recipe whose provenance contradicts itself.
+rejects a recipe whose provenance contradicts itself. A field the
+reader does not know warns and loads (#261, ADR-0013's 2026-08-16
+amendment). A save then drops it, and the warning says so.
 
 Examples:
     Round-trip a recipe through a file:
@@ -50,6 +52,7 @@ from vramfit.adapters.outbound.json_common import (
     _load_json,
     _require,
     _save_json,
+    _warn_unknown_fields,
 )
 from vramfit.domain.model import (
     Assignment,
@@ -71,6 +74,48 @@ from vramfit.domain.scan import KQUANT_IMX_METHOD
 # zero pairs, and a schema-4 recipe can carry no-op pairs that
 # falsely fail the reconstruction gate — re-plan it.
 RECIPE_SCHEMA_VERSION: Final[int] = 6
+
+# Every key the reader carries, per object the schema fixes (#261).
+# A key outside these sets warns and loads (ADR-0013, the 2026-08-16
+# amendment). ``plan.pins`` and ``plan.protections`` are absent here
+# on purpose: their keys are tensor-name patterns, and the solver
+# validates them.
+RECIPE_ROOT_FIELDS: Final[frozenset[str]] = frozenset(
+    {
+        "vramfit_schema",
+        "model_id",
+        "runtime",
+        "within_group",
+        "imatrix",
+        "plan",
+        "assignments",
+        "protected_tensors",
+    }
+)
+PLAN_FIELDS: Final[frozenset[str]] = frozenset(
+    {
+        "vram_budget_bytes",
+        "kv_headroom_bytes",
+        "weight_budget_bytes",
+        "predicted_total_bytes",
+        "predicted_damage",
+        "solver",
+        "pins",
+        "protections",
+        "imatrix_exclusions",
+        "format_overhead",
+        "trace",
+    }
+)
+TRACE_STEP_FIELDS: Final[frozenset[str]] = frozenset(
+    {"step", "group", "from_bits", "to_bits", "damage_delta", "bytes_freed", "ratio"}
+)
+ASSIGNMENT_FIELDS: Final[frozenset[str]] = frozenset(
+    {"group", "bits", "bytes", "damage"}
+)
+PROTECTED_TENSOR_FIELDS: Final[frozenset[str]] = frozenset(
+    {"tensor", "bits", "exclude_imatrix"}
+)
 
 
 def recipe_from_dict(data: object) -> Recipe:
@@ -105,7 +150,8 @@ def recipe_from_dict(data: object) -> Recipe:
         ArtifactError: If any field is missing, mistyped, or violates a
             schema rule — including non-positive ``bits`` or ``bytes``
             in any assignment, and a known runtime that cannot serve
-            an assigned precision.
+            an assigned precision. A field the reader does not know
+            reports and loads instead (#261).
 
     Examples:
         Reject an unsupported schema version:
@@ -116,6 +162,7 @@ def recipe_from_dict(data: object) -> Recipe:
     """
     root = _get_dict(data, "$")
     _check_schema_version(root, "$", expected=RECIPE_SCHEMA_VERSION)
+    _warn_unknown_fields(root, "$", RECIPE_ROOT_FIELDS)
     model_id = _get_str(root, "model_id", "$")
     _require("runtime" in root, "$", 'missing required field "runtime"')
     runtime = None if root["runtime"] is None else _get_str(root, "runtime", "$")
@@ -151,6 +198,7 @@ def recipe_from_dict(data: object) -> Recipe:
     for i, raw in enumerate(raw_assignments):
         path = f"$.assignments[{i}]"
         obj = _get_dict(raw, path)
+        _warn_unknown_fields(obj, path, ASSIGNMENT_FIELDS)
         bits = _get_int(obj, "bits", path)
         _require(bits > 0, f"{path}.bits", "must be positive")
         size = _get_int(obj, "bytes", path)
@@ -182,6 +230,7 @@ def recipe_from_dict(data: object) -> Recipe:
     for i, raw in enumerate(raw_protected):
         path = f"$.protected_tensors[{i}]"
         obj = _get_dict(raw, path)
+        _warn_unknown_fields(obj, path, PROTECTED_TENSOR_FIELDS)
         bits = _get_int(obj, "bits", path)
         _require(bits > 0, f"{path}.bits", "must be positive")
         pair = ProtectedTensor(
@@ -350,9 +399,11 @@ def _parse_plan_meta(obj: dict[str, Any]) -> PlanMeta:
             are required — including ``protections`` (ADR-0022) and
             ``imatrix_exclusions`` (ADR-0023) — the
             writer always emits them, so a missing
-            field means a truncated or hand-edited artifact.
+            field means a truncated or hand-edited artifact. A field
+            the section does not carry reports and loads (#261).
     """
     path = "$.plan"
+    _warn_unknown_fields(obj, path, PLAN_FIELDS)
     _require("pins" in obj, path, 'missing required field "pins"')
     pins_obj = _get_dict(obj["pins"], f"{path}.pins")
     pins = {
@@ -375,6 +426,7 @@ def _parse_plan_meta(obj: dict[str, Any]) -> PlanMeta:
     for i, raw in enumerate(trace_raw):
         step_path = f"{path}.trace[{i}]"
         step_obj = _get_dict(raw, step_path)
+        _warn_unknown_fields(step_obj, step_path, TRACE_STEP_FIELDS)
         trace.append(
             TraceStep(
                 step=_get_int(step_obj, "step", step_path),

@@ -12,9 +12,10 @@ The reader landed with #137. The sidecar was the last published
 artifact with no reader, so nobody could verify the five shipped
 files by loading them (ADR-0025).
 
-The reader drops a key it does not know. Do not load a published
-sidecar and save it over itself. #261 carries that gap, and it
-reaches every artifact reader.
+A field the reader does not know warns and loads (#261, ADR-0013's
+2026-08-16 amendment). A save then drops it, because no domain type
+carries it, and the warning says so. The sidecar is the sharpest
+case: ADR-0025 publishes it beside the weights.
 
 Examples:
     Read a published sidecar:
@@ -50,6 +51,7 @@ from vramfit.adapters.outbound.json_common import (
     _load_json,
     _require,
     _save_json,
+    _warn_unknown_fields,
 )
 from vramfit.domain.evals import (
     EvalsSidecar,
@@ -66,6 +68,46 @@ from vramfit.domain.evals import (
 # artifact (ADR-0013) — a breaking change here bumps this constant
 # and nothing else's.
 EVALS_SIDECAR_SCHEMA_VERSION: Final[int] = 2
+
+# Every key the reader carries, per object (#261). A key outside these
+# sets warns and loads (ADR-0013, the 2026-08-16 amendment). The writer
+# emits one key set in every schema-2 sidecar, so a hand edit is the
+# only way a document reaches a report.
+SIDECAR_ROOT_FIELDS: Final[frozenset[str]] = frozenset(
+    {"vramfit_schema", "artifact", "toolchain", "tier1", "tier2", "tier3"}
+)
+ARTIFACT_FIELDS: Final[frozenset[str]] = frozenset({"file", "sha256", "size_bytes"})
+TOOLCHAIN_FIELDS: Final[frozenset[str]] = frozenset(
+    {"llama_cpp_build", "lm_eval", "llama_cpp_python", "lane"}
+)
+TIER1_FIELDS: Final[frozenset[str]] = frozenset(
+    {"date", "dataset", "chunks", "ppl", "ppl_stderr"}
+)
+TIER2_FIELDS: Final[frozenset[str]] = frozenset({"reference", "dataset", "windows"})
+TIER2_WINDOW_FIELDS: Final[frozenset[str]] = frozenset(
+    {
+        "date",
+        "chunks",
+        "mean_kld",
+        "kld_stderr",
+        "same_top_pct",
+        "same_top_stderr_pct",
+    }
+)
+TIER3_FIELDS: Final[frozenset[str]] = frozenset({"tasks"})
+TIER3_TASK_FIELDS: Final[frozenset[str]] = frozenset(
+    {
+        "date",
+        "name",
+        "version",
+        "few_shot",
+        "n",
+        "metric",
+        "score",
+        "stderr",
+        "wall_clock_seconds",
+    }
+)
 
 
 def _tier1_to_dict(tier1: Tier1Result) -> dict[str, Any]:
@@ -232,6 +274,9 @@ def _artifact_from_dict(obj: dict[str, Any], path: str) -> EvaluatedArtifact:
     Extracts every field first, then constructs. `_built` wraps the
     constructor alone, so it never relabels a parse failure.
 
+    The reader reports a field the block does not carry, then loads
+    it (#261).
+
     Args:
         obj: The block's JSON object.
         path: Its JSON path.
@@ -242,6 +287,7 @@ def _artifact_from_dict(obj: dict[str, Any], path: str) -> EvaluatedArtifact:
     Raises:
         ArtifactError: If a field is missing or invalid.
     """
+    _warn_unknown_fields(obj, path, ARTIFACT_FIELDS)
     file = _get_str(obj, "file", path)
     sha256 = _get_str(obj, "sha256", path)
     size_bytes = _get_int(obj, "size_bytes", path)
@@ -258,6 +304,9 @@ def _toolchain_from_dict(obj: dict[str, Any], path: str) -> EvalToolchain:
     so each reads as optional here. `EvalsSidecar` enforces their
     pairing with tier 3.
 
+    The reader reports a field the block does not carry, then loads
+    it (#261).
+
     Args:
         obj: The block's JSON object.
         path: Its JSON path.
@@ -268,6 +317,7 @@ def _toolchain_from_dict(obj: dict[str, Any], path: str) -> EvalToolchain:
     Raises:
         ArtifactError: If a field is missing or invalid.
     """
+    _warn_unknown_fields(obj, path, TOOLCHAIN_FIELDS)
     build = _get_str(obj, "llama_cpp_build", path)
     lm_eval = _get_opt_str(obj, "lm_eval", path)
     binding = _get_opt_str(obj, "llama_cpp_python", path)
@@ -281,6 +331,9 @@ def _tier1_from_dict(obj: dict[str, Any], path: str) -> Tier1Result:
     Extracts every field first, then constructs. `_built` wraps the
     constructor alone, so it never relabels a parse failure.
 
+    The reader reports a field the block does not carry, then loads
+    it (#261).
+
     Args:
         obj: The block's JSON object.
         path: Its JSON path.
@@ -291,6 +344,7 @@ def _tier1_from_dict(obj: dict[str, Any], path: str) -> Tier1Result:
     Raises:
         ArtifactError: If a field is missing or invalid.
     """
+    _warn_unknown_fields(obj, path, TIER1_FIELDS)
     date = _get_str(obj, "date", path)
     dataset = _get_str(obj, "dataset", path)
     chunks = _get_int(obj, "chunks", path)
@@ -305,6 +359,9 @@ def _tier2_window_from_dict(obj: dict[str, Any], path: str) -> Tier2Window:
     Extracts every field first, then constructs. `_built` wraps the
     constructor alone, so it never relabels a parse failure.
 
+    The reader reports a field the block does not carry, then loads
+    it (#261).
+
     Args:
         obj: The window's JSON object.
         path: Its JSON path.
@@ -315,6 +372,7 @@ def _tier2_window_from_dict(obj: dict[str, Any], path: str) -> Tier2Window:
     Raises:
         ArtifactError: If a field is missing or invalid.
     """
+    _warn_unknown_fields(obj, path, TIER2_WINDOW_FIELDS)
     date = _get_str(obj, "date", path)
     chunks = _get_int(obj, "chunks", path)
     mean_kld = _get_float(obj, "mean_kld", path)
@@ -335,6 +393,9 @@ def _tier2_from_dict(obj: dict[str, Any], path: str) -> Tier2Result:
     Extracts every field first, then constructs. `_built` wraps the
     constructor alone, so it never relabels a parse failure.
 
+    The reader reports a field the block does not carry, then loads
+    it (#261).
+
     Args:
         obj: The block's JSON object.
         path: Its JSON path.
@@ -346,6 +407,7 @@ def _tier2_from_dict(obj: dict[str, Any], path: str) -> Tier2Result:
         ArtifactError: If a field is missing or invalid, or two
             windows share a chunk count.
     """
+    _warn_unknown_fields(obj, path, TIER2_FIELDS)
     raw = _get_list(obj, "windows", path)
     windows = tuple(
         _tier2_window_from_dict(
@@ -364,6 +426,9 @@ def _tier3_task_from_dict(obj: dict[str, Any], path: str) -> Tier3Task:
     Extracts every field first, then constructs. `_built` wraps the
     constructor alone, so it never relabels a parse failure.
 
+    The reader reports a field the block does not carry, then loads
+    it (#261).
+
     Args:
         obj: The task's JSON object.
         path: Its JSON path.
@@ -374,6 +439,7 @@ def _tier3_task_from_dict(obj: dict[str, Any], path: str) -> Tier3Task:
     Raises:
         ArtifactError: If a field is missing or invalid.
     """
+    _warn_unknown_fields(obj, path, TIER3_TASK_FIELDS)
     date = _get_str(obj, "date", path)
     name = _get_str(obj, "name", path)
     version = _get_str(obj, "version", path)
@@ -394,6 +460,9 @@ def _tier3_task_from_dict(obj: dict[str, Any], path: str) -> Tier3Task:
 def _tier3_from_dict(obj: dict[str, Any], path: str) -> Tier3Result:
     """Parse the ``tier3`` block.
 
+    The reader reports a field the block does not carry, then loads
+    it (#261).
+
     Args:
         obj: The block's JSON object.
         path: Its JSON path.
@@ -405,6 +474,7 @@ def _tier3_from_dict(obj: dict[str, Any], path: str) -> Tier3Result:
         ArtifactError: If a field is missing or invalid, or two tasks
             share a name.
     """
+    _warn_unknown_fields(obj, path, TIER3_FIELDS)
     raw = _get_list(obj, "tasks", path)
     tasks = tuple(
         _tier3_task_from_dict(
@@ -472,7 +542,8 @@ def sidecar_from_dict(data: dict[str, Any]) -> EvalsSidecar:
 
     The inverse of `sidecar_to_dict`. Every tier key must be present.
     The writer emits one key set in every schema-2 sidecar, so a null
-    value means the tier did not run.
+    value means the tier did not run. A field the reader does not know
+    reports and loads (#261).
 
     Args:
         data: The artifact's top-level JSON object.
@@ -496,6 +567,7 @@ def sidecar_from_dict(data: dict[str, Any]) -> EvalsSidecar:
     root = "$"
     obj = _get_dict(data, root)
     _check_schema_version(obj, root, EVALS_SIDECAR_SCHEMA_VERSION)
+    _warn_unknown_fields(obj, root, SIDECAR_ROOT_FIELDS)
     artifact = _required_block(obj, "artifact", root, _artifact_from_dict)
     toolchain = _required_block(obj, "toolchain", root, _toolchain_from_dict)
     tier1 = _optional_block(obj, "tier1", root, _tier1_from_dict)

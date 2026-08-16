@@ -20,7 +20,9 @@ additive the same way: absent means the group records no summary.
 The top-level ``derived`` note (#136) is additive too: absent means
 the map is a scan artifact. A present ``imatrix`` must pair with the
 assisted method token — the loader rejects a map whose provenance
-contradicts itself.
+contradicts itself. A field the reader does not know warns and loads
+(#261, ADR-0013's 2026-08-16 amendment). A save then drops it, and
+the warning says so.
 
 Examples:
     Round-trip a map through a file:
@@ -59,6 +61,7 @@ from vramfit.adapters.outbound.json_common import (
     _load_json,
     _require,
     _save_json,
+    _warn_unknown_fields,
 )
 from vramfit.domain.model import (
     ImatrixCountSummary,
@@ -77,6 +80,38 @@ MAP_SCHEMA_VERSION: Final[int] = 3
 # tells a reader the producer could have keyed on stacks.
 MAP_SCHEMA_ALSO_READS: Final[tuple[int, ...]] = (2,)
 
+# Every key the reader carries, per object the schema fixes (#261).
+# A key outside these sets warns and loads (ADR-0013, the 2026-08-16
+# amendment). ``sensitivity`` and ``tensor_bytes`` are absent here on
+# purpose: their keys are precisions and tensor names, and their own
+# rules already check them. ``imatrix_counts`` fixes its three keys
+# exactly (ADR-0026), so it refuses rather than warns.
+MAP_ROOT_FIELDS: Final[frozenset[str]] = frozenset(
+    {"vramfit_schema", "model_id", "scan", "groups", "derived"}
+)
+SCAN_FIELDS: Final[frozenset[str]] = frozenset(
+    {
+        "metric",
+        "calibration",
+        "calibration_tokens",
+        "precisions",
+        "group_by",
+        "started_at",
+        "within_group",
+        "imatrix",
+    }
+)
+GROUP_FIELDS: Final[frozenset[str]] = frozenset(
+    {
+        "name",
+        "tensors",
+        "bytes_fp16",
+        "sensitivity",
+        "tensor_bytes",
+        "imatrix_counts",
+    }
+)
+
 
 def map_from_dict(data: object) -> SensitivityMap:
     """Validate parsed JSON and build a `SensitivityMap`.
@@ -94,7 +129,8 @@ def map_from_dict(data: object) -> SensitivityMap:
             any field is missing, mistyped, or violates a schema rule
             (duplicate group names, unknown ``group_by``, sensitivity
             keys not matching ``scan.precisions``, an empty or
-            non-string ``derived`` note, and so on).
+            non-string ``derived`` note, and so on). A field the
+            reader does not know reports and loads instead (#261).
 
     Examples:
         Reject an unsupported schema version:
@@ -110,6 +146,7 @@ def map_from_dict(data: object) -> SensitivityMap:
         expected=MAP_SCHEMA_VERSION,
         also_reads=MAP_SCHEMA_ALSO_READS,
     )
+    _warn_unknown_fields(root, "$", MAP_ROOT_FIELDS)
     model_id = _get_str(root, "model_id", "$")
     _require("scan" in root, "$", 'missing required field "scan"')
     scan = _parse_scan_meta(_get_dict(root["scan"], "$.scan"))
@@ -292,9 +329,11 @@ def _parse_scan_meta(obj: dict[str, Any]) -> ScanMeta:
             does not pair with the assisted method token — assisted
             damages without their imatrix provenance are not
             comparable to anything (ADR-0020, absent defaults to
-            None).
+            None). A field the section does not carry reports and
+            loads (#261).
     """
     path = "$.scan"
+    _warn_unknown_fields(obj, path, SCAN_FIELDS)
     tokens = _get_int(obj, "calibration_tokens", path)
     _require(tokens > 0, f"{path}.calibration_tokens", "must be positive")
     raw_precisions = _get_list(obj, "precisions", path)
@@ -411,9 +450,11 @@ def _parse_layer_group(
             summing to ``bytes_fp16`` (ADR-0022 — absent means
             unknown, and an explicit null is rejected: the writer
             never emits one), or a present ``imatrix_counts`` fails
-            `_parse_imatrix_counts` (ADR-0026 decision 4).
+            `_parse_imatrix_counts` (ADR-0026 decision 4). A field
+            the group does not carry reports and loads (#261).
     """
     obj = _get_dict(raw, path)
+    _warn_unknown_fields(obj, path, GROUP_FIELDS)
     bytes_fp16 = _get_int(obj, "bytes_fp16", path)
     _require(bytes_fp16 > 0, f"{path}.bytes_fp16", "must be positive")
     tensors_raw = _get_list(obj, "tensors", path)

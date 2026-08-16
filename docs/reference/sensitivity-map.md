@@ -203,3 +203,18 @@ below remain, the sub-4-bit pricing claims do not.
         GGUF numbers one stack `blk.<n>.`, so the target's
         `mtp.layers.<n>` and a multimodal checkpoint's vision tower
         each collide with the backbone. Scan one stack at a time.
+
+## Unknown fields
+
+The loader reports a field it does not know, then loads the map
+(ADR-0013, the 2026-08-16 amendment, issue #261). The report names the
+JSON path and states that a save drops the field. The rule covers the
+map root, `scan`, and each entry of `groups`.
+
+Three objects never report. `sensitivity` keys on precisions,
+`tensor_bytes` keys on tensor names, and each has its own rule. A
+group's `imatrix_counts` fixes `min`, `median`, and `max` exactly
+(ADR-0026), so it refuses instead.
+
+A load then save still deletes the field. Keep the source. Never
+re-save a hand-extended copy over itself.

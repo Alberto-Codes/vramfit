@@ -9,7 +9,9 @@ an in-flight scan. The tool rename (#118) is the one exception: the
 loader rejects the pre-rename envelope key with a message that names
 the new key. Writes go through the same atomic-replace path as
 the artifact adapters, so a crash mid-write never corrupts the
-checkpoint.
+checkpoint. A field the reader does not know warns and loads (#261,
+ADR-0013's 2026-08-16 amendment). A save then drops it, and the
+warning says so.
 
 Examples:
     Resume a scan and record one new cell:
@@ -47,6 +49,7 @@ from vramfit.adapters.outbound.json_common import (
     _reject_renamed_envelope_key,
     _require,
     _save_json,
+    _warn_unknown_fields,
 )
 from vramfit.domain.scan import Measurement
 
@@ -55,6 +58,13 @@ from vramfit.domain.scan import Measurement
 # The tool rename (#118) is the one coupled bump — every envelope key
 # renamed at once, so version-1 checkpoints do not resume.
 CHECKPOINT_SCHEMA_VERSION: Final[int] = 2
+
+# Every key the reader carries, per object (#261). A key outside these
+# sets warns and loads (ADR-0013, the 2026-08-16 amendment).
+CHECKPOINT_ROOT_FIELDS: Final[frozenset[str]] = frozenset(
+    {"vramfit_schema", "fingerprint", "measurements"}
+)
+MEASUREMENT_FIELDS: Final[frozenset[str]] = frozenset({"group", "bits", "damage"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -149,7 +159,8 @@ def _parse_checkpoint(data: object, fingerprint: str) -> tuple[Measurement, ...]
             checkpoint fails the version next (#154). The checkpoint
             reads exactly one version, so it passes that single
             version as the readable set — unlike the sensitivity map,
-            which reads two (#161).
+            which reads two (#161). A field the checkpoint does not
+            carry reports and loads (#261).
     """
     root = _get_dict(data, "$")
     _reject_renamed_envelope_key(root, "$", (CHECKPOINT_SCHEMA_VERSION,))
@@ -160,6 +171,7 @@ def _parse_checkpoint(data: object, fingerprint: str) -> tuple[Measurement, ...]
         f"unsupported schema version {version} — this vramfit reads "
         f"checkpoint version {CHECKPOINT_SCHEMA_VERSION}",
     )
+    _warn_unknown_fields(root, "$", CHECKPOINT_ROOT_FIELDS)
     stored = _get_str(root, "fingerprint", "$")
     _require(
         stored == fingerprint,
@@ -184,9 +196,11 @@ def _parse_measurement(raw: Any, path: str) -> Measurement:
 
     Raises:
         ArtifactError: If a field is missing or mistyped, or the values
-            violate `Measurement` invariants.
+            violate `Measurement` invariants. A field the entry does
+            not carry reports and loads (#261).
     """
     obj = _get_dict(raw, path)
+    _warn_unknown_fields(obj, path, MEASUREMENT_FIELDS)
     try:
         return Measurement(
             group=_get_str(obj, "group", path),
