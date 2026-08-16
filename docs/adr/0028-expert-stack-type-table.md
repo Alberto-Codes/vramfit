@@ -146,11 +146,25 @@ Facts verified upstream on 2026-08-14 (#189):
   terminated, so the #229 record carries that check and no file on
   the box repeats it.
 - The decision 3 scan did not run during the #229 gate, and #247
-  carries the reason (noted 2026-08-14). `run_tool` decodes the
+  carries the reason (noted 2026-08-14). `run_tool` decoded the
   quantizer's merged output as strict UTF-8, and llama.cpp
   truncates its `tokenizer.ggml.merges` preview inside a character.
-  The decode raises before any scan reads the output. Read a packed
-  GGUF's real tensor types to check a pack until #247 lands.
+  The decode raised before any scan read the output. **#247 landed
+  (PR #250), so the scan now runs and the workaround is retired
+  (noted 2026-08-15).** `run_tool` replaces an undecodable byte
+  instead of refusing it.
+- A replaced byte can delete a decision 3 match, and #252 measured
+  how far that reaches (2026-08-15). It reaches no scanned line.
+  llama.cpp truncates only inside its `- kv` dump loop, and a
+  warning line never passes through it. Splitting a warning would
+  need a second writer. Pipe-write atomicity does not supply that
+  guarantee, because the warning spans two or three separate log
+  writes (`src/llama-quant.cpp:381`, `:415`, `:418`).
+  Single-threadedness supplies it. `llama-quantize` installs no
+  threaded log callback, and it picks every tensor type in a
+  metadata pass that ends before the first quantize worker starts.
+  The #252 measurement record carries the method and the trial
+  counts.
 - The nominal-2 row now means a width the solver may not buy on
   this target (noted 2026-08-14). The empty band from 2.25 to 4.25
   bits per weight therefore separates the only width that fits a

@@ -16,8 +16,13 @@ type breaks the recipe the artifact claims to carry (ADR-0028). With
 an importance matrix (ADR-0016) it also scans that output for
 tensors the matrix did not cover — there the
 quantizer only warns, and a silently unassisted tensor must not
-pass unrecorded. The recipe's imatrix exclusions become
-``--exclude-weights`` flags, and their intentional misses stay out
+pass unrecorded (ADR-0023 decision 4). A miss whose tensor name
+carries U+FFFD halts
+instead, because `run_tool` could not read that name and the
+record would state a name nobody read (#252). That halt reports
+stage ``quantize`` (ADR-0012 decision 5). The recipe's imatrix
+exclusions become ``--exclude-weights`` flags, and their
+intentional misses stay out
 of that coverage record (ADR-0023). Every failure — a tool that cannot start, exits
 nonzero, dies to a signal, or leaves no usable file — translates to
 `PackError` at this boundary (ADR-0011), carrying the tool's last
@@ -80,6 +85,80 @@ _TYPE_FALLBACK: Final[re.Pattern[str]] = re.compile(
     r"warning: +(\S+) +- ncols +\d+ not divisible by +\d+ "
     r"\(required for type +(\S+)\).*?falling back to +(\S+)"
 )
+
+# `run_tool` replaces a byte it cannot decode with U+FFFD (#247).
+# U+FFFD is not whitespace, so `_IMATRIX_MISS`'s capture group takes
+# it like any other character (#252). The escape keeps the sentinel
+# legible, because the glyph itself survives a re-encoding poorly.
+_REPLACEMENT_CHAR: Final[str] = "\ufffd"
+
+
+def _read_miss_names(output: str, out: Path) -> tuple[str, ...]:
+    """Capture the imatrix-miss tensor names, refusing an unread one.
+
+    The scan records a miss and continues (ADR-0028 decision 3), so
+    a captured name reaches `PackResult.imatrix_uncovered` and the
+    `model_packed` run-log event as fact. ADR-0023 decision 4 keeps
+    that field an honest record of unintentional gaps. A name
+    carrying U+FFFD was never read, so it records nothing. Dropping
+    it silently would instead hide a gap the field must carry.
+    Halting is the only answer that does neither.
+
+    The ADR-0023 exclusion discount compares exact strings. A damaged
+    name therefore evades it too. It then reads as a coverage gap the
+    recipe meant to create.
+
+    #252 measured the decode route to this case on 2026-08-15 and
+    found it closed. llama.cpp truncates only inside its `- kv` dump
+    loop, which no miss warning passes through. `ggml_set_name` cuts
+    a name at 63 bytes, but the GGUF reader refuses an over-long
+    name first (`ggml/src/gguf.cpp:639-644`), so that cut never runs
+    here. The route that stays open is a GGUF file whose short
+    tensor name is already invalid UTF-8, which no reader checks
+    (`ggml/src/gguf.cpp:340-354`).
+
+    The guard sees damage inside a captured name only. Damage to the
+    surrounding literal deletes the match, and the miss then leaves
+    no trace here. `run_tool` carries that residual case.
+
+    Args:
+        output: The quantizer's merged output.
+        out: The packed file, kept for inspection.
+
+    Returns:
+        The miss names in output order, without repeats.
+
+    Raises:
+        PackError: If any captured name carries U+FFFD. The halt
+            reports stage ``quantize`` (ADR-0012 decision 5), which
+            also covers a quantizer that failed. #275 carries whether
+            a zero-exit halt earns its own stage.
+
+    Examples:
+        A clean run reports its misses in order:
+
+        ```python
+        names = _read_miss_names(
+            "did not find weights for blk.0.attn_v.weight", Path("out.gguf")
+        )
+        assert names == ("blk.0.attn_v.weight",)
+        ```
+    """
+    names = tuple(dict.fromkeys(_IMATRIX_MISS.findall(output)))
+    damaged = [name for name in names if _REPLACEMENT_CHAR in name]
+    if damaged:
+        # `ascii` spells the replacement character as an escape. A log
+        # viewer that cannot render the glyph would otherwise show a
+        # box in an error that is about that exact byte.
+        details = ", ".join(ascii(name) for name in damaged)
+        raise PackError(
+            f"quantize: run_tool could not decode {len(damaged)} imatrix-miss "
+            f"tensor name{'' if len(damaged) == 1 else 's'}: {details}. "
+            f"An undecodable name records no imatrix coverage (ADR-0023). "
+            f"The quantizer exited 0, and the packed file is kept at {out} "
+            f"for inspection"
+        )
+    return names
 
 
 class TypeFallbackError(PackError):
@@ -215,8 +294,9 @@ class LlamaCppPacker:
         Raises:
             PackError: If the recipe targets another runtime
                 (ADR-0013), the base GGUF is missing, the recipe
-                cannot be mapped (ADR-0012), the quantizer fails, or
-                it writes no usable file.
+                cannot be mapped (ADR-0012), the quantizer fails, it
+                writes no usable file, or it names an imatrix-miss
+                tensor the reader could not decode (#252).
             TypeFallbackError: If the quantizer's output carries the
                 type-fallback warning pair — the artifact ignored
                 the recipe on a zero exit (ADR-0028). The file is
@@ -262,7 +342,7 @@ class LlamaCppPacker:
         uncovered = (
             tuple(
                 name
-                for name in dict.fromkeys(_IMATRIX_MISS.findall(quantize_output))
+                for name in _read_miss_names(quantize_output, self.out_path)
                 if name not in excluded
             )
             if self.imatrix is not None
