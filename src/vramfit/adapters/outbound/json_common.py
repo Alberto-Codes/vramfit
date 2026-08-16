@@ -12,7 +12,9 @@ fails the same way, at the load step. A document that repeats a key
 inside one object fails at the load step too (#262). `json.loads` would
 otherwise keep the last value and report nothing. That refusal names the
 key and reports at the artifact root, because the parser hook that
-catches it sees no ancestry. The boolean extractor
+catches it sees no ancestry. That hook lives in
+`json_duplicate_key`, which three readers outside this module share
+(#283). The boolean extractor
 accepts only real booleans, and the string extractors reject the
 empty string. Schema versions advance
 per artifact (ADR-0013) — each adapter owns its version constant and
@@ -38,6 +40,7 @@ Examples:
 See Also:
     - [vramfit.adapters.outbound.sensitivity_map_json][]: Map IO.
     - [vramfit.adapters.outbound.recipe_json][]: Recipe IO.
+    - [vramfit.adapters.outbound.json_duplicate_key][]: The shared hook.
 """
 
 from __future__ import annotations
@@ -47,6 +50,10 @@ import math
 from pathlib import Path
 from typing import Any
 
+from vramfit.adapters.outbound.json_duplicate_key import (
+    DuplicateKeyError,
+    object_from_pairs,
+)
 from vramfit.domain.errors import VramfitError
 
 
@@ -371,72 +378,6 @@ def _check_schema_version(
     )
 
 
-class _DuplicateKey(Exception):
-    """One JSON object defined the same key twice.
-
-    `_object_from_pairs` raises this and `_load_json` converts it to an
-    `ArtifactError`. It does not subclass `ValueError`, so the catch-all
-    clause in `_load_json` cannot relabel the refusal
-    ``cannot parse JSON:`` whatever order the clauses take (#262).
-
-    Attributes:
-        key (str): The key the object defined twice.
-
-    Examples:
-        Refuse an object that repeats a key:
-
-        ```python
-        from vramfit.adapters.outbound.json_common import _object_from_pairs
-
-        try:
-            _object_from_pairs([("ppl", 999.0), ("ppl", 8.5543)])
-        except Exception as exc:
-            print(exc.key)
-        ```
-    """
-
-    def __init__(self, key: str) -> None:
-        """Record the duplicated key.
-
-        Args:
-            key: The key the object defined twice.
-        """
-        super().__init__(key)
-        self.key = key
-
-
-def _object_from_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-    """Build one JSON object from its pairs, refusing a repeated key.
-
-    `json.loads` keeps the last value when a document repeats a key, and
-    reports nothing. Someone who re-measures a tier pastes the new line
-    beside the old one. That publishes two conflicting records, and the
-    reader picks one by position (#262). This hook refuses instead.
-
-    The hook sees one object's pairs and no ancestry, so it reports the
-    key alone. `_load_json` names the artifact root as the path. Neither
-    can build the ``$.tier1.ppl`` path the extractors report.
-
-    The check reads the object under construction, so the hook walks the
-    pairs once. Every JSON object in every artifact passes through here.
-
-    Args:
-        pairs: The object's key-value pairs, in document order.
-
-    Returns:
-        The pairs as a dict.
-
-    Raises:
-        _DuplicateKey: If a key appears more than once in the object.
-    """
-    obj: dict[str, Any] = {}
-    for key, value in pairs:
-        if key in obj:
-            raise _DuplicateKey(key)
-        obj[key] = value
-    return obj
-
-
 def _load_json(path: Path, root: str) -> dict[str, Any]:
     """Read ``path`` and return its top-level JSON object.
 
@@ -452,18 +393,14 @@ def _load_json(path: Path, root: str) -> dict[str, Any]:
             valid JSON, carries a number literal the parser refuses,
             repeats a key inside one object, or its top level is not an
             object. The duplicate-key message names the key, which is
-            all `_object_from_pairs` can report.
+            all `object_from_pairs` can report.
     """
     try:
         data = json.loads(
-            path.read_text(encoding="utf-8"), object_pairs_hook=_object_from_pairs
+            path.read_text(encoding="utf-8"), object_pairs_hook=object_from_pairs
         )
-    except _DuplicateKey as exc:
-        raise ArtifactError(
-            root,
-            f'duplicate key "{exc.key}" — one JSON object defines it twice. '
-            "The reader cannot choose between the two values. Delete one.",
-        ) from exc
+    except DuplicateKeyError as exc:
+        raise ArtifactError(root, exc.message) from exc
     except json.JSONDecodeError as exc:
         raise ArtifactError(root, f"invalid JSON: {exc}") from exc
     except UnicodeDecodeError as exc:

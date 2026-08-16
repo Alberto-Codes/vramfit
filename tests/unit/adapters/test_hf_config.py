@@ -204,3 +204,27 @@ class TestModelShapeFromConfig:
 
         with pytest.raises(ValueError, match="invalid JSON"):
             shape_from_config_json(path)
+
+    def test_duplicate_key_raises(self, tmp_path) -> None:
+        # The publisher owns this file. Taking the last value would give
+        # a 32-layer budget for a config that also says 64 (#283).
+        path = tmp_path / "config.json"
+        path.write_text(
+            '{"num_hidden_layers": 64, "num_hidden_layers": 32, '
+            '"num_key_value_heads": 8, "num_attention_heads": 32, '
+            '"hidden_size": 4096}'
+        )
+
+        with pytest.raises(ValueError, match='duplicate key "num_hidden_layers"'):
+            shape_from_config_json(path)
+
+    def test_duplicate_key_in_a_nested_object_raises(self, tmp_path) -> None:
+        config = self._decilm_config()
+        raw = json.dumps(config).replace(
+            '"n_heads_in_group": 8', '"n_heads_in_group": 8, "n_heads_in_group": 16', 1
+        )
+        path = tmp_path / "config.json"
+        path.write_text(raw)
+
+        with pytest.raises(ValueError, match='duplicate key "n_heads_in_group"'):
+            shape_from_config_json(path)

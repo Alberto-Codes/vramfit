@@ -19,6 +19,11 @@ the uncapped group set instead of perturbing one tensor twice.
 ~93 GB of original clones in host RAM at 49B scale, so offloaded
 originals restore from the model's safetensors shards instead.
 
+The model publisher owns the shard index. vramfit reads it and never
+writes it, and it still refuses an index that defines one key twice
+(#283). The alternative keeps the last value, so a repeated tensor name
+in ``weight_map`` would restore the wrong shard with no report.
+
 Examples:
     Resolve a sharded model's offloaded parameters:
 
@@ -39,6 +44,11 @@ from pathlib import Path
 
 import torch
 from safetensors import safe_open
+
+from vramfit.adapters.outbound.json_duplicate_key import (
+    DuplicateKeyError,
+    object_from_pairs,
+)
 
 _INDEX_FILE = "model.safetensors.index.json"
 _SINGLE_FILE = "model.safetensors"
@@ -290,6 +300,13 @@ class ShardReader:
 def open_shard_reader(model_id: str) -> ShardReader | None:
     """Locate the safetensors shards behind a local model path.
 
+    The publisher owns the index file, so vramfit reads it and never
+    writes it. A repeated key still refuses (#283). `json.loads` would
+    keep the last value, and a tensor name repeated in ``weight_map``
+    would then point the reader at one shard and drop the other. The
+    restored original would be the wrong tensor, and the damage figure
+    would be wrong with no report.
+
     Args:
         model_id: Hugging Face model id or local checkpoint path.
 
@@ -299,17 +316,22 @@ def open_shard_reader(model_id: str) -> ShardReader | None:
 
     Raises:
         OSError: If an index or shard file exists but cannot be read.
-        ValueError: If the index file is not valid JSON, or holds no
-            ``weight_map`` object.
+        ValueError: If the index file is not valid JSON, defines the
+            same key twice, or holds no ``weight_map`` object.
     """
     directory = Path(model_id)
     if not directory.is_dir():
         return None
     index_path = directory / _INDEX_FILE
     if index_path.is_file():
-        weight_map = json.loads(index_path.read_text(encoding="utf-8")).get(
-            "weight_map"
-        )
+        try:
+            index = json.loads(
+                index_path.read_text(encoding="utf-8"),
+                object_pairs_hook=object_from_pairs,
+            )
+        except DuplicateKeyError as exc:
+            raise ValueError(f"{index_path}: {exc.message}") from exc
+        weight_map = index.get("weight_map")
         if not isinstance(weight_map, dict):
             raise ValueError(f"{index_path} has no weight_map object")
         return ShardReader(

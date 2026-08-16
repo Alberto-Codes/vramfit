@@ -186,6 +186,25 @@ class TestShardReader:
         with pytest.raises(ValueError, match="weight_map"):
             open_shard_reader(str(tmp_path))
 
+    def test_open_on_an_index_repeating_a_tensor_name_raises(self, tmp_path) -> None:
+        # The publisher owns this file. Taking the last value would
+        # restore "a" from the wrong shard, and the damage figure would
+        # be wrong with no report (#283).
+        (tmp_path / "model.safetensors.index.json").write_text(
+            '{"weight_map": {"a": "m-00001.safetensors", "a": "m-00002.safetensors"}}'
+        )
+
+        with pytest.raises(ValueError, match='duplicate key "a"'):
+            open_shard_reader(str(tmp_path))
+
+    def test_open_on_an_index_repeating_a_top_level_key_raises(self, tmp_path) -> None:
+        (tmp_path / "model.safetensors.index.json").write_text(
+            '{"weight_map": {"a": "m-00001.safetensors"}, "weight_map": {}}'
+        )
+
+        with pytest.raises(ValueError, match='duplicate key "weight_map"'):
+            open_shard_reader(str(tmp_path))
+
     def test_verify_names_a_missing_tensor(self, tmp_path) -> None:
         reader = self._saved(tmp_path, {"a": torch.randn(2, 2)})
 
