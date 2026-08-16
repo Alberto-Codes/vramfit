@@ -486,6 +486,14 @@ change.
 > headline. The recipe's published claim runs against published
 > artifacts only.
 
+> **Corrected 2026-08-16 ([#284](https://github.com/Alberto-Codes/vramfit/issues/284)).**
+> The arithmetic above is keyed to the superseded 14.5 GiB budget. The
+> budget is 15.776 GiB. At that budget uniform `Q2_0` leaves 5.870 GiB
+> unspent, and the 46 expert stacks at `MXFP4` cost 14.534 GiB, which
+> sits inside the budget rather than over it.
+> [#288](https://github.com/Alberto-Codes/vramfit/issues/288) rules
+> whether the term survives. The ruling above stands until it does.
+
 **Tier-3 slice**
 :   The fixed set of lm-evaluation-harness tasks and few-shot settings
     that certifies a publication candidate's capabilities: five tasks at
