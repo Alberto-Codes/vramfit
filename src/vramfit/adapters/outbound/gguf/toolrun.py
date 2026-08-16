@@ -18,7 +18,13 @@ byte-level BPE tokenizer. A strict decode raised `UnicodeDecodeError`
 out of a successful quantize and skipped every guard that reads the
 output (#247). Replacement never invents a scanner match. It can
 delete one, but only inside the line that carried the bad bytes.
-#252 carries that residual risk. `surrogateescape` instead writes
+#252 measured that risk on 2026-08-15 and found no scanned line it
+reaches. The truncation lives only in llama.cpp's `- kv` dump loop
+(`src/llama-model-loader.cpp:791`), and no warning line passes
+through it. A pipe write of 4096 bytes or fewer is atomic under
+POSIX, and llama.cpp logs each message in one 118-byte write from
+one thread, so no concurrent writer splits a warning.
+`surrogateescape` instead writes
 unpaired surrogates into the run log. RFC 8259 section 8.2 leaves a
 reader's handling of those undefined.
 

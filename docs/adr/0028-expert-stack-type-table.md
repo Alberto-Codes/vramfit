@@ -146,11 +146,21 @@ Facts verified upstream on 2026-08-14 (#189):
   terminated, so the #229 record carries that check and no file on
   the box repeats it.
 - The decision 3 scan did not run during the #229 gate, and #247
-  carries the reason (noted 2026-08-14). `run_tool` decodes the
+  carries the reason (noted 2026-08-14). `run_tool` decoded the
   quantizer's merged output as strict UTF-8, and llama.cpp
   truncates its `tokenizer.ggml.merges` preview inside a character.
-  The decode raises before any scan reads the output. Read a packed
-  GGUF's real tensor types to check a pack until #247 lands.
+  The decode raised before any scan read the output. **#247 landed
+  (PR #250), so the scan now runs and the workaround is retired
+  (noted 2026-08-15).** `run_tool` replaces an undecodable byte
+  instead of refusing it.
+- A replaced byte can delete a decision 3 match, and #252 measured
+  how far that reaches (2026-08-15). It reaches no scanned line.
+  llama.cpp truncates only inside its `- kv` dump loop, and a
+  warning line never passes through it. A pipe write of 4096 bytes
+  or fewer is atomic under POSIX, and llama.cpp logs each message
+  in one 118-byte write from one thread, so no concurrent writer
+  splits a warning. 152 000 adversarial trials deleted no match.
+  Decision 3 needs no degraded-stream clause.
 - The nominal-2 row now means a width the solver may not buy on
   this target (noted 2026-08-14). The empty band from 2.25 to 4.25
   bits per weight therefore separates the only width that fits a

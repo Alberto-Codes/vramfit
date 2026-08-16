@@ -62,6 +62,13 @@ EXCLUDED_MISS_WARNING = (
     "====== llama_tensor_get_wanted_type: did not find weights for blk.0.attn_v.weight"
 )
 
+# The same miss warning after `run_tool` replaced a byte it could not
+# decode. U+FFFD is not whitespace, so `_IMATRIX_MISS` captures it as
+# part of the tensor name (#252).
+UNDECODED_MISS_WARNING = (
+    "====== llama_tensor_get_wanted_type: did not find weights for token_embd.wei�ght"
+)
+
 # The zero-exit type-fallback warning pair, one merged output line
 # (`tensor_type_fallback`, llama.cpp src/llama-quant.cpp): the ncols
 # report, then the substituted type (ADR-0028 decision 3).
@@ -185,7 +192,11 @@ def _real_packer(  # noqa: PLR0913 - the contract fixture surface: one flag per 
     with_excluded_miss: bool = False,
     with_type_fallback: bool = False,
     with_f16_fallback: bool = False,
+    with_undecoded_miss: bool = False,
 ) -> RecipePacker:
+    # `with_undecoded_miss` has no fake counterpart. The fake receives
+    # structured names and never decodes a stream, so the damaged-name
+    # case is real-adapter-only (#252).
     def stub_body(stage: str, template: str) -> str:
         if fail_stage == stage:
             return _FAILING_STUB
@@ -194,6 +205,8 @@ def _real_packer(  # noqa: PLR0913 - the contract fixture surface: one flag per 
         lines = []
         if with_uncovered:
             lines.append(UNCOVERED_WARNING)
+        if with_undecoded_miss:
+            lines.append(UNDECODED_MISS_WARNING)
         if with_excluded_miss:
             lines.append(EXCLUDED_MISS_WARNING)
         if with_type_fallback:
@@ -509,7 +522,61 @@ class TestRecipePackerContract:
 
 
 class TestLlamaCppCommandLines:
-    """Real-adapter argv contracts the fake structurally cannot cover."""
+    """Real-adapter behavior the fake structurally cannot cover.
+
+    The argv contracts below pin the exact command lines. The
+    damaged-name tests pin how the adapter reads a stream the fake
+    never sees, because the fake receives structured names (#252).
+    """
+
+    def test_pack_with_an_undecodable_miss_name_raises_pack_error(
+        self, tmp_path
+    ) -> None:
+        # `run_tool` replaces an undecodable byte with U+FFFD (#247),
+        # and the miss capture takes it as part of the tensor name.
+        # Recording a name nobody read as coverage fact is the defect,
+        # and dropping it silently would hide a real miss (ADR-0016).
+        packer = _real_packer(tmp_path, with_imatrix=True, with_undecoded_miss=True)
+        packer.convert()
+
+        with pytest.raises(PackError, match="could not decode"):
+            packer.pack(sample_pack_recipe())
+
+    def test_pack_with_an_undecodable_miss_name_names_it_and_the_kept_file(
+        self, tmp_path
+    ) -> None:
+        packer = _real_packer(tmp_path, with_imatrix=True, with_undecoded_miss=True)
+        packer.convert()
+
+        with pytest.raises(PackError) as caught:
+            packer.pack(sample_pack_recipe())
+
+        assert "token_embd.wei�ght" in str(caught.value)
+        assert str(tmp_path / "out.gguf") in str(caught.value)
+
+    def test_pack_with_an_undecodable_miss_name_records_no_clean_name(
+        self, tmp_path
+    ) -> None:
+        # The halt must not leave the clean miss recorded on its own.
+        packer = _real_packer(
+            tmp_path, with_imatrix=True, with_uncovered=True, with_undecoded_miss=True
+        )
+        packer.convert()
+
+        with pytest.raises(PackError, match="could not decode"):
+            packer.pack(sample_pack_recipe())
+
+    def test_pack_without_imatrix_ignores_an_undecodable_miss_name(
+        self, tmp_path
+    ) -> None:
+        # Without a matrix there is no coverage record to corrupt, so
+        # the scan never runs and the pack completes (ADR-0016).
+        packer = _real_packer(tmp_path, with_undecoded_miss=True)
+        packer.convert()
+
+        result = packer.pack(sample_pack_recipe())
+
+        assert result.imatrix_uncovered == ()
 
     def test_convert_argv_requests_an_f16_outfile(self, tmp_path) -> None:
         packer = _real_packer(tmp_path)
