@@ -123,7 +123,8 @@ def read_run_log(path: Path) -> list[dict[str, Any]]:
     ``event`` or ``vramfit_runlog`` collides with the keyword argument
     and raises `TypeError` at the call. So a repeat means a hand edit or
     a foreign writer, never a crash, and the drop rule stays scoped to
-    truncation.
+    truncation. The refusal names the file line, counting blank lines
+    that the reader itself skips.
 
     Args:
         path: The run-log file.
@@ -136,15 +137,21 @@ def read_run_log(path: Path) -> list[dict[str, Any]]:
         ValueError: If a non-final line is not valid JSON, or any line
             defines the same key twice.
     """
+    # Each line keeps its file number, because the blank-line filter
+    # would otherwise make the refusal below name the wrong line. A hand
+    # edit is what writes a duplicate key, and it is what leaves a stray
+    # blank line too.
     lines = [
-        line for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
+        (number, line)
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
+        if line.strip()
     ]
     events: list[dict[str, Any]] = []
-    for i, line in enumerate(lines):
+    for i, (number, line) in enumerate(lines):
         try:
             events.append(json.loads(line, object_pairs_hook=object_from_pairs))
         except DuplicateKeyError as exc:
-            raise ValueError(f"{path}: line {i + 1}: {exc.message}") from exc
+            raise ValueError(f"{path}: line {number}: {exc.message}") from exc
         except ValueError:
             if i == len(lines) - 1:
                 break

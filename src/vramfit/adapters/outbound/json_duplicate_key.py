@@ -1,4 +1,4 @@
-"""One rule every vramfit JSON reader applies: no object repeats a key.
+"""Every reader in the vramfit package refuses a repeated JSON key.
 
 `json.loads` keeps the last value when a document repeats a key, and it
 reports nothing (#262). RFC 8259 permits the repeat and states that the
@@ -10,6 +10,9 @@ vramfit refuses it.
 Four artifact readers apply the rule through `_load_json`. Three readers
 outside it apply the rule directly: the run log, a Hugging Face
 ``config.json``, and a safetensors shard index (#283).
+
+`scripts/backfill_tensor_sizes.py` reads a sensitivity map without the
+rule and stays outside the package (#286).
 
 The hook lives here rather than in `json_common`, because those three
 readers share nothing else with the artifact readers. `json_common`

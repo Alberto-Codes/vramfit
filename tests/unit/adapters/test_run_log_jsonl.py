@@ -109,6 +109,21 @@ def test_reader_raises_on_a_duplicate_key_in_a_middle_line(tmp_path) -> None:
         read_run_log(path)
 
 
+def test_reader_names_the_file_line_past_a_blank_line(tmp_path) -> None:
+    # The locator must survive the blank-line filter. A hand edit writes
+    # the duplicate key, and a hand edit leaves the blank line.
+    path = tmp_path / "x.jsonl"
+    path.write_text(
+        '{"event": "scan_started"}\n'
+        "\n"
+        "\n"
+        '{"event": "cell_measured", "damage": 1.0, "damage": 2.0}\n'
+    )
+
+    with pytest.raises(ValueError, match='line 4: duplicate key "damage"'):
+        read_run_log(path)
+
+
 def test_reader_raises_on_a_duplicate_key_in_the_final_line(tmp_path) -> None:
     # ADR-0011 decision 2 drops a torn final line, which is the crash
     # signature. A duplicate key parses and no crash writes one, so the
