@@ -21,6 +21,12 @@
   field's meaning still reads one version. Decision 3 says "the
   sensitivity map stays at 1". Read that as version 3: #118's
   envelope rename took it to 2, and this ruling takes it to 3.
+- **Amendment (2026-08-16, issue #261):** decision 3 governs the
+  version an artifact declares. It said nothing about a **field** the
+  reader does not know, so every reader accepted one and dropped it.
+  A load followed by a save deleted it. The rule is now stated:
+  **an artifact reader reports a field it does not know, and loads
+  the document.** See [Unknown fields](#unknown-fields) below.
 
 ## Context
 
@@ -87,6 +93,55 @@ time.
    ftype aliases `Q5_K_M`, matching the `Q4_K` case; `Q6_K` is its
    own ftype). All other ADR-0012 clauses stand.
 
+## Unknown fields
+
+Added by the 2026-08-16 amendment (issue #261). Decision 3 rules on
+the version an artifact declares. This section rules on a field the
+reader does not know.
+
+1. **An artifact reader reports the field, then loads the document.**
+   The report names the JSON path. It states that a save drops the
+   field. The reader refuses nothing on this account.
+2. **One level reaches every reader and every caller.** The
+   sensitivity map, the recipe, the scan checkpoint, and the evals
+   sidecar behave alike. A reader does not report differently for the
+   CLI than for a port caller.
+3. **Rejected alternative — refuse the load.** This project adds
+   fields inside a version. `imatrix_counts` landed at map version 3
+   (#217). `derived` landed at map version 3 (#254). Neither bumped.
+   A reader that refused an unknown field could not read the next
+   such addition. Decision 3 already tolerates an unknown `runtime`
+   value for the same reason.
+4. **Rejected alternative — preserve the field.** No domain type
+   carries it. Preservation needs a store on 17 frozen dataclasses
+   across `vramfit.domain.model` and `vramfit.domain.evals`. It puts
+   unparsed JSON in the domain, which ADR-0008 keeps in the adapters.
+   Every writer also rebuilds its document field by field. A stored
+   field would need a merge at each of 18 objects.
+5. **An object whose keys the schema does not fix never reports.** The
+   map's `sensitivity` and `tensor_bytes`, and the recipe's `pins` and
+   `protections`, key on precisions, tensor names, and patterns. Their
+   own rules check those keys. A group's `imatrix_counts` fixes three
+   keys exactly (ADR-0026), so it keeps refusing.
+6. **The report travels on the human channel.** ADR-0011 decision 1
+   keeps two channels apart. A reader holds no run log, so it reports
+   through the stdlib `warnings` module. The CLI installs its own
+   reporter and prints one `warning:` line per report. That matches
+   the run-log failure line of ADR-0011 decision 2. The reader names
+   no source line, because the raising line sits inside the adapter
+   and says nothing about the artifact. The JSON path in the message
+   is the locator.
+7. **A reader of a file the model publisher owns accepts an unknown
+   field and reports nothing.** `hf_config.py` and `scan/offload.py`
+   read documents another project writes, where an unknown key is
+   normal. Only a vramfit artifact reader reports. Issues #286 and
+   #287 cover the remaining parse sites.
+
+Measured on 2026-08-16, before the build. The 8 published sensitivity
+maps carry no field their readers do not know. Neither do the 5
+published evals sidecars, nor the published recipe. No report fires on
+the published set today.
+
 ## Consequences
 
 - One sensitivity map now plans for several runtimes: scan once at
@@ -101,6 +156,10 @@ time.
 - Old version-1 recipe files no longer load. They are regenerated
   from their maps in minutes, and no published artifact carries the
   old schema.
+- A load followed by a save still deletes a field the reader does not
+  know. The 2026-08-16 amendment reports the loss instead of fixing
+  it. Anyone who hand-extends a published artifact must keep the
+  source, not re-save the loaded copy.
 
 ## Open questions
 

@@ -1,10 +1,17 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 from hypothesis import settings
+
+from vramfit.adapters.outbound.json_common import (
+    report_through_warnings,
+    reset_unknown_field_reporter,
+    set_unknown_field_reporter,
+)
 
 # Two hypothesis profiles per ADR-0009: "fast" keeps pre-commit quick,
 # "thorough" runs on pre-push and CI via HYPOTHESIS_PROFILE=thorough.
@@ -37,6 +44,21 @@ CALIBRATION_TEXT = (
 # GPU cap that forces `auto` sharding to offload most of the
 # offload-scale model while keeping its first layers on the card.
 OFFLOAD_GPU_CAP = 120 * 2**20
+
+
+@pytest.fixture(autouse=True)
+def _default_unknown_field_reporter() -> Iterator[None]:
+    """Give every test the readers' default unknown-field reporter (#261).
+
+    The CLI installs its own reporter on every run and keeps no token,
+    so a CLI test leaves that reporter behind. A later test asserting
+    on the warning would then see nothing, and pytest-randomly picks
+    the order that exposes it. The token restores whatever this test
+    inherited.
+    """
+    token = set_unknown_field_reporter(report_through_warnings)
+    yield
+    reset_unknown_field_reporter(token)
 
 
 @pytest.fixture(scope="session")

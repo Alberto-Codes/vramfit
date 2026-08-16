@@ -171,3 +171,17 @@ stamped copy fails with `$.plan: missing required field
 
 The [card ledger](../../publication/model-card/card-ledger.md)
 records the 49B case that #134 measured.
+
+## Unknown fields
+
+The loader reports a field it does not know, then loads the recipe
+(ADR-0013, the 2026-08-16 amendment, issue #261). The report names the
+JSON path and states that a save drops the field. The rule covers the
+recipe root, `plan`, each entry of `plan.trace`, `assignments`, and
+`protected_tensors`.
+
+`plan.pins` and `plan.protections` never report. Both key on
+tensor-name patterns, and the solver validates them.
+
+A load then save still deletes the field. Keep the source. Never
+re-save a hand-extended copy over itself.

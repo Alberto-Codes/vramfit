@@ -4,6 +4,7 @@ import json
 
 import pytest
 
+from tests.unit.conftest import make_recipe_dict
 from vramfit.adapters.outbound.json_common import ArtifactError
 from vramfit.adapters.outbound.recipe_json import (
     load_recipe,
@@ -12,42 +13,6 @@ from vramfit.adapters.outbound.recipe_json import (
     save_recipe,
 )
 from vramfit.domain.model import Assignment, PlanMeta, TraceStep
-
-
-def make_recipe_dict() -> dict:
-    return {
-        "vramfit_schema": 6,
-        "model_id": "test/model",
-        "runtime": "llama.cpp",
-        "plan": {
-            "vram_budget_bytes": 100,
-            "kv_headroom_bytes": 10,
-            "weight_budget_bytes": 90,
-            "predicted_total_bytes": 80,
-            "predicted_damage": 0.5,
-            "solver": "greedy-damage-per-byte",
-            "pins": {"g*": 8},
-            "protections": {},
-            "imatrix_exclusions": [],
-            "format_overhead": 0.05,
-            "trace": [
-                {
-                    "step": 1,
-                    "group": "g1",
-                    "from_bits": 8,
-                    "to_bits": 4,
-                    "damage_delta": 0.1,
-                    "bytes_freed": 20,
-                    "ratio": 0.005,
-                }
-            ],
-        },
-        "assignments": [
-            {"group": "g0", "bits": 8, "bytes": 40, "damage": 0.0},
-            {"group": "g1", "bits": 4, "bytes": 40, "damage": 0.5},
-        ],
-        "protected_tensors": [],
-    }
 
 
 @pytest.mark.unit

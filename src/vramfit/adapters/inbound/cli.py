@@ -21,7 +21,11 @@ dropped no-op pair (ADR-0022, issue #59), and its
 ``--exclude-imatrix`` globs mark protected tensors with a warning
 when a glob overreaches the protected set (ADR-0023). ``--format-overhead`` defaults per size
 model (ADR-0014): the residual when the runtime has an
-effective-bits table, the scalar otherwise.
+effective-bits table, the scalar otherwise. An artifact field a
+reader does not know draws a ``warning:`` line as well: the app
+callback installs the reporter the outbound readers call (#261,
+ADR-0013). The protection warnings live in
+[vramfit.adapters.inbound.cli_protection_warnings][].
 
 Examples:
     Show the installed version:
@@ -46,8 +50,12 @@ import typer
 
 from vramfit import __version__
 from vramfit.adapters.inbound import cli_pack, cli_scan, cli_validate
+from vramfit.adapters.inbound.cli_protection_warnings import warn_protection_gaps
 from vramfit.adapters.outbound.hf_config import HfConfigFile
-from vramfit.adapters.outbound.json_common import ArtifactError
+from vramfit.adapters.outbound.json_common import (
+    ArtifactError,
+    set_unknown_field_reporter,
+)
 from vramfit.adapters.outbound.recipe_json import JsonRecipeFile
 from vramfit.adapters.outbound.sensitivity_map_json import JsonSensitivityMapFile
 from vramfit.domain.budget import (
@@ -61,14 +69,6 @@ from vramfit.domain.budget import (
     parse_size,
 )
 from vramfit.domain.errors import VramfitError
-from vramfit.domain.model import SensitivityMap
-from vramfit.domain.protection import (
-    expand_exclusions,
-    expand_protections,
-    noop_protected_tensors,
-    noop_protection_patterns,
-    overreaching_exclusion_patterns,
-)
 from vramfit.domain.runtime import LLAMA_CPP, RUNTIME_CAPABILITIES
 from vramfit.domain.solver import (
     DEFAULT_FORMAT_OVERHEAD,
@@ -86,6 +86,31 @@ app = typer.Typer(
     help="Selective per-layer quantization to fit large models on a single GPU.",
     no_args_is_help=True,
 )
+
+
+def _echo_unknown_artifact_field(message: str) -> None:
+    """Print one unknown-field report on the human channel.
+
+    The line matches the run-log failure line (ADR-0011 decision 2).
+    The JSON path the report carries names the field. The stdlib
+    rendering would prefix a placeholder origin instead.
+
+    Args:
+        message: The report text, already carrying its JSON path.
+    """
+    typer.echo(f"warning: {message}", err=True)
+
+
+@app.callback()
+def main() -> None:
+    """Wire the process-wide reporting every command shares.
+
+    The artifact readers report a field they do not know through the
+    stdlib `warnings` module (#261, ADR-0013). This runs before any
+    command and routes those reports to the human channel. It keeps no
+    token, because the process exits with the command.
+    """
+    set_unknown_field_reporter(_echo_unknown_artifact_field)
 
 
 @app.command()
@@ -259,60 +284,6 @@ def _parse_rules(raw_rules: list[str] | None, option: str) -> dict[str, int]:
     return rules
 
 
-def _warn_protection_gaps(
-    protections: dict[str, int],
-    exclusions: tuple[str, ...],
-    map_: SensitivityMap,
-    state: dict[str, int],
-    runtime: str,
-) -> None:
-    """Warn about protection input that changed nothing.
-
-    A protection that changed nothing must not read as protection
-    applied (ADR-0022), and an exclusion glob that reaches outside
-    the protected set must not read as full coverage (ADR-0023).
-    A dead rule warns once per pattern. A dropped no-op pair warns
-    per tensor unless its rule already warned as fully dead
-    (issue #59). The solver already validated the rules, so
-    re-expansion here cannot fail.
-
-    Args:
-        protections: The verbatim pattern-to-floor rules.
-        exclusions: The verbatim ``--exclude-imatrix`` patterns.
-        map_: The solved sensitivity map.
-        state: Final assigned precision per group name.
-        runtime: The target runtime the floors were validated for.
-    """
-    floors = expand_protections(protections, map_, runtime)
-    for pattern in noop_protection_patterns(protections, map_, state, floors):
-        typer.echo(
-            f'warning: --protect "{pattern}={protections[pattern]}" is a '
-            "no-op — every tensor it governs already meets the floor, "
-            "or a later rule overrides it",
-            err=True,
-        )
-    group_of = {t: g.name for g in map_.groups for t in g.tensors}
-    excluded = expand_exclusions(exclusions, floors, map_)
-    for name in noop_protected_tensors(protections, map_, state, floors):
-        group = group_of[name]
-        message = (
-            f'warning: protection floor {floors[name]} on "{name}" is a '
-            f'per-tensor no-op — group "{group}" already packs at '
-            f"{state[group]}-bit. The recipe drops the pair."
-        )
-        if name in excluded:
-            message += " Its imatrix exclusion drops with it (ADR-0023)."
-        typer.echo(message, err=True)
-    overreach = overreaching_exclusion_patterns(exclusions, floors, map_)
-    for pattern, outside in overreach.items():
-        typer.echo(
-            f'warning: --exclude-imatrix "{pattern}" also matches '
-            f'{len(outside)} unprotected tensors (first: "{outside[0]}") '
-            "— their imatrix rows stay (ADR-0023)",
-            err=True,
-        )
-
-
 @app.command()
 def plan(
     sensitivity_map: Annotated[
@@ -379,6 +350,10 @@ def plan(
     nothing draws a warning, never silence — the recipe drops a
     no-op pair, which would otherwise falsely fail the
     reconstruction check (issue #59).
+
+    A map field the reader does not know draws a warning too, and the
+    plan continues (#261). The warning names the JSON path and states
+    that a save drops the field.
 
     An ``--exclude-imatrix`` glob marks matched protected tensors to
     quantize without their imatrix rows (ADR-0023) — the remedy when
@@ -465,7 +440,7 @@ def plan(
 
     if protections:
         state = {a.group: a.bits for a in recipe.assignments}
-        _warn_protection_gaps(protections, exclusions, map_, state, runtime)
+        warn_protection_gaps(protections, exclusions, map_, state, runtime)
 
     sink: RecipeSink = JsonRecipeFile(out)
     try:

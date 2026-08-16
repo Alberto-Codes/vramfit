@@ -14,7 +14,11 @@ otherwise keep the last value and report nothing. That refusal names the
 key and reports at the artifact root, because the parser hook that
 catches it sees no ancestry. That hook lives in
 `json_duplicate_key`, which three readers outside this module share
-(#283). The boolean extractor
+(#283). A field the reader does not know warns and loads
+(#261) — `_warn_unknown_fields` reports it, and ADR-0013's
+2026-08-16 amendment sets that level. An `UnknownFieldReporter`
+carries the report — `report_through_warnings` by default, and the CLI
+installs its own. The boolean extractor
 accepts only real booleans, and the string extractors reject the
 empty string. Schema versions advance
 per artifact (ADR-0013) — each adapter owns its version constant and
@@ -47,8 +51,11 @@ from __future__ import annotations
 
 import json
 import math
+import warnings
+from collections.abc import Callable
+from contextvars import ContextVar, Token
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 from vramfit.adapters.outbound.json_duplicate_key import (
     DuplicateKeyError,
@@ -103,6 +110,133 @@ def _require(condition: bool, path: str, message: str) -> None:
     """
     if not condition:
         raise ArtifactError(path, message)
+
+
+class UnknownArtifactFieldWarning(UserWarning):
+    """An artifact carries a field its reader does not know (#261).
+
+    ADR-0013's 2026-08-16 amendment sets this level. The reader
+    accepts the field and reports it. A save drops it, because no
+    domain type carries it. The category exists so a caller can route
+    or silence these reports alone — the CLI renders them on the human
+    channel.
+
+    Examples:
+        Catch the report a hand-edited field raises. The default
+        reporter must still be in force — the CLI replaces it:
+
+        ```python
+        import warnings
+
+        from vramfit.adapters.outbound.evals_sidecar_json import (
+            load_evals_sidecar,
+        )
+        from vramfit.adapters.outbound.json_common import (
+            UnknownArtifactFieldWarning,
+        )
+
+        with warnings.catch_warnings(record=True) as seen:
+            load_evals_sidecar(hand_edited_path)
+        print(seen[0].category is UnknownArtifactFieldWarning)
+        ```
+    """
+
+
+# Takes one report's text and delivers it. A plain comment, because no
+# other alias in this package carries an attribute docstring.
+UnknownFieldReporter = Callable[[str], None]
+
+
+# A source location the reader can honestly claim. `warn_explicit`
+# demands one, and every real candidate is wrong: the raising line sits
+# inside this module, and the frame above it is a different depth at
+# each of the 18 call sites. The JSON path inside the message is the
+# locator that matters.
+_ARTIFACT_ORIGIN: Final[str] = "<vramfit artifact>"
+
+
+def report_through_warnings(message: str) -> None:
+    """Deliver a report as an `UnknownArtifactFieldWarning`.
+
+    The default. A caller that imports a reader and wires nothing still
+    sees the report, and `warnings` filters silence or collect it.
+
+    `warnings.warn` would drop most reports. Its default filter keys on
+    the message, the category, the module, and the line, then records
+    the hit in that module's registry. The raising line never moves, so
+    the second document carrying the same field would report nothing.
+    ``registry=None`` skips that bookkeeping, so every document reports.
+
+    Args:
+        message: The report text, already carrying its JSON path.
+
+    Warns:
+        UnknownArtifactFieldWarning: Always. The message is the report.
+    """
+    warnings.warn_explicit(
+        message, UnknownArtifactFieldWarning, _ARTIFACT_ORIGIN, 0, registry=None
+    )
+
+
+# The reporter the readers call. A `ContextVar` rather than a rebound
+# module name: `set_unknown_field_reporter` returns a token that
+# restores the previous reporter exactly, and a thread or an asyncio
+# task sees only its own installs.
+_REPORTER: Final[ContextVar[UnknownFieldReporter]] = ContextVar(
+    "vramfit_unknown_field_reporter", default=report_through_warnings
+)
+
+
+def set_unknown_field_reporter(
+    report: UnknownFieldReporter,
+) -> Token[UnknownFieldReporter]:
+    """Route unknown-field reports somewhere else.
+
+    The CLI installs a reporter that prints one ``warning:`` line,
+    because the interpreter's own warning rendering names no artifact
+    and tells an operator nothing.
+
+    Args:
+        report: The reporter to install.
+
+    Returns:
+        A token that `reset_unknown_field_reporter` restores from.
+    """
+    return _REPORTER.set(report)
+
+
+def reset_unknown_field_reporter(token: Token[UnknownFieldReporter]) -> None:
+    """Restore the reporter that a token was taken before.
+
+    Args:
+        token: The token `set_unknown_field_reporter` returned.
+    """
+    _REPORTER.reset(token)
+
+
+def _warn_unknown_fields(obj: dict[str, Any], path: str, known: frozenset[str]) -> None:
+    """Report every key in ``obj`` the reader does not know.
+
+    The reader loads the document anyway (ADR-0013, the 2026-08-16
+    amendment). Reports follow document order, so two runs over one
+    file agree. An object whose keys the schema does not fix — the
+    map's ``sensitivity``, the recipe's ``pins`` — never reaches this
+    check. Its own rule validates its keys instead.
+
+    The reporter in force takes each report, so a caller decides where
+    it lands.
+
+    Args:
+        obj: The JSON object to check.
+        path: JSON path of that object, for the report.
+        known: Every key this reader carries at that object.
+    """
+    for key in obj:
+        if key in known:
+            continue
+        _REPORTER.get()(
+            f"{path}.{key}: vramfit does not know this field. A save drops it."
+        )
 
 
 def _get_dict(obj: Any, path: str) -> dict[str, Any]:
