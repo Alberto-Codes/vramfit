@@ -2,6 +2,10 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-31 (accepted 2026-07-31)
+- **Amendment (2026-08-17, issue #319):** a fourth method token,
+  `gguf-ref`, ports the block quantizers `llama-quantize` applies where
+  no K-quant reaches. Maintainer ruling 2026-08-17. See
+  "Amendment: the `gguf-ref` method" below.
 
 ## Context
 
@@ -101,3 +105,83 @@ compounds on wrong marginals.
 - Two maps of the same model are now comparable only when their
   `scan.within_group` matches — the same rule calibration
   provenance already imposes.
+
+## Amendment: the `gguf-ref` method (2026-08-17, issue #319)
+
+### Context
+
+This record ported the K-quants because the pack applied them. On the
+Nemotron 3.5 Lightning 30B-A3B target the pack cannot apply them at all.
+`tensor_type_fallback` rejects any type whose block does not divide
+`ne[0]`, and the 46 routed-expert stacks hold rows of 2688 and 1856
+against `QK_K` 256 (#159, #189). ADR-0028 packs those stacks at `Q8_0`,
+`Q4_0`, and `Q2_0`. The stacks hold 93.0 % of the parameters.
+
+`kquant` priced them anyway. A box-side spike measured the gap on real
+bf16 weights, over 32 of the 128 experts in each of the 46 stacks.
+
+| nominal | the method applied | the pack applies | under-priced by |
+|---|---|---|---|
+| 2 | `Q2_K` 0.088908 | `Q2_0` 0.518557 | 5.83x |
+| 4 | `Q4_K` 0.005163 | `Q4_0` 0.007526 | 1.46x |
+
+The numbers are weight-space reconstruction error at
+`||q - w||² / ||w||²`. They are not damage and they set no price.
+
+A solver spends the ratio between two widths. The method priced nominal
+2 at 17.22 times nominal 4, against the pack's 68.90 times. **So the map
+made 2 bits look 4.00 times cheaper than the artifact delivers.** The
+frames also order the stacks apart, at Spearman rho +0.4638 for `Q2_K`
+against `Q2_0` and +0.7853 for `Q4_K` against `Q4_0`.
+
+The record's own straddle assumption also breaks on these rows. Neither
+2688 nor 1856 divides 256, so a flat super-block spans two rows. That
+defect is real and inert. Per-row padding moves the fit 0.05 % and the
+layer ordering not at all, at rho +1.0000.
+
+ADR-0021 decision 1 closed the scan-frame refinement lane. This
+amendment does not reopen it. That lane refined a frame toward a type
+the pack applied. This one replaces a frame the pack cannot apply.
+
+### Decision
+
+1. **A fourth within-group method ports the block quantizers.** It
+   reimplements `quantize_row_q2_0_ref` and `quantize_row_q4_0_ref` from
+   llama.cpp b10326, commit `3653e6d6d`, including the fp16 scale
+   rounding and the `roundf` tie rule. The port returns dequantized
+   values, like the other two methods.
+2. **The method token is `gguf-ref`.** The CLI accepts
+   `--within-group gguf`. `gguf-imx` stays reserved for the assisted
+   path, because `quantize_row_q4_0_impl` fits with imatrix weights.
+3. **The port verifies against the C reference.** A golden-fixture suite
+   asserts the torch round trip matches recorded dequantized values, on
+   ADR-0018 decision 4's pattern.
+4. **`kquant` refuses a tensor whose rows do not divide 256, and names
+   it.** The refusal mirrors ADR-0028's pack-side halt on the type
+   fallback. A silent substitution would make one map record two frames
+   under one token.
+5. **The 30B target re-scans its 46 expert stacks under `gguf-ref`**, at
+   precisions 2 and 4. The run needs #282's group-subset flag first, at
+   $4.04 against $18.42 for the whole 210-group scan.
+
+### Consequences
+
+- `rtn` is not the fallback for these stacks. It reaches `Q2_0`'s grid
+  at block 64 and the CLI hardcodes block 32. At block 32 it over-prices
+  `Q2_0` by ordering alone, and at nominal 4 it over-prices `Q4_0` by
+  1.28 times.
+- `Q2_0` reaches three levels, not four. The reference clamps
+  `round(w/amax)` to `[-1, 2]` and `|w| <= amax` caps it at 1. Upstream
+  built the type for ternary QAT checkpoints and packed 2 bits for
+  acceleration (ggml-org/llama.cpp#24448).
+- **`quantize_q2_0` accepts an importance matrix and ignores it**
+  (`ggml/src/ggml-quants.c:2113-2126`). So `gguf-imx` can only ever
+  differ from `gguf-ref` at nominal 4. #278 carries the consequence for
+  the published-build comparison.
+- Maps priced under `kquant` on this target do not compare with maps
+  priced under `gguf-ref`. #163's map is the campaign's input until the
+  re-scan lands.
+- No published work prices a sensitivity map against the exact type its
+  artifact ships. SPEAR (arXiv 2606.11244) measures the nearest thing,
+  at Spearman rho 0.77 to 0.98 across three quantizers sharing one
+  4-bit format. This target's rho is +0.4638.

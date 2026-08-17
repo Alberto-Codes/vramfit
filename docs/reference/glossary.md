@@ -139,6 +139,10 @@ change.
     `kquant-imx` is the same port with assisted pricing — the map
     then also records the imatrix path in `scan.imatrix`
     ([ADR-0020](../adr/0020-imatrix-assisted-pricing.md)).
+    `gguf-ref` ports `Q2_0` and `Q4_0`, the block quantizers
+    `llama-quantize` applies where no K-quant reaches a row
+    ([ADR-0018](../adr/0018-kquant-within-group-method.md), 2026-08-17
+    amendment). `gguf-imx` is reserved for its assisted path.
     [ADR-0021](../adr/0021-runtime-frame-measurement.md) supersedes
     ADR-0020, and the method stays a valid scan option. A method
     change is a new scan — the token lives in the fingerprint and in
