@@ -35,6 +35,19 @@ class TestParseSize:
         with pytest.raises(ValueError, match="does not fit a 64-bit byte count"):
             parse_size("20000000000GiB")
 
+    def test_size_that_floats_to_infinity_refuses_as_value_error(self) -> None:
+        # A long enough digit string floats to infinity and reaches
+        # `int()` before the bound runs. `OverflowError` is not a
+        # `ValueError`, so the CLI would show a traceback (#260).
+        with pytest.raises(ValueError, match="does not fit a 64-bit byte count"):
+            parse_size("9" * 400)
+
+    def test_refusal_caps_the_size_it_repeats_back(self) -> None:
+        with pytest.raises(ValueError) as caught:
+            parse_size("9" * 400)
+
+        assert len(str(caught.value)) < 120
+
     def test_size_inside_the_bound_still_parses(self) -> None:
         # `parse_size` runs the number through a float, so it cannot
         # land on 2**63 - 1 exactly. 2**62 is representable and well
