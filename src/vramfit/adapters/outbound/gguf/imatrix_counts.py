@@ -28,9 +28,11 @@ first read: the base install keeps ``vramfit pack --help`` and a
 matrix-less pack working (ADR-0005).
 
 `imatrix_entry_names` serves the exclusion check
-([vramfit.adapters.outbound.gguf.exclusion_match][]) from the same
-read. One definition of a readable imatrix serves both callers, so
-neither can accept a file the other refuses (the #198 amendment).
+([vramfit.adapters.outbound.gguf.exclusion_match][]) through the same
+`_counts_by_entry`. One definition of a malformed imatrix serves both
+callers, rather than a second and looser scan (the #198 amendment).
+The list's sixth case needs the base GGUF, so it stays with
+`expert_stack_counts` and that function's own docstring records it.
 
 Examples:
     Read the counts the pack's quantizer will consume:
@@ -53,15 +55,30 @@ See Also:
 from __future__ import annotations
 
 import math
+import struct
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 from vramfit.adapters.outbound.gguf.types import PackError
 
 # A fused expert stack shapes as three dimensions in the base GGUF —
 # ``ne`` of (columns, rows, experts). Any other rank is dense.
 _STACK_DIMS = 3
+
+# What gguf-py raises on a file it cannot read, measured by
+# `override_match` over a truncated header and carried here for the
+# same reason. `ValueError` covers a bad magic and an unsupported
+# version, `IndexError` an empty numpy slice on a short file, and
+# `OSError` the memory map. An interrupted ``llama-imatrix`` run
+# leaves such a file, and both readers open it at a pack boundary
+# that promises `PackError` (ADR-0011).
+_READER_FAILURES: Final[tuple[type[Exception], ...]] = (
+    ValueError,
+    IndexError,
+    struct.error,
+    OSError,
+)
 
 
 def _load_gguf() -> Any:
@@ -84,7 +101,13 @@ def _load_gguf() -> Any:
 
 
 def _open_reader(gguf_module: Any, path: Path, role: str) -> Any:
-    """Open one GGUF file, translating a parse failure to `PackError`.
+    """Open one GGUF file, translating every read failure to `PackError`.
+
+    A truncated header raises `IndexError` from an empty numpy slice
+    rather than a parse error, and the memory map raises `OSError`.
+    Both reach a pack boundary that promises `PackError` (ADR-0011),
+    so the tuple matches `override_match`'s rather than `ValueError`
+    alone.
 
     Args:
         gguf_module: The imported ``gguf`` module.
@@ -96,13 +119,20 @@ def _open_reader(gguf_module: Any, path: Path, role: str) -> Any:
         An open ``GGUFReader``.
 
     Raises:
-        PackError: If the file is not a GGUF.
-        OSError: If the file cannot be read.
+        PackError: If the file is not a GGUF, keeping the wording
+            ADR-0026's refusal list records, or if the reader fails
+            any other way. The cause carries what it reported.
     """
     try:
         return gguf_module.GGUFReader(str(path))
     except ValueError as exc:
         raise PackError(f"{role} {path} is not a GGUF: {exc}") from exc
+    except _READER_FAILURES as exc:
+        raise PackError(
+            f"cannot read the {role} {path}: {type(exc).__name__}: {exc}. "
+            f"A partial file from an interrupted run reads this way — "
+            f"delete it and produce it again"
+        ) from exc
 
 
 def _counts_by_entry(reader: Any, path: Path) -> dict[str, list[float]]:
@@ -159,14 +189,27 @@ def imatrix_entry_names(imatrix: Path) -> tuple[str, ...]:
     """Read the matrix's entry names, as ``--exclude-weights`` sees them.
 
     ``common/imatrix-loader.cpp`` keys each loaded entry by its tensor
-    name with ``.in_sum2`` or ``.counts`` removed, and it refuses a
-    sums tensor without its counts twin. `_counts_by_entry` applies
-    the same two rules, so its keys are the names the quantizer
-    matches an exclusion against.
+    name with ``.in_sum2`` or ``.counts`` removed, which is what
+    `_counts_by_entry` returns. So these keys are the names the
+    quantizer matches an exclusion against.
 
-    The read runs the #198 amendment's closed refusal list, the way
-    the count read does. A second, lenient reader here would accept a
-    file the count read refuses.
+    The read runs the file-level half of the #198 amendment's closed
+    refusal list, through the same `_counts_by_entry` the count read
+    uses. A second, lenient reader here would accept a file that read
+    refuses.
+
+    **It runs five of the list's six cases.** The sixth compares a
+    matched entry's count length against its base tensor's matrix
+    count, and it needs the base GGUF that `expert_stack_counts`
+    opens. An exclusion check reads the matrix alone, so that case
+    stays with the caller that has both files.
+
+    **The pair rule is one-directional here and symmetric in C.**
+    `common_imatrix_load` refuses a mismatched pair either way, and
+    `_counts_by_entry` refuses only an ``.in_sum2`` with no
+    ``.counts`` twin. So a ``.counts`` tensor with no sums twin yields
+    a name here and makes the C loader exit 1. That is a loud
+    downstream failure rather than a silent one, and #325 carries it.
 
     Args:
         imatrix: The importance matrix the pack consumes.
@@ -175,9 +218,12 @@ def imatrix_entry_names(imatrix: Path) -> tuple[str, ...]:
         Every entry name the matrix declares, in file order.
 
     Raises:
-        PackError: If gguf-py is missing, the file is not a GGUF, or
-            the matrix fails the closed refusal list.
-        OSError: If the file cannot be read.
+        PackError: If gguf-py is missing, the reader cannot open the
+            file, or the matrix fails one of the five file-level
+            cases on the closed refusal list.
+        OSError: If the memory map fails while reading tensor data,
+            which `_open_reader` cannot reach. `check_exclusion_match`
+            translates it at the pack boundary.
 
     Examples:
         Read the names an exclusion must reach:

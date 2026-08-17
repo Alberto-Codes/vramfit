@@ -33,13 +33,15 @@ matrix, which `LlamaCppPacker.pack` honors by emitting no flag. The
 record addresses no third case, so an exclusion that reaches a real
 matrix and erases nothing is a malformed input rather than a ruled
 outcome. #307 is the contrasting case: ADR-0012 decision 3 supplies
-the floored layer's mechanism, so that one reports and #320 owns the
-refusal question.
+the floored layer's mechanism, and its 2026-08-16 amendment states
+that the mechanism is not an acceptance policy. So that one reports
+and #320 owns the refusal question.
 
 The comparison is the tool's own. It searches the exclusion name
-inside each entry name, with no case folding — ``quantize.cpp``
-lower-cases a ``--tensor-type`` pattern before it compiles, and it
-does no such thing to an exclusion.
+inside each entry name, with no case folding. ``quantize.cpp:332``
+lower-cases a ``--tensor-type`` pattern, and ``:462`` stores an
+exclusion verbatim. So folding case here would pass a name the
+quantizer never erases.
 
 The names the pack emits are full GGUF tensor names, which decision 4
 requires and which reach exactly one row. A partial name matches many
@@ -126,7 +128,10 @@ def check_exclusion_match(excluded: Sequence[str], imatrix: Path) -> None:
 
     Raises:
         PackError: If any exclusion reaches no entry (#309), if
-            gguf-py is missing, or if the reader refuses the matrix.
+            gguf-py is missing, or if the reader cannot read the
+            matrix. `LlamaCppPacker.pack` promises `PackError` at
+            this boundary, so a memory-map `OSError` translates here
+            rather than escaping (ADR-0011).
 
     Examples:
         A recipe excluding a tensor the matrix never priced refuses
@@ -138,13 +143,23 @@ def check_exclusion_match(excluded: Sequence[str], imatrix: Path) -> None:
     """
     if not excluded:
         return
-    unmatched = unmatched_exclusions(excluded, imatrix_entry_names(imatrix))
+    try:
+        names = imatrix_entry_names(imatrix)
+    except OSError as exc:
+        raise PackError(
+            f"cannot read the imatrix {imatrix}: {type(exc).__name__}: {exc}"
+        ) from exc
+    unmatched = unmatched_exclusions(excluded, names)
     if not unmatched:
         return
     details = ", ".join(f'"{name}"' for name in unmatched)
+    # Both counts are over distinct names. `unmatched_exclusions`
+    # already deduplicates, so a raw denominator would read a repeated
+    # name as a second exclusion that passed.
+    distinct = len(dict.fromkeys(excluded))
     raise PackError(
         f"the imatrix {imatrix} carries no row for {len(unmatched)} of "
-        f"{len(excluded)} recipe exclusions: {details}. The quantizer "
+        f"{distinct} recipe exclusions: {details}. The quantizer "
         f"erases no row for such a name and exits 0. The tensor then keeps "
         f"the assisted fit the recipe asked to drop, and the record states "
         f"an exclusion that never applied (ADR-0023). Check the recipe's "

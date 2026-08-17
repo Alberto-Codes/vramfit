@@ -609,8 +609,13 @@ class TestPackCommand:
         )
 
         assert result.exit_code == 1
-        assert "carries no row for 1 of 1 recipe exclusions" in result.output
-        assert "blk.0.attn_v.weight" in result.output
+        # `result.stderr` and not `result.output`: on the pinned click
+        # 8.4.2 `output` holds both streams, so it would pass whichever
+        # channel carried the refusal (#293).
+        assert "carries no row for 1 of 1 recipe exclusions" in result.stderr
+        assert "blk.0.attn_v.weight" in result.stderr
+        # The remedy is the half the operator acts on.
+        assert "Check the recipe's protected tensors" in result.stderr
         log = read_run_log(out.with_name(out.stem + ".runlog.jsonl"))
         assert log[-1]["event"] == "pack_halted"
         assert log[-1]["stage"] == "quantize"

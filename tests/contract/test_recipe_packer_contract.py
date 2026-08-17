@@ -21,7 +21,11 @@ from typing import Literal
 
 import pytest
 
-from tests.fakes import MemoryRecipePacker, decoder_tensor_names
+from tests.fakes import (
+    MemoryRecipePacker,
+    decoder_imatrix_entry_names,
+    decoder_tensor_names,
+)
 from vramfit.adapters.outbound.gguf import exclusion_match, override_match
 from vramfit.adapters.outbound.gguf.pack import LlamaCppPacker, TypeFallbackError
 from vramfit.adapters.outbound.gguf.types import PackError
@@ -208,7 +212,15 @@ def _real_packer(  # noqa: PLR0913 - the contract fixture surface: one flag per 
     with_undecodable_miss: bool = False,
     with_second_undecodable_miss: bool = False,
     with_undecodable_excluded_miss: bool = False,
+    with_unreached_exclusion: bool = False,
+    with_unmatched_override: bool = False,
 ) -> RecipePacker:
+    # These two configure the fake alone. The real adapter reads both
+    # name lists through the module seams the conftest fixtures patch,
+    # so a test wanting either refusal re-patches the seam and passes
+    # the flag for the other side.
+    del with_unreached_exclusion, with_unmatched_override
+
     # The undecodable-name flags have no fake counterpart. The fake
     # receives structured names and never decodes a stream, so the
     # damaged-name case is real-adapter-only (#252).
@@ -257,6 +269,21 @@ def _real_packer(  # noqa: PLR0913 - the contract fixture surface: one flag per 
     )
 
 
+# The entries a matrix carrying no row for the excluded tensor holds.
+# `excluded_pack_recipe` excludes `blk.0.attn_v.weight`, so a list
+# starting at layer 1 reaches it with nothing.
+UNREACHED_ENTRY_NAMES = ("blk.1.attn_v.weight",)
+# A base GGUF the sample recipe's layer overrides do not address.
+UNMATCHED_BASE_NAMES = ("token_embd.weight", "blk.9.attn_v.weight")
+
+
+def _entry_names(*, with_imatrix: bool, unreached: bool) -> tuple[str, ...] | None:
+    """Pick the matrix entry names the fake answers from."""
+    if not with_imatrix:
+        return None
+    return UNREACHED_ENTRY_NAMES if unreached else decoder_imatrix_entry_names()
+
+
 def _fake_packer(  # noqa: PLR0913 - mirrors _real_packer's fixture surface
     tmp_path: Path,
     *,
@@ -268,6 +295,8 @@ def _fake_packer(  # noqa: PLR0913 - mirrors _real_packer's fixture surface
     with_excluded_miss: bool = False,
     with_type_fallback: bool = False,
     with_f16_fallback: bool = False,
+    with_unreached_exclusion: bool = False,
+    with_unmatched_override: bool = False,
 ) -> RecipePacker:
     uncovered = ("token_embd.weight",) if with_uncovered else ()
     if with_excluded_miss:
@@ -285,10 +314,14 @@ def _fake_packer(  # noqa: PLR0913 - mirrors _real_packer's fixture surface
         type_fallbacks=fallbacks,
         # The same names `base_gguf_names` serves the real adapter, so
         # both sides run the #303 refusal and the #307 report over one
-        # tensor list. `imatrix_entry_names` serves the #309 refusal
-        # from the same list, for the same reason.
-        base_tensor_names=decoder_tensor_names(),
-        imatrix_entry_names=decoder_tensor_names() if with_imatrix else None,
+        # tensor list. The matrix's entries are the narrower list the
+        # `imatrix_entry_names` fixture serves, for the same reason.
+        base_tensor_names=(
+            UNMATCHED_BASE_NAMES if with_unmatched_override else decoder_tensor_names()
+        ),
+        imatrix_entry_names=_entry_names(
+            with_imatrix=with_imatrix, unreached=with_unreached_exclusion
+        ),
     )
 
 
@@ -506,6 +539,59 @@ class TestRecipePackerContract:
 
         assert result.imatrix_uncovered == ("token_embd.weight",)
         assert result.imatrix_excluded == ("blk.0.attn_v.weight",)
+
+    def test_pack_exclusion_reaching_no_imatrix_row_refuses(
+        self, build, tmp_path, monkeypatch
+    ) -> None:
+        # ADR-0009 wants both sides to raise the same error for the
+        # same recipe. The real adapter answers from the module seam
+        # and the fake from its field, so both take the same names
+        # (#309).
+        monkeypatch.setattr(
+            exclusion_match,
+            "imatrix_entry_names",
+            lambda _: UNREACHED_ENTRY_NAMES,
+        )
+        packer: RecipePacker = build(
+            tmp_path, with_imatrix=True, with_unreached_exclusion=True
+        )
+        packer.convert()
+
+        with pytest.raises(PackError) as exc:
+            packer.pack(excluded_pack_recipe())
+
+        message = str(exc.value)
+        assert "carries no row for 1 of 1 recipe exclusions" in message
+        assert '"blk.0.attn_v.weight"' in message
+        # The remedy is what the operator acts on, so both sides
+        # carry it rather than a bare summary.
+        assert "Check the recipe's protected tensors" in message
+
+    def test_pack_failing_both_checks_reports_the_override_refusal(
+        self, build, tmp_path, monkeypatch
+    ) -> None:
+        # The base-GGUF read runs first, so a recipe broken both ways
+        # reports the mapping error (#303 before #309).
+        monkeypatch.setattr(
+            override_match,
+            "base_tensor_names",
+            lambda _: UNMATCHED_BASE_NAMES,
+        )
+        monkeypatch.setattr(
+            exclusion_match,
+            "imatrix_entry_names",
+            lambda _: UNREACHED_ENTRY_NAMES,
+        )
+        packer: RecipePacker = build(
+            tmp_path,
+            with_imatrix=True,
+            with_unreached_exclusion=True,
+            with_unmatched_override=True,
+        )
+        packer.convert()
+
+        with pytest.raises(PackError, match="carries no tensor for"):
+            packer.pack(excluded_pack_recipe())
 
     def test_pack_records_the_layers_no_override_reached(self, build, tmp_path) -> None:
         # The sample recipe addresses layers 0 and 1. Both sides read
@@ -913,3 +999,7 @@ class TestLlamaCppCommandLines:
         result = packer.pack(excluded_pack_recipe())
 
         assert result.imatrix_excluded == ()
+        # The stub above proves no read happened. This proves why: the
+        # command carries no exclusion to check.
+        argv = json.loads((tmp_path / "quantize-argv.json").read_text())
+        assert "--exclude-weights" not in argv

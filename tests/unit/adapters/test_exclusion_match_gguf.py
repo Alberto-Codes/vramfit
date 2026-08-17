@@ -68,6 +68,60 @@ class TestImatrixEntryNames:
         with pytest.raises(PackError, match=r"imatrix .* is not a GGUF"):
             imatrix_entry_names(path)
 
+    def test_a_truncated_header_refuses_as_a_pack_error(self, tmp_path: Path) -> None:
+        # gguf-py reads each header field as `self._get(...)[0]`, so a
+        # short file raises `IndexError` from an empty numpy slice.
+        # `pack` promises `PackError` at this boundary (ADR-0011).
+        whole = tmp_path / "whole.imatrix.gguf"
+        write_imatrix(whole, ("blk.0.attn_v.weight",))
+        path = tmp_path / "model.imatrix.gguf"
+        path.write_bytes(whole.read_bytes()[:24])
+        with pytest.raises(PackError, match="cannot read the imatrix"):
+            imatrix_entry_names(path)
+
+    def test_a_sums_tensor_without_its_counts_twin_refuses(
+        self, tmp_path: Path
+    ) -> None:
+        # The read runs the #198 closed refusal list rather than a
+        # second, lenient scan.
+        path = tmp_path / "model.imatrix.gguf"
+        writer = GGUFWriter(path, arch="imatrix")
+        writer.add_type("imatrix")
+        writer.add_tensor("blk.0.attn_v.weight.in_sum2", np.ones((1, 4), np.float32))
+        writer.add_tensor("blk.1.attn_v.weight.in_sum2", np.ones((1, 4), np.float32))
+        writer.add_tensor(
+            "blk.1.attn_v.weight.counts", np.array([[5.0]], dtype=np.float32)
+        )
+        writer.write_header_to_file()
+        writer.write_kv_data_to_file()
+        writer.write_tensors_to_file()
+        writer.close()
+        with pytest.raises(PackError, match="has no counts twin"):
+            imatrix_entry_names(path)
+
+    def test_an_unknown_tensor_suffix_refuses(self, tmp_path: Path) -> None:
+        path = tmp_path / "model.imatrix.gguf"
+        writer = GGUFWriter(path, arch="imatrix")
+        writer.add_type("imatrix")
+        writer.add_tensor("blk.0.attn_v.weight.sums", np.ones((1, 4), np.float32))
+        writer.write_header_to_file()
+        writer.write_kv_data_to_file()
+        writer.write_tensors_to_file()
+        writer.close()
+        with pytest.raises(PackError, match="unexpected tensor"):
+            imatrix_entry_names(path)
+
+    def test_a_matrix_holding_no_counts_refuses(self, tmp_path: Path) -> None:
+        path = tmp_path / "model.imatrix.gguf"
+        writer = GGUFWriter(path, arch="imatrix")
+        writer.add_type("imatrix")
+        writer.write_header_to_file()
+        writer.write_kv_data_to_file()
+        writer.write_tensors_to_file()
+        writer.close()
+        with pytest.raises(PackError, match=r"holds no \.counts tensors"):
+            imatrix_entry_names(path)
+
 
 class TestCheckExclusionMatchAgainstAFile:
     def test_an_exclusion_the_matrix_carries_passes(self, tmp_path: Path) -> None:

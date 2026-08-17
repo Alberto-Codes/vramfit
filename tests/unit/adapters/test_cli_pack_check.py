@@ -201,7 +201,12 @@ class TestReconstructionGate:
         # gate still measures the excluded tensor (ADR-0023).
         recipe_path = save_excluded_recipe(tmp_path)
         fake = MemoryRecipePacker(
-            packed_bytes=WEIGHT_BUDGET - 100, imatrix=str(imatrix_path)
+            packed_bytes=WEIGHT_BUDGET - 100,
+            imatrix=str(imatrix_path),
+            # The matrix prices the excluded tensor, so the #309
+            # refusal stays out of this suite's way. Leaving it unset
+            # would skip a check the real adapter always runs.
+            imatrix_entry_names=(PROTECTED_GGUF,),
         )
         monkeypatch.setattr(cli_pack, "_build_packer", lambda *args: fake)
         patch_checkers(monkeypatch, protected_rmse=0.00164, reference_rmse=0.0048)
@@ -227,7 +232,12 @@ class TestReconstructionGate:
         # (ADR-0023).
         recipe_path = save_excluded_recipe(tmp_path)
         fake = MemoryRecipePacker(
-            packed_bytes=WEIGHT_BUDGET - 100, imatrix=str(imatrix_path)
+            packed_bytes=WEIGHT_BUDGET - 100,
+            imatrix=str(imatrix_path),
+            # The matrix prices the excluded tensor, so the #309
+            # refusal stays out of this suite's way. Leaving it unset
+            # would skip a check the real adapter always runs.
+            imatrix_entry_names=(PROTECTED_GGUF,),
         )
         monkeypatch.setattr(cli_pack, "_build_packer", lambda *args: fake)
         patch_checkers(monkeypatch, protected_rmse=0.0241, reference_rmse=0.0048)
@@ -268,7 +278,12 @@ class TestReconstructionGate:
         recipe_path = tmp_path / "recipe.json"
         save_recipe(recipe, recipe_path)
         fake = MemoryRecipePacker(
-            packed_bytes=WEIGHT_BUDGET - 100, imatrix=str(imatrix_path)
+            packed_bytes=WEIGHT_BUDGET - 100,
+            imatrix=str(imatrix_path),
+            # The matrix prices the excluded tensor, so the #309
+            # refusal stays out of this suite's way. Leaving it unset
+            # would skip a check the real adapter always runs.
+            imatrix_entry_names=(PROTECTED_GGUF,),
         )
         monkeypatch.setattr(cli_pack, "_build_packer", lambda *args: fake)
         out = tmp_path / "packed.gguf"
