@@ -4,10 +4,11 @@ The rest of the override matching runs without gguf-py in
 `test_override_match.py`. Only the header read needs a real file, so
 only this module carries the guard.
 
-CI installs no extras on the default test jobs, so these skip there.
-The `test-gguf` job installs gguf-py and selects `-m contract`, which
-this module does not carry — ADR-0009 reserves `contract` for
-verified-fake port suites and #207 owns whether that marker widens.
+The module is marked `unit` rather than `contract`. ADR-0009 reserves
+`contract` for verified-fake port suites, and #207 owns whether that
+marker widens. Both CI jobs that collect this tier install the gguf
+dependency group, so these run there and skip on a dev box synced
+without it.
 """
 
 # ruff: noqa: E402 - the importorskip guard must run before gguf imports
@@ -31,11 +32,6 @@ from vramfit.adapters.outbound.gguf.types import PackError
 from vramfit.domain.pack import TypeOverride
 
 pytestmark = pytest.mark.unit
-
-
-@pytest.fixture(autouse=True)
-def base_gguf_names() -> None:
-    """Override the suite-wide stub — this module reads real files."""
 
 
 def write_gguf(path: Path, names: tuple[str, ...]) -> None:

@@ -217,8 +217,9 @@ def check_overrides_match(overrides: Sequence[TypeOverride], base_gguf: Path) ->
 
     Raises:
         PackError: If any override matches no tensor, if gguf-py is
-            missing, or if the base file is not a GGUF.
-        OSError: If the base file cannot be read.
+            missing, or if the reader cannot read the base file.
+            `base_tensor_names` wraps every reader failure, so no
+            `OSError` reaches the caller.
 
     Examples:
         A recipe naming a layer the base GGUF does not carry refuses

@@ -219,7 +219,7 @@ extra-paths = ["scripts", ".claude/hooks"]
 # The scan adapter and its torch-tier tests import torch and
 # transformers, which CI and torch-less dev boxes do not install
 # (ADR-0005). The reconstruction adapter (ADR-0022), the imatrix
-# count reader (ADR-0026), the override matcher (ADR-0012, #208), and
+# count reader (ADR-0026), the override matcher (ADR-0012, #303), and
 # their contract suites import gguf-py
 # the same way. Everything else still type-checks strictly.
 # `scripts/check_ty_overrides.py` gates this list. Every entry must
