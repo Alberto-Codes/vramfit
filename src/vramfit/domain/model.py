@@ -201,12 +201,20 @@ class ImatrixCountSummary:
         attribute documents.
 
         Raises:
-            ValueError: If ``min`` is negative, ``median`` is not
-                finite, or the three values are not ordered
+            ValueError: If ``median`` is too large for a float, if
+                ``min`` is negative, if ``median`` is not finite, or
+                if the three values are not ordered
                 ``min <= median <= max`` — an unordered summary
                 cannot come from one pooled distribution.
         """
-        object.__setattr__(self, "median", float(self.median))
+        try:
+            object.__setattr__(self, "median", float(self.median))
+        except OverflowError as exc:
+            # Unreachable through the readers, which bound an integer
+            # before it arrives (#260). An in-memory caller building
+            # from an unvalidated source is the open route, and
+            # `OverflowError` is not a `ValueError` (ADR-0011).
+            raise ValueError("median is too large for a float") from exc
         if self.min < 0:
             raise ValueError("min must not be negative")
         if not math.isfinite(self.median):

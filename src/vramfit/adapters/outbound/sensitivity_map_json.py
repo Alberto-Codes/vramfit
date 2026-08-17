@@ -525,7 +525,9 @@ def _parse_imatrix_counts(obj: dict[str, Any], path: str) -> ImatrixCountSummary
         ArtifactError: If a present field is not an object holding
             exactly ``min``, ``median``, and ``max``, a value is
             mistyped or negative, or the three are not ordered
-            ``min <= median <= max``.
+            ``min <= median <= max``. A `ValueError` the domain type
+            raises translates here too, so a later invariant cannot
+            escape the root as a bare `ValueError` (#260).
     """
     if "imatrix_counts" not in obj:
         return None
@@ -545,4 +547,11 @@ def _parse_imatrix_counts(obj: dict[str, Any], path: str) -> ImatrixCountSummary
         field_path,
         "must be ordered: min <= median <= max",
     )
-    return ImatrixCountSummary(min=minimum, median=median, max=maximum)
+    # The checks above duplicate the domain's, so nothing should reach
+    # the constructor and fail. A future invariant would escape as a
+    # bare `ValueError` past the CLI's root handler without this, and
+    # every sibling parser already translates (#260).
+    try:
+        return ImatrixCountSummary(min=minimum, median=median, max=maximum)
+    except ValueError as exc:
+        raise ArtifactError(field_path, str(exc)) from exc

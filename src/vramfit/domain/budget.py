@@ -5,6 +5,11 @@ Implements the arithmetic from ``docs/explanation/vram-budget.md``:
 sum over attention layers, not ``layers x constant``, because NAS-derived
 models like the north-star target delete attention from some layers.
 
+`parse_size` refuses a size the artifacts cannot carry, at the signed
+64-bit range every reader bounds (ADR-0008 as amended 2026-08-16,
+#260). Refusing here names the option the operator typed rather than
+the artifact vramfit would write.
+
 Attributes:
     KV_DTYPE_BYTES (dict[str, int]): Bytes per KV-cache element by dtype
         name (``fp16``, ``bf16``, ``fp8``).
@@ -42,6 +47,9 @@ from typing import Final
 KV_DTYPE_BYTES: Final[dict[str, int]] = {"fp16": 2, "bf16": 2, "fp8": 1}
 DEFAULT_RUNTIME_OVERHEAD_BYTES: Final[int] = 2 * 2**30
 
+# How much of a rejected size string a message repeats back.
+_SHOWN_SIZE_CHARS = 40
+
 _SIZE_RE: Final[re.Pattern[str]] = re.compile(
     r"^\s*(?P<number>\d+(?:\.\d+)?)\s*(?P<unit>[KMGT]i?B|B)?\s*$", re.IGNORECASE
 )
@@ -71,7 +79,13 @@ def parse_size(text: str) -> int:
         The size in bytes.
 
     Raises:
-        ValueError: If the string is not a recognizable size.
+        ValueError: If the string is not a recognizable size, or the
+            result does not fit the signed 64-bit range the artifacts
+            carry (#260). A budget that large describes no machine.
+            A digit string long enough to float to infinity refuses
+            the same way, because `OverflowError` is not a
+            `ValueError` the CLI catches. The message repeats at most
+            `_SHOWN_SIZE_CHARS` of the input back.
 
     Examples:
         Binary vs decimal units:
@@ -88,7 +102,20 @@ def parse_size(text: str) -> int:
         raise ValueError(f'not a recognizable size: "{text}"')
     number = float(match.group("number"))
     unit = (match.group("unit") or "B").lower()
-    return int(number * _UNIT_BYTES[unit])
+    # The input reaches an operator-facing message, so cap it. A
+    # 400-digit size would otherwise fill a terminal (#260).
+    shown = text if len(text) <= _SHOWN_SIZE_CHARS else f"{text[:_SHOWN_SIZE_CHARS]}…"
+    refusal = f'size "{shown}" does not fit a 64-bit byte count'
+    try:
+        size = int(number * _UNIT_BYTES[unit])
+    except (OverflowError, ValueError) as exc:
+        # A digit string long enough to float to infinity reaches
+        # `int()` before the bound below can run, and `OverflowError`
+        # is not a `ValueError` the CLI catches (ADR-0011).
+        raise ValueError(refusal) from exc
+    if not -(2**63) <= size <= 2**63 - 1:
+        raise ValueError(refusal)
+    return size
 
 
 def format_size(n_bytes: int) -> str:

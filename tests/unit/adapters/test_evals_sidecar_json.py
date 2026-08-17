@@ -151,6 +151,30 @@ class TestSidecarFromDict:
 
         assert sidecar_from_dict(sidecar_to_dict(sidecar)) == sidecar
 
+    def test_unbounded_size_bytes_is_refused(self) -> None:
+        # A sidecar is published evidence and the artifact class most
+        # likely to be hand-edited. Before #260 it could claim a file
+        # size no file can have, and the reader took it as provenance.
+        data = sidecar_to_dict(full_sidecar())
+        data["artifact"]["size_bytes"] = 10**400
+
+        with pytest.raises(ArtifactError, match="signed 64-bit range"):
+            sidecar_from_dict(data)
+
+    def test_unbounded_size_bytes_names_its_json_path(self) -> None:
+        data = sidecar_to_dict(full_sidecar())
+        data["artifact"]["size_bytes"] = 10**400
+
+        with pytest.raises(ArtifactError) as caught:
+            sidecar_from_dict(data)
+        assert "$.artifact.size_bytes" in str(caught.value)
+
+    def test_real_artifact_size_still_reads(self) -> None:
+        data = sidecar_to_dict(full_sidecar())
+        data["artifact"]["size_bytes"] = 20_908_008_960
+
+        assert sidecar_from_dict(data).artifact.size_bytes == 20_908_008_960
+
     def test_pre_rename_envelope_key_names_the_new_key(self) -> None:
         data = sidecar_to_dict(full_sidecar())
         data["quantfit_schema"] = data.pop("vramfit_schema")

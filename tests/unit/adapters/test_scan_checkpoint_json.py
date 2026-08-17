@@ -112,11 +112,51 @@ def test_pre_rename_envelope_key_older_version_names_both_blockers(tmp_path) -> 
 
 
 @pytest.mark.parametrize("value", ["one", True], ids=["string", "boolean"])
-def test_pre_rename_envelope_key_unreadable_version_names_only_the_key(
+def test_pre_rename_envelope_key_non_integer_version_names_both_blockers(
     tmp_path, value
 ) -> None:
+    # A non-integer version is a second blocker, so suppressing the
+    # bump clause left the reader to hit it after the rename. #154
+    # set the rule that the message names both (#260).
     path = tmp_path / "scan.checkpoint.json"
     path.write_text(json.dumps({"quantfit_schema": value, "fingerprint": FP}))
+
+    with pytest.raises(ArtifactError) as excinfo:
+        JsonScanCheckpointFile(path).load(FP)
+
+    message = excinfo.value.message
+    assert "A key rename alone does not make it load." in message
+    assert "Write the version as an integer." in message
+
+
+@pytest.mark.parametrize(
+    ("value", "type_name"),
+    [("one", "string"), (True, "boolean"), (None, "null"), ({"a": 1}, "object")],
+    ids=["string", "boolean", "null", "object"],
+)
+def test_pre_rename_envelope_key_names_the_type_and_not_the_value(
+    tmp_path, value, type_name
+) -> None:
+    # The message must not echo the document back. A large object
+    # under that key would otherwise render an unbounded error (#260).
+    path = tmp_path / "scan.checkpoint.json"
+    path.write_text(json.dumps({"quantfit_schema": value, "fingerprint": FP}))
+
+    with pytest.raises(ArtifactError) as excinfo:
+        JsonScanCheckpointFile(path).load(FP)
+
+    message = excinfo.value.message
+    assert f"JSON type {type_name}" in message
+    assert len(message) < 400
+
+
+def test_pre_rename_envelope_key_readable_version_names_only_the_key(
+    tmp_path,
+) -> None:
+    # A version this reader accepts needs only the key rename, so the
+    # message must not also tell the reader to bump.
+    path = tmp_path / "scan.checkpoint.json"
+    path.write_text(json.dumps({"quantfit_schema": 2, "fingerprint": FP}))
 
     with pytest.raises(ArtifactError) as excinfo:
         JsonScanCheckpointFile(path).load(FP)

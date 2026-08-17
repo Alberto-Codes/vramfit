@@ -2,6 +2,27 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-28
+- **Amendment (2026-08-16, issue #260):** decision 2 gains the rule
+  that splits validation across the boundary. **An artifact reader
+  bounds what the format can carry. The domain bounds what the value
+  means.**
+
+    A reader answers whether a value is representable — the right
+    JSON type, a number a float can hold, an integer inside the
+    signed 64-bit range. The domain answers whether the value means
+    anything — positive, non-negative, ordered, inside a table.
+
+    The split follows decision 2's own reasoning. Serialization is an
+    adapter concern, and how wide a number the wire format carries is
+    a serialization question. A domain type must not grow a field
+    bound because JSON can spell an integer of any length.
+
+    `_as_float` already worked this way, refusing what a float cannot
+    hold while the domain kept `positive` and `non-negative`. It also
+    checks `finite`, which is the one place the reader reaches past
+    representability — `json.loads` accepts `NaN` and `Infinity`, and
+    a reader that passed them on would poison every later comparison.
+    ADR-0011's 2026-08-16 amendment applies the split to integers.
 
 ## Context
 
