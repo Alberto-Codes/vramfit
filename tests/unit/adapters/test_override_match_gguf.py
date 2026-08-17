@@ -60,8 +60,40 @@ class TestBaseTensorNames:
     def test_non_gguf_file_refuses(self, tmp_path: Path) -> None:
         bogus = tmp_path / "base.gguf"
         bogus.write_bytes(b"not a gguf")
-        with pytest.raises(PackError, match="is not a GGUF"):
+        with pytest.raises(PackError, match="cannot read the base GGUF"):
             base_tensor_names(bogus)
+
+    @pytest.mark.parametrize("length", [4, 24, 32, 33, 34])
+    def test_truncated_header_refuses_as_pack_error(
+        self, tmp_path: Path, length: int
+    ) -> None:
+        # `GGUFReader` reads each header field as `self._get(...)[0]`,
+        # so a short file raises `IndexError` from an empty numpy
+        # slice. `IndexError` is neither `VramfitError` nor anything
+        # the CLI catches, so it would surface as a traceback with no
+        # `pack_halted` event (ADR-0011).
+        full = tmp_path / "full.gguf"
+        write_gguf(full, ("blk.0.attn_v.weight",))
+        short = tmp_path / "short.gguf"
+        short.write_bytes(full.read_bytes()[:length])
+
+        with pytest.raises(PackError, match="cannot read the base GGUF"):
+            base_tensor_names(short)
+
+    def test_interrupted_convert_names_the_remedy(self, tmp_path: Path) -> None:
+        # `convert` reuses any existing base GGUF, so a partial file
+        # from a killed convert reaches the next pack.
+        short = tmp_path / "base.gguf"
+        short.write_bytes(b"GGUF")
+
+        with pytest.raises(PackError) as caught:
+            base_tensor_names(short)
+        assert "convert again" in str(caught.value)
+
+    def test_gguf_holding_no_tensors_returns_empty(self, tmp_path: Path) -> None:
+        empty = tmp_path / "base.gguf"
+        write_gguf(empty, ())
+        assert base_tensor_names(empty) == ()
 
 
 class TestCheckAgainstARealFile:

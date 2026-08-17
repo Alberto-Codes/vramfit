@@ -289,6 +289,7 @@ def _fake_packer(  # noqa: PLR0913 - mirrors _real_packer's fixture surface
 @pytest.mark.parametrize(
     "build", [_real_packer, _fake_packer], ids=["real-subprocess", "fake-memory"]
 )
+@pytest.mark.usefixtures("base_gguf_names")
 class TestRecipePackerContract:
     def test_convert_returns_the_base_size(self, build, tmp_path) -> None:
         packer: RecipePacker = build(tmp_path)
@@ -540,6 +541,7 @@ class TestRecipePackerContract:
             packer.pack(sample_pack_recipe())
 
 
+@pytest.mark.usefixtures("base_gguf_names")
 class TestLlamaCppCommandLines:
     """Real-adapter behavior the fake structurally cannot cover.
 

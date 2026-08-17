@@ -86,6 +86,28 @@ class TestUnmatchedPatterns:
             unmatched_patterns(overrides, _DECODER_NAMES)
 
 
+class TestMissingGgufPy:
+    def test_missing_gguf_names_the_pack_extra(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # No CI job runs the suite without gguf-py since the test job
+        # gained the group, so this branch needs its own stub. Same
+        # shape as the imatrix reader's suite.
+        import builtins
+
+        real_import = builtins.__import__
+
+        def no_gguf(name, *args, **kwargs):
+            if name == "gguf":
+                raise ImportError("No module named 'gguf'")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", no_gguf)
+
+        with pytest.raises(PackError, match="pack extra"):
+            override_match.base_tensor_names(Path("base.gguf"))
+
+
 class TestCheckOverridesMatch:
     def test_empty_overrides_never_open_the_base_gguf(
         self, monkeypatch: pytest.MonkeyPatch

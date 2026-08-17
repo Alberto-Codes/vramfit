@@ -132,15 +132,20 @@ def test_validate_without_the_extra_reports_the_install_hint(tmp_path) -> None:
 
 
 def test_pack_flow_with_stub_toolchain_produces_the_packed_file(tmp_path) -> None:
+    # The pack step reads the base GGUF's tensor names (#303), so
+    # the stub convert script needs gguf-py. A dev box synced with
+    # `uv sync --dev` alone does not carry it, and the pre-push
+    # gate collects this test — skip rather than fail (ADR-0009).
+    pytest.importorskip("gguf", reason="pack extra not installed")
+    pytest.importorskip("numpy", reason="pack extra not installed")
     from vramfit.adapters.outbound.recipe_json import save_recipe
     from vramfit.adapters.outbound.run_log_jsonl import read_run_log
     from vramfit.domain.model import Assignment, PlanMeta, Recipe
 
     checkout = tmp_path / "llama.cpp"
     (checkout / "build" / "bin").mkdir(parents=True)
-    # The pack step reads this file's tensor names to refuse an
-    # override that matches nothing (#303), so the stub writes a real
-    # GGUF carrying the recipe's layer 0 rather than opaque bytes.
+    # The stub writes a real GGUF carrying the recipe's layer 0, so
+    # the pack step's override check finds the tensor it addresses.
     (checkout / "convert_hf_to_gguf.py").write_text(
         "import sys\n"
         "import numpy as np\n"
@@ -200,6 +205,81 @@ def test_pack_flow_with_stub_toolchain_produces_the_packed_file(tmp_path) -> Non
     events = [e["event"] for e in read_run_log(out.with_name("packed.runlog.jsonl"))]
     assert events[0] == "pack_started"
     assert events[-1] == "pack_finished"
+
+
+def test_pack_refuses_an_override_the_base_gguf_cannot_match(tmp_path) -> None:
+    # The whole path through the console script: a real base GGUF, the
+    # real adapter, and a recipe naming a layer the file does not
+    # carry. The quantizer would apply nothing and exit 0 (#303).
+    pytest.importorskip("gguf", reason="pack extra not installed")
+    pytest.importorskip("numpy", reason="pack extra not installed")
+    from vramfit.adapters.outbound.recipe_json import save_recipe
+    from vramfit.adapters.outbound.run_log_jsonl import read_run_log
+    from vramfit.domain.model import Assignment, PlanMeta, Recipe
+
+    checkout = tmp_path / "llama.cpp"
+    (checkout / "build" / "bin").mkdir(parents=True)
+    # The base GGUF carries layer 9 alone.
+    (checkout / "convert_hf_to_gguf.py").write_text(
+        "import sys\n"
+        "import numpy as np\n"
+        "from gguf import GGUFWriter\n"
+        'out = sys.argv[sys.argv.index("--outfile") + 1]\n'
+        'writer = GGUFWriter(out, arch="llama")\n'
+        'writer.add_tensor("blk.9.attn_v.weight", np.zeros((2, 2), dtype=np.float16))\n'
+        "writer.write_header_to_file()\n"
+        "writer.write_kv_data_to_file()\n"
+        "writer.write_tensors_to_file()\n"
+        "writer.close()\n"
+    )
+    quantize = checkout / "build" / "bin" / "llama-quantize"
+    quantize.write_text(
+        "#!/usr/bin/env python3\n"
+        "import sys\n"
+        'open(sys.argv[-3], "wb").write(b"Q" * 500)\n'
+    )
+    quantize.chmod(0o700)
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    recipe_path = tmp_path / "recipe.json"
+    save_recipe(
+        Recipe(
+            model_id=str(model_dir),
+            plan=PlanMeta(
+                vram_budget_bytes=4_000,
+                kv_headroom_bytes=1_000,
+                weight_budget_bytes=3_000,
+                predicted_total_bytes=2_500,
+                predicted_damage=0.05,
+                solver="greedy-damage-per-byte",
+                pins={},
+                protections={},
+                format_overhead=0.05,
+                trace=(),
+            ),
+            assignments=(
+                Assignment(group="model.layers.0", bits=4, bytes=500, damage=0.01),
+            ),
+            runtime="llama.cpp",
+            within_group=None,
+            imatrix=None,
+            protected_tensors=(),
+        ),
+        recipe_path,
+    )
+    out = tmp_path / "packed.gguf"
+
+    result = run(
+        "pack", str(recipe_path), "--llama-cpp", str(checkout), "--out", str(out)
+    )
+
+    assert result.returncode == 1
+    output = result.stdout + result.stderr
+    assert "carries no tensor for 1 of 1 override patterns" in output
+    assert not out.exists()
+    log = read_run_log(out.with_name("packed.runlog.jsonl"))
+    assert log[-1]["event"] == "pack_halted"
+    assert log[-1]["stage"] == "quantize"
 
 
 def test_infeasible_plan_exits_one_via_console_script(tmp_path) -> None:

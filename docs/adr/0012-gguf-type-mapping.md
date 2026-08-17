@@ -87,33 +87,51 @@
     instrument) and at `e9fa0781f`: the match loop runs per tensor,
     it never records an unused pattern, and the file carries no
     unused-pattern report. The `--override-tensor` runtime flag
-    reports nothing either. No upstream issue or pull request tracks
-    the gap.
+    reports nothing either. A keyword sweep of ggml-org issues and
+    pull requests on 2026-08-16 found nothing tracking the gap. That
+    sweep read titles and open issues, so it bounds the claim rather
+    than settling it.
 
     The check holds the pattern and never the group's root. Naming
-    the roots that pack would contradict the 2026-08-12 amendment's
-    any-family clause, which is why the check reads the file instead.
-    Issue #236 records that reasoning.
+    the roots a pack accepts would contradict the 2026-08-12
+    amendment's any-family clause, which is why the check reads the
+    file instead. Issue #236 records that reasoning.
 
-    **The check closes the no-op and not the foreign root.** A recipe
-    whose groups hang from a root the base GGUF carries no tensor for
-    refuses here. A multimodal base GGUF is the other case: it
-    carries the decoder at `blk.<n>.` and the vision tower at
-    `v.blk.<n>.`, so a vision group's `blk.<n>.` pattern matches the
-    decoder's layer `<n>` and applies to the wrong tensors. That
-    pack is wrong and this check passes it. #236 still owns the
-    root question, and #303 carries the no-op half.
+    **The check refuses an unmatched override and not a foreign
+    root.** A recipe whose groups hang from a root the base GGUF
+    carries no tensor for refuses here. A multimodal base GGUF is the
+    other case: it carries the decoder at `blk.<n>.` and the vision
+    tower at `v.blk.<n>.`. `regex_search` searches a substring, so a
+    vision group's `blk.<n>.` pattern matches the decoder's layer
+    `<n>` and applies to the wrong tensors. That pack is wrong and
+    this check passes it. #236 still owns the root question.
 
-    The check replicates the tool's matching and not its priority
-    order. A pattern that matches a tensor an earlier override also
-    claims still passes. Re-deriving the first-match order here would
-    make the backend a second source of truth for it (#190).
+    **The check is a superset of the tool's match set, on purpose.**
+    It never refuses a pack the tool would honour. Three upstream
+    filters it does not model each let a pattern pass and still
+    apply nothing: the first-match-wins order at `:694`, the
+    `tensor_allows_quantization` gate at `:675`, and the early
+    returns for the embedding and the output head at `:678-683`.
+    Re-deriving any of them would make the backend a second source
+    of truth for upstream (#190). #305 carries the residual, and
+    #306 carries the two flags, which no check holds against the
+    file at all. No pattern this backend builds reaches any of the
+    three today.
 
-    The read needs gguf-py, so every pack now requires the pack
-    extra. An `--imatrix` pack already did (ADR-0026, the #198
-    amendment). The refusal reports halt stage `quantize`, because
-    decision 5 names no stage that runs before the quantizer. #275
-    carries whether a pre-run refusal earns its own stage.
+    The read needs gguf-py, so every pack carrying at least one
+    override requires it. A recipe yielding no override skips the
+    read. An `--imatrix` pack already required gguf-py (ADR-0026,
+    the #198 amendment), and #310 carries giving pack a thin extra
+    that does not also install torch.
+
+    The refusal reports halt stage `quantize`. Decision 5 lists
+    `convert`, `quantize`, and `size_check`, and `convert` does run
+    before the quantizer — so the stage list is not the reason. The
+    reason is that a new stage amends decision 5, which #275 owns.
+    The nearest precedent went the other way: `_read_zero_count_experts`
+    is also a pre-quantizer refusal and it reports stage
+    `imatrix_counts`, which decision 5 does not list either. #275
+    should rule both together.
 
 ## Context
 

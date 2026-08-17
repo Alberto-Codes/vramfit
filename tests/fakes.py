@@ -5,15 +5,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
+from vramfit.adapters.outbound.gguf.override_match import unmatched_patterns
 from vramfit.adapters.outbound.gguf.pack import TypeFallbackError
 from vramfit.adapters.outbound.gguf.types import (
     PackError,
+    all_overrides,
     base_type,
     check_runtime,
     imatrix_exclusion_names,
     output_tensor_type,
-    protection_overrides,
-    tensor_overrides,
     token_embedding_type,
 )
 from vramfit.adapters.outbound.json_common import ArtifactError
@@ -165,6 +165,11 @@ class MemoryRecipePacker:
     uses, so the fake cannot drift from the ADR-0012 tables. Like the
     real adapter, an existing base wins before a broken convert tool,
     and a mapping failure packs nothing.
+
+    ``base_tensor_names`` gives the fake the real adapter's pre-run
+    override refusal (#303). It holds the names a base GGUF would
+    declare. None skips the check, because most suites configure no
+    model shape and only care about the sizes.
     """
 
     base_bytes: int = 1_000
@@ -174,6 +179,7 @@ class MemoryRecipePacker:
     imatrix: str | None = None
     imatrix_uncovered: tuple[str, ...] = ()
     type_fallbacks: tuple[tuple[str, str, str], ...] = ()
+    base_tensor_names: tuple[str, ...] | None = None
     packed: list[Recipe] = field(default_factory=list)
 
     def convert(self) -> int:
@@ -198,7 +204,18 @@ class MemoryRecipePacker:
         base = base_type(recipe)
         embedding = token_embedding_type(recipe)
         output = output_tensor_type(recipe)
-        overrides = protection_overrides(recipe) + tensor_overrides(recipe)
+        overrides = all_overrides(recipe)
+        if self.base_tensor_names is not None:
+            # Parity with the real adapter's pre-run refusal (#303).
+            # A fake left at None keeps the old behavior, so a suite
+            # that does not care about the check stays unchanged.
+            unmatched = unmatched_patterns(overrides, self.base_tensor_names)
+            if unmatched:
+                raise PackError(
+                    f"the base GGUF carries no tensor for {len(unmatched)} "
+                    f"of {len(overrides)} override patterns: "
+                    + ", ".join(f'"{pattern}"' for pattern in unmatched)
+                )
         if self.type_fallbacks:
             raise TypeFallbackError(self.type_fallbacks, Path("packed.gguf"))
         result = PackResult(
@@ -322,8 +339,9 @@ def decoder_tensor_names(layers: int = 64) -> tuple[str, ...]:
     A stand-in for `base_tensor_names` in suites that stub the base
     GGUF as opaque bytes. It covers every pattern this backend emits
     — the seven quantized projections, the three fused expert
-    stacks, the embedding, and the output head — so a recipe under
-    the decoder root matches and the override check passes (#303).
+    stacks, the two Mamba projections, the embedding, and the output
+    head — so a recipe under the decoder root matches and the
+    override check passes (#303).
 
     Args:
         layers: How many `blk.<n>.` layers to name.
