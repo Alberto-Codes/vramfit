@@ -21,7 +21,7 @@ from typing import Literal
 
 import pytest
 
-from tests.fakes import MemoryRecipePacker
+from tests.fakes import MemoryRecipePacker, decoder_tensor_names
 from vramfit.adapters.outbound.gguf import override_match
 from vramfit.adapters.outbound.gguf.pack import LlamaCppPacker, TypeFallbackError
 from vramfit.adapters.outbound.gguf.types import PackError
@@ -283,6 +283,10 @@ def _fake_packer(  # noqa: PLR0913 - mirrors _real_packer's fixture surface
         imatrix=str(tmp_path / "imatrix.gguf") if with_imatrix else None,
         imatrix_uncovered=uncovered,
         type_fallbacks=fallbacks,
+        # The same names `base_gguf_names` serves the real adapter, so
+        # both sides run the #303 refusal and the #307 report over one
+        # tensor list.
+        base_tensor_names=decoder_tensor_names(),
     )
 
 
@@ -500,6 +504,36 @@ class TestRecipePackerContract:
 
         assert result.imatrix_uncovered == ("token_embd.weight",)
         assert result.imatrix_excluded == ("blk.0.attn_v.weight",)
+
+    def test_pack_records_the_layers_no_override_reached(self, build, tmp_path) -> None:
+        # The sample recipe addresses layers 0 and 1. Both sides read
+        # a 64-layer decoder, so 62 layers took the floor with no
+        # word from the quantizer (#307).
+        packer: RecipePacker = build(tmp_path)
+        packer.convert()
+
+        result = packer.pack(sample_pack_recipe())
+
+        assert result.uncovered_layers == tuple(
+            f"blk.{index}." for index in range(2, 64)
+        )
+
+    def test_pack_counts_a_stack_override_as_covering_its_layer(
+        self, build, tmp_path
+    ) -> None:
+        # The stack recipe addresses layer 1's two expert stacks and
+        # nothing else. Those overrides reach two tensors of that
+        # layer, so layer 1 is covered and the rest are not. Reporting
+        # per tensor instead would name every attention and dense
+        # tensor of a layer an expert-stack recipe addresses on
+        # purpose.
+        packer: RecipePacker = build(tmp_path)
+        packer.convert()
+
+        result = packer.pack(stack_pack_recipe())
+
+        assert "blk.1." not in result.uncovered_layers
+        assert "blk.0." in result.uncovered_layers
 
     def test_pack_llama_cpp_recipe_is_accepted(self, build, tmp_path) -> None:
         packer: RecipePacker = build(tmp_path, base_exists=True)

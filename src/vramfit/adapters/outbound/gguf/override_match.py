@@ -1,4 +1,8 @@
-r"""Override matching: refuse a pattern no base-GGUF tensor carries.
+r"""Override matching: hold a recipe against the base GGUF's tensor names.
+
+Two checks share one memory-mapped header read. The first refuses an
+override pattern no tensor carries (#303). The second names the layers
+the file carries that no override reaches (#307).
 
 ``llama-quantize`` compiles each ``--tensor-type`` pattern once and
 searches it against every tensor name. A pattern that matches nothing
@@ -44,6 +48,20 @@ Every pattern the pack step builds is a ``blk\.<n>\.`` or
 ``blk\.<n>\.<class>\.`` prefix over real GGUF tensor classes, so
 none of the three is reachable through this backend today.
 
+`uncovered_layers` runs the same comparison the other way. A layer the
+base GGUF numbers that no override reaches takes the ``--pure`` base
+ftype, which ADR-0012 decision 3 states is the designed outcome — the
+packed file is recipe-driven, and a tensor no override covers gets the
+floor. So this reports and never refuses. It is the ADR-0026 decision
+5 shape: the quantizer prints nothing, and the pack path names the
+case rather than flattening it silently.
+
+The unit is the layer index and not the tensor. A recipe of
+expert-stack groups reaches one tensor class per layer on purpose, so
+a per-tensor report would name every attention and dense tensor in the
+model. A layer no pattern touches at all is the case the recipe did
+not address.
+
 gguf-py rides the scan extra and the pack extra includes it, so the
 import defers to the first read. ``vramfit pack --help`` keeps working
 on a base install (ADR-0005).
@@ -52,7 +70,7 @@ Examples:
     Hold a recipe's overrides against the file the quantizer reads:
 
     ```python
-    check_overrides_match(overrides, Path("model-f16.gguf"))
+    uncovered = check_base_coverage(overrides, Path("model-f16.gguf"))
     ```
 
 See Also:
@@ -83,6 +101,11 @@ _READER_FAILURES: Final[tuple[type[Exception], ...]] = (
     struct.error,
     OSError,
 )
+
+# The GGUF layer-stack prefix. Anchored, so a vision tower's
+# `v.blk.<n>.` does not read as a decoder layer — #236 owns that root
+# question and this report must not pre-empt it.
+_BLK_LAYER: Final[re.Pattern[str]] = re.compile(r"^blk\.(\d+)\.")
 
 
 def _load_gguf() -> Any:
@@ -154,6 +177,35 @@ def base_tensor_names(base_gguf: Path) -> tuple[str, ...]:
         ) from exc
 
 
+def _compiled(override: TypeOverride) -> re.Pattern[str]:
+    r"""Compile one override the way ``llama-quantize`` compiles it.
+
+    ``tools/quantize/quantize.cpp:332`` lower-cases a pattern before
+    it compiles, and ``src/llama-quant.cpp:694`` searches the name
+    rather than anchoring it.
+
+    Args:
+        override: The override to compile.
+
+    Returns:
+        The compiled pattern.
+
+    Raises:
+        PackError: If the pattern does not compile. A layer pattern is
+            built by f-string over `_LAYER_GROUP`'s ``(\d+)`` capture,
+            and the other two producers escape a prefix drawn from the
+            fixed GGUF class tables. So every pattern this backend
+            builds is a literal today, and a failure here means a
+            caller supplied its own pattern or that capture widened.
+    """
+    try:
+        return re.compile(override.pattern.lower())
+    except re.error as exc:
+        raise PackError(
+            f'override pattern "{override.pattern}" does not compile: {exc}'
+        ) from exc
+
+
 def unmatched_patterns(
     overrides: Sequence[TypeOverride], names: Iterable[str]
 ) -> tuple[str, ...]:
@@ -172,13 +224,7 @@ def unmatched_patterns(
         The unmatched patterns, without repeats, in override order.
 
     Raises:
-        PackError: If a pattern does not compile. A layer pattern is
-            built by f-string over `_LAYER_GROUP`'s ``(\d+)``
-            capture, and the other two producers escape a prefix
-            drawn from the fixed GGUF class tables. So every pattern
-            this backend builds is a literal today, and a failure
-            here means a caller supplied its own pattern or that
-            capture widened.
+        PackError: If a pattern does not compile. See `_compiled`.
 
     Examples:
         A layer the base GGUF does not carry reports its pattern:
@@ -193,52 +239,108 @@ def unmatched_patterns(
     for override in overrides:
         if override.pattern in unmatched:
             continue
-        try:
-            pattern = re.compile(override.pattern.lower())
-        except re.error as exc:
-            raise PackError(
-                f'override pattern "{override.pattern}" does not compile: {exc}'
-            ) from exc
+        pattern = _compiled(override)
         if not any(pattern.search(name) for name in tensor_names):
             unmatched.append(override.pattern)
     return tuple(unmatched)
 
 
-def check_overrides_match(overrides: Sequence[TypeOverride], base_gguf: Path) -> None:
-    """Refuse a pack whose overrides do not reach the base GGUF.
+def uncovered_layers(
+    overrides: Sequence[TypeOverride], names: Iterable[str]
+) -> tuple[str, ...]:
+    r"""Name the base GGUF's layers that no override reaches.
 
-    The refusal runs before the quantizer, so a recipe naming the
-    wrong tensor tree costs no quantize run and writes no file.
+    A layer is covered when at least one override pattern matches at
+    least one tensor under it. An uncovered layer takes the ``--pure``
+    base ftype, which ADR-0012 decision 3 makes the designed outcome,
+    so this reports rather than refusing.
+
+    The comparison lower-cases each pattern and searches it, the way
+    `unmatched_patterns` does and the way ``llama-quantize`` does.
 
     Args:
         overrides: The overrides the pack would drive into the
-            quantizer. An empty sequence passes.
-        base_gguf: The base GGUF the quantizer reads.
+            quantizer. An empty sequence leaves every layer uncovered.
+        names: The base GGUF's tensor names.
+
+    Returns:
+        The uncovered layer prefixes, e.g. ``blk.52.``, sorted by
+        layer index. Empty when every layer the file numbers is
+        reached, and empty for a file that numbers no layer.
 
     Raises:
-        PackError: If any override matches no tensor, if gguf-py is
-            missing, or if the reader cannot read the base file.
-            `base_tensor_names` wraps every reader failure, so no
-            `OSError` reaches the caller.
+        PackError: If a pattern does not compile. `unmatched_patterns`
+            documents why every pattern this backend builds is a
+            literal.
+
+    Examples:
+        A recipe scanned over fewer layers than the file carries:
+
+        ```python
+        overrides = (TypeOverride(r"blk\.0\.", "q4_k"),)
+        names = ("blk.0.attn_v.weight", "blk.1.attn_v.weight")
+        assert uncovered_layers(overrides, names) == ("blk.1.",)
+        ```
+    """
+    patterns = [_compiled(override) for override in overrides]
+    covered: set[int] = set()
+    present: set[int] = set()
+    for name in names:
+        match = _BLK_LAYER.match(name)
+        if match is None:
+            continue
+        index = int(match.group(1))
+        present.add(index)
+        if index not in covered and any(p.search(name) for p in patterns):
+            covered.add(index)
+    return tuple(f"blk.{index}." for index in sorted(present - covered))
+
+
+def check_base_coverage(
+    overrides: Sequence[TypeOverride], base_gguf: Path
+) -> tuple[str, ...]:
+    """Hold a recipe's overrides against the base GGUF, both ways.
+
+    One header read serves both checks. The refusal runs before the
+    quantizer, so a recipe naming the wrong tensor tree costs no
+    quantize run and writes no file.
+
+    Args:
+        overrides: The overrides the pack would drive into the
+            quantizer. An empty sequence skips the read, because a
+            recipe driving no override packs everything at the floor
+            on purpose.
+        base_gguf: The base GGUF the quantizer reads.
+
+    Returns:
+        The layer prefixes the file carries that no override reaches
+        (#307). Empty for an empty override sequence.
+
+    Raises:
+        PackError: If any override matches no tensor (#303), if
+            gguf-py is missing, or if the reader cannot read the base
+            file. `base_tensor_names` wraps every reader failure, so
+            no `OSError` reaches the caller.
 
     Examples:
         A recipe naming a layer the base GGUF does not carry refuses
         here rather than packing:
 
         ```python
-        check_overrides_match(overrides, Path("model-f16.gguf"))
+        uncovered = check_base_coverage(overrides, Path("model-f16.gguf"))
         ```
     """
     if not overrides:
-        return
-    unmatched = unmatched_patterns(overrides, base_tensor_names(base_gguf))
-    if not unmatched:
-        return
-    details = ", ".join(f'"{pattern}"' for pattern in unmatched)
-    raise PackError(
-        f"the base GGUF {base_gguf} carries no tensor for {len(unmatched)} "
-        f"of {len(overrides)} override patterns: {details}. The quantizer "
-        f"applies no such override and exits 0, so the packed file would "
-        f"drop that part of the recipe without a report (#303). Check the "
-        f"recipe's group names against the base GGUF's tensor names"
-    )
+        return ()
+    names = base_tensor_names(base_gguf)
+    unmatched = unmatched_patterns(overrides, names)
+    if unmatched:
+        details = ", ".join(f'"{pattern}"' for pattern in unmatched)
+        raise PackError(
+            f"the base GGUF {base_gguf} carries no tensor for {len(unmatched)} "
+            f"of {len(overrides)} override patterns: {details}. The quantizer "
+            f"applies no such override and exits 0, so the packed file would "
+            f"drop that part of the recipe without a report (#303). Check the "
+            f"recipe's group names against the base GGUF's tensor names"
+        )
+    return uncovered_layers(overrides, names)

@@ -14,7 +14,10 @@ holds every override against the base GGUF's tensor names and refuses
 one that matches nothing
 ([vramfit.adapters.outbound.gguf.override_match][]) — such an
 override changes no type and the quantizer exits 0 without reporting
-it (ADR-0012 as amended 2026-08-16). The
+it (ADR-0012 as amended 2026-08-16). That one header read also names
+the layers the file carries that no override reaches. They take the
+``--pure`` floor, which decision 3 makes the designed outcome, so the
+result records them and the pack continues (#307). The
 adapter scans the quantizer's zero-exit output for the type-fallback
 warning pair and halts on a match (`TypeFallbackError`) — a rewritten
 type breaks the recipe the artifact claims to carry (ADR-0028). With
@@ -61,7 +64,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-from vramfit.adapters.outbound.gguf.override_match import check_overrides_match
+from vramfit.adapters.outbound.gguf.override_match import check_base_coverage
 from vramfit.adapters.outbound.gguf.toolrun import run_tool, sized_file
 from vramfit.adapters.outbound.gguf.types import (
     PackError,
@@ -283,7 +286,10 @@ class LlamaCppPacker:
         resolved pairs become the leading overrides (ADR-0022). Every
         override must match a tensor the base GGUF carries, and one
         that matches nothing refuses before the quantizer runs
-        (#303). A configured importance
+        (#303). The same read names the layers the file carries that
+        no override reaches — they take the ``--pure`` floor, so the
+        result records them and the pack continues (#307). A
+        configured importance
         matrix reaches the quantizer as ``--imatrix``, lands in the
         result's provenance, and the quantizer's output is scanned
         for tensors the matrix did not cover (ADR-0016). The
@@ -328,8 +334,10 @@ class LlamaCppPacker:
         # type, and the quantizer reports nothing and exits 0. It runs
         # after the table lookups above, so a recipe that fails both
         # still reports the table error first (ADR-0012 as amended
-        # 2026-08-16, #303).
-        check_overrides_match(overrides, self.base_gguf)
+        # 2026-08-16, #303). The same read names the layers the file
+        # carries that no override reaches, which take the --pure
+        # floor on a zero exit (#307).
+        uncovered_layers = check_base_coverage(overrides, self.base_gguf)
         excluded = imatrix_exclusion_names(recipe) if self.imatrix is not None else ()
         command = [str(self.quantize_bin), "--pure"]
         if self.imatrix is not None:
@@ -373,4 +381,5 @@ class LlamaCppPacker:
             imatrix_path=None if self.imatrix is None else str(self.imatrix),
             imatrix_uncovered=uncovered,
             imatrix_excluded=excluded,
+            uncovered_layers=uncovered_layers,
         )

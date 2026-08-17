@@ -111,6 +111,14 @@ class PackResult:
             warning, so only this record names the case. A report,
             never a gate. Separate from ``imatrix_uncovered``, which
             names whole tensors. Empty without an imatrix.
+        uncovered_layers (tuple[str, ...]): Layers the base model
+            carries that no override reached, in layer order. They
+            took the ``base_type`` floor, which ADR-0012 decision 3
+            makes the designed outcome — so this is a report, never a
+            gate (#307). It names the gap between the recipe and the
+            file, which the packed size otherwise carries with no
+            signal. The tokens are the runtime's own layer names, so
+            the backend owns the vocabulary.
 
     Examples:
         Inspect the real size of a packed model:
@@ -129,6 +137,7 @@ class PackResult:
     imatrix_uncovered: tuple[str, ...] = ()
     imatrix_excluded: tuple[str, ...] = ()
     imatrix_zero_count_experts: tuple[tuple[str, int], ...] = ()
+    uncovered_layers: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         """Enforce the result invariants.
@@ -140,8 +149,8 @@ class PackResult:
                 ``imatrix_uncovered``, ``imatrix_excluded``, or
                 ``imatrix_zero_count_experts`` is set without an
                 ``imatrix_path``, a zero-count pair names an empty
-                stack or a negative expert index, or two overrides
-                share a pattern.
+                stack or a negative expert index, an uncovered layer
+                is empty, or two overrides share a pattern.
         """
         if self.packed_bytes <= 0:
             raise ValueError("packed_bytes must be positive")
@@ -160,6 +169,8 @@ class PackResult:
         if self.imatrix_zero_count_experts and self.imatrix_path is None:
             raise ValueError("imatrix_zero_count_experts requires an imatrix_path")
         _check_zero_count_pairs(self.imatrix_zero_count_experts)
+        if any(not layer for layer in self.uncovered_layers):
+            raise ValueError("an uncovered layer must not be empty")
         patterns = [override.pattern for override in self.overrides]
         if len(set(patterns)) != len(patterns):
             raise ValueError("override patterns must be unique")

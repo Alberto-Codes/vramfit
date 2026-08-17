@@ -132,6 +132,36 @@
     is also a pre-quantizer refusal and it reports stage
     `imatrix_counts`, which decision 5 does not list either. #275
     should rule both together.
+- **Amendment (2026-08-16, issue #307):** decision 3 gains a report.
+  The pack step names every layer the base GGUF numbers that no
+  override reaches, in `PackResult.uncovered_layers`, on the
+  `model_packed` run-log event, and as one `warning:` line. The same
+  header read serves this and the #303 refusal.
+
+    Decision 3 already rules the outcome. A tensor no override covers
+    gets the base type, and that is the designed behavior. So this
+    reports and never refuses. What decision 3 did not carry is a
+    signal. `llama-quantize` prints nothing for an unaddressed layer
+    and exits 0, so the packed file differs from the recipe and from
+    `plan.predicted_total_bytes` with nothing to read. This is the
+    ADR-0026 decision 5 shape: a report, never a gate.
+
+    **The unit is the layer index and not the tensor.** A layer counts
+    as covered when at least one override reaches at least one tensor
+    under it. An expert-stack recipe addresses one tensor class per
+    layer on purpose, so a per-tensor report would name every
+    attention and dense tensor in the model.
+
+    The reach is a base GGUF that numbers more layers than the recipe
+    addresses. #256 measured the published 30B builds carrying 48
+    expert stacks: 46 backbone plus 2 under `blk.52`. A recipe scanned
+    over the backbone alone leaves that block at the floor. A stale or
+    wrong-variant base GGUF reaches the same state, and
+    `weight_budget_margin` reports fit rather than refusing.
+
+    The prefix match is anchored at `blk.`, so a vision tower's
+    `v.blk.<n>.` reports nothing here. #236 still owns the root
+    question, and this report does not pre-empt it.
 
 ## Context
 

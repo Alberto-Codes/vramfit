@@ -14,7 +14,10 @@ warnings, the count read, and the echoes live in
 [vramfit.adapters.inbound.cli_pack_imatrix][]. A type-fallback
 warning in the quantizer's output halts the quantize stage with the
 file kept, and the ``pack_halted`` event carries stage
-``type_fallback`` and every rewrite (ADR-0028). After
+``type_fallback`` and every rewrite (ADR-0028). The ``model_packed``
+event and one ``warning:`` line name the layers the base GGUF carries
+that no override reached — they packed at the recipe's floor, and the
+quantizer reports neither (#307). After
 packing it re-checks the real bytes against the recipe's weight
 budget, gates a protected imatrix pack on the reconstruction check
 (ADR-0022 — the stage lives in
@@ -69,7 +72,7 @@ from vramfit.adapters.outbound.recipe_json import load_recipe
 from vramfit.adapters.outbound.run_log_jsonl import JsonlRunLogFile
 from vramfit.domain.budget import format_size
 from vramfit.domain.model import Recipe
-from vramfit.domain.pack import weight_budget_margin
+from vramfit.domain.pack import PackResult, weight_budget_margin
 from vramfit.ports.outbound import RecipePacker
 
 
@@ -129,6 +132,51 @@ def _load_recipe(path: Path) -> Recipe:
     except (OSError, ArtifactError) as exc:
         typer.echo(f"error: {path}: {exc}", err=True)
         raise typer.Exit(code=1) from exc
+
+
+def _report_uncovered_layers(result: PackResult) -> None:
+    """Echo the layers the recipe never addressed.
+
+    They packed at the recipe's floor, which ADR-0012 decision 3 makes
+    the designed outcome for a tensor no override covers. So the line
+    warns and never refuses. It exists because the quantizer prints
+    nothing and exits 0, and the packed size then differs from
+    ``plan.predicted_total_bytes`` with no other signal (#307).
+
+    The line states a count and names the layers. That stays short on
+    the real gap this catches — a base GGUF numbering a block the scan
+    never priced, such as the MoE target's MTP block at ``blk.52``.
+
+    Args:
+        result: The pack step's accounting record.
+    """
+    if not result.uncovered_layers:
+        return
+    count = len(result.uncovered_layers)
+    # The MoE target's gap is one MTP block, so the singular is the
+    # common case rather than an edge.
+    noun = "layer" if count == 1 else "layers"
+    names = ", ".join(result.uncovered_layers)
+    typer.echo(
+        f"warning: the base GGUF carries {count} {noun} no override "
+        f"reached: {names} — they packed at the {result.base_type} "
+        "floor, so the file is smaller than the recipe predicts (#307)",
+        err=True,
+    )
+
+
+def _report_pack_effects(result: PackResult) -> None:
+    """Echo everything the packed file carries that the recipe does not.
+
+    Both reports name a gap the quantizer leaves unreported on a zero
+    exit. The coverage gap comes first, because it explains a size the
+    imatrix lines do not.
+
+    Args:
+        result: The pack step's accounting record.
+    """
+    _report_uncovered_layers(result)
+    _report_imatrix_effects(result)
 
 
 def pack(
@@ -221,7 +269,10 @@ def pack(
     stack rows. The quantizer's output is scanned for the
     type-fallback warning pair, and a match halts with the file
     kept — a rewritten type breaks the recipe the artifact claims
-    to carry (ADR-0028). The
+    to carry (ADR-0028). A layer the base GGUF numbers that no
+    override reached packs at the recipe's floor, which decision 3
+    intends. The quantizer prints nothing, so the command warns and
+    the run log names each one (#307). The
     command re-checks the packed file's real
     bytes against the recipe's weight budget — nominal-bit
     predictions undershoot GGUF's effective bits. A protected
@@ -357,9 +408,10 @@ def pack(
             "imatrix_zero_count_experts": [
                 [stack, expert] for stack, expert in result.imatrix_zero_count_experts
             ],
+            "uncovered_layers": list(result.uncovered_layers),
         },
     )
-    _report_imatrix_effects(result)
+    _report_pack_effects(result)
 
     margin = weight_budget_margin(recipe, result.packed_bytes)
     fits = margin >= 0

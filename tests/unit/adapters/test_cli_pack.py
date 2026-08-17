@@ -559,6 +559,70 @@ class TestPackCommand:
         assert log[-1]["stage"] == "quantize"
         assert not out.exists()
 
+    def test_layer_no_override_reaches_warns_and_packs(
+        self, tmp_path, monkeypatch, llama_cpp_dir, recipe_path
+    ) -> None:
+        # The mirror of #303: the recipe's `blk\.0\.` override matches,
+        # and the file also numbers `blk.52`. That block takes the
+        # --pure floor on a zero exit, which ADR-0012 decision 3 makes
+        # the designed outcome — so the pack warns and continues
+        # (#307).
+        patch_packer(
+            monkeypatch,
+            MemoryRecipePacker(
+                base_tensor_names=("blk.0.attn_v.weight", "blk.52.attn_v.weight")
+            ),
+        )
+        out = tmp_path / "packed.gguf"
+
+        result = runner.invoke(
+            app,
+            [
+                "pack",
+                str(recipe_path),
+                "--llama-cpp",
+                str(llama_cpp_dir),
+                "--out",
+                str(out),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "carries 1 layer no override reached: blk.52." in result.stderr
+        assert "smaller than the recipe predicts" in result.stderr
+        log = read_run_log(out.with_name(out.stem + ".runlog.jsonl"))
+        packed = next(line for line in log if line["event"] == "model_packed")
+        assert packed["uncovered_layers"] == ["blk.52."]
+
+    def test_recipe_reaching_every_layer_warns_nothing(
+        self, tmp_path, monkeypatch, llama_cpp_dir, recipe_path
+    ) -> None:
+        patch_packer(
+            monkeypatch,
+            MemoryRecipePacker(
+                base_tensor_names=("token_embd.weight", "blk.0.attn_v.weight")
+            ),
+        )
+        out = tmp_path / "packed.gguf"
+
+        result = runner.invoke(
+            app,
+            [
+                "pack",
+                str(recipe_path),
+                "--llama-cpp",
+                str(llama_cpp_dir),
+                "--out",
+                str(out),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "no override reached" not in result.output
+        log = read_run_log(out.with_name(out.stem + ".runlog.jsonl"))
+        packed = next(line for line in log if line["event"] == "model_packed")
+        assert packed["uncovered_layers"] == []
+
     def test_unmappable_recipe_exits_1_and_halts_at_quantize(
         self, tmp_path, monkeypatch, llama_cpp_dir
     ) -> None:

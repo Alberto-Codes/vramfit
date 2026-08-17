@@ -1,4 +1,4 @@
-"""`base_tensor_names` against a written GGUF (#303).
+"""`base_tensor_names` against a written GGUF (#303, #307).
 
 The rest of the override matching runs without gguf-py in
 `test_override_match.py`. Only the header read needs a real file, so
@@ -26,7 +26,7 @@ from gguf import GGUFWriter
 
 from vramfit.adapters.outbound.gguf.override_match import (
     base_tensor_names,
-    check_overrides_match,
+    check_base_coverage,
 )
 from vramfit.adapters.outbound.gguf.types import PackError
 from vramfit.domain.pack import TypeOverride
@@ -96,7 +96,7 @@ class TestCheckAgainstARealFile:
     def test_override_reaching_a_written_tensor_passes(self, tmp_path: Path) -> None:
         base = tmp_path / "base.gguf"
         write_gguf(base, ("blk.0.attn_v.weight",))
-        check_overrides_match((TypeOverride(r"blk\.0\.", "q4_k"),), base)
+        check_base_coverage((TypeOverride(r"blk\.0\.", "q4_k"),), base)
 
     def test_override_naming_an_absent_layer_refuses(self, tmp_path: Path) -> None:
         # A recipe packed against the wrong checkpoint, or one naming
@@ -108,7 +108,7 @@ class TestCheckAgainstARealFile:
             TypeOverride(r"blk\.8\.", "q2_k"),
         )
         with pytest.raises(PackError, match="no tensor for 2 of 2"):
-            check_overrides_match(overrides, base)
+            check_base_coverage(overrides, base)
 
     def test_prefixed_tree_matches_and_passes(self, tmp_path: Path) -> None:
         # `blk\.0\.` is a substring of `v.blk.0.attn_v.weight`, so the
@@ -116,4 +116,15 @@ class TestCheckAgainstARealFile:
         # #236 owns the resulting mis-application.
         base = tmp_path / "base.gguf"
         write_gguf(base, ("v.blk.0.attn_v.weight",))
-        check_overrides_match((TypeOverride(r"blk\.0\.", "q4_k"),), base)
+        assert check_base_coverage((TypeOverride(r"blk\.0\.", "q4_k"),), base) == ()
+
+    def test_layer_the_recipe_never_addressed_reports_from_the_file(
+        self, tmp_path: Path
+    ) -> None:
+        # #307 read from a real header: the recipe covers blk.0, the
+        # file also numbers blk.52, and the quantizer would drop it to
+        # the --pure floor on a zero exit.
+        base = tmp_path / "base.gguf"
+        write_gguf(base, ("blk.0.attn_v.weight", "blk.52.attn_v.weight"))
+        overrides = (TypeOverride(r"blk\.0\.", "q4_k"),)
+        assert check_base_coverage(overrides, base) == ("blk.52.",)
