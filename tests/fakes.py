@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
+from vramfit.adapters.outbound.gguf.exclusion_match import unmatched_exclusions
 from vramfit.adapters.outbound.gguf.override_match import (
     floored_layers,
     unmatched_patterns,
@@ -173,7 +174,8 @@ class MemoryRecipePacker:
     override refusal (#303) and its uncovered-layer report (#307). It
     holds the names a base GGUF would declare. None skips both,
     because most suites configure no model shape and only care about
-    the sizes.
+    the sizes. ``imatrix_entry_names`` does the same for the
+    exclusion refusal (#309), and None skips it the same way.
     """
 
     base_bytes: int = 1_000
@@ -184,6 +186,7 @@ class MemoryRecipePacker:
     imatrix_uncovered: tuple[str, ...] = ()
     type_fallbacks: tuple[tuple[str, str, str], ...] = ()
     base_tensor_names: tuple[str, ...] | None = None
+    imatrix_entry_names: tuple[str, ...] | None = None
     packed: list[Recipe] = field(default_factory=list)
 
     def convert(self) -> int:
@@ -200,7 +203,6 @@ class MemoryRecipePacker:
             raise PackError("base GGUF does not exist — run convert first")
         if self.fail_stage == "quantize":
             raise PackError("quantize failed with exit code 3:\nconfigured failure")
-        excluded = imatrix_exclusion_names(recipe) if self.imatrix is not None else ()
         # The mapping evaluates in the real adapter's order, so the
         # same malformed recipe raises the same refusal first. A
         # configured type-fallback pair then halts after the mapping
@@ -224,6 +226,28 @@ class MemoryRecipePacker:
                     + ", ".join(f'"{pattern}"' for pattern in unmatched)
                 )
             layer_gaps = floored_layers(overrides, self.base_tensor_names)
+        # The real adapter resolves the exclusion names after the
+        # base-GGUF checks, so a recipe failing both reports the
+        # mapping error (`pack.py`). This block sits here to match.
+        excluded = imatrix_exclusion_names(recipe) if self.imatrix is not None else ()
+        if excluded and self.imatrix_entry_names is not None:
+            # Parity with the real adapter's exclusion refusal (#309).
+            # A fake left at None keeps the old behavior. The message
+            # carries the real one's remedy, so a suite asserting the
+            # operator's next step cannot pass against a bare summary.
+            unreached = unmatched_exclusions(excluded, self.imatrix_entry_names)
+            if unreached:
+                raise PackError(
+                    f"the imatrix carries no row for {len(unreached)} of "
+                    f"{len(dict.fromkeys(excluded))} recipe exclusions: "
+                    + ", ".join(f'"{name}"' for name in unreached)
+                    + ". The quantizer erases no row for such a name and "
+                    "exits 0. The tensor then keeps the assisted fit the "
+                    "recipe asked to drop, and the record states an "
+                    "exclusion that never applied (ADR-0023). Check the "
+                    "recipe's protected tensors against the imatrix's "
+                    "entry names"
+                )
         if self.type_fallbacks:
             raise TypeFallbackError(self.type_fallbacks, Path("packed.gguf"))
         result = PackResult(
@@ -386,3 +410,38 @@ def decoder_tensor_names(layers: int = 64) -> tuple[str, ...]:
         f"blk.{index}.{suffix}.weight" for index in range(layers) for suffix in suffixes
     ]
     return tuple(names)
+
+
+def decoder_imatrix_entry_names(layers: int = 64) -> tuple[str, ...]:
+    """Name the entries an imatrix over that decoder would carry.
+
+    A stand-in for `imatrix_entry_names` in suites that stub the
+    matrix as a path to no file. It is a strict subset of
+    `decoder_tensor_names`, because a matrix prices fewer tensors
+    than the base GGUF carries. ADR-0016's acceptance evidence
+    measured `token_embd` as the expected uncovered tensor, so the
+    embedding and the output head stay out.
+
+    Keeping the two lists distinguishable matters: a check handed the
+    base GGUF's names in place of the matrix's would pass every
+    stub that served one list for both.
+
+    Args:
+        layers: How many `blk.<n>.` layers to price.
+
+    Returns:
+        The entry names, in tensor order.
+
+    Examples:
+        Stub the matrix read in a contract suite:
+
+        ```python
+        monkeypatch.setattr(
+            exclusion_match,
+            "imatrix_entry_names",
+            lambda _: decoder_imatrix_entry_names(),
+        )
+        ```
+    """
+    head = {"token_embd.weight", "output.weight"}
+    return tuple(n for n in decoder_tensor_names(layers) if n not in head)

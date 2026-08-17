@@ -282,6 +282,115 @@ def test_pack_refuses_an_override_the_base_gguf_cannot_match(tmp_path) -> None:
     assert log[-1]["stage"] == "quantize"
 
 
+def test_pack_refuses_an_exclusion_the_imatrix_cannot_match(tmp_path) -> None:
+    # The whole path through the console script: a real base GGUF, a
+    # real imatrix, the real reader, and a recipe excluding a tensor
+    # the matrix never priced. The quantizer would erase no row and
+    # exit 0 (#309).
+    pytest.importorskip("gguf", reason="pack extra not installed")
+    np = pytest.importorskip("numpy", reason="pack extra not installed")
+    from gguf import GGUFWriter
+
+    from vramfit.adapters.outbound.recipe_json import save_recipe
+    from vramfit.adapters.outbound.run_log_jsonl import read_run_log
+    from vramfit.domain.model import (
+        Assignment,
+        PlanMeta,
+        ProtectedTensor,
+        Recipe,
+    )
+
+    checkout = tmp_path / "llama.cpp"
+    (checkout / "build" / "bin").mkdir(parents=True)
+    (checkout / "convert_hf_to_gguf.py").write_text(
+        "import sys\n"
+        "import numpy as np\n"
+        "from gguf import GGUFWriter\n"
+        'out = sys.argv[sys.argv.index("--outfile") + 1]\n'
+        'writer = GGUFWriter(out, arch="llama")\n'
+        'for name in ("blk.0.attn_v.weight", "blk.1.attn_v.weight"):\n'
+        "    writer.add_tensor(name, np.zeros((2, 2), dtype=np.float16))\n"
+        "writer.write_header_to_file()\n"
+        "writer.write_kv_data_to_file()\n"
+        "writer.write_tensors_to_file()\n"
+        "writer.close()\n"
+    )
+    quantize = checkout / "build" / "bin" / "llama-quantize"
+    quantize.write_text(
+        "#!/usr/bin/env python3\n"
+        "import sys\n"
+        'open(sys.argv[-3], "wb").write(b"Q" * 500)\n'
+    )
+    quantize.chmod(0o700)
+
+    # The matrix prices layer 1 alone, and the recipe excludes layer 0.
+    imatrix = tmp_path / "model.imatrix.gguf"
+    writer = GGUFWriter(imatrix, arch="imatrix")
+    writer.add_type("imatrix")
+    writer.add_tensor("blk.1.attn_v.weight.in_sum2", np.ones((1, 4), dtype=np.float32))
+    writer.add_tensor("blk.1.attn_v.weight.counts", np.array([[5.0]], dtype=np.float32))
+    writer.write_header_to_file()
+    writer.write_kv_data_to_file()
+    writer.write_tensors_to_file()
+    writer.close()
+
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    recipe_path = tmp_path / "recipe.json"
+    save_recipe(
+        Recipe(
+            model_id=str(model_dir),
+            plan=PlanMeta(
+                vram_budget_bytes=4_000,
+                kv_headroom_bytes=1_000,
+                weight_budget_bytes=3_000,
+                predicted_total_bytes=2_500,
+                predicted_damage=0.05,
+                solver="greedy-damage-per-byte",
+                pins={"*.self_attn.v_proj.weight": 5},
+                protections={"*.self_attn.v_proj.weight": 5},
+                format_overhead=0.05,
+                trace=(),
+                imatrix_exclusions=("model.layers.0.*",),
+            ),
+            assignments=(
+                Assignment(group="model.layers.0", bits=4, bytes=500, damage=0.01),
+            ),
+            runtime="llama.cpp",
+            # ADR-0020 ties the recorded imatrix to the assisted fit.
+            within_group="kquant-imx",
+            imatrix=str(imatrix),
+            protected_tensors=(
+                ProtectedTensor(
+                    "model.layers.0.self_attn.v_proj.weight", 5, exclude_imatrix=True
+                ),
+            ),
+        ),
+        recipe_path,
+    )
+    out = tmp_path / "packed.gguf"
+
+    result = run(
+        "pack",
+        str(recipe_path),
+        "--llama-cpp",
+        str(checkout),
+        "--out",
+        str(out),
+        "--imatrix",
+        str(imatrix),
+    )
+
+    assert result.returncode == 1
+    output = result.stdout + result.stderr
+    assert "carries no row for 1 of 1 recipe exclusions" in output
+    assert "blk.0.attn_v.weight" in output
+    assert not out.exists()
+    log = read_run_log(out.with_name("packed.runlog.jsonl"))
+    assert log[-1]["event"] == "pack_halted"
+    assert log[-1]["stage"] == "quantize"
+
+
 def test_infeasible_plan_exits_one_via_console_script(tmp_path) -> None:
     map_path = tmp_path / "sensitivity.json"
     map_path.write_text(

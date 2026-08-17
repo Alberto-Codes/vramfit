@@ -408,8 +408,12 @@ A recipe with imatrix exclusions drives one `--exclude-weights`
 flag per marked pair when the pack runs with `--imatrix`
 ([ADR-0023](../adr/0023-imatrix-exclusions.md)). The excluded
 tensors keep their promoted types and quantize without their
-imatrix rows. Packing such a recipe without `--imatrix` warns that
-the exclusions change nothing.
+imatrix rows. The command reads the matrix's entry names first and
+refuses an exclusion that reaches none of them. The quantizer erases
+a row by substring, so such a name erases nothing and exits 0. The
+tensor would keep the fit the recipe asked to drop, and the record
+would state an exclusion that never applied. Packing such a recipe
+without `--imatrix` warns that the exclusions change nothing.
 
 With `--smoke-text` the command runs the smoke test: `--smoke-chunks` perplexity chunks through
 `build/bin/llama-perplexity`, gated by the `--smoke-threshold`

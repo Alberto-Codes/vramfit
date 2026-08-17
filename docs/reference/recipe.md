@@ -144,6 +144,8 @@ below remain, the sub-4-bit pricing claims do not.
   to — pack emits `--exclude-weights` for each marked pair when it
   runs with an imatrix. A dropped pair's mark drops with it, and
   plan refuses an exclusion pattern left with no surviving pair.
+  Pack refuses a marked pair the imatrix carries no row for, because
+  the quantizer would erase nothing and report nothing.
 - **`format_overhead`** — the overhead fraction used for every size
   prediction, resolved from the size model's default when `--format-overhead`
   is not given (0.005 with an effective-bits table, 0.05 without). Together
