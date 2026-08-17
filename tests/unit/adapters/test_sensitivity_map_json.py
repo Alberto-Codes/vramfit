@@ -221,6 +221,28 @@ class TestSensitivityMap:
         with pytest.raises(ArtifactError, match="must equal scan"):
             map_from_dict(raw)
 
+    def test_unbounded_bytes_fp16_rejected(self) -> None:
+        # Python integers are unbounded, so without the reader's cap a
+        # map could declare a size no machine can hold (#260).
+        raw = make_map([("g0", 10**400, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
+
+        with pytest.raises(ArtifactError, match="signed 64-bit range"):
+            map_from_dict(raw)
+
+    def test_unbounded_calibration_tokens_rejected(self) -> None:
+        raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
+        raw["scan"]["calibration_tokens"] = 2**63
+
+        with pytest.raises(ArtifactError, match="signed 64-bit range"):
+            map_from_dict(raw)
+
+    def test_largest_representable_bytes_fp16_accepted(self) -> None:
+        # The bound refuses nothing a real measurement produces. The
+        # largest checkpoint this project reads is near 10^11.
+        raw = make_map([("g0", 2**63 - 1, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
+
+        assert map_from_dict(raw).groups[0].bytes_fp16 == 2**63 - 1
+
     def test_nonpositive_bytes_fp16_rejected(self) -> None:
         raw = make_map([("g0", 0, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
 

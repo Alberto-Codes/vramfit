@@ -372,6 +372,14 @@ class TestImatrixCountSummaryInvariants:
         with pytest.raises(ValueError, match="negative"):
             ImatrixCountSummary(min=-1, median=0.0, max=1)
 
+    def test_unbounded_median_rejected_as_value_error(self) -> None:
+        # The readers bound an integer before it arrives, so this is
+        # reachable only from an in-memory caller. A bare `float()`
+        # raised `OverflowError`, which is not a `ValueError` and so
+        # escapes the `VramfitError` root (ADR-0011, #260).
+        with pytest.raises(ValueError, match="too large for a float"):
+            ImatrixCountSummary(min=0, median=10**400, max=10**401)
+
     def test_non_finite_median_rejected(self) -> None:
         with pytest.raises(ValueError, match="finite"):
             ImatrixCountSummary(min=0, median=float("nan"), max=1)

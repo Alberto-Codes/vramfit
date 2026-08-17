@@ -8,7 +8,12 @@ and non-finite floats (``json.loads`` accepts ``NaN``/``Infinity``, which
 would poison solver comparisons downstream). A number written as an
 integer literal too large for a float fails as an `ArtifactError`, not
 an `OverflowError` (#260). A literal past the parser's own digit limit
-fails the same way, at the load step. A document that repeats a key
+fails the same way, at the load step. An integer field bounds to the
+signed 64-bit range for the same reason: Python integers are
+unbounded, so a document could otherwise declare a count or a byte
+size no machine can hold and every reader would take it as provenance.
+The reader decides what the format can carry, and the domain decides
+what the value means (ADR-0011 as amended 2026-08-17). A document that repeats a key
 inside one object fails at the load step too (#262). `json.loads` would
 otherwise keep the last value and report nothing. That refusal names the
 key and reports at the artifact root, because the parser hook that
@@ -153,6 +158,12 @@ UnknownFieldReporter = Callable[[str], None]
 # each of the 18 call sites. The JSON path inside the message is the
 # locator that matters.
 _ARTIFACT_ORIGIN: Final[str] = "<vramfit artifact>"
+
+# The signed 64-bit range an artifact integer must fit (#260). Python
+# integers are unbounded, so without this a document could declare a
+# byte count no machine can hold and every reader would take it.
+_INT_MAX: Final[int] = 2**63 - 1
+_INT_MIN: Final[int] = -(2**63)
 
 
 def report_through_warnings(message: str) -> None:
@@ -336,7 +347,20 @@ def _get_bool(obj: dict[str, Any], key: str, path: str) -> bool:
 
 
 def _as_int(value: Any, path: str) -> int:
-    """Return ``value`` as an int, rejecting JSON booleans.
+    """Return ``value`` as an int, rejecting booleans and unbounded values.
+
+    Python integers carry unlimited precision, so an artifact could
+    declare a count or a byte size no machine can hold and every
+    reader would record it as provenance. The bound is the signed
+    64-bit range, which is what a byte count, a token count, and a
+    chunk count all fit. The largest real value this project measures
+    is a 93 GB checkpoint, near 10^11.
+
+    The bound sits here rather than in the domain, matching
+    `_as_float`: the reader answers whether the format can carry a
+    value, and the domain answers whether the value means anything
+    (#260). Above 4300 digits `_load_json` refuses the document
+    first, so this closes the window between the two.
 
     Args:
         value: Candidate value.
@@ -346,10 +370,16 @@ def _as_int(value: Any, path: str) -> int:
         The integer value.
 
     Raises:
-        ArtifactError: If the value is a bool or not an integer.
+        ArtifactError: If the value is a bool, not an integer, or
+            outside the signed 64-bit range.
     """
     _require(not isinstance(value, bool), path, "expected an integer, got a boolean")
     _require(isinstance(value, int), path, "expected an integer")
+    _require(
+        _INT_MIN <= value <= _INT_MAX,
+        path,
+        f"integer is outside the signed 64-bit range [{_INT_MIN}, {_INT_MAX}]",
+    )
     return value
 
 
@@ -414,20 +444,29 @@ def _get_float(obj: dict[str, Any], key: str, path: str) -> float:
     return _as_float(obj[key], f"{path}.{key}")
 
 
-def _pre_rename_version(obj: dict[str, Any]) -> int | None:
+def _pre_rename_version(obj: dict[str, Any]) -> int | str | None:
     """Read the schema version a pre-rename artifact declares.
+
+    A non-integer value comes back as its JSON spelling rather than
+    None, so the caller's message keeps the clause telling the reader
+    to bump the version (#260). A pre-rename artifact hand-edited to
+    ``"3"`` or ``true`` otherwise read as no version at all, and the
+    reader lost half the remedy.
 
     Args:
         obj: Top-level artifact object.
 
     Returns:
-        The declared version, or None when the key is absent or its
-        value is not an integer. JSON booleans are Python integers and
-        do not count.
+        The declared version as an int, its JSON spelling when the
+        value is present but not an integer, or None when the key is
+        absent. JSON booleans are Python integers and count as
+        non-integers here.
     """
-    value = obj.get("quantfit_schema")
-    if isinstance(value, bool) or not isinstance(value, int):
+    if "quantfit_schema" not in obj:
         return None
+    value = obj["quantfit_schema"]
+    if isinstance(value, bool) or not isinstance(value, int):
+        return json.dumps(value)
     return value
 
 
@@ -440,6 +479,11 @@ def _reject_renamed_envelope_key(
     artifact in the frozen run root (#134) predates the rename by one
     to four schema versions. A reader who renames the key alone fails
     again on the version, so the message states the version too.
+
+    A version that is present but not an integer is a second blocker
+    of the same kind, and it now earns the same clause (#260). It
+    read as no version at all until then, which left the reader to
+    meet it after the rename.
 
     Args:
         obj: Top-level artifact object.
@@ -458,13 +502,19 @@ def _reject_renamed_envelope_key(
         return
     found = _pre_rename_version(obj)
     names = " or ".join(str(v) for v in sorted(readable))
+    bump = (
+        "A key rename alone does not make it load. "
+        "Bump the version or re-run the stage that writes it."
+    )
     detail = ""
-    if found is not None and found not in readable:
+    if isinstance(found, str):
+        # The value is present and not an integer, so the key rename
+        # is again not the only blocker (#154, #260).
         detail = (
-            f" The document declares version {found}. "
-            "A key rename alone does not make it load. "
-            "Bump the version or re-run the stage that writes it."
+            f" The document declares version {found}, which is not an integer. {bump}"
         )
+    elif found is not None and found not in readable:
+        detail = f" The document declares version {found}. {bump}"
     raise ArtifactError(
         f"{path}.quantfit_schema",
         'the envelope key renamed to "vramfit_schema" (#118). '

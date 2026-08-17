@@ -5,6 +5,32 @@
 - **Amendment (2026-08-11):** the tool renamed to vramfit (#118,
   chart #114). Decision 2's run-log envelope key renamed with it,
   and the run-log version bumped. The rename executed in #120.
+- **Amendment (2026-08-17, issue #260):** decision 5 gains the split
+  that decides where a bound lives. **An artifact reader bounds what
+  the format can carry. The domain bounds what the value means.**
+
+    Python integers carry unlimited precision, so a document could
+    declare a count or a byte size no machine can hold. Every reader
+    took it and recorded it as provenance. Measured 2026-08-15 on a
+    published sidecar: ``size_bytes`` at 10^400 loaded clean.
+
+    `_as_int` now refuses an integer outside the signed 64-bit range,
+    naming its JSON path. One rule covers roughly twenty integer
+    fields across the sensitivity map, the recipe, the scan
+    checkpoint, and the evals sidecar. It refuses nothing a
+    measurement produces — the largest real value this project reads
+    is a 93 GB checkpoint, near 10^11.
+
+    The split follows what `_as_float` already did. That extractor
+    catches `OverflowError` because a float cannot carry the value,
+    while the domain keeps ``positive``, ``non-negative``, and
+    ``finite``. Reading the same division onto integers keeps the
+    bound in one place and leaves the domain's meaning untouched.
+
+    An upper bound with a semantic meaning stays open. No record
+    fixes a maximum for ``size_bytes`` or a token count, and any
+    figure would be arbitrary. This amendment bounds representability
+    only.
 
 ## Context
 

@@ -112,11 +112,30 @@ def test_pre_rename_envelope_key_older_version_names_both_blockers(tmp_path) -> 
 
 
 @pytest.mark.parametrize("value", ["one", True], ids=["string", "boolean"])
-def test_pre_rename_envelope_key_unreadable_version_names_only_the_key(
+def test_pre_rename_envelope_key_non_integer_version_names_both_blockers(
     tmp_path, value
 ) -> None:
+    # A non-integer version is a second blocker, so suppressing the
+    # bump clause left the reader to hit it after the rename. #154
+    # set the rule that the message names both (#260).
     path = tmp_path / "scan.checkpoint.json"
     path.write_text(json.dumps({"quantfit_schema": value, "fingerprint": FP}))
+
+    with pytest.raises(ArtifactError) as excinfo:
+        JsonScanCheckpointFile(path).load(FP)
+
+    message = excinfo.value.message
+    assert "which is not an integer" in message
+    assert "A key rename alone does not make it load." in message
+
+
+def test_pre_rename_envelope_key_readable_version_names_only_the_key(
+    tmp_path,
+) -> None:
+    # A version this reader accepts needs only the key rename, so the
+    # message must not also tell the reader to bump.
+    path = tmp_path / "scan.checkpoint.json"
+    path.write_text(json.dumps({"quantfit_schema": 2, "fingerprint": FP}))
 
     with pytest.raises(ArtifactError) as excinfo:
         JsonScanCheckpointFile(path).load(FP)
