@@ -182,6 +182,31 @@ super-additive joint damage (×11.9) on a 2-bit-heavy recipe.
     vramfit refuses that word, because its own target admits no
     uniform-expert pack at the budget size.
 
+    **It stays unpriced by choice, ruled 2026-08-16 on #302.** A
+    prototype computed its alpha over the 5,888 routed expert matrices
+    of chart #158's target. That cost 572.4 s of wall clock on eight CPU
+    threads, and it touched no GPU. Pooled to the 46 expert stacks
+    `llama-quantize` addresses, AlphaQ's allocation overlaps the
+    measured recipe at 25 or 26 of 35. The figure spans two values
+    because no record assigns that recipe's 35th expert stack. A uniform
+    random 35-of-46 draw overlaps at 26.63 in expectation, at a standard
+    deviation of 1.25. **So AlphaQ picks no better than chance.**
+
+    The objective in
+    [Superone77/AlphaQ](https://github.com/Superone77/AlphaQ) multiplies
+    a spectral term by weight variance. So AlphaQ relieves an expert
+    stack that carries a low alpha and a high weight variance. vramfit
+    instead relieves high measured damage. **The two rank different
+    quantities, and the overlap above prices the difference.**
+
+    **The comparison is weak evidence either way, and #319 says why.**
+    #163's map groups by layer, so one damage figure covers both expert
+    stacks of a layer beside its router and its shared experts. That map
+    also priced these expert stacks through a K-quant fit
+    `llama-quantize` refuses on rows 2688 and 1856. Depth drives the map
+    as well, at Spearman rho -0.898 against layer index over 23 layers.
+    **A sharper comparison waits on a map the pack can realize.**
+
 **[Mixed-precision quantization for language models: techniques and prospects](https://arxiv.org/abs/2510.16805)** (survey, 2025)
 :   The field map. It confirms two things about the landscape.
     Sensitivity-driven bit allocation is an active research area.
