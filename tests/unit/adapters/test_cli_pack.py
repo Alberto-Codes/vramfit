@@ -622,6 +622,11 @@ class TestPackCommand:
         )
 
         assert result.exit_code == 0, result.output
+        # `result.output` and not `result.stderr` on purpose. Measured
+        # on the pinned click 8.4.2, `output` holds both streams, so a
+        # negative assertion over it is the stronger claim: the line
+        # must appear on neither channel. The positive case above pins
+        # the channel (#293).
         assert "no override reached" not in result.output
         log = read_run_log(out.with_name(out.stem + ".runlog.jsonl"))
         packed = next(line for line in log if line["event"] == "model_packed")
