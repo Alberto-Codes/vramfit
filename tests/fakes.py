@@ -314,3 +314,48 @@ class MemoryEvalsSidecarStore:
     @property
     def last(self) -> EvalsSidecar:
         return self.saved[-1]
+
+
+def decoder_tensor_names(layers: int = 64) -> tuple[str, ...]:
+    """Name every GGUF tensor a llama-family decoder of ``layers`` carries.
+
+    A stand-in for `base_tensor_names` in suites that stub the base
+    GGUF as opaque bytes. It covers every pattern this backend emits
+    — the seven quantized projections, the three fused expert
+    stacks, the embedding, and the output head — so a recipe under
+    the decoder root matches and the override check passes (#303).
+
+    Args:
+        layers: How many `blk.<n>.` layers to name.
+
+    Returns:
+        The tensor names, embedding and head first.
+
+    Examples:
+        Stub the reader in a CLI suite:
+
+        ```python
+        monkeypatch.setattr(
+            override_match, "base_tensor_names", lambda _: decoder_tensor_names()
+        )
+        ```
+    """
+    suffixes = (
+        "attn_q",
+        "attn_k",
+        "attn_v",
+        "attn_output",
+        "ffn_gate",
+        "ffn_up",
+        "ffn_down",
+        "ffn_gate_exps",
+        "ffn_up_exps",
+        "ffn_down_exps",
+        "ssm_in",
+        "ssm_out",
+    )
+    names = ["token_embd.weight", "output.weight"]
+    names += [
+        f"blk.{index}.{suffix}.weight" for index in range(layers) for suffix in suffixes
+    ]
+    return tuple(names)

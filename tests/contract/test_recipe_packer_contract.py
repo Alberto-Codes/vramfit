@@ -22,6 +22,7 @@ from typing import Literal
 import pytest
 
 from tests.fakes import MemoryRecipePacker
+from vramfit.adapters.outbound.gguf import override_match
 from vramfit.adapters.outbound.gguf.pack import LlamaCppPacker, TypeFallbackError
 from vramfit.adapters.outbound.gguf.types import PackError
 from vramfit.domain.model import Assignment, PlanMeta, ProtectedTensor, Recipe
@@ -821,3 +822,23 @@ class TestLlamaCppCommandLines:
 
         with pytest.raises(PackError, match="cannot be inspected"):
             packer.pack(sample_pack_recipe())
+
+    def test_override_matching_no_base_tensor_refuses_before_the_quantizer(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        # The base GGUF carries layer 9 alone, so both of the sample
+        # recipe's layer overrides address an absent index. The
+        # quantizer would apply neither and exit 0 (#303).
+        monkeypatch.setattr(
+            override_match,
+            "base_tensor_names",
+            lambda _: ("token_embd.weight", "blk.9.attn_v.weight"),
+        )
+        packer = _real_packer(tmp_path)
+        packer.convert()
+
+        with pytest.raises(PackError, match="no tensor for 2 of 2"):
+            packer.pack(sample_pack_recipe())
+
+        # The refusal runs before the quantizer, so no file survives.
+        assert not (tmp_path / "out.gguf").exists()

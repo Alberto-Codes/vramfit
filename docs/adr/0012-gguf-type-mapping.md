@@ -73,6 +73,47 @@
   groups map through [ADR-0028](0028-expert-stack-type-table.md)'s
   table, pack halts on the quantizer's type-fallback warning, and
   decision 5's halt stages gain `type_fallback`.
+- **Amendment (2026-08-16, issue #303):** decision 2 gains a
+  pre-run check. Every override must match a tensor the base GGUF
+  carries. The backend reads that file's tensor names before it runs
+  the quantizer, and it refuses an override matching none. The
+  refusal names each unmatched pattern.
+
+    `llama-quantize` compiles each pattern and searches it per
+    tensor. A pattern that matches nothing changes no type. The tool
+    then exits 0 and reports nothing, so the packed file drops that
+    part of the recipe with no signal. Checked against
+    `src/llama-quant.cpp` at commit `3653e6d6d` (b10326, the pinned
+    instrument) and at `e9fa0781f`: the match loop runs per tensor,
+    it never records an unused pattern, and the file carries no
+    unused-pattern report. The `--override-tensor` runtime flag
+    reports nothing either. No upstream issue or pull request tracks
+    the gap.
+
+    The check holds the pattern and never the group's root. Naming
+    the roots that pack would contradict the 2026-08-12 amendment's
+    any-family clause, which is why the check reads the file instead.
+    Issue #236 records that reasoning.
+
+    **The check closes the no-op and not the foreign root.** A recipe
+    whose groups hang from a root the base GGUF carries no tensor for
+    refuses here. A multimodal base GGUF is the other case: it
+    carries the decoder at `blk.<n>.` and the vision tower at
+    `v.blk.<n>.`, so a vision group's `blk.<n>.` pattern matches the
+    decoder's layer `<n>` and applies to the wrong tensors. That
+    pack is wrong and this check passes it. #236 still owns the
+    root question, and #303 carries the no-op half.
+
+    The check replicates the tool's matching and not its priority
+    order. A pattern that matches a tensor an earlier override also
+    claims still passes. Re-deriving the first-match order here would
+    make the backend a second source of truth for it (#190).
+
+    The read needs gguf-py, so every pack now requires the pack
+    extra. An `--imatrix` pack already did (ADR-0026, the #198
+    amendment). The refusal reports halt stage `quantize`, because
+    decision 5 names no stage that runs before the quantizer. #275
+    carries whether a pre-run refusal earns its own stage.
 
 ## Context
 
@@ -174,12 +215,17 @@ scan does not produce one today. K-quants need no extra input.
   consumes one via `--imatrix`, K-quants first. The i-quant type
   table itself stays open there.
 - Whether pack persists the toolchain's own output as a sidecar
-  artifact. Today a zero-exit tool's warnings (for example an
-  override pattern that matched no tensor) are discarded. Narrowed
+  artifact. Today a zero-exit tool's warnings are discarded. Narrowed
   by [ADR-0028](0028-expert-stack-type-table.md): the type-fallback
   warning now halts the pack, and the imatrix-miss warning was
   already recorded (ADR-0016). The sidecar question itself stays
   open.
+
+    **Correction (2026-08-16, issue #303):** this question read "for
+    example an override pattern that matched no tensor". No such
+    warning exists. `llama-quantize` emits nothing for an unused
+    pattern, so that case was never a discarded warning. The
+    2026-08-16 amendment closes it by reading the base GGUF instead.
 - ~~Whether the solver should consume per-type effective-bit tables
   instead of one `format_overhead` fraction (ties to the
   runtime-capability milestone from ADR-0010).~~ Resolved by

@@ -138,10 +138,21 @@ def test_pack_flow_with_stub_toolchain_produces_the_packed_file(tmp_path) -> Non
 
     checkout = tmp_path / "llama.cpp"
     (checkout / "build" / "bin").mkdir(parents=True)
+    # The pack step reads this file's tensor names to refuse an
+    # override that matches nothing (#303), so the stub writes a real
+    # GGUF carrying the recipe's layer 0 rather than opaque bytes.
     (checkout / "convert_hf_to_gguf.py").write_text(
         "import sys\n"
+        "import numpy as np\n"
+        "from gguf import GGUFWriter\n"
         'out = sys.argv[sys.argv.index("--outfile") + 1]\n'
-        'open(out, "wb").write(b"G" * 1000)\n'
+        'writer = GGUFWriter(out, arch="llama")\n'
+        'for name in ("token_embd.weight", "blk.0.attn_v.weight"):\n'
+        "    writer.add_tensor(name, np.zeros((2, 2), dtype=np.float16))\n"
+        "writer.write_header_to_file()\n"
+        "writer.write_kv_data_to_file()\n"
+        "writer.write_tensors_to_file()\n"
+        "writer.close()\n"
     )
     quantize = checkout / "build" / "bin" / "llama-quantize"
     quantize.write_text(

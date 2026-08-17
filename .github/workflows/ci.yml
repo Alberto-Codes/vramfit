@@ -90,7 +90,10 @@ jobs:
 
   # Mirrors the pre-push gate: thorough hypothesis profile, e2e
   # included, 90% coverage floor from pyproject. GPU and integration
-  # tiers stay out — CI has neither the card nor the weights.
+  # tiers stay out — CI has neither the card nor the weights. The
+  # gguf group rides along because the pack step reads the base
+  # GGUF's tensor names (ADR-0012 as amended 2026-08-16, #303), and
+  # the e2e pack flow drives that read through the console script.
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -105,7 +108,7 @@ jobs:
           enable-cache: true
           cache-suffix: py${{ matrix.python-version }}
       - run: uv python install ${{ matrix.python-version }}
-      - run: uv sync --locked --dev
+      - run: uv sync --locked --dev --group gguf
         env:
           UV_PYTHON: ${{ matrix.python-version }}
       - run: >-
@@ -119,13 +122,13 @@ jobs:
         continue-on-error: true
 
   # The gguf-py contract suites guard on import and skip wherever
-  # gguf is absent, so the test job never runs them (#197). This job
-  # installs the gguf dependency group and runs the contract tier.
-  # The group carries gguf-py and numpy without torch. The marker
-  # expression keeps the resource tiers out, matching the addopts
-  # default — a bare `-m contract` would replace that deselection.
-  # The import step fails loudly when gguf is missing. Without it a
-  # broken install skips green.
+  # gguf is absent (#197). The test job now installs the group too,
+  # so this job is no longer their only run — it stays as the
+  # torch-free check, on a plain 3.12 without the coverage floor or
+  # the thorough profile. The marker expression keeps the resource
+  # tiers out, matching the addopts default — a bare `-m contract`
+  # would replace that deselection. The import step fails loudly
+  # when gguf is missing. Without it a broken install skips green.
   test-gguf:
     runs-on: ubuntu-latest
     timeout-minutes: 10
