@@ -186,15 +186,25 @@ super-additive joint damage (×11.9) on a 2-bit-heavy recipe.
     computed its alpha over all 5,888 expert matrices of chart #158's
     target. That costs 572.4 s of CPU time, 0 B of VRAM, and no rented
     GPU. Pooled to the 46 stacks llama.cpp serves, its allocation
-    overlaps the measured pick at 25 or 26 of 35. A uniform random
-    35-of-46 draw overlaps at 26.63, so AlphaQ matches the measurement
-    no better than chance. The shipped objective in
+    overlaps the measured pick at 25 or 26 stacks of 35. The figure
+    spans two values because the measured arm's 35th stack is unruled.
+    A uniform random 35-of-46 draw overlaps at 26.63 stacks in
+    expectation. So AlphaQ matches the measurement no better than
+    chance.
+
+    The shipped objective in
     [Superone77/AlphaQ](https://github.com/Superone77/AlphaQ)
-    multiplies a spectral term by weight variance, and the variance
-    term drives the result. Against measured damage the spectral term
-    agrees, at Spearman rho -0.562 on `ffn_up_exps`. The variance term
-    opposes it at -0.808. So a campaign arm would price the variance
-    term rather than the heavy-tailedness the paper argues.
+    multiplies a spectral term by weight variance. **The variance term
+    drives the result.** AlphaQ relieves a stack that carries a low
+    alpha and a high weight variance. vramfit instead relieves a layer
+    that carries high measured damage. Rank the 23 MoE layers by each
+    quantity and compare. Mean alpha reads Spearman rho -0.562 against
+    measured damage on `ffn_up_exps`. So the low-alpha stacks are the
+    damaged ones and the spectral term agrees. Mean variance reads
+    -0.808, so the high-variance stacks are the undamaged ones and the
+    variance term disagrees. The product follows the stronger term. So
+    a campaign arm would price the variance term rather than the
+    heavy-tailedness the paper argues.
 
 **[Mixed-precision quantization for language models: techniques and prospects](https://arxiv.org/abs/2510.16805)** (survey, 2025)
 :   The field map. It confirms two things about the landscape.
