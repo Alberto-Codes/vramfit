@@ -14,7 +14,10 @@ warnings, the count read, and the echoes live in
 [vramfit.adapters.inbound.cli_pack_imatrix][]. A type-fallback
 warning in the quantizer's output halts the quantize stage with the
 file kept, and the ``pack_halted`` event carries stage
-``type_fallback`` and every rewrite (ADR-0028). After
+``type_fallback`` and every rewrite (ADR-0028). The ``model_packed``
+event and one ``warning:`` line name every layer the base GGUF
+numbers that no override reached. Those layers pack at the recipe's
+floor and the quantizer reports none of them (#307). After
 packing it re-checks the real bytes against the recipe's weight
 budget, gates a protected imatrix pack on the reconstruction check
 (ADR-0022 — the stage lives in
@@ -69,7 +72,7 @@ from vramfit.adapters.outbound.recipe_json import load_recipe
 from vramfit.adapters.outbound.run_log_jsonl import JsonlRunLogFile
 from vramfit.domain.budget import format_size
 from vramfit.domain.model import Recipe
-from vramfit.domain.pack import weight_budget_margin
+from vramfit.domain.pack import PackResult, weight_budget_margin
 from vramfit.ports.outbound import RecipePacker
 
 
@@ -129,6 +132,56 @@ def _load_recipe(path: Path) -> Recipe:
     except (OSError, ArtifactError) as exc:
         typer.echo(f"error: {path}: {exc}", err=True)
         raise typer.Exit(code=1) from exc
+
+
+def _report_floored_layers(result: PackResult) -> None:
+    """Echo the layers the recipe never addressed.
+
+    The quantizer prints nothing for them and exits 0. So only this
+    line and the ``model_packed`` event name the case (#307).
+
+    **The packed file grows, and the line says so.** A layer reaches
+    no override only when the recipe holds no assignment for it.
+    ``plan.predicted_total_bytes`` sums the assignment sizes, so it
+    never counted that layer. The quantizer still writes the tensors
+    at the floor. The margin line two statements later can therefore
+    read ``OVER`` for exactly this reason.
+
+    The count leads and the names follow. A base GGUF numbering one
+    unpriced block yields one name. A wrong-variant base can yield
+    dozens, so the run log carries the list as data.
+
+    Args:
+        result: The pack step's accounting record.
+    """
+    if not result.floored_layers:
+        return
+    count = len(result.floored_layers)
+    # A base GGUF numbering one unpriced block is the narrow case, so
+    # the singular is not an edge.
+    noun = "layer" if count == 1 else "layers"
+    names = ", ".join(result.floored_layers)
+    typer.echo(
+        f"warning: the base GGUF carries {count} {noun} no override "
+        f"reached: {names}. They packed at the {result.base_type} "
+        "floor. The recipe priced none of them, so the file exceeds "
+        "plan.predicted_total_bytes by their cost (#307)",
+        err=True,
+    )
+
+
+def _report_pack_effects(result: PackResult) -> None:
+    """Echo everything the packed file carries that the recipe does not.
+
+    Both reports name a gap the quantizer leaves unreported on a zero
+    exit. The floored layers come first, because they explain a size
+    the imatrix lines do not.
+
+    Args:
+        result: The pack step's accounting record.
+    """
+    _report_floored_layers(result)
+    _report_imatrix_effects(result)
 
 
 def pack(
@@ -221,7 +274,13 @@ def pack(
     stack rows. The quantizer's output is scanned for the
     type-fallback warning pair, and a match halts with the file
     kept — a rewritten type breaks the recipe the artifact claims
-    to carry (ADR-0028). The
+    to carry (ADR-0028). A layer the base GGUF numbers that no
+    override reached packs at the recipe's floor (decision 3). The
+    quantizer prints nothing, so the command warns and the run log
+    names each one (#307). Such a layer carries no assignment, so it
+    adds bytes the recipe never priced and the size re-check below
+    grows more likely to refuse. #320 carries whether the case should
+    refuse outright. The
     command re-checks the packed file's real
     bytes against the recipe's weight budget — nominal-bit
     predictions undershoot GGUF's effective bits. A protected
@@ -357,9 +416,10 @@ def pack(
             "imatrix_zero_count_experts": [
                 [stack, expert] for stack, expert in result.imatrix_zero_count_experts
             ],
+            "floored_layers": list(result.floored_layers),
         },
     )
-    _report_imatrix_effects(result)
+    _report_pack_effects(result)
 
     margin = weight_budget_margin(recipe, result.packed_bytes)
     fits = margin >= 0

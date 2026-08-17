@@ -132,6 +132,63 @@
     is also a pre-quantizer refusal and it reports stage
     `imatrix_counts`, which decision 5 does not list either. #275
     should rule both together.
+- **Amendment (2026-08-16, issue #307):** decision 3 gains a report.
+  The pack step names every layer the base GGUF numbers that no
+  override reaches, in `PackResult.floored_layers`, on the
+  `model_packed` run-log event, and as one `warning:` line. The same
+  header read serves this and the #303 refusal.
+
+    **Decision 3 supplies the mechanism, not an acceptance policy.**
+    It states that a tensor no override covers gets the base type,
+    and that `--pure` keeps the file recipe-driven. Its contrast is
+    recipe-driven against heuristic-driven. It does not say vramfit
+    must accept a recipe that leaves a whole layer unaddressed.
+    Decision 3 also predates the case. It dates to 2026-07-28 against
+    a dense model the scan priced whole, where decision 2's one
+    override per layer group left no layer unreached.
+
+    **So this amendment records the narrow action and leaves the
+    wider one open.** The report is strictly additive. It refuses no
+    pack the tool would honour, and it ends the silence. Whether an
+    unreached layer should instead refuse stays open, and #320
+    carries it. Two clauses pull toward refusal. Decision 2 gives an
+    untied head its own flag, which "stops `--pure` from dropping the
+    head to the recipe's floor" — the record's answer to one unscanned
+    unit silently taking the floor was to prevent it. The 2026-08-12
+    (#180) amendment refuses a recipe naming two roots, because
+    `mtp.layers.<n>` and `backbone.layers.<n>` both map onto
+    `blk.<n>.`. That is this defect's mirror in the same namespace.
+
+    The report itself is the ADR-0026 decision 5 shape: a report,
+    never a gate.
+
+    **The unit is the layer index and not the tensor.** A layer counts
+    as covered when at least one override reaches at least one tensor
+    under it. An expert-stack recipe addresses one tensor class per
+    layer on purpose, so a per-tensor report would name every
+    attention and dense tensor in the model.
+
+    **The packed file grows.** A layer reaches no override only when
+    the recipe holds no assignment for it, because `tensor_overrides`
+    emits one override per mapped assignment.
+    `plan.predicted_total_bytes` sums the assignment sizes, so it
+    never counted that layer. The quantizer still writes its tensors
+    at the floor. Decision 4's size re-check therefore grows more
+    likely to refuse, not less.
+
+    The reach is a base GGUF that numbers more layers than the recipe
+    addresses. #256 measured the published 30B builds carrying 48
+    expert stacks: 46 backbone plus 2 under `blk.52`. **Our own
+    converter drops that block**, so the MTP case reaches vramfit only
+    through a base GGUF from another source. A stale or wrong-variant
+    base is the trigger with no other gate, because `vramfit pack
+    --base-gguf` takes any file and `convert` reuses any existing one.
+    That lands on this ADR's open question about verifying the base
+    GGUF against the recipe's `model_id`, which stays open.
+
+    The prefix match is anchored at `blk.`, so a vision tower's
+    `v.blk.<n>.` reports nothing here. #236 still owns the root
+    question, and this report does not pre-empt it.
 
 ## Context
 

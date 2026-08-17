@@ -161,6 +161,43 @@ class TestPackResult:
 
         assert result.imatrix_path is None
 
+    def test_floored_layers_need_no_imatrix(self) -> None:
+        # Unlike the three imatrix reports, this one comes from the
+        # base GGUF's own tensor names, so a matrix-less pack carries
+        # it (#307).
+        result = PackResult(
+            packed_bytes=1,
+            base_type="Q4_K_S",
+            token_embedding_type=None,
+            output_tensor_type=None,
+            overrides=(),
+            floored_layers=("blk.52.",),
+        )
+
+        assert result.floored_layers == ("blk.52.",)
+
+    def test_empty_floored_layer_raises_value_error(self) -> None:
+        with pytest.raises(ValueError, match="floored layer"):
+            PackResult(
+                packed_bytes=1,
+                base_type="Q4_K_S",
+                token_embedding_type=None,
+                output_tensor_type=None,
+                overrides=(),
+                floored_layers=("",),
+            )
+
+    def test_floored_layers_default_to_empty(self) -> None:
+        result = PackResult(
+            packed_bytes=1,
+            base_type="Q4_K_S",
+            token_embedding_type=None,
+            output_tensor_type=None,
+            overrides=(),
+        )
+
+        assert result.floored_layers == ()
+
 
 class TestWeightBudgetMargin:
     def test_under_budget_margin_is_positive(self) -> None:

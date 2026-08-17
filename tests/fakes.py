@@ -5,7 +5,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
-from vramfit.adapters.outbound.gguf.override_match import unmatched_patterns
+from vramfit.adapters.outbound.gguf.override_match import (
+    floored_layers,
+    unmatched_patterns,
+)
 from vramfit.adapters.outbound.gguf.pack import TypeFallbackError
 from vramfit.adapters.outbound.gguf.types import (
     PackError,
@@ -167,9 +170,10 @@ class MemoryRecipePacker:
     and a mapping failure packs nothing.
 
     ``base_tensor_names`` gives the fake the real adapter's pre-run
-    override refusal (#303). It holds the names a base GGUF would
-    declare. None skips the check, because most suites configure no
-    model shape and only care about the sizes.
+    override refusal (#303) and its uncovered-layer report (#307). It
+    holds the names a base GGUF would declare. None skips both,
+    because most suites configure no model shape and only care about
+    the sizes.
     """
 
     base_bytes: int = 1_000
@@ -205,10 +209,13 @@ class MemoryRecipePacker:
         embedding = token_embedding_type(recipe)
         output = output_tensor_type(recipe)
         overrides = all_overrides(recipe)
-        if self.base_tensor_names is not None:
-            # Parity with the real adapter's pre-run refusal (#303).
-            # A fake left at None keeps the old behavior, so a suite
-            # that does not care about the check stays unchanged.
+        layer_gaps: tuple[str, ...] = ()
+        if self.base_tensor_names is not None and overrides:
+            # Parity with the real adapter's pre-run checks (#303,
+            # #307). A fake left at None keeps the old behavior, so a
+            # suite that does not care about them stays unchanged. An
+            # empty override set skips both, as `check_base_coverage`
+            # does.
             unmatched = unmatched_patterns(overrides, self.base_tensor_names)
             if unmatched:
                 raise PackError(
@@ -216,6 +223,7 @@ class MemoryRecipePacker:
                     f"of {len(overrides)} override patterns: "
                     + ", ".join(f'"{pattern}"' for pattern in unmatched)
                 )
+            layer_gaps = floored_layers(overrides, self.base_tensor_names)
         if self.type_fallbacks:
             raise TypeFallbackError(self.type_fallbacks, Path("packed.gguf"))
         result = PackResult(
@@ -231,6 +239,7 @@ class MemoryRecipePacker:
                 else ()
             ),
             imatrix_excluded=excluded,
+            floored_layers=layer_gaps,
         )
         self.packed.append(recipe)
         return result
