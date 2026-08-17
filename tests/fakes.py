@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
+from vramfit.adapters.outbound.gguf.exclusion_match import unmatched_exclusions
 from vramfit.adapters.outbound.gguf.override_match import (
     floored_layers,
     unmatched_patterns,
@@ -173,7 +174,8 @@ class MemoryRecipePacker:
     override refusal (#303) and its uncovered-layer report (#307). It
     holds the names a base GGUF would declare. None skips both,
     because most suites configure no model shape and only care about
-    the sizes.
+    the sizes. ``imatrix_entry_names`` does the same for the
+    exclusion refusal (#309), and None skips it the same way.
     """
 
     base_bytes: int = 1_000
@@ -184,6 +186,7 @@ class MemoryRecipePacker:
     imatrix_uncovered: tuple[str, ...] = ()
     type_fallbacks: tuple[tuple[str, str, str], ...] = ()
     base_tensor_names: tuple[str, ...] | None = None
+    imatrix_entry_names: tuple[str, ...] | None = None
     packed: list[Recipe] = field(default_factory=list)
 
     def convert(self) -> int:
@@ -224,6 +227,18 @@ class MemoryRecipePacker:
                     + ", ".join(f'"{pattern}"' for pattern in unmatched)
                 )
             layer_gaps = floored_layers(overrides, self.base_tensor_names)
+        if excluded and self.imatrix_entry_names is not None:
+            # Parity with the real adapter's exclusion refusal
+            # (#309), in its order: the base-GGUF checks run first, so
+            # a recipe failing both reports the mapping error. A fake
+            # left at None keeps the old behavior.
+            unreached = unmatched_exclusions(excluded, self.imatrix_entry_names)
+            if unreached:
+                raise PackError(
+                    f"the imatrix carries no row for {len(unreached)} of "
+                    f"{len(excluded)} recipe exclusions: "
+                    + ", ".join(f'"{name}"' for name in unreached)
+                )
         if self.type_fallbacks:
             raise TypeFallbackError(self.type_fallbacks, Path("packed.gguf"))
         result = PackResult(

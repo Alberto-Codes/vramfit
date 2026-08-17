@@ -22,7 +22,7 @@ from typing import Literal
 import pytest
 
 from tests.fakes import MemoryRecipePacker, decoder_tensor_names
-from vramfit.adapters.outbound.gguf import override_match
+from vramfit.adapters.outbound.gguf import exclusion_match, override_match
 from vramfit.adapters.outbound.gguf.pack import LlamaCppPacker, TypeFallbackError
 from vramfit.adapters.outbound.gguf.types import PackError
 from vramfit.domain.model import Assignment, PlanMeta, ProtectedTensor, Recipe
@@ -285,15 +285,17 @@ def _fake_packer(  # noqa: PLR0913 - mirrors _real_packer's fixture surface
         type_fallbacks=fallbacks,
         # The same names `base_gguf_names` serves the real adapter, so
         # both sides run the #303 refusal and the #307 report over one
-        # tensor list.
+        # tensor list. `imatrix_entry_names` serves the #309 refusal
+        # from the same list, for the same reason.
         base_tensor_names=decoder_tensor_names(),
+        imatrix_entry_names=decoder_tensor_names() if with_imatrix else None,
     )
 
 
 @pytest.mark.parametrize(
     "build", [_real_packer, _fake_packer], ids=["real-subprocess", "fake-memory"]
 )
-@pytest.mark.usefixtures("base_gguf_names")
+@pytest.mark.usefixtures("base_gguf_names", "imatrix_entry_names")
 class TestRecipePackerContract:
     def test_convert_returns_the_base_size(self, build, tmp_path) -> None:
         packer: RecipePacker = build(tmp_path)
@@ -573,7 +575,7 @@ class TestRecipePackerContract:
             packer.pack(sample_pack_recipe())
 
 
-@pytest.mark.usefixtures("base_gguf_names")
+@pytest.mark.usefixtures("base_gguf_names", "imatrix_entry_names")
 class TestLlamaCppCommandLines:
     """Real-adapter behavior the fake structurally cannot cover.
 
@@ -876,3 +878,38 @@ class TestLlamaCppCommandLines:
 
         # The refusal runs before the quantizer, so no file survives.
         assert not (tmp_path / "out.gguf").exists()
+
+    def test_exclusion_reaching_no_imatrix_row_refuses_before_the_quantizer(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        # The matrix prices layer 1 alone, so the recipe's exclusion
+        # of layer 0 erases no row. The quantizer would exit 0 and
+        # report nothing (#309).
+        monkeypatch.setattr(
+            exclusion_match,
+            "imatrix_entry_names",
+            lambda _: ("blk.1.attn_v.weight",),
+        )
+        packer = _real_packer(tmp_path, with_imatrix=True)
+        packer.convert()
+
+        with pytest.raises(PackError, match="carries no row for 1 of 1"):
+            packer.pack(excluded_pack_recipe())
+
+        assert not (tmp_path / "out.gguf").exists()
+
+    def test_a_matrix_less_pack_reads_no_imatrix_for_exclusions(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        # Decision 4 makes an exclusion inert without a matrix, so
+        # the check must not run and refuse one (ADR-0023).
+        def refuse(_: Path) -> tuple[str, ...]:
+            raise AssertionError("a matrix-less pack read an imatrix")
+
+        monkeypatch.setattr(exclusion_match, "imatrix_entry_names", refuse)
+        packer = _real_packer(tmp_path)
+        packer.convert()
+
+        result = packer.pack(excluded_pack_recipe())
+
+        assert result.imatrix_excluded == ()

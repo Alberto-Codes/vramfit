@@ -17,6 +17,23 @@
   exclusion on a stack drops all 128 expert rows, so the remedy is
   all-or-nothing there. [ADR-0026](0026-moe-expert-pricing.md) records
   the constraint.
+- **Amendment (2026-08-17, issue #309):** decision 4 gains a
+  pre-quantizer refusal. Pack reads the matrix's entry names and
+  refuses an exclusion no entry contains. `prepare_imatrix` erases a
+  row with `find(name)`, counts no erasure, and prints nothing, so
+  the quantizer exits 0 either way. Verified in
+  `tools/quantize/quantize.cpp` at commit `3653e6d6d` (b10326, the
+  pinned instrument) and at `e9fa0781f`. Such an exclusion breaks
+  both halves of this ADR. The tensor keeps the assisted fit
+  decision 1 buys the exclusion to drop. The record then states an
+  applied exclusion under `imatrix_excluded` and discounts the
+  tensor out of `imatrix_uncovered`, so a genuine coverage gap reads
+  as neither. The refusal follows decision 1's shape, which already
+  refuses a glob matching no protected tensor and, under the
+  2026-08-09 amendment, an exclusion whose every pair drops as a
+  no-op. The names pack emits are full tensor names, so a partial
+  name reaching many rows stays this ADR's own subject rather than
+  the check's.
 
 ## Context
 

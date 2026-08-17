@@ -27,6 +27,11 @@ extra (the pack extra includes it), so the import is deferred to the
 first read: the base install keeps ``vramfit pack --help`` and a
 matrix-less pack working (ADR-0005).
 
+`imatrix_entry_names` serves the exclusion check
+([vramfit.adapters.outbound.gguf.exclusion_match][]) from the same
+read. One definition of a readable imatrix serves both callers, so
+neither can accept a file the other refuses (the #198 amendment).
+
 Examples:
     Read the counts the pack's quantizer will consume:
 
@@ -41,6 +46,8 @@ Examples:
 See Also:
     - [vramfit.domain.pack][]: `zero_count_experts`, the verdict on
       these counts.
+    - [vramfit.adapters.outbound.gguf.exclusion_match][]: the other
+      caller of `imatrix_entry_names`.
 """
 
 from __future__ import annotations
@@ -146,6 +153,43 @@ def _counts_by_entry(reader: Any, path: Path) -> dict[str, list[float]]:
     if orphans:
         raise PackError(f"{path}: {orphans[0]}.in_sum2 has no counts twin")
     return counts
+
+
+def imatrix_entry_names(imatrix: Path) -> tuple[str, ...]:
+    """Read the matrix's entry names, as ``--exclude-weights`` sees them.
+
+    ``common/imatrix-loader.cpp`` keys each loaded entry by its tensor
+    name with ``.in_sum2`` or ``.counts`` removed, and it refuses a
+    sums tensor without its counts twin. `_counts_by_entry` applies
+    the same two rules, so its keys are the names the quantizer
+    matches an exclusion against.
+
+    The read runs the #198 amendment's closed refusal list, the way
+    the count read does. A second, lenient reader here would accept a
+    file the count read refuses.
+
+    Args:
+        imatrix: The importance matrix the pack consumes.
+
+    Returns:
+        Every entry name the matrix declares, in file order.
+
+    Raises:
+        PackError: If gguf-py is missing, the file is not a GGUF, or
+            the matrix fails the closed refusal list.
+        OSError: If the file cannot be read.
+
+    Examples:
+        Read the names an exclusion must reach:
+
+        ```python
+        names = imatrix_entry_names(Path("model.imatrix.gguf"))
+        assert "blk.1.attn_v.weight" in names
+        ```
+    """
+    gguf = _load_gguf()
+    reader = _open_reader(gguf, imatrix, "imatrix")
+    return tuple(_counts_by_entry(reader, imatrix))
 
 
 @dataclass(frozen=True, slots=True)

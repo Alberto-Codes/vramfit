@@ -31,7 +31,11 @@ record would state a name nobody read (#252). That halt reports
 stage ``quantize`` (ADR-0012 decision 5). The recipe's imatrix
 exclusions become ``--exclude-weights`` flags, and their
 intentional misses stay out
-of that coverage record (ADR-0023). Every failure — a tool that cannot start, exits
+of that coverage record (ADR-0023). It holds those exclusions against
+the matrix's entry names first and refuses one that reaches no row
+([vramfit.adapters.outbound.gguf.exclusion_match][]) — the quantizer
+erases nothing for such a name and exits 0, so the tensor would keep
+the fit the recipe asked to drop (#309). Every failure — a tool that cannot start, exits
 nonzero, dies to a signal, or leaves no usable file — translates to
 `PackError` at this boundary (ADR-0011), carrying the tool's last
 output lines.
@@ -64,6 +68,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
+from vramfit.adapters.outbound.gguf.exclusion_match import check_exclusion_match
 from vramfit.adapters.outbound.gguf.override_match import check_base_coverage
 from vramfit.adapters.outbound.gguf.toolrun import run_tool, sized_file
 from vramfit.adapters.outbound.gguf.types import (
@@ -295,8 +300,11 @@ class LlamaCppPacker:
         for tensors the matrix did not cover (ADR-0016). The
         recipe's imatrix exclusions become ``--exclude-weights``
         flags (ADR-0023) — the quantizer drops those rows, so the
-        coverage scan discounts them as intentional. Without an
-        imatrix the exclusions are no-ops and stay unemitted.
+        coverage scan discounts them as intentional. An exclusion the
+        matrix carries no row for refuses before the quantizer runs,
+        because it would erase nothing and report nothing (#309).
+        Without an imatrix the exclusions are no-ops and stay
+        unemitted.
 
         Args:
             recipe: The recipe to apply.
@@ -309,9 +317,10 @@ class LlamaCppPacker:
             PackError: If the recipe targets another runtime
                 (ADR-0013), the base GGUF is missing, the recipe
                 cannot be mapped (ADR-0012), an override matches no
-                tensor in the base GGUF (#303), the quantizer fails,
-                it writes no usable file, or it names an imatrix-miss
-                tensor the reader could not decode (#252).
+                tensor in the base GGUF (#303), an exclusion reaches
+                no imatrix row (#309), the quantizer fails, it writes
+                no usable file, or it names an imatrix-miss tensor
+                the reader could not decode (#252).
             TypeFallbackError: If the quantizer's output carries the
                 type-fallback warning pair — the artifact ignored
                 the recipe on a zero exit (ADR-0028). The file is
@@ -338,7 +347,14 @@ class LlamaCppPacker:
         # carries that no override reaches, which take the --pure
         # floor on a zero exit (#307).
         floored_layers = check_base_coverage(overrides, self.base_gguf)
-        excluded = imatrix_exclusion_names(recipe) if self.imatrix is not None else ()
+        excluded: tuple[str, ...] = ()
+        if self.imatrix is not None:
+            excluded = imatrix_exclusion_names(recipe)
+            # The quantizer erases an imatrix row by substring and
+            # reports no exclusion that erased nothing (#309). It runs
+            # after the base-GGUF read, so a recipe that fails both
+            # still reports the mapping error first.
+            check_exclusion_match(excluded, self.imatrix)
         command = [str(self.quantize_bin), "--pure"]
         if self.imatrix is not None:
             command += ["--imatrix", str(self.imatrix)]

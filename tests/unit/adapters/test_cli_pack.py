@@ -15,7 +15,7 @@ from vramfit.adapters.inbound import cli_pack, cli_pack_imatrix, cli_pack_smoke
 from vramfit.adapters.inbound.cli import app
 from vramfit.adapters.outbound.recipe_json import save_recipe
 from vramfit.adapters.outbound.run_log_jsonl import read_run_log
-from vramfit.domain.model import Assignment, PlanMeta, Recipe
+from vramfit.domain.model import Assignment, PlanMeta, ProtectedTensor, Recipe
 
 runner = CliRunner()
 
@@ -554,6 +554,63 @@ class TestPackCommand:
         assert result.exit_code == 1
         assert "carries no tensor for 1 of 1 override patterns" in result.output
         assert r"blk\.0\." in result.output
+        log = read_run_log(out.with_name(out.stem + ".runlog.jsonl"))
+        assert log[-1]["event"] == "pack_halted"
+        assert log[-1]["stage"] == "quantize"
+        assert not out.exists()
+
+    def test_exclusion_reaching_no_imatrix_row_exits_1_and_halts_at_quantize(
+        self, tmp_path, monkeypatch, llama_cpp_dir
+    ) -> None:
+        # The matrix prices layer 9 alone, so the recipe's exclusion
+        # of layer 0 erases no row. The quantizer would exit 0 and
+        # report nothing (#309).
+        model_dir = tmp_path / "model"
+        model_dir.mkdir()
+        recipe = make_recipe(str(model_dir))
+        recipe = replace(
+            recipe,
+            plan=replace(
+                recipe.plan,
+                protections={"*.self_attn.v_proj.weight": 5},
+                imatrix_exclusions=("model.layers.0.*",),
+            ),
+            protected_tensors=(
+                ProtectedTensor(
+                    "model.layers.0.self_attn.v_proj.weight", 5, exclude_imatrix=True
+                ),
+            ),
+        )
+        recipe_file = tmp_path / "excluded-recipe.json"
+        save_recipe(recipe, recipe_file)
+        imatrix_path = tmp_path / "imatrix.gguf"
+        imatrix_path.touch()
+        patch_packer(
+            monkeypatch,
+            MemoryRecipePacker(
+                imatrix=str(imatrix_path),
+                imatrix_entry_names=("blk.9.attn_v.weight",),
+            ),
+        )
+        out = tmp_path / "packed.gguf"
+
+        result = runner.invoke(
+            app,
+            [
+                "pack",
+                str(recipe_file),
+                "--llama-cpp",
+                str(llama_cpp_dir),
+                "--out",
+                str(out),
+                "--imatrix",
+                str(imatrix_path),
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert "carries no row for 1 of 1 recipe exclusions" in result.output
+        assert "blk.0.attn_v.weight" in result.output
         log = read_run_log(out.with_name(out.stem + ".runlog.jsonl"))
         assert log[-1]["event"] == "pack_halted"
         assert log[-1]["stage"] == "quantize"

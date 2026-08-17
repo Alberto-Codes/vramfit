@@ -220,8 +220,10 @@ extra-paths = ["scripts", ".claude/hooks"]
 # transformers, which CI and torch-less dev boxes do not install
 # (ADR-0005). The reconstruction adapter (ADR-0022), the imatrix
 # count reader (ADR-0026), the override matcher (ADR-0012, #303), and
-# their contract suites import gguf-py
-# the same way. Everything else still type-checks strictly.
+# their suites import gguf-py
+# the same way. The exclusion matcher (ADR-0023, #309) reads through
+# the count reader, so only its own gguf-backed suite lands here.
+# Everything else still type-checks strictly.
 # `scripts/check_ty_overrides.py` gates this list. Every entry must
 # cover a file that imports an optional root, so a stale entry fails.
 [[tool.ty.overrides]]
@@ -234,6 +236,7 @@ include = [
     "tests/contract/test_imatrix_count_source_contract.py",
     "tests/contract/test_reconstruction_checker_contract.py",
     "tests/integration/test_torch_scan_adapter.py",
+    "tests/unit/adapters/test_exclusion_match_gguf.py",
     "tests/unit/adapters/test_override_match_gguf.py",
     "tests/unit/adapters/test_scan_offload.py",
 ]
