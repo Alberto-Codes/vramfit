@@ -564,9 +564,8 @@ class TestPackCommand:
     ) -> None:
         # The mirror of #303: the recipe's `blk\.0\.` override matches,
         # and the file also numbers `blk.52`. That block takes the
-        # --pure floor on a zero exit, which ADR-0012 decision 3 makes
-        # the designed outcome — so the pack warns and continues
-        # (#307).
+        # --pure floor on a zero exit (ADR-0012 decision 3), so the
+        # pack warns and continues (#307).
         patch_packer(
             monkeypatch,
             MemoryRecipePacker(
@@ -589,10 +588,15 @@ class TestPackCommand:
 
         assert result.exit_code == 0, result.output
         assert "carries 1 layer no override reached: blk.52." in result.stderr
-        assert "smaller than the recipe predicts" in result.stderr
+        # The direction is load-bearing. An unreached layer carries no
+        # assignment, so predicted_total_bytes never counted it and the
+        # packed file grows. The margin line can read OVER for exactly
+        # this reason, so the warning must not claim the opposite.
+        assert "exceeds plan.predicted_total_bytes" in result.stderr
+        assert "smaller" not in result.stderr
         log = read_run_log(out.with_name(out.stem + ".runlog.jsonl"))
         packed = next(line for line in log if line["event"] == "model_packed")
-        assert packed["uncovered_layers"] == ["blk.52."]
+        assert packed["floored_layers"] == ["blk.52."]
 
     def test_recipe_reaching_every_layer_warns_nothing(
         self, tmp_path, monkeypatch, llama_cpp_dir, recipe_path
@@ -621,7 +625,7 @@ class TestPackCommand:
         assert "no override reached" not in result.output
         log = read_run_log(out.with_name(out.stem + ".runlog.jsonl"))
         packed = next(line for line in log if line["event"] == "model_packed")
-        assert packed["uncovered_layers"] == []
+        assert packed["floored_layers"] == []
 
     def test_unmappable_recipe_exits_1_and_halts_at_quantize(
         self, tmp_path, monkeypatch, llama_cpp_dir

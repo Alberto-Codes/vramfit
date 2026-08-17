@@ -14,7 +14,7 @@ import pytest
 from vramfit.adapters.outbound.gguf import override_match
 from vramfit.adapters.outbound.gguf.override_match import (
     check_base_coverage,
-    uncovered_layers,
+    floored_layers,
     unmatched_patterns,
 )
 from vramfit.adapters.outbound.gguf.types import PackError
@@ -87,18 +87,18 @@ class TestUnmatchedPatterns:
             unmatched_patterns(overrides, _DECODER_NAMES)
 
 
-class TestUncoveredLayers:
+class TestFlooredLayers:
     def test_every_layer_reached_reports_nothing(self) -> None:
         overrides = (
             TypeOverride(r"blk\.0\.", "q4_k"),
             TypeOverride(r"blk\.1\.", "q4_k"),
             TypeOverride(r"blk\.11\.", "q4_k"),
         )
-        assert uncovered_layers(overrides, _DECODER_NAMES) == ()
+        assert floored_layers(overrides, _DECODER_NAMES) == ()
 
     def test_layer_no_override_reaches_reports_its_prefix(self) -> None:
         overrides = (TypeOverride(r"blk\.0\.", "q4_k"),)
-        assert uncovered_layers(overrides, _DECODER_NAMES) == ("blk.1.", "blk.11.")
+        assert floored_layers(overrides, _DECODER_NAMES) == ("blk.1.", "blk.11.")
 
     def test_mtp_block_beyond_the_scanned_range_reports(self) -> None:
         # #256 measured the published 30B builds carrying 48 expert
@@ -113,7 +113,7 @@ class TestUncoveredLayers:
             TypeOverride(r"blk\.0\.ffn_down_exps\.", "q4_0"),
             TypeOverride(r"blk\.1\.ffn_down_exps\.", "q4_0"),
         )
-        assert uncovered_layers(overrides, names) == ("blk.52.",)
+        assert floored_layers(overrides, names) == ("blk.52.",)
 
     def test_one_reached_tensor_covers_the_whole_layer(self) -> None:
         # An expert-stack recipe addresses one tensor class per layer
@@ -121,15 +121,33 @@ class TestUncoveredLayers:
         # and dense tensor in the model.
         names = ("blk.0.ffn_down_exps.weight", "blk.0.attn_v.weight")
         overrides = (TypeOverride(r"blk\.0\.ffn_down_exps\.", "q4_0"),)
-        assert uncovered_layers(overrides, names) == ()
+        assert floored_layers(overrides, names) == ()
+
+    def test_escaped_dot_does_not_cover_a_longer_index(self) -> None:
+        # The sharpest edge of the coverage rule. `blk\.1\.` unescaped
+        # would match `blk.11.attn_v.weight` through the wildcard dot
+        # and mark layer 11 covered. Patterns arrive `re.escape`d, so
+        # it must not.
+        overrides = (TypeOverride(r"blk\.1\.", "q4_k"),)
+        assert floored_layers(overrides, _DECODER_NAMES) == ("blk.0.", "blk.11.")
+
+    def test_class_wide_pattern_covers_every_layer_carrying_it(self) -> None:
+        # llama-quantize searches rather than anchors, so a caller
+        # pattern naming a tensor class alone reaches every layer.
+        overrides = (TypeOverride(r"attn_v\.", "q4_k"),)
+        assert floored_layers(overrides, _DECODER_NAMES) == ()
+
+    def test_repeated_tensor_name_does_not_double_report(self) -> None:
+        names = ("blk.4.attn_v.weight", "blk.4.attn_v.weight")
+        assert floored_layers((), names) == ("blk.4.",)
 
     def test_layers_report_in_index_order_not_file_order(self) -> None:
         names = ("blk.11.attn_v.weight", "blk.2.attn_v.weight")
-        assert uncovered_layers((), names) == ("blk.2.", "blk.11.")
+        assert floored_layers((), names) == ("blk.2.", "blk.11.")
 
     def test_file_numbering_no_layer_reports_nothing(self) -> None:
         names = ("token_embd.weight", "output.weight")
-        assert uncovered_layers((), names) == ()
+        assert floored_layers((), names) == ()
 
     def test_foreign_root_layer_is_not_a_decoder_layer(self) -> None:
         # A vision tower numbers `v.blk.<n>.`. The prefix is anchored,
@@ -137,12 +155,12 @@ class TestUncoveredLayers:
         # question and this report must not pre-empt it.
         names = ("v.blk.0.attn_v.weight", "blk.0.attn_v.weight")
         overrides = (TypeOverride(r"blk\.0\.", "q4_k"),)
-        assert uncovered_layers(overrides, names) == ()
+        assert floored_layers(overrides, names) == ()
 
     def test_uncompilable_pattern_raises_pack_error(self) -> None:
         overrides = (TypeOverride("blk[", "q4_k"),)
         with pytest.raises(PackError, match="does not compile"):
-            uncovered_layers(overrides, _DECODER_NAMES)
+            floored_layers(overrides, _DECODER_NAMES)
 
 
 class TestMissingGgufPy:

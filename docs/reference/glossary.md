@@ -387,10 +387,21 @@ change.
     output-head flag types, the pattern overrides, the importance
     matrix path when one was used, the imatrix coverage record
     (uncovered tensors, and the exclusions the recipe instructed),
-    and the zero-count expert report — `(stack, expert)` pairs the
+    the zero-count expert report — `(stack, expert)` pairs the
     matrix counts zero times
-    ([ADR-0026](../adr/0026-moe-expert-pricing.md) decision 5).
-    Code type `vramfit.domain.pack.PackResult`.
+    ([ADR-0026](../adr/0026-moe-expert-pricing.md) decision 5) — and
+    the **floored layers**. Code type
+    `vramfit.domain.pack.PackResult`.
+
+**Floored layer**
+:   A layer the base GGUF numbers that no override in the recipe
+    reaches. It packs at the recipe's base-type floor and the
+    quantizer reports nothing, so the pack step names it
+    ([ADR-0012](../adr/0012-gguf-type-mapping.md), the 2026-08-16
+    #307 amendment). Distinct from an **uncovered tensor**, which the
+    importance matrix missed. One names a gap between the recipe and
+    the model, the other a gap between the matrix and the model. Not
+    "unaddressed layer" or "missing layer".
 
 **Importance matrix** (short: **imatrix**)
 :   Per-weight activation statistics collected over a calibration run,

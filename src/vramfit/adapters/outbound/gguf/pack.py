@@ -287,7 +287,7 @@ class LlamaCppPacker:
         override must match a tensor the base GGUF carries, and one
         that matches nothing refuses before the quantizer runs
         (#303). The same read names the layers the file carries that
-        no override reaches — they take the ``--pure`` floor, so the
+        no override reaches. They take the ``--pure`` floor, so the
         result records them and the pack continues (#307). A
         configured importance
         matrix reaches the quantizer as ``--imatrix``, lands in the
@@ -337,7 +337,7 @@ class LlamaCppPacker:
         # 2026-08-16, #303). The same read names the layers the file
         # carries that no override reaches, which take the --pure
         # floor on a zero exit (#307).
-        uncovered_layers = check_base_coverage(overrides, self.base_gguf)
+        floored_layers = check_base_coverage(overrides, self.base_gguf)
         excluded = imatrix_exclusion_names(recipe) if self.imatrix is not None else ()
         command = [str(self.quantize_bin), "--pure"]
         if self.imatrix is not None:
@@ -381,5 +381,5 @@ class LlamaCppPacker:
             imatrix_path=None if self.imatrix is None else str(self.imatrix),
             imatrix_uncovered=uncovered,
             imatrix_excluded=excluded,
-            uncovered_layers=uncovered_layers,
+            floored_layers=floored_layers,
         )

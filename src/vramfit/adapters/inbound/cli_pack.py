@@ -15,9 +15,9 @@ warnings, the count read, and the echoes live in
 warning in the quantizer's output halts the quantize stage with the
 file kept, and the ``pack_halted`` event carries stage
 ``type_fallback`` and every rewrite (ADR-0028). The ``model_packed``
-event and one ``warning:`` line name the layers the base GGUF carries
-that no override reached — they packed at the recipe's floor, and the
-quantizer reports neither (#307). After
+event and one ``warning:`` line name every layer the base GGUF
+numbers that no override reached. Those layers pack at the recipe's
+floor and the quantizer reports none of them (#307). After
 packing it re-checks the real bytes against the recipe's weight
 budget, gates a protected imatrix pack on the reconstruction check
 (ADR-0022 — the stage lives in
@@ -134,33 +134,38 @@ def _load_recipe(path: Path) -> Recipe:
         raise typer.Exit(code=1) from exc
 
 
-def _report_uncovered_layers(result: PackResult) -> None:
+def _report_floored_layers(result: PackResult) -> None:
     """Echo the layers the recipe never addressed.
 
-    They packed at the recipe's floor, which ADR-0012 decision 3 makes
-    the designed outcome for a tensor no override covers. So the line
-    warns and never refuses. It exists because the quantizer prints
-    nothing and exits 0, and the packed size then differs from
-    ``plan.predicted_total_bytes`` with no other signal (#307).
+    The quantizer prints nothing for them and exits 0. So only this
+    line and the ``model_packed`` event name the case (#307).
 
-    The line states a count and names the layers. That stays short on
-    the real gap this catches — a base GGUF numbering a block the scan
-    never priced, such as the MoE target's MTP block at ``blk.52``.
+    **The packed file grows, and the line says so.** A layer reaches
+    no override only when the recipe holds no assignment for it.
+    ``plan.predicted_total_bytes`` sums the assignment sizes, so it
+    never counted that layer. The quantizer still writes the tensors
+    at the floor. The margin line two statements later can therefore
+    read ``OVER`` for exactly this reason.
+
+    The count leads and the names follow. A base GGUF numbering one
+    unpriced block yields one name. A wrong-variant base can yield
+    dozens, so the run log carries the list as data.
 
     Args:
         result: The pack step's accounting record.
     """
-    if not result.uncovered_layers:
+    if not result.floored_layers:
         return
-    count = len(result.uncovered_layers)
-    # The MoE target's gap is one MTP block, so the singular is the
-    # common case rather than an edge.
+    count = len(result.floored_layers)
+    # A base GGUF numbering one unpriced block is the narrow case, so
+    # the singular is not an edge.
     noun = "layer" if count == 1 else "layers"
-    names = ", ".join(result.uncovered_layers)
+    names = ", ".join(result.floored_layers)
     typer.echo(
         f"warning: the base GGUF carries {count} {noun} no override "
-        f"reached: {names} — they packed at the {result.base_type} "
-        "floor, so the file is smaller than the recipe predicts (#307)",
+        f"reached: {names}. They packed at the {result.base_type} "
+        "floor. The recipe priced none of them, so the file exceeds "
+        "plan.predicted_total_bytes by their cost (#307)",
         err=True,
     )
 
@@ -169,13 +174,13 @@ def _report_pack_effects(result: PackResult) -> None:
     """Echo everything the packed file carries that the recipe does not.
 
     Both reports name a gap the quantizer leaves unreported on a zero
-    exit. The coverage gap comes first, because it explains a size the
-    imatrix lines do not.
+    exit. The floored layers come first, because they explain a size
+    the imatrix lines do not.
 
     Args:
         result: The pack step's accounting record.
     """
-    _report_uncovered_layers(result)
+    _report_floored_layers(result)
     _report_imatrix_effects(result)
 
 
@@ -270,9 +275,12 @@ def pack(
     type-fallback warning pair, and a match halts with the file
     kept — a rewritten type breaks the recipe the artifact claims
     to carry (ADR-0028). A layer the base GGUF numbers that no
-    override reached packs at the recipe's floor, which decision 3
-    intends. The quantizer prints nothing, so the command warns and
-    the run log names each one (#307). The
+    override reached packs at the recipe's floor (decision 3). The
+    quantizer prints nothing, so the command warns and the run log
+    names each one (#307). Such a layer carries no assignment, so it
+    adds bytes the recipe never priced and the size re-check below
+    grows more likely to refuse. #320 carries whether the case should
+    refuse outright. The
     command re-checks the packed file's real
     bytes against the recipe's weight budget — nominal-bit
     predictions undershoot GGUF's effective bits. A protected
@@ -408,7 +416,7 @@ def pack(
             "imatrix_zero_count_experts": [
                 [stack, expert] for stack, expert in result.imatrix_zero_count_experts
             ],
-            "uncovered_layers": list(result.uncovered_layers),
+            "floored_layers": list(result.floored_layers),
         },
     )
     _report_pack_effects(result)

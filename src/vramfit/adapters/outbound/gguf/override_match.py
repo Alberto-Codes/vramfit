@@ -48,13 +48,22 @@ Every pattern the pack step builds is a ``blk\.<n>\.`` or
 ``blk\.<n>\.<class>\.`` prefix over real GGUF tensor classes, so
 none of the three is reachable through this backend today.
 
-`uncovered_layers` runs the same comparison the other way. A layer the
+`floored_layers` runs the same comparison the other way. A layer the
 base GGUF numbers that no override reaches takes the ``--pure`` base
-ftype, which ADR-0012 decision 3 states is the designed outcome — the
-packed file is recipe-driven, and a tensor no override covers gets the
-floor. So this reports and never refuses. It is the ADR-0026 decision
-5 shape: the quantizer prints nothing, and the pack path names the
-case rather than flattening it silently.
+ftype. ADR-0012 decision 3 supplies the mechanism, and its 2026-08-16
+#307 amendment records why this reports rather than refuses. It is
+the ADR-0026 decision 5 shape: the quantizer prints nothing, and the
+pack path names the case rather than flattening it silently.
+
+**The superset bias flips direction here.** The refusal above is a
+superset of the tool's match set, so it never refuses a pack the tool
+would honour. That same superset makes `covered` a superset of
+truly-covered, so this report is a subset of truly-floored. It
+under-reports, and under-reporting is the silence #307 exists to
+break. Of the three upstream filters, only `tensor_allows_quantization`
+can hide a layer here, and it needs a pattern whose every match is a
+tensor the quantizer skips. `GGUF_SUFFIX_BY_HF` carries no such class,
+so #305's residual bounds this too.
 
 The unit is the layer index and not the tensor. A recipe of
 expert-stack groups reaches one tensor class per layer on purpose, so
@@ -70,7 +79,7 @@ Examples:
     Hold a recipe's overrides against the file the quantizer reads:
 
     ```python
-    uncovered = check_base_coverage(overrides, Path("model-f16.gguf"))
+    floored = check_base_coverage(overrides, Path("model-f16.gguf"))
     ```
 
 See Also:
@@ -245,33 +254,35 @@ def unmatched_patterns(
     return tuple(unmatched)
 
 
-def uncovered_layers(
+def floored_layers(
     overrides: Sequence[TypeOverride], names: Iterable[str]
 ) -> tuple[str, ...]:
     r"""Name the base GGUF's layers that no override reaches.
 
     A layer is covered when at least one override pattern matches at
-    least one tensor under it. An uncovered layer takes the ``--pure``
-    base ftype, which ADR-0012 decision 3 makes the designed outcome,
-    so this reports rather than refusing.
+    least one tensor under it. A layer no pattern reaches takes the
+    ``--pure`` base ftype (ADR-0012 decision 3), so this reports
+    rather than refusing.
 
     The comparison lower-cases each pattern and searches it, the way
-    `unmatched_patterns` does and the way ``llama-quantize`` does.
+    `unmatched_patterns` does and the way ``llama-quantize`` does. It
+    inherits that superset, so it under-reports rather than
+    over-reports. The module docstring carries the reasoning.
 
     Args:
         overrides: The overrides the pack would drive into the
-            quantizer. An empty sequence leaves every layer uncovered.
+            quantizer. An empty sequence floors every layer, and this
+            names them all. `check_base_coverage` never reaches that
+            case, because it returns before the file read.
         names: The base GGUF's tensor names.
 
     Returns:
-        The uncovered layer prefixes, e.g. ``blk.52.``, sorted by
+        The floored layer prefixes, e.g. ``blk.52.``, sorted by
         layer index. Empty when every layer the file numbers is
         reached, and empty for a file that numbers no layer.
 
     Raises:
-        PackError: If a pattern does not compile. `unmatched_patterns`
-            documents why every pattern this backend builds is a
-            literal.
+        PackError: If a pattern does not compile. See `_compiled`.
 
     Examples:
         A recipe scanned over fewer layers than the file carries:
@@ -279,7 +290,7 @@ def uncovered_layers(
         ```python
         overrides = (TypeOverride(r"blk\.0\.", "q4_k"),)
         names = ("blk.0.attn_v.weight", "blk.1.attn_v.weight")
-        assert uncovered_layers(overrides, names) == ("blk.1.",)
+        assert floored_layers(overrides, names) == ("blk.1.",)
         ```
     """
     patterns = [_compiled(override) for override in overrides]
@@ -314,7 +325,9 @@ def check_base_coverage(
 
     Returns:
         The layer prefixes the file carries that no override reaches
-        (#307). Empty for an empty override sequence.
+        (#307). Empty for an empty override sequence, which skips the
+        read rather than reporting every layer. Such a recipe floors
+        the whole model and #307 does not cover it.
 
     Raises:
         PackError: If any override matches no tensor (#303), if
@@ -327,7 +340,7 @@ def check_base_coverage(
         here rather than packing:
 
         ```python
-        uncovered = check_base_coverage(overrides, Path("model-f16.gguf"))
+        floored = check_base_coverage(overrides, Path("model-f16.gguf"))
         ```
     """
     if not overrides:
@@ -343,4 +356,4 @@ def check_base_coverage(
             f"drop that part of the recipe without a report (#303). Check the "
             f"recipe's group names against the base GGUF's tensor names"
         )
-    return uncovered_layers(overrides, names)
+    return floored_layers(overrides, names)

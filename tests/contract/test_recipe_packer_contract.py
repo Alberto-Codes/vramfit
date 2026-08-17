@@ -514,9 +514,7 @@ class TestRecipePackerContract:
 
         result = packer.pack(sample_pack_recipe())
 
-        assert result.uncovered_layers == tuple(
-            f"blk.{index}." for index in range(2, 64)
-        )
+        assert result.floored_layers == tuple(f"blk.{index}." for index in range(2, 64))
 
     def test_pack_counts_a_stack_override_as_covering_its_layer(
         self, build, tmp_path
@@ -532,8 +530,8 @@ class TestRecipePackerContract:
 
         result = packer.pack(stack_pack_recipe())
 
-        assert "blk.1." not in result.uncovered_layers
-        assert "blk.0." in result.uncovered_layers
+        assert "blk.1." not in result.floored_layers
+        assert "blk.0." in result.floored_layers
 
     def test_pack_llama_cpp_recipe_is_accepted(self, build, tmp_path) -> None:
         packer: RecipePacker = build(tmp_path, base_exists=True)

@@ -161,7 +161,7 @@ class TestPackResult:
 
         assert result.imatrix_path is None
 
-    def test_uncovered_layers_need_no_imatrix(self) -> None:
+    def test_floored_layers_need_no_imatrix(self) -> None:
         # Unlike the three imatrix reports, this one comes from the
         # base GGUF's own tensor names, so a matrix-less pack carries
         # it (#307).
@@ -171,23 +171,23 @@ class TestPackResult:
             token_embedding_type=None,
             output_tensor_type=None,
             overrides=(),
-            uncovered_layers=("blk.52.",),
+            floored_layers=("blk.52.",),
         )
 
-        assert result.uncovered_layers == ("blk.52.",)
+        assert result.floored_layers == ("blk.52.",)
 
-    def test_empty_uncovered_layer_raises_value_error(self) -> None:
-        with pytest.raises(ValueError, match="uncovered layer"):
+    def test_empty_floored_layer_raises_value_error(self) -> None:
+        with pytest.raises(ValueError, match="floored layer"):
             PackResult(
                 packed_bytes=1,
                 base_type="Q4_K_S",
                 token_embedding_type=None,
                 output_tensor_type=None,
                 overrides=(),
-                uncovered_layers=("",),
+                floored_layers=("",),
             )
 
-    def test_uncovered_layers_default_to_empty(self) -> None:
+    def test_floored_layers_default_to_empty(self) -> None:
         result = PackResult(
             packed_bytes=1,
             base_type="Q4_K_S",
@@ -196,7 +196,7 @@ class TestPackResult:
             overrides=(),
         )
 
-        assert result.uncovered_layers == ()
+        assert result.floored_layers == ()
 
 
 class TestWeightBudgetMargin:

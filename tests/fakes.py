@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Literal
 
 from vramfit.adapters.outbound.gguf.override_match import (
-    uncovered_layers,
+    floored_layers,
     unmatched_patterns,
 )
 from vramfit.adapters.outbound.gguf.pack import TypeFallbackError
@@ -223,7 +223,7 @@ class MemoryRecipePacker:
                     f"of {len(overrides)} override patterns: "
                     + ", ".join(f'"{pattern}"' for pattern in unmatched)
                 )
-            layer_gaps = uncovered_layers(overrides, self.base_tensor_names)
+            layer_gaps = floored_layers(overrides, self.base_tensor_names)
         if self.type_fallbacks:
             raise TypeFallbackError(self.type_fallbacks, Path("packed.gguf"))
         result = PackResult(
@@ -239,7 +239,7 @@ class MemoryRecipePacker:
                 else ()
             ),
             imatrix_excluded=excluded,
-            uncovered_layers=layer_gaps,
+            floored_layers=layer_gaps,
         )
         self.packed.append(recipe)
         return result

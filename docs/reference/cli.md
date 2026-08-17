@@ -339,6 +339,17 @@ warns when `--imatrix` is absent or names a different file, because
 the pack would not match the map's frame (ADR-0020). A warning, not
 a refusal: packing itself works either way.
 
+Every pack holds the recipe's overrides against the base GGUF's
+tensor names before the quantizer runs. An override no tensor matches
+refuses the pack (#303). A layer the file numbers that no override
+reaches does not refuse: it packs at the base-type floor, which
+ADR-0012 decision 3 describes. The quantizer prints nothing for it,
+so a console warning states the count and names the layers, and the
+`model_packed` event carries them under `floored_layers` — a report,
+never a gate (#307). Those layers carry no assignment, so the packed
+file exceeds `plan.predicted_total_bytes` by their cost. Issue #320
+carries whether the case should refuse instead.
+
 An `--imatrix` pack also reads the matrix's `.counts` tensors
 against the base GGUF, between the convert and quantize stages
 ([ADR-0026](../adr/0026-moe-expert-pricing.md) decision 5). The
@@ -407,7 +418,7 @@ packed model is unproven. Every run appends the pack events to the
 run log: pack_started, gguf_converted (with `reused`), model_packed
 (real bytes, base type, embedding and output tensor types, override
 count, imatrix, uncovered tensors, excluded tensors, zero-count
-experts), size_checked (margin and
+experts, floored layers), size_checked (margin and
 `fits`), reconstruction_checked when the gate ran (per-tensor
 protected and reference RMSE, `collapsed`, `passed`), smoke_tested
 when the smoke test ran (perplexity — null
