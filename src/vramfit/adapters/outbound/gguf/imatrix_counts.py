@@ -34,6 +34,15 @@ callers, rather than a second and looser scan (the #198 amendment).
 The list's sixth case needs the base GGUF, so it stays with
 `expert_stack_counts` and that function's own docstring records it.
 
+A file this reader cannot open fails as `PackError` whatever gguf-py
+raised. A bad magic keeps the ``is not a GGUF`` wording ADR-0026
+records, and a truncated header, a partial field, or a failing
+memory map take the wider message. Both readers open the matrix at a
+pack boundary that promises `PackError` (ADR-0011), so an `IndexError`
+from an interrupted ``llama-imatrix`` run must not escape. A map that
+fails later, while a ``.counts`` tensor's data is read, still raises
+`OSError` and `check_exclusion_match` translates it there.
+
 Examples:
     Read the counts the pack's quantizer will consume:
 
@@ -66,15 +75,15 @@ from vramfit.adapters.outbound.gguf.types import PackError
 # ``ne`` of (columns, rows, experts). Any other rank is dense.
 _STACK_DIMS = 3
 
-# What gguf-py raises on a file it cannot read, measured by
-# `override_match` over a truncated header and carried here for the
-# same reason. `ValueError` covers a bad magic and an unsupported
-# version, `IndexError` an empty numpy slice on a short file, and
-# `OSError` the memory map. An interrupted ``llama-imatrix`` run
-# leaves such a file, and both readers open it at a pack boundary
-# that promises `PackError` (ADR-0011).
+# What gguf-py raises on a file it cannot read, beyond the
+# `ValueError` that keeps its own branch below for ADR-0026's
+# wording. `IndexError` comes from an empty numpy slice on a short
+# file, `struct.error` from a partial field, and `OSError` from the
+# memory map. `override_match` measured the `IndexError` share over a
+# truncated header. An interrupted ``llama-imatrix`` run leaves such
+# a file, and this reader opens it at a pack boundary that promises
+# `PackError` (ADR-0011).
 _READER_FAILURES: Final[tuple[type[Exception], ...]] = (
-    ValueError,
     IndexError,
     struct.error,
     OSError,
@@ -106,8 +115,8 @@ def _open_reader(gguf_module: Any, path: Path, role: str) -> Any:
     A truncated header raises `IndexError` from an empty numpy slice
     rather than a parse error, and the memory map raises `OSError`.
     Both reach a pack boundary that promises `PackError` (ADR-0011),
-    so the tuple matches `override_match`'s rather than `ValueError`
-    alone.
+    so `_READER_FAILURES` carries them beside the `ValueError` that
+    keeps its own branch for ADR-0026's wording.
 
     Args:
         gguf_module: The imported ``gguf`` module.
@@ -221,9 +230,12 @@ def imatrix_entry_names(imatrix: Path) -> tuple[str, ...]:
         PackError: If gguf-py is missing, the reader cannot open the
             file, or the matrix fails one of the five file-level
             cases on the closed refusal list.
-        OSError: If the memory map fails while reading tensor data,
-            which `_open_reader` cannot reach. `check_exclusion_match`
-            translates it at the pack boundary.
+        OSError: If the memory map fails after the open, while
+            `_counts_by_entry` reads a ``.counts`` tensor's data.
+            `_open_reader` translates the failures it sees at open
+            time and this one happens outside it, so
+            `check_exclusion_match` translates it at the pack
+            boundary.
 
     Examples:
         Read the names an exclusion must reach:
