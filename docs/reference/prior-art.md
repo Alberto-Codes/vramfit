@@ -182,6 +182,20 @@ super-additive joint damage (×11.9) on a 2-bit-heavy recipe.
     vramfit refuses that word, because its own target admits no
     uniform-expert pack at the budget size.
 
+    **It stays unpriced by choice, ruled 2026-08-16 on #302.** A spike
+    computed its alpha over all 5,888 expert matrices of chart #158's
+    target. That costs 572.4 s of CPU time, 0 B of VRAM, and no rented
+    GPU. Pooled to the 46 stacks llama.cpp serves, its allocation
+    overlaps the measured pick at 25 or 26 of 35. A uniform random
+    35-of-46 draw overlaps at 26.63, so AlphaQ matches the measurement
+    no better than chance. The shipped objective in
+    [Superone77/AlphaQ](https://github.com/Superone77/AlphaQ)
+    multiplies a spectral term by weight variance, and the variance
+    term drives the result. Against measured damage the spectral term
+    agrees, at Spearman rho -0.562 on `ffn_up_exps`. The variance term
+    opposes it at -0.808. So a campaign arm would price the variance
+    term rather than the heavy-tailedness the paper argues.
+
 **[Mixed-precision quantization for language models: techniques and prospects](https://arxiv.org/abs/2510.16805)** (survey, 2025)
 :   The field map. It confirms two things about the landscape.
     Sensitivity-driven bit allocation is an active research area.
