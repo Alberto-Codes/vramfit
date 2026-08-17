@@ -71,7 +71,11 @@ def parse_size(text: str) -> int:
         The size in bytes.
 
     Raises:
-        ValueError: If the string is not a recognizable size.
+        ValueError: If the string is not a recognizable size, or the
+            result does not fit the signed 64-bit range the artifacts
+            carry (#260). A budget that large describes no machine,
+            and refusing here names the option the operator typed
+            rather than the artifact vramfit would write.
 
     Examples:
         Binary vs decimal units:
@@ -88,7 +92,10 @@ def parse_size(text: str) -> int:
         raise ValueError(f'not a recognizable size: "{text}"')
     number = float(match.group("number"))
     unit = (match.group("unit") or "B").lower()
-    return int(number * _UNIT_BYTES[unit])
+    size = int(number * _UNIT_BYTES[unit])
+    if not -(2**63) <= size <= 2**63 - 1:
+        raise ValueError(f'size "{text}" does not fit a 64-bit byte count')
+    return size
 
 
 def format_size(n_bytes: int) -> str:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 
 import pytest
 
@@ -235,6 +236,27 @@ class TestSensitivityMap:
 
         with pytest.raises(ArtifactError, match="signed 64-bit range"):
             map_from_dict(raw)
+
+    def test_integer_below_the_lower_bound_rejected(self) -> None:
+        raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
+        raw["scan"]["calibration_tokens"] = -(2**63) - 1
+
+        with pytest.raises(ArtifactError, match="signed 64-bit range"):
+            map_from_dict(raw)
+
+    def test_saving_an_unrepresentable_integer_refuses(self, tmp_path) -> None:
+        # The reader's bound is one half of a round trip. Without the
+        # same bound on the writer, vramfit emits a document its own
+        # reader refuses and blames the artifact (#260).
+        raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
+        map_ = map_from_dict(raw)
+        oversized = replace(map_.groups[0], bytes_fp16=2**63)
+        out = tmp_path / "map.json"
+
+        with pytest.raises(ArtifactError, match="no reader would load it back"):
+            save_sensitivity_map(replace(map_, groups=(oversized,)), out)
+
+        assert not out.exists()
 
     def test_largest_representable_bytes_fp16_accepted(self) -> None:
         # The bound refuses nothing a real measurement produces. The

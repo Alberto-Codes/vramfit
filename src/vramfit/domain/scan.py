@@ -407,7 +407,9 @@ def summarize_imatrix_counts(
         The pooled count minimum, median, and maximum. The median is
         a float in every case — ``statistics.median`` returns an
         ``int`` for odd-length integer input, and one field must not
-        write two JSON types.
+        write two JSON types. That conversion is where a count too
+        large for a float fails, before the summary's own guard runs
+        (#260).
 
     Raises:
         ValueError: If no counts arrive at all — an empty reduction
@@ -430,11 +432,15 @@ def summarize_imatrix_counts(
             "no counts to summarize — a group without a resolved expert "
             "stack records no summary (ADR-0026, #201 amendment)"
         )
-    return ImatrixCountSummary(
-        min=min(pooled),
-        median=float(statistics.median(pooled)),
-        max=max(pooled),
-    )
+    try:
+        median = float(statistics.median(pooled))
+    except OverflowError as exc:
+        # `statistics.median` averages the two middle counts on an
+        # even-length pool, and that division overflows before the
+        # summary's own guard can run. This is the in-memory route
+        # the readers' bound does not cover (#260).
+        raise ValueError("counts are too large to summarize") from exc
+    return ImatrixCountSummary(min=min(pooled), median=median, max=max(pooled))
 
 
 def assemble_map(

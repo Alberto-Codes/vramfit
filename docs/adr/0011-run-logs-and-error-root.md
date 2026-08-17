@@ -5,32 +5,37 @@
 - **Amendment (2026-08-11):** the tool renamed to vramfit (#118,
   chart #114). Decision 2's run-log envelope key renamed with it,
   and the run-log version bumped. The rename executed in #120.
-- **Amendment (2026-08-17, issue #260):** decision 5 gains the split
-  that decides where a bound lives. **An artifact reader bounds what
-  the format can carry. The domain bounds what the value means.**
+- **Amendment (2026-08-16, issue #260):** decision 5 gains three
+  translations, so no representability failure escapes the root.
 
-    Python integers carry unlimited precision, so a document could
-    declare a count or a byte size no machine can hold. Every reader
-    took it and recorded it as provenance. Measured 2026-08-15 on a
-    published sidecar: ``size_bytes`` at 10^400 loaded clean.
+    `_as_int` refuses an integer outside the signed 64-bit range,
+    naming its JSON path. Python integers carry unlimited precision,
+    so a document could declare a count or a byte size no machine can
+    hold. Every reader took it and recorded it as provenance.
+    Measured 2026-08-15 on a published sidecar: `size_bytes` at
+    10^400 loaded clean. One rule covers 26 integer call sites across
+    the four readers, and it refuses nothing a measurement produces.
 
-    `_as_int` now refuses an integer outside the signed 64-bit range,
-    naming its JSON path. One rule covers roughly twenty integer
-    fields across the sensitivity map, the recipe, the scan
-    checkpoint, and the evals sidecar. It refuses nothing a
-    measurement produces — the largest real value this project reads
-    is a 93 GB checkpoint, near 10^11.
+    `_save_json` applies the same bound before it writes, so vramfit
+    reads what vramfit writes. Without it a writer emits a document
+    its own reader refuses, and the refusal names the artifact rather
+    than the input that produced it.
 
-    The split follows what `_as_float` already did. That extractor
-    catches `OverflowError` because a float cannot carry the value,
-    while the domain keeps ``positive``, ``non-negative``, and
-    ``finite``. Reading the same division onto integers keeps the
-    bound in one place and leaves the domain's meaning untouched.
+    `summarize_imatrix_counts` and `ImatrixCountSummary` convert an
+    `OverflowError` from a float conversion into a `ValueError`. Both
+    sit behind the readers' bound, so the open route is an in-memory
+    caller.
 
-    An upper bound with a semantic meaning stays open. No record
-    fixes a maximum for ``size_bytes`` or a token count, and any
-    figure would be arbitrary. This amendment bounds representability
-    only.
+    ADR-0008's 2026-08-16 amendment carries the layering rule these
+    three build on.
+
+    A non-integer pre-rename schema version now earns its own clause
+    in the envelope message, on #154's rule that the message names
+    both blockers. #154 scoped that rule to the frozen run root,
+    whose artifacts all declare integer versions, so extending it is
+    a decision this amendment records. The clause names the value's
+    JSON type and never the value, so a large object under that key
+    cannot render an unbounded message.
 
 ## Context
 
@@ -104,6 +109,10 @@ The human channel works: `typer.echo` progress lines and clean
   submissions (issue #11).
 - Whether `cell_measured` should carry the GPU memory high-water mark
   or utilization, which costs an NVML dependency.
+- Whether an integer field earns a bound with a meaning, beyond the
+  representability bound the 2026-08-16 amendment sets. No record
+  fixes a maximum for `size_bytes` or a token count, and any figure
+  would be arbitrary.
 
 ## Consequences
 

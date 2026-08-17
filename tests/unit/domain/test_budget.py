@@ -28,6 +28,19 @@ class TestParseSize:
     def test_fractional_size_with_unit(self) -> None:
         assert parse_size("1.5GiB") == int(1.5 * 2**30)
 
+    def test_size_past_a_64_bit_byte_count_rejected(self) -> None:
+        # `--vram 20000000000GiB` used to solve, write a recipe, and
+        # then fail when that recipe was read back. Refusing here
+        # names the option the operator typed (#260).
+        with pytest.raises(ValueError, match="does not fit a 64-bit byte count"):
+            parse_size("20000000000GiB")
+
+    def test_size_inside_the_bound_still_parses(self) -> None:
+        # `parse_size` runs the number through a float, so it cannot
+        # land on 2**63 - 1 exactly. 2**62 is representable and well
+        # past any real card.
+        assert parse_size(str(2**62)) == 2**62
+
     def test_whitespace_and_case_tolerated(self) -> None:
         assert parse_size(" 4 gib ") == 4 * 2**30
 
