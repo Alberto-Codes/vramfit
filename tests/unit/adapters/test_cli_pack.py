@@ -525,6 +525,40 @@ class TestPackCommand:
             "imatrix": imatrix_path,
         }
 
+    def test_override_matching_no_tensor_exits_1_and_halts_at_quantize(
+        self, tmp_path, monkeypatch, llama_cpp_dir, recipe_path
+    ) -> None:
+        # The base GGUF carries layer 9 alone, so the recipe's
+        # `blk\.0\.` override addresses an absent index. The
+        # quantizer would apply it and exit 0 (#303).
+        patch_packer(
+            monkeypatch,
+            MemoryRecipePacker(
+                base_tensor_names=("token_embd.weight", "blk.9.attn_v.weight")
+            ),
+        )
+        out = tmp_path / "packed.gguf"
+
+        result = runner.invoke(
+            app,
+            [
+                "pack",
+                str(recipe_path),
+                "--llama-cpp",
+                str(llama_cpp_dir),
+                "--out",
+                str(out),
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert "carries no tensor for 1 of 1 override patterns" in result.output
+        assert r"blk\.0\." in result.output
+        log = read_run_log(out.with_name(out.stem + ".runlog.jsonl"))
+        assert log[-1]["event"] == "pack_halted"
+        assert log[-1]["stage"] == "quantize"
+        assert not out.exists()
+
     def test_unmappable_recipe_exits_1_and_halts_at_quantize(
         self, tmp_path, monkeypatch, llama_cpp_dir
     ) -> None:

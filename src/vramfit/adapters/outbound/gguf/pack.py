@@ -9,7 +9,12 @@ recorded for a foreign runtime (ADR-0013), then runs
 [vramfit.adapters.outbound.gguf.types][]: protection overrides
 first (ADR-0022 — the quantizer applies the first matching
 pattern), then pattern overrides per
-layer group, plus dedicated embedding and output-head flags. The
+layer group, plus dedicated embedding and output-head flags. It then
+holds every override against the base GGUF's tensor names and refuses
+one that matches nothing
+([vramfit.adapters.outbound.gguf.override_match][]) — such an
+override changes no type and the quantizer exits 0 without reporting
+it (ADR-0012 as amended 2026-08-16). The
 adapter scans the quantizer's zero-exit output for the type-fallback
 warning pair and halts on a match (`TypeFallbackError`) — a rewritten
 type breaks the recipe the artifact claims to carry (ADR-0028). With
@@ -56,15 +61,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
+from vramfit.adapters.outbound.gguf.override_match import check_overrides_match
 from vramfit.adapters.outbound.gguf.toolrun import run_tool, sized_file
 from vramfit.adapters.outbound.gguf.types import (
     PackError,
+    all_overrides,
     base_type,
     check_runtime,
     imatrix_exclusion_names,
     output_tensor_type,
-    protection_overrides,
-    tensor_overrides,
     token_embedding_type,
 )
 from vramfit.domain.model import Recipe
@@ -275,7 +280,10 @@ class LlamaCppPacker:
         ``lm_head`` group drives the output flag with its own
         assignment, and the embedding assignment stands in when the
         scan measured no head (ADR-0012). A protected recipe's
-        resolved pairs become the leading overrides (ADR-0022). A configured importance
+        resolved pairs become the leading overrides (ADR-0022). Every
+        override must match a tensor the base GGUF carries, and one
+        that matches nothing refuses before the quantizer runs
+        (#303). A configured importance
         matrix reaches the quantizer as ``--imatrix``, lands in the
         result's provenance, and the quantizer's output is scanned
         for tensors the matrix did not cover (ADR-0016). The
@@ -294,8 +302,9 @@ class LlamaCppPacker:
         Raises:
             PackError: If the recipe targets another runtime
                 (ADR-0013), the base GGUF is missing, the recipe
-                cannot be mapped (ADR-0012), the quantizer fails, it
-                writes no usable file, or it names an imatrix-miss
+                cannot be mapped (ADR-0012), an override matches no
+                tensor in the base GGUF (#303), the quantizer fails,
+                it writes no usable file, or it names an imatrix-miss
                 tensor the reader could not decode (#252).
             TypeFallbackError: If the quantizer's output carries the
                 type-fallback warning pair — the artifact ignored
@@ -313,7 +322,14 @@ class LlamaCppPacker:
         # Protection overrides first (ADR-0022): the quantizer applies
         # the first matching pattern, so a protected tensor must match
         # its own pattern before its group's.
-        overrides = protection_overrides(recipe) + tensor_overrides(recipe)
+        overrides = all_overrides(recipe)
+        # Last mapping check, and the only one that reads the model.
+        # An override the base GGUF carries no tensor for changes no
+        # type, and the quantizer reports nothing and exits 0. It runs
+        # after the table lookups above, so a recipe that fails both
+        # still reports the table error first (ADR-0012 as amended
+        # 2026-08-16, #303).
+        check_overrides_match(overrides, self.base_gguf)
         excluded = imatrix_exclusion_names(recipe) if self.imatrix is not None else ()
         command = [str(self.quantize_bin), "--pure"]
         if self.imatrix is not None:

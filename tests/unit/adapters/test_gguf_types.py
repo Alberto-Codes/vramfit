@@ -9,6 +9,7 @@ from vramfit.adapters.outbound.gguf.types import (
     BASE_FTYPE_BY_BITS,
     GGML_TYPE_BY_BITS,
     PackError,
+    all_overrides,
     base_type,
     check_runtime,
     expert_stack_type_for,
@@ -520,6 +521,36 @@ class TestProtectionOverrides:
 
         with pytest.raises(PackError, match="no GGUF type maps 7-bit"):
             protection_overrides(recipe)
+
+
+class TestAllOverrides:
+    def test_protection_overrides_lead_the_group_overrides(self) -> None:
+        # The quantizer applies the first matching pattern, so a
+        # per-tensor pattern must precede its group's (ADR-0022).
+        recipe = make_protected_recipe(
+            (("model.layers.4.self_attn.v_proj.weight", 5),),
+            ("model.layers.4", 3),
+        )
+
+        assert all_overrides(recipe) == (
+            TypeOverride(pattern=r"blk\.4\.attn_v\.", quant_type="q5_k"),
+            TypeOverride(pattern=r"blk\.4\.", quant_type="q3_k"),
+        )
+
+    def test_composition_equals_its_two_halves(self) -> None:
+        recipe = make_protected_recipe(
+            (("model.layers.4.self_attn.v_proj.weight", 5),),
+            ("model.layers.4", 3),
+        )
+
+        assert all_overrides(recipe) == protection_overrides(recipe) + tensor_overrides(
+            recipe
+        )
+
+    def test_unprotected_recipe_yields_the_group_overrides_alone(self) -> None:
+        recipe = make_recipe(("model.layers.0", 4))
+
+        assert all_overrides(recipe) == tensor_overrides(recipe)
 
 
 class TestImatrixExclusionNames:

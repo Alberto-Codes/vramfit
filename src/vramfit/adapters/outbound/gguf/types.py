@@ -19,6 +19,11 @@ the pack check cannot drift apart. A
 recipe recorded for a foreign runtime, or anything the table cannot
 map, raises `PackError` instead of guessing.
 
+`all_overrides` composes the protection and group overrides in the
+quantizer's priority order. One function owns that composition, so
+the pack step and its pre-run match check cannot disagree on which
+overrides exist (#303).
+
 Examples:
     Map a recipe to quantizer inputs:
 
@@ -27,7 +32,7 @@ Examples:
 
     base = types.base_type(recipe)
     embed = types.token_embedding_type(recipe)
-    overrides = types.tensor_overrides(recipe)
+    overrides = types.all_overrides(recipe)
     ```
 
 See Also:
@@ -590,3 +595,35 @@ def tensor_overrides(recipe: Recipe) -> tuple[TypeOverride, ...]:
         bits = ggml_type_for(assignment.bits)
         layers.append(TypeOverride(rf"blk\.{match.group(1)}\.", bits))
     return tuple(stacks) + tuple(layers)
+
+
+def all_overrides(recipe: Recipe) -> tuple[TypeOverride, ...]:
+    """Compose every override the quantizer receives, in priority order.
+
+    Protection overrides lead, because the quantizer applies the
+    first matching pattern and a per-tensor pattern is the most
+    specific of the three (ADR-0022). The group overrides follow in
+    `tensor_overrides`' own order.
+
+    One function owns the composition, so the pack step and the
+    pre-run match check never drift apart on which overrides exist
+    (#190, #303).
+
+    Args:
+        recipe: The recipe to pack.
+
+    Returns:
+        Protection overrides, then expert-stack and layer overrides.
+
+    Raises:
+        PackError: If any group or precision has no mapping. See
+            `protection_overrides` and `tensor_overrides`.
+
+    Examples:
+        The pack step and its pre-run check read one list:
+
+        ```python
+        overrides = all_overrides(recipe)
+        ```
+    """
+    return protection_overrides(recipe) + tensor_overrides(recipe)
