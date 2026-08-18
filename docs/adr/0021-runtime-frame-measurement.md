@@ -84,6 +84,12 @@ arithmetic.
    alternatives, so the solver buys no 2-bit on this target. #249
    carries the measurements that would settle it.
 
+- **ADR-0018's 2026-08-17 amendment (#319) adds a `gguf-ref` method,
+  and decision 1 above still stands.** That method replaces a frame the
+  pack cannot apply, on rows where `tensor_type_fallback` rewrites every
+  K-quant. It refines no frame toward a type the pack applies, so it
+  does not reopen the closed lane.
+
 ## Open questions
 
 - ~~Does the 3-bit-floored recipe transfer? The eleventh data
