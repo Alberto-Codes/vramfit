@@ -75,7 +75,7 @@ class TestWithinGroupDispatch:
         torch.manual_seed(0)
         param = torch.randn(2, 2688)
 
-        result = self._meter("gguf")._quantize_dequantize(param, 2, UP)
+        result = self._meter("q0")._quantize_dequantize(param, 2, UP)
 
         assert result.shape == param.shape
 

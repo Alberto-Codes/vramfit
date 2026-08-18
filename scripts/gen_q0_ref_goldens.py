@@ -1,4 +1,4 @@
-"""Generate `gguf-ref` golden fixtures from libggml (ADR-0018).
+"""Generate `q0-ref` golden fixtures from libggml (ADR-0018).
 
 Drives ``ggml_quantize_chunk`` for ``Q2_0``, ``Q4_0``, and ``Q8_0``
 and records the dequantized outputs the torch port must reproduce
@@ -9,7 +9,7 @@ the two. The script first replays one committed ADR-0018 fixture,
 so a wrong library version fails loudly before it writes anything.
 
 Usage:
-    uv run python scripts/gen_gguf_ref_goldens.py ~/llama.cpp/build/bin
+    uv run python scripts/gen_q0_ref_goldens.py ~/llama.cpp/build/bin
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ DEQUANTIZE = {
     8: "dequantize_row_q8_0",
 }
 KQUANT = Path(__file__).parent.parent / "tests" / "data" / "kquant"
-OUT = Path(__file__).parent.parent / "tests" / "data" / "gguf_ref"
+OUT = Path(__file__).parent.parent / "tests" / "data" / "q0_ref"
 
 
 def _load(bin_dir: Path) -> ctypes.CDLL:
@@ -204,7 +204,7 @@ def _check_library(lib: ctypes.CDLL) -> None:
 
 
 def main() -> None:
-    """Generate ``tests/data/gguf_ref/golden.npz``."""
+    """Generate ``tests/data/q0_ref/golden.npz``."""
     bin_dir = Path(sys.argv[1]).expanduser()
     lib = _load(bin_dir)
     _check_library(lib)

@@ -7,6 +7,10 @@
   reaches. Its token `gguf-ref` is the fourth, because `kquant` carries
   two. Maintainer ruling 2026-08-17. See "Amendment: the `gguf-ref`
   method" below.
+- **Amendment (2026-08-18, issue #332):** decision 2 of the 2026-08-17
+  amendment changes the token. The method is `q0` and the token is
+  `q0-ref`. Maintainer ruling 2026-08-18. See "Amendment: the token
+  becomes `q0-ref`" below.
 
 ## Context
 
@@ -168,6 +172,8 @@ the pack applied. This one replaces a frame the pack cannot apply.
 2. **The method token is `gguf-ref`.** The CLI accepts
    `--within-group gguf`. `gguf-imx` stays reserved for the assisted
    path, because `quantize_row_q4_0_impl` fits with imatrix weights.
+   **Superseded 2026-08-18 by #332.** The token is `q0-ref` and the
+   reserved token is `q0-imx`. See the amendment below.
 3. **The port verifies against the C reference.** A golden-fixture suite
    asserts the torch round trip matches recorded dequantized values, on
    decision 4's pattern above. It covers random, outlier-heavy,
@@ -229,3 +235,54 @@ the pack applied. This one replaces a frame the pack cannot apply.
   Three scan-frame refinements each looked principled and each packed
   worse. A `gguf-ref` map earns nothing until an arm built from it beats
   #300's blind draws at 1.184126. #321 and #328 carry that test.
+
+## Amendment: the token becomes `q0-ref` (2026-08-18, issue #332)
+
+### Context
+
+The 2026-08-17 amendment named the method `gguf` and its token
+`gguf-ref`. Review argued against both after that ruling. The argument
+reached PR #326's body and a comment on #327, and neither survives a
+merge. #332 carried it to the tracker.
+
+Three facts drive the change.
+
+- The other tokens name a quantizer family. `rtn` names an algorithm.
+  `kquant` names a type family. `gguf` names the container.
+- `Q2_K` and `Q4_K` are GGUF types too. So the `gguf-` prefix separates
+  this method from `kquant` by nothing a reader can see.
+- The 30B target's usable expert palette holds `MXFP4`, `NVFP4`,
+  `IQ4_NL`, `Q4_1`, `Q5_0`, and `Q5_1`. Each is a GGUF type. A `gguf-`
+  token spends the prefix every later port needs. #288 carries an
+  `MXFP4` mix that reaches 46 of 46 stacks.
+
+`legacy-ref` is the community word for this family. It is wrong here,
+because `Q2_0` merged 2026-07-07.
+
+The change is time-boxed. PR #330 writes the token into the scan
+fingerprint and into `scan.within_group`. A token change after a map
+carries it invalidates that map. No map carries `gguf-ref` today. #328
+scans 92 cells at $4.04, and its map is the first that would.
+
+### Decision
+
+1. **The method is `q0` and its token is `q0-ref`.** The name states the
+   `_0` family: one fp16 scale per block, no minimum, and no
+   super-block. `Q2_0`, `Q4_0`, and `Q8_0` are that set. This supersedes
+   decision 2 of the 2026-08-17 amendment. Maintainer ruling 2026-08-18.
+2. **`q0-imx` replaces `gguf-imx` as the reserved assisted token.** The
+   reservation does not change. `quantize_q2_0` still ignores an
+   importance matrix, so the reserved path can differ at nominal 4 only.
+3. **A later GGUF-type port takes its own family token.** `mxfp4-ref`
+   stays free. The `gguf-` prefix names no method.
+4. **The rename reaches the code, the tests, and the reference pages.**
+   The module is `scan/q0_ref.py`, the constant is `Q0_REF_METHOD`, and
+   the CLI accepts `--within-group q0`.
+
+### Consequences
+
+- No artifact moves. No map, recipe, or run log carries `gguf-ref`.
+- The 2026-08-17 amendment stays as written above. Read its `gguf-ref`
+  and `gguf-imx` as `q0-ref` and `q0-imx`.
+- The golden-fixture suite still asserts all three types bit-exact
+  against libggml. The rename moves names and no arithmetic.

@@ -20,7 +20,7 @@ The K-quant fits round with ``nearest_int``, a round-half-to-even
 magic-number trick. ``torch.round`` rounds half to even, so those
 rounding modes match. ``Q8_0`` instead calls ``roundf``, which
 breaks ties away from zero — `round_half_away` carries that rule
-and the ``gguf`` port shares it. Vectorized reductions can still
+and the ``q0`` port shares it. Vectorized reductions can still
 order float sums differently from the C loops, so knife-edge
 fitting choices may diverge on isolated sub-blocks. The golden
 fixtures bound that drift.
@@ -34,7 +34,7 @@ Examples:
 
 See Also:
     - [vramfit.adapters.outbound.scan.quantize][]: The RTN v1 method.
-    - [vramfit.adapters.outbound.scan.gguf_ref][]: The block
+    - [vramfit.adapters.outbound.scan.q0_ref][]: The block
       quantizers, for the rows this module refuses.
 """
 
@@ -414,6 +414,9 @@ def refuse_straddling_rows(row_length: int, bits: int) -> None:
     the routed-expert rows of 2688 and 1856, so a refusal keyed to
     256 alone would refuse a cell the pack realizes.
 
+    The refusal names the method that does reach these rows. That is
+    ``--within-group q0``, tokened ``q0-ref`` since #332.
+
     Args:
         row_length: Elements per row — the tensor's last dimension.
         bits: The cell's nominal precision.
@@ -440,7 +443,7 @@ def refuse_straddling_rows(row_length: int, bits: int) -> None:
         f"{row_length}. llama-quantize substitutes another type here, so this "
         f"cell would price a frame the pack cannot apply, and the fit would "
         f"straddle two rows (ADR-0018). Scan these rows unassisted with "
-        f"--within-group gguf, which covers nominal 8, 4, and 2."
+        f"--within-group q0, which covers nominal 8, 4, and 2."
     )
 
 

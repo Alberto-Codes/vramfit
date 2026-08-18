@@ -314,41 +314,41 @@ class TestValidateCommand:
         assert builds[0]["within_group"] == "kquant"
         assert "warning" not in result.output
 
-    def test_gguf_recipe_resolves_the_builder_method_by_itself(
+    def test_q0_recipe_resolves_the_builder_method_by_itself(
         self, tmp_path, monkeypatch
     ) -> None:
-        # A recipe priced on a gguf-ref map must validate in the
+        # A recipe priced on a q0-ref map must validate in the
         # same frame, or the pass compares nothing (ADR-0019).
         builds = install_meter(
             monkeypatch, MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES))
         )
         recipe_path = tmp_path / "recipe.json"
-        save_recipe(make_recipe(DEFAULT_RECIPE, within_group="gguf-ref"), recipe_path)
+        save_recipe(make_recipe(DEFAULT_RECIPE, within_group="q0-ref"), recipe_path)
 
         result = invoke_validate(tmp_path, recipe_path)
 
         assert result.exit_code == 0, result.output
-        assert builds[0]["within_group"] == "gguf"
+        assert builds[0]["within_group"] == "q0"
         assert "warning" not in result.output
 
-    def test_gguf_refuses_a_recipe_assigning_three_bits(
+    def test_q0_refuses_a_recipe_assigning_three_bits(
         self, tmp_path, monkeypatch
     ) -> None:
-        # ADR-0028 refuses nominal 3 at pack, so the gguf method has
+        # ADR-0028 refuses nominal 3 at pack, so the q0 method has
         # no 3-bit port to measure it with.
         install_meter(
             monkeypatch, MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES))
         )
         recipe_path = tmp_path / "recipe.json"
         save_recipe(
-            make_recipe((("model.layers.0", 3, 0.01),), within_group="gguf-ref"),
+            make_recipe((("model.layers.0", 3, 0.01),), within_group="q0-ref"),
             recipe_path,
         )
 
         result = invoke_validate(tmp_path, recipe_path)
 
         assert result.exit_code == 2
-        assert "gguf covers" in result.output
+        assert "q0 covers" in result.output
 
     def test_matching_explicit_method_flag_is_accepted(
         self, tmp_path, monkeypatch

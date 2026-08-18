@@ -178,40 +178,40 @@ def test_kquant_with_uncovered_precisions_exits_with_usage_error(
     assert "kquant covers" in result.output
 
 
-def test_gguf_with_uncovered_precisions_exits_with_usage_error(
+def test_q0_with_uncovered_precisions_exits_with_usage_error(
     tmp_path, monkeypatch
 ) -> None:
-    # ADR-0028 refuses nominal 3 at pack, so the gguf method has no
+    # ADR-0028 refuses nominal 3 at pack, so the q0 method has no
     # 3-bit port. Rejected before the model load burns an hour.
     install_meter(
         monkeypatch, MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES), tokens=64)
     )
 
-    result, _ = invoke_scan(tmp_path, "--precisions", "8,3", "--within-group", "gguf")
+    result, _ = invoke_scan(tmp_path, "--precisions", "8,3", "--within-group", "q0")
 
     assert result.exit_code == 2
-    assert "gguf covers" in result.output
+    assert "q0 covers" in result.output
 
 
-def test_gguf_scan_records_the_method_in_the_map(tmp_path, monkeypatch) -> None:
+def test_q0_scan_records_the_method_in_the_map(tmp_path, monkeypatch) -> None:
     damages = {(spec.name, bits): 0.1 for spec in SPECS for bits in (4, 2)}
     captured = install_meter(
         monkeypatch, MemoryDamageMeter(specs=SPECS, damages=damages, tokens=64)
     )
 
-    result, out = invoke_scan(tmp_path, "--precisions", "4,2", "--within-group", "gguf")
+    result, out = invoke_scan(tmp_path, "--precisions", "4,2", "--within-group", "q0")
 
     assert result.exit_code == 0
     map_ = load_sensitivity_map(out)
-    assert map_.scan.within_group == "gguf-ref"
+    assert map_.scan.within_group == "q0-ref"
     # The map's claim must match what the meter measured with — a
-    # map that says gguf-ref over kquant damages is corrupted
+    # map that says q0-ref over kquant damages is corrupted
     # provenance.
-    assert captured["within_group"] == "gguf"
+    assert captured["within_group"] == "q0"
 
 
-def test_imatrix_with_gguf_exits_with_usage_error(tmp_path, monkeypatch) -> None:
-    # gguf-imx is reserved and unbuilt: quantize_q2_0 accepts an
+def test_imatrix_with_q0_exits_with_usage_error(tmp_path, monkeypatch) -> None:
+    # q0-imx is reserved and unbuilt: quantize_q2_0 accepts an
     # importance matrix and ignores it (ADR-0018).
     install_meter(
         monkeypatch, MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES), tokens=64)
@@ -224,7 +224,7 @@ def test_imatrix_with_gguf_exits_with_usage_error(tmp_path, monkeypatch) -> None
         "--precisions",
         "4,2",
         "--within-group",
-        "gguf",
+        "q0",
         "--imatrix",
         str(imatrix),
     )

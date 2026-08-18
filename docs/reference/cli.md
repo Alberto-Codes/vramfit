@@ -231,7 +231,7 @@ belongs to a different scan, a measurement fails (the checkpoint keeps
 completed cells), a checkpoint write fails, or the map cannot be
 written. Exit 2 on malformed `--precisions`, `--group-by`, `--groups`,
 `--within-group`, or `--gpu-memory`, a `--gpu-memory` without
-`--device auto`, a `--within-group kquant` or `gguf` combined with
+`--device auto`, a `--within-group kquant` or `q0` combined with
 precisions the port does not cover, an `--imatrix` without
 `--within-group kquant` or naming a missing file, or a missing
 `--out` or `--runlog` directory.
@@ -244,7 +244,7 @@ lengths on the 30B target. `llama-quantize` never applies those types
 there. `tensor_type_fallback` warns and substitutes `Q4_0` or `Q5_0`,
 so pricing the requested type records a frame the pack cannot apply.
 `Q8_0` blocks 32 elements and reaches both rows, so nominal 8 never
-refuses. Use `--within-group gguf` for those rows.
+refuses. Use `--within-group q0` for those rows.
 
 ## `vramfit validate`
 
@@ -320,7 +320,7 @@ the model's, or the measurement fails. Exit 2 on a malformed
 `--group-by`, `--within-group`, or `--gpu-memory`, a `--gpu-memory`
 without `--device auto`, an `--imatrix` without the kquant method or
 naming a missing file, a frame that contradicts the recipe's
-recorded method, a `--within-group kquant` or `gguf` that meets
+recorded method, a `--within-group kquant` or `q0` that meets
 recipe assignments the ported quantizers do not cover, or a missing
 `--runlog` directory.
 
