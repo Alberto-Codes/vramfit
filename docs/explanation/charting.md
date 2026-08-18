@@ -6,7 +6,9 @@ status: draft
 
 > **Status: draft** — process design recorded 2026-08-09. The first
 > chart is #70 (go-public), created 2026-08-09 from the #66/#67/#11/#68
-> cluster. The sections below fold in findings from that run.
+> cluster. The sections below fold in findings from that run, and from
+> later charts. A bullet carrying a later chart's finding names that
+> chart and the date.
 > Promoted to `draft` 2026-08-12: chart #70 reached its Destination
 > and closed, which is the condition this page set for itself. It
 > stays below `stable` because one completed chart is one sample —
@@ -182,10 +184,22 @@ way a second decision store would fork the truth.
   owning ticket. An open question that lives only in prose is
   untracked. (Added 2026-08-11: chart #70 dropped two deferrals
   framed as open questions.)
+- A count or a measurement the session asserts comes from a
+  command, run in that session. A figure a record or a ruling fixes
+  cites the record instead, and the session never re-derives it.
+  Two commands cover the usual cases: `git diff --stat` for a
+  change's size, and the `blocked_by` call in Mechanics for a
+  blocker count. (Added 2026-08-18: chart #158's #332 entry reused
+  a four-file count of one quantity as the cost of another, against
+  22 changed files.)
 - Sessions may run in parallel on different tickets. The chart
   body has no lock. Re-read it immediately before writing. Re-read
   after writing to confirm the prior content and the new line both
-  survived.
+  survived. A session also invalidates its own entry by writing the
+  chart before its tracker edits land, so write the chart last.
+  (Added 2026-08-18: chart #158's #332 entry named one open blocker
+  truthfully, and the same session wired a second 28 seconds
+  later.)
 - Parallel sessions share one checkout unless isolated. A session
   that edits repo files enters its own git worktree first. Every
   session stages exact paths, never the whole tree.
