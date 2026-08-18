@@ -142,9 +142,12 @@ change.
     [ADR-0021](../adr/0021-runtime-frame-measurement.md) supersedes
     ADR-0020, and the method stays a valid scan option.
     `q0-ref` ports `Q2_0` and `Q4_0`, the block quantizers
-    `llama-quantize` applies where no K-quant reaches a row
+    `llama-quantize` applies where no K-quant reaches a row. It covers
+    nominal 8 as well, reusing ADR-0018's `Q8_0` port, so the method
+    reads 8, 4, and 2
     ([ADR-0018](../adr/0018-kquant-within-group-method.md), 2026-08-17
-    amendment, token renamed by the 2026-08-18 amendment). `q0-imx` is reserved for its assisted path. A method
+    amendment, token renamed by the 2026-08-18 amendment). `q0-imx` is
+    reserved for its assisted path. A method
     change is a new scan — the token lives in the fingerprint and in
     the map's `scan.within_group`, and the recipe carries its map's
     token for the validation pass. Not "quantization mode" or
@@ -162,7 +165,8 @@ change.
     same shape for `quantize_row_q4_0_impl`. `Q2_0` has no assisted
     path, because `quantize_q2_0` ignores the matrix
     ([ADR-0018](../adr/0018-kquant-within-group-method.md), 2026-08-17
-    amendment, token renamed by the 2026-08-18 amendment). Not "imatrix mode" or "weighted scanning".
+    amendment, token renamed by the 2026-08-18 amendment). Not
+    "imatrix mode" or "weighted scanning".
 
 **Reconstruction error**
 :   The squared difference between a quantized tensor and its

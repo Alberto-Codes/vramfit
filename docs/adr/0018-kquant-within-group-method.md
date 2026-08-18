@@ -2,11 +2,13 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-31 (accepted 2026-07-31)
-- **Amendment (2026-08-17, issue #319):** a third method, `gguf`, ports
-  the block quantizers `llama-quantize` applies where no K-quant
-  reaches. Its token `gguf-ref` is the fourth, because `kquant` carries
-  two. Maintainer ruling 2026-08-17. See "Amendment: the `gguf-ref`
-  method" below.
+- **Amendment (2026-08-17, issue #319):** a third method ports the
+  block quantizers `llama-quantize` applies where no K-quant reaches.
+  Its token is the fourth, because `kquant` carries two. Maintainer
+  ruling 2026-08-17. **It named the method `gguf` and the token
+  `gguf-ref`, and the 2026-08-18 amendment supersedes both names.**
+  The amendment body below keeps its original wording. See "Amendment:
+  the `gguf-ref` method" below.
 - **Amendment (2026-08-18, issue #332):** decision 2 of the 2026-08-17
   amendment changes the token. The method is `q0` and the token is
   `q0-ref`. Maintainer ruling 2026-08-18. See "Amendment: the token
