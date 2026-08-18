@@ -14,8 +14,9 @@ Read that page before charting or working a ticket. The page is the
 source. This file only enforces the load-bearing rules.
 
 Chart #70 was the proving run. It reached its Destination and closed
-on 2026-08-12. The rules below carry its findings, several written
-mid-run after the convention failed. When a rule fights
+on 2026-08-12. Most rules below carry its findings, several written
+mid-run after the convention failed. Later charts add findings too, and
+such a rule names the chart it came from. When a rule fights
 reality, flag the conflict to the maintainer. Do not silently obey
 and do not silently deviate.
 
@@ -51,7 +52,18 @@ and do not silently deviate.
   session ends without resolving. Any session may release a claim
   older than one day with no comment since assignment.
 - The chart body has no lock. Re-read it immediately before
-  writing and confirm the write survived.
+  writing and confirm the write survived. Write the chart after
+  the tracker edits land, or the entry describes a state the
+  session then changes. #332's entry named one open blocker
+  truthfully, and the same session wired a second 28 seconds
+  later.
+- A count or a measurement the session asserts comes from a
+  command, run in that session. A figure a record or a ruling
+  fixes cites the record instead. Use `git diff --stat` for a
+  change's size, and the `blocked_by` call in the convention's
+  Mechanics block for a blocker count. #332's entry reused a
+  four-file count of one quantity as the cost of another, against
+  22 changed files.
 - Enter a git worktree before editing repo files. Stage exact
   paths, never the whole tree.
 - Background agents never write the chart body. The charting
