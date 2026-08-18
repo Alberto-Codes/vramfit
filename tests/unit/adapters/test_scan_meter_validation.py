@@ -13,7 +13,7 @@ extra is absent (ADR-0009).
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal, cast
+from typing import cast
 
 import pytest
 
@@ -21,6 +21,7 @@ torch = pytest.importorskip("torch", reason="scan extra not installed")
 pytest.importorskip("transformers", reason="scan extra not installed")
 
 from vramfit.adapters.outbound.scan.meter import TorchDamageMeter
+from vramfit.adapters.outbound.scan.within_group import WithinGroupMethod
 
 pytestmark = pytest.mark.unit
 
@@ -61,7 +62,7 @@ class TestWithinGroupDispatch:
     name the tensor that stopped it, not the type alone.
     """
 
-    def _meter(self, method: Literal["rtn", "kquant", "gguf"]) -> TorchDamageMeter:
+    def _meter(self, method: WithinGroupMethod) -> TorchDamageMeter:
         meter = build_meter()
         meter._within_group = method
         meter._imatrix_weights = {}
@@ -91,7 +92,7 @@ class TestWithinGroupDispatch:
         # the calibration file nor the model is ever read. A silent
         # RTN fallback under a mistyped method would corrupt every
         # damage the meter measures.
-        unknown = cast("Literal['rtn', 'kquant', 'gguf']", "gptq")
+        unknown = cast(WithinGroupMethod, "gptq")
 
         with pytest.raises(ValueError, match="within_group must be one of"):
             TorchDamageMeter(
