@@ -30,3 +30,10 @@ coverage.xml
 .claude/checkpoints/
 .claude/mailbox/
 .claude/agent-registry.json
+
+# A halted `vramfit scan` writes its run log beside --out, and --out
+# defaults to a relative path. A run started from the repository root
+# leaves the log here (#155). The pattern carries no leading slash, so
+# it also ignores the name in a subdirectory. A run log the project
+# ever wants tracked needs `git add -f` or a negation.
+*.runlog.jsonl

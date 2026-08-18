@@ -6,6 +6,7 @@ import importlib.util
 import json
 import shutil
 import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -20,10 +21,34 @@ pytestmark = [
 ]
 
 
-def run(*args: str) -> subprocess.CompletedProcess[str]:
+def run(*args: str, cwd: Path) -> subprocess.CompletedProcess[str]:
+    """Run the console script with its working directory pinned.
+
+    `cwd` has no default on purpose. `vramfit scan` defaults `--out`
+    to a relative path and writes its run log beside it. A command
+    started from the repository root leaves artifacts there (#155). A
+    required argument makes a new test choose a directory.
+
+    This guards the subprocess path only. `CliRunner.invoke` does not
+    change directory, so an in-process test that omits `--out` still
+    writes into the repository root.
+
+    Args:
+        *args: Arguments for the console script.
+        cwd: Working directory for the subprocess, normally
+            `tmp_path`.
+
+    Returns:
+        The completed process, with stdout and stderr captured.
+    """
     assert VRAMFIT is not None
     return subprocess.run(  # noqa: S603 - fixed executable, test-controlled args
-        [VRAMFIT, *args], capture_output=True, text=True, timeout=60, check=False
+        [VRAMFIT, *args],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+        cwd=cwd,
     )
 
 
@@ -50,6 +75,7 @@ def test_plan_flow_produces_loadable_recipe(tmp_path) -> None:
         "50000",
         "--out",
         str(out),
+        cwd=tmp_path,
     )
 
     assert result.returncode == 0, result.stderr
@@ -72,7 +98,9 @@ def test_budget_flow_prints_breakdown(tmp_path) -> None:
         )
     )
 
-    result = run("budget", "--model-config", str(config), "--vram", "24GiB")
+    result = run(
+        "budget", "--model-config", str(config), "--vram", "24GiB", cwd=tmp_path
+    )
 
     assert result.returncode == 0, result.stderr
     assert "weight budget" in result.stdout
@@ -84,10 +112,14 @@ def test_scan_without_the_extra_reports_the_install_hint(tmp_path) -> None:
     calibration = tmp_path / "calib.txt"
     calibration.write_text("calibration text")
 
-    result = run("scan", "some/model", "--calibration", str(calibration))
+    result = run("scan", "some/model", "--calibration", str(calibration), cwd=tmp_path)
 
     assert result.returncode == 1
     assert "vramfit[scan]" in result.stderr + result.stdout
+    # The halted scan writes a run log beside its default --out. It
+    # lands under the pinned cwd and never in the repository root
+    # (#155).
+    assert (tmp_path / "sensitivity.runlog.jsonl").is_file()
 
 
 def test_validate_without_the_extra_reports_the_install_hint(tmp_path) -> None:
@@ -125,7 +157,9 @@ def test_validate_without_the_extra_reports_the_install_hint(tmp_path) -> None:
     calibration = tmp_path / "calib.txt"
     calibration.write_text("calibration text")
 
-    result = run("validate", str(recipe_path), "--calibration", str(calibration))
+    result = run(
+        "validate", str(recipe_path), "--calibration", str(calibration), cwd=tmp_path
+    )
 
     assert result.returncode == 1
     assert "vramfit[scan]" in result.stderr + result.stdout
@@ -196,7 +230,13 @@ def test_pack_flow_with_stub_toolchain_produces_the_packed_file(tmp_path) -> Non
     out = tmp_path / "packed.gguf"
 
     result = run(
-        "pack", str(recipe_path), "--llama-cpp", str(checkout), "--out", str(out)
+        "pack",
+        str(recipe_path),
+        "--llama-cpp",
+        str(checkout),
+        "--out",
+        str(out),
+        cwd=tmp_path,
     )
 
     assert result.returncode == 0, result.stderr
@@ -270,7 +310,13 @@ def test_pack_refuses_an_override_the_base_gguf_cannot_match(tmp_path) -> None:
     out = tmp_path / "packed.gguf"
 
     result = run(
-        "pack", str(recipe_path), "--llama-cpp", str(checkout), "--out", str(out)
+        "pack",
+        str(recipe_path),
+        "--llama-cpp",
+        str(checkout),
+        "--out",
+        str(out),
+        cwd=tmp_path,
     )
 
     assert result.returncode == 1
@@ -352,7 +398,13 @@ def test_pack_refuses_a_scanned_head_the_base_gguf_cannot_match(tmp_path) -> Non
     out = tmp_path / "packed.gguf"
 
     result = run(
-        "pack", str(recipe_path), "--llama-cpp", str(checkout), "--out", str(out)
+        "pack",
+        str(recipe_path),
+        "--llama-cpp",
+        str(checkout),
+        "--out",
+        str(out),
+        cwd=tmp_path,
     )
 
     assert result.returncode == 1
@@ -463,6 +515,7 @@ def test_pack_refuses_an_exclusion_the_imatrix_cannot_match(tmp_path) -> None:
         str(out),
         "--imatrix",
         str(imatrix),
+        cwd=tmp_path,
     )
 
     assert result.returncode == 1
@@ -481,7 +534,9 @@ def test_infeasible_plan_exits_one_via_console_script(tmp_path) -> None:
         json.dumps(make_map([("g0", 160_000, {8: 0.001, 4: 0.01, 3: 0.1, 2: 1.0})]))
     )
 
-    result = run("plan", str(map_path), "--vram", "10000", "--kv-headroom", "1000")
+    result = run(
+        "plan", str(map_path), "--vram", "10000", "--kv-headroom", "1000", cwd=tmp_path
+    )
 
     assert result.returncode == 1
     assert "no recipe fits" in result.stderr + result.stdout
