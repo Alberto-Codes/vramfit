@@ -140,7 +140,11 @@ change.
     then also records the imatrix path in `scan.imatrix`
     ([ADR-0020](../adr/0020-imatrix-assisted-pricing.md)).
     [ADR-0021](../adr/0021-runtime-frame-measurement.md) supersedes
-    ADR-0020, and the method stays a valid scan option. A method
+    ADR-0020, and the method stays a valid scan option.
+    `gguf-ref` ports `Q2_0` and `Q4_0`, the block quantizers
+    `llama-quantize` applies where no K-quant reaches a row
+    ([ADR-0018](../adr/0018-kquant-within-group-method.md), 2026-08-17
+    amendment). `gguf-imx` is reserved for its assisted path. A method
     change is a new scan — the token lives in the fingerprint and in
     the map's `scan.within_group`, and the recipe carries its map's
     token for the validation pass. Not "quantization mode" or
@@ -154,8 +158,19 @@ change.
     ADR-0020, and the method stays a valid scan option.
     **Unassisted** names the reference-path fit without weights.
     A tensor the imatrix does not cover always prices unassisted —
-    the same fallback `llama-quantize` applies. Not "imatrix mode"
-    or "weighted scanning".
+    the same fallback `llama-quantize` applies. `gguf-imx` reserves the
+    same shape for `quantize_row_q4_0_impl`. `Q2_0` has no assisted
+    path, because `quantize_q2_0` ignores the matrix
+    ([ADR-0018](../adr/0018-kquant-within-group-method.md), 2026-08-17
+    amendment). Not "imatrix mode" or "weighted scanning".
+
+**Reconstruction error**
+:   The squared difference between a quantized tensor and its
+    original, at `||q - w||² / ||w||²`, measured in weight space. It
+    compares two perturbations against each other. It never enters a
+    sensitivity map and it sets no price. **It is not damage** — #302
+    measured a weight-space term and measured damage ordering apart on
+    the 30B target. Not "quantization error" or "damage".
 
 **Validation pass**
 :   The whole-recipe check of the additivity assumption (`vramfit
