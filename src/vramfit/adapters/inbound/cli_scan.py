@@ -346,7 +346,7 @@ def scan(
         typer.Option(
             help="Within-group method: rtn, kquant for the "
             "K-quant-faithful port (ADR-0018, precisions 8/4/3/2), "
-            "or gguf for the block quantizers Q2_0/Q4_0/Q8_0 "
+            "or q0 for the block quantizers Q2_0/Q4_0/Q8_0 "
             "(precisions 8/4/2)."
         ),
     ] = "rtn",
@@ -377,7 +377,8 @@ def scan(
     the count. Groups offloaded to host RAM under the cap measure
     through accelerate's weights map (ADR-0015). The meter refuses
     weights offloaded beyond host RAM — see the how-to.
-    ``--within-group`` selects the quantization the meter applies
+    ``--within-group`` takes ``rtn``, ``kquant``, or ``q0``, and it
+    selects the quantization the meter applies
     inside a perturbed group (ADR-0018): ``rtn`` is the v1 default,
     ``kquant`` prices cells with the ported K-quant reference
     quantizers, and ``q0`` prices them with the ported block

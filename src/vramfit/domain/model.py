@@ -13,6 +13,7 @@ within-group method tokens live here — `SCAN_METHOD` beside the
 `ScanMeta` field it is the default for (ADR-0018), the kquant
 tokens beside the `imatrix` invariant they anchor (ADR-0020), and
 `Q0_REF_METHOD` for the block quantizers (ADR-0018, 2026-08-17
+amendment, token renamed by the 2026-08-18
 amendment).
 Serialization and the JSON schema envelope (including the
 ``vramfit_schema`` version field) live in
@@ -72,7 +73,8 @@ KQUANT_METHOD = "kquant-ref"
 # with the pack's imatrix weighting every covered fit. Defined here
 # because `ScanMeta` pairs the token with its `imatrix` field.
 KQUANT_IMX_METHOD = "kquant-imx"
-# The GGUF block-quantizer method (ADR-0018, 2026-08-17 amendment):
+# The q0 block-quantizer method (ADR-0018, 2026-08-17 amendment,
+# token renamed 2026-08-18):
 # Q2_0, Q4_0, and Q8_0 ported from llama.cpp b10326. It prices the
 # rows no K-quant reaches. `q0-imx` stays reserved — its assisted
 # path is unbuilt.

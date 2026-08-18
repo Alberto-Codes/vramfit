@@ -69,8 +69,8 @@ class TestWithinGroupDispatch:
         meter._block_size = 32
         return meter
 
-    def test_gguf_prices_a_routed_expert_row(self) -> None:
-        # 2688 refuses every 256-element super-block type. The gguf
+    def test_q0_prices_a_routed_expert_row(self) -> None:
+        # 2688 refuses every 256-element super-block type. The q0
         # method's blocks of 64 and 32 both divide it (#159).
         torch.manual_seed(0)
         param = torch.randn(2, 2688)

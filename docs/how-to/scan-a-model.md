@@ -117,14 +117,14 @@ at `Q8_0`, `Q4_0`, and `Q2_0` instead.
 Scan them with the `q0` method, which ports those three block
 quantizers
 ([ADR-0018](../adr/0018-kquant-within-group-method.md), 2026-08-17
-amendment):
+amendment, token renamed by the 2026-08-18 amendment):
 
 ```bash
 uv run vramfit scan ./model --calibration calibration.txt \
   --group-by stack \
   --precisions 4,2 \
   --within-group q0 \
-  --out sensitivity-gguf.json
+  --out sensitivity-q0.json
 ```
 
 The method covers nominal 8, 4, and 2. It refuses nominal 3, which
@@ -133,7 +133,7 @@ and 5 and 6 until ports exist.
 `--imatrix` does not pair with it. The `q0-imx` token is reserved
 for a real assisted path — `quantize_row_q4_0_impl` fits with
 imatrix weights — and nothing builds it yet. `quantize_q2_0` ignores
-the matrix, so an assisted gguf method could only ever differ at
+the matrix, so an assisted q0 method could only ever differ at
 nominal 4.
 
 A `kquant` scan now refuses such a cell. The message names the

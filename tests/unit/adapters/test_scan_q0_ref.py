@@ -219,7 +219,7 @@ class TestRefusals:
     def test_uncovered_bits_are_refused(self, bits: int) -> None:
         # ADR-0028 refuses nominal 3 at pack, and 5 and 6 have no
         # port. A silent fallback would price an unreachable frame.
-        with pytest.raises(ValueError, match="gguf covers bits"):
+        with pytest.raises(ValueError, match="q0 covers bits"):
             q0_ref_quantize_dequantize(torch.randn(2, 64), bits)
 
         assert bits not in Q0_REF_BITS

@@ -189,7 +189,7 @@ def _check_library(lib: ctypes.CDLL) -> None:
         sys.exit("library replay diverges from golden.npz — wrong llama.cpp build?")
     # The Q3_K replay proves the checkout, not these three types — a
     # build where Q2_0 moved and Q3_K did not would pass it. Replay
-    # the committed gguf fixtures too, once they exist.
+    # the committed q0 fixtures too, once they exist.
     existing = OUT / "golden.npz"
     if not existing.exists():
         return

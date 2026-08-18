@@ -414,8 +414,10 @@ def refuse_straddling_rows(row_length: int, bits: int) -> None:
     the routed-expert rows of 2688 and 1856, so a refusal keyed to
     256 alone would refuse a cell the pack realizes.
 
-    The refusal names the method that does reach these rows. That is
-    ``--within-group q0``, tokened ``q0-ref`` since #332.
+    The refusal names the method that reaches these rows at nominal
+    8, 4, and 2. That method is ``--within-group q0``. Its token is
+    ``q0-ref`` since #332. Nominal 3 reaches no method, because
+    ADR-0028 decision 2 refuses it at pack.
 
     Args:
         row_length: Elements per row — the tensor's last dimension.

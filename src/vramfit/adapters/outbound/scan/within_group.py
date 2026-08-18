@@ -16,7 +16,7 @@ The methods:
   ``Q8_0``, which reach the rows no K-quant tiles.
 
 Examples:
-    Perturb one tensor under the gguf method:
+    Perturb one tensor under the q0 method:
 
     ```python
     name = "model.layers.0.mixer.experts.up_proj"

@@ -16,7 +16,8 @@ riding through from `GroupSpec`
 (ADR-0022, ADR-0026 decision 4) — the pooled count reduction
 (`summarize_imatrix_counts`), the within-group method tokens and each
 method's precision coverage set (`rtn-block32`, `kquant-ref`,
-`kquant-imx`, and `q0-ref` — ADR-0006, ADR-0018, ADR-0020, with
+`kquant-imx`, and `q0-ref` since the 2026-08-18 amendment —
+ADR-0006, ADR-0018, ADR-0020, with
 every token re-exported from [vramfit.domain.model][], where
 `ScanMeta` anchors them), and
 the escaped fingerprint — carrying the method and the imatrix
@@ -285,8 +286,8 @@ class Measurement:
 # The precisions the kquant port covers. The scan validates candidate
 # precisions against this before it loads a model.
 KQUANT_PRECISIONS = (8, 4, 3, 2)
-# The precisions the gguf port covers (ADR-0018, 2026-08-17
-# amendment). Nominal 3 is absent because ADR-0028 decision 2
+# The precisions the q0 port covers (ADR-0018, 2026-08-17
+# amendment, token renamed 2026-08-18). Nominal 3 is absent because ADR-0028 decision 2
 # refuses it at pack, and 5 and 6 wait for ports.
 Q0_REF_PRECISIONS = (8, 4, 2)
 

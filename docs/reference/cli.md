@@ -144,10 +144,10 @@ vramfit scan MODEL
   --trust-remote-code    Allow model repos with custom code (the
                          north-star target needs this)
   --resume / --no-resume Continue from the checkpoint file  [default: resume]
-  --within-group TEXT    Within-group method: rtn | kquant | gguf
+  --within-group TEXT    Within-group method: rtn | kquant | q0
                          (ADR-0018). kquant prices cells with the
                          ported K-quant reference quantizers (8, 4,
-                         3, 2). gguf prices them with the ported
+                         3, 2). q0 prices them with the ported
                          block quantizers Q2_0, Q4_0, and Q8_0 (8,
                          4, 2), which reach the rows no K-quant
                          tiles. Each pairs only with precisions its
@@ -273,7 +273,7 @@ vramfit validate RECIPE
   --trust-remote-code    Allow model repos with custom code
   --gpu-memory SIZE      Byte cap on GPU 0 model shards (e.g. 17GiB).
                          Requires --device auto  [default: none]
-  --within-group TEXT    Within-group method: rtn | kquant | gguf
+  --within-group TEXT    Within-group method: rtn | kquant | q0
                          (ADR-0018)  [default: the recipe's recorded
                          method, or rtn without a record]
   --imatrix PATH         GGUF imatrix for assisted K-quant measurement

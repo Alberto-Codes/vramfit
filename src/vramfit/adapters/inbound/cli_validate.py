@@ -292,7 +292,7 @@ def validate(
         str | None,
         typer.Option(
             help="Within-group method: rtn, kquant for the "
-            "K-quant-faithful port, or gguf for the block "
+            "K-quant-faithful port, or q0 for the block "
             "quantizers Q2_0/Q4_0/Q8_0 (ADR-0018). Default: the "
             "method the recipe records, or rtn for recipes without "
             "the record."
@@ -340,7 +340,8 @@ def validate(
 
     Raises:
         typer.BadParameter: If ``--group-by``, ``--within-group``, or
-            ``--gpu-memory`` is malformed, ``--gpu-memory`` is given
+            ``--gpu-memory`` is malformed — ``--within-group`` takes
+            ``rtn``, ``kquant``, or ``q0`` — ``--gpu-memory`` is given
             without ``--device auto``, ``--within-group kquant`` or
             ``q0`` meets recipe assignments the port does not
             cover,

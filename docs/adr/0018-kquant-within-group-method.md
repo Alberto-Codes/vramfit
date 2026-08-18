@@ -268,21 +268,27 @@ scans 92 cells at $4.04, and its map is the first that would.
 
 1. **The method is `q0` and its token is `q0-ref`.** The name states the
    `_0` family: one fp16 scale per block, no minimum, and no
-   super-block. `Q2_0`, `Q4_0`, and `Q8_0` are that set. This supersedes
-   decision 2 of the 2026-08-17 amendment. Maintainer ruling 2026-08-18.
+   super-block. `Q2_0`, `Q4_0`, and `Q8_0` are the ported subset.
+   **`Q5_0` fits the same family and carries no port.** `Q4_1` and
+   `Q5_1` each carry a minimum, so the family excludes them. This
+   supersedes decision 2 of the 2026-08-17 amendment. Maintainer ruling
+   2026-08-18.
 2. **`q0-imx` replaces `gguf-imx` as the reserved assisted token.** The
    reservation does not change. `quantize_q2_0` still ignores an
    importance matrix, so the reserved path can differ at nominal 4 only.
-3. **A later GGUF-type port takes its own family token.** `mxfp4-ref`
-   stays free. The `gguf-` prefix names no method.
+3. **A port of a type outside the `_0` family takes its own token.**
+   `mxfp4-ref` stays free for `MXFP4`, and `NVFP4` takes its own.
+   **A later `Q5_0` port extends `q0` instead**, because the family
+   already covers it. The `gguf-` prefix names no method.
 4. **The rename reaches the code, the tests, and the reference pages.**
-   The module is `scan/q0_ref.py`, the constant is `Q0_REF_METHOD`, and
-   the CLI accepts `--within-group q0`.
+   The module is `scan/q0_ref.py`. The constant is `Q0_REF_METHOD`. The
+   CLI accepts `--within-group q0`.
 
 ### Consequences
 
 - No artifact moves. No map, recipe, or run log carries `gguf-ref`.
-- The 2026-08-17 amendment stays as written above. Read its `gguf-ref`
-  and `gguf-imx` as `q0-ref` and `q0-imx`.
+- The 2026-08-17 amendment keeps its original wording. Its decision 2
+  carries a supersession marker and nothing else there moved. Read its
+  `gguf-ref` and `gguf-imx` as `q0-ref` and `q0-imx`.
 - The golden-fixture suite still asserts all three types bit-exact
   against libggml. The rename moves names and no arithmetic.

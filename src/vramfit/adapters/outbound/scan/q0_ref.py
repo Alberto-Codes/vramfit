@@ -167,9 +167,10 @@ def q0_ref_quantize_dequantize(weight: torch.Tensor, bits: int) -> torch.Tensor:
         input.
 
     Raises:
-        ValueError: If ``bits`` has no port, naming the types it
-            does cover. ADR-0028 refuses nominal 3 at pack, and 5
-            and 6 wait for ports.
+        ValueError: If ``bits`` has no port. The message names the
+            method as ``q0`` and lists the types it does cover.
+            ADR-0028 refuses nominal 3 at pack, and 5 and 6 wait for
+            ports.
 
     Examples:
         Q2_0 keeps at most three levels per 64-element block:
@@ -187,7 +188,7 @@ def q0_ref_quantize_dequantize(weight: torch.Tensor, bits: int) -> torch.Tensor:
             f"{b} ({GGUF_TYPE_NAMES[b]})" for b in sorted(Q0_REF_BITS, reverse=True)
         )
         raise ValueError(
-            f"gguf covers bits {covered}, got {bits} — ADR-0028 refuses "
+            f"q0 covers bits {covered}, got {bits} — ADR-0028 refuses "
             "nominal 3 at pack, and 5 and 6 have no port (ADR-0018)"
         )
     round_trip, block = _ROUND_TRIPS[bits]

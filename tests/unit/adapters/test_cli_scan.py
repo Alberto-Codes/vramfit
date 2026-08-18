@@ -193,6 +193,18 @@ def test_q0_with_uncovered_precisions_exits_with_usage_error(
     assert "q0 covers" in result.output
 
 
+def test_within_group_help_names_only_values_the_parser_accepts(tmp_path) -> None:
+    # The help text and the parser drifted apart once (#332 review):
+    # --help advertised a value --within-group refused, so a reader who
+    # copied it got exit 2. Pin the two together.
+    result, _ = invoke_scan(tmp_path, "--help")
+
+    assert result.exit_code == 0, result.output
+    for method in ("rtn", "kquant", "q0"):
+        assert method in result.output
+    assert "gguf" not in result.output
+
+
 def test_q0_scan_records_the_method_in_the_map(tmp_path, monkeypatch) -> None:
     damages = {(spec.name, bits): 0.1 for spec in SPECS for bits in (4, 2)}
     captured = install_meter(
