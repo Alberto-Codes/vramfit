@@ -162,55 +162,6 @@ class TestRoundTripProperties:
             with pytest.raises(ValueError, match="kquant"):
                 kquant_quantize_dequantize(torch.randn(1, 256), bits)
 
-
-class TestStraddlingRowRefusal:
-    """ADR-0018's 2026-08-17 amendment, decision 4.
-
-    `tensor_type_fallback` rejects any type whose block does not
-    divide ``ne[0]``, so pricing such a cell records one map under
-    two frames. The refusal reads the mapped type's block size and
-    never a constant.
-    """
-
-    @pytest.mark.parametrize("row", (2688, 1856))
-    @pytest.mark.parametrize("bits", (2, 3, 4))
-    def test_a_super_block_type_refuses_the_routed_expert_rows(
-        self, row: int, bits: int
-    ) -> None:
-        with pytest.raises(ValueError, match="does not divide the row length"):
-            refuse_straddling_rows(row, bits)
-
-    @pytest.mark.parametrize("row", (2688, 1856))
-    def test_q8_0_accepts_the_routed_expert_rows(self, row: int) -> None:
-        # Q8_0 blocks 32 elements, which divides both, and ADR-0028
-        # decision 1 packs it there. A refusal keyed to 256 alone
-        # would refuse a cell the pack realizes.
-        refuse_straddling_rows(row, 8)
-
-        assert row % _ROUND_TRIPS[8][1] == 0
-
-    def test_the_message_names_the_type_the_block_and_the_row(self) -> None:
-        with pytest.raises(ValueError) as exc:
-            refuse_straddling_rows(2688, 2)
-
-        message = str(exc.value)
-        assert "Q2_K" in message
-        assert "256" in message
-        assert "2688" in message
-
-    def test_the_round_trip_refuses_before_it_quantizes(self) -> None:
-        with pytest.raises(ValueError, match="does not divide the row length"):
-            kquant_quantize_dequantize(torch.randn(4, 2688), 2)
-
-    def test_the_round_trip_accepts_q8_0_on_the_same_row(self) -> None:
-        result = kquant_quantize_dequantize(torch.randn(2, 2688), 8)
-
-        assert result.shape == (2, 2688)
-
-    def test_a_dividing_row_is_untouched(self) -> None:
-        refuse_straddling_rows(512, 2)
-        refuse_straddling_rows(256, 4)
-
     def test_domain_coverage_mirrors_the_dispatch_table(self) -> None:
         # The CLI pre-flight validates against the domain copy; the
         # adapter gates on the dispatch table. Drift between them
@@ -266,3 +217,52 @@ class TestStraddlingRowRefusal:
             kq = kquant_quantize_dequantize(w, bits)
             rtn = rtn_quantize_dequantize(w, bits)
             assert not torch.equal(kq, rtn)
+
+
+class TestStraddlingRowRefusal:
+    """ADR-0018's 2026-08-17 amendment, decision 4.
+
+    `tensor_type_fallback` rejects any type whose block does not
+    divide ``ne[0]``, so pricing such a cell records one map under
+    two frames. The refusal reads the mapped type's block size and
+    never a constant.
+    """
+
+    @pytest.mark.parametrize("row", (2688, 1856))
+    @pytest.mark.parametrize("bits", (2, 3, 4))
+    def test_a_super_block_type_refuses_the_routed_expert_rows(
+        self, row: int, bits: int
+    ) -> None:
+        with pytest.raises(ValueError, match="does not divide the row length"):
+            refuse_straddling_rows(row, bits)
+
+    @pytest.mark.parametrize("row", (2688, 1856))
+    def test_q8_0_accepts_the_routed_expert_rows(self, row: int) -> None:
+        # Q8_0 blocks 32 elements, which divides both, and ADR-0028
+        # decision 1 packs it there. A refusal keyed to 256 alone
+        # would refuse a cell the pack realizes.
+        refuse_straddling_rows(row, 8)
+
+        assert row % _ROUND_TRIPS[8][1] == 0
+
+    def test_the_message_names_the_type_the_block_and_the_row(self) -> None:
+        with pytest.raises(ValueError) as exc:
+            refuse_straddling_rows(2688, 2)
+
+        message = str(exc.value)
+        assert "Q2_K" in message
+        assert "256" in message
+        assert "2688" in message
+
+    def test_the_round_trip_refuses_before_it_quantizes(self) -> None:
+        with pytest.raises(ValueError, match="does not divide the row length"):
+            kquant_quantize_dequantize(torch.randn(4, 2688), 2)
+
+    def test_the_round_trip_accepts_q8_0_on_the_same_row(self) -> None:
+        result = kquant_quantize_dequantize(torch.randn(2, 2688), 8)
+
+        assert result.shape == (2, 2688)
+
+    def test_a_dividing_row_is_untouched(self) -> None:
+        refuse_straddling_rows(512, 2)
+        refuse_straddling_rows(256, 4)

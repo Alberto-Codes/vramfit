@@ -219,9 +219,10 @@ class TorchDamageMeter:
                 still refuses, the #202 vouching rule.
 
         Raises:
-            ValueError: If ``within_group`` is not a known method —
-                an unknown value must not fall back to RTN and record
-                damages under the wrong token — imatrix input
+            ValueError: If ``within_group`` is not one of
+                `METHODS` — an unknown value must not fall back to
+                RTN and record damages under the wrong token —
+                imatrix input
                 arrives with the ``rtn`` method (RTN has no weighted
                 C counterpart), ``imatrix_weights`` and
                 ``imatrix_path`` arrive together, the imatrix file
@@ -237,8 +238,9 @@ class TorchDamageMeter:
         # Checked before the model load: a silent RTN fallback under
         # a mistyped method corrupts every damage the meter measures.
         if within_group not in METHODS:
+            known = ", ".join(f'"{name}"' for name in METHODS)
             raise ValueError(
-                f'within_group must be "rtn", "kquant", or "gguf", got "{within_group}"'
+                f'within_group must be one of {known}, got "{within_group}"'
             )
         if imatrix_weights is not None and imatrix_path is not None:
             raise ValueError(
@@ -250,7 +252,7 @@ class TorchDamageMeter:
                 raise ValueError(
                     "imatrix weights require the kquant within-group method "
                     "(ADR-0020) — RTN has no weighted C counterpart, and "
-                    "gguf-imx is reserved and unbuilt (ADR-0018)"
+                    "gguf-imx is reserved but unbuilt (ADR-0018)"
                 )
             if imatrix_weights is not None and not imatrix_weights:
                 raise ValueError(

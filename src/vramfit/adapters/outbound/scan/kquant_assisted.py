@@ -354,7 +354,8 @@ def kquant_assisted_quantize_dequantize(
     consumes them: every row of length ``weight.shape[-1]`` fits
     against the same imatrix column weights. 8-bit routes to the
     unassisted ``Q8_0`` port — ``quantize_q8_0`` discards the
-    imatrix. The input is never modified. The computation runs on
+    imatrix — and takes that port's own row-length refusal, which
+    reaches rows a super-block cannot. The input is never modified. The computation runs on
     the input's device first and retries on the CPU when the float32
     workspace does not fit the card.
 
@@ -393,9 +394,11 @@ def kquant_assisted_quantize_dequantize(
         raise ValueError(
             f"assisted kquant supports bits in {ASSISTED_BITS}, got {bits} (ADR-0020)"
         )
-    # The mapped type decides, never a constant: the 8-bit route
-    # above blocks 32 elements and reaches rows a super-block cannot
-    # (ADR-0018, 2026-08-17 amendment, decision 4).
+    # Below the 8-bit route above, so an 8-bit cell reaches rows a
+    # super-block cannot — Q8_0 blocks 32 and its own refusal runs
+    # inside `kquant_quantize_dequantize`. Every type left here
+    # blocks 256, so the shared check reads the same constant the
+    # deleted one did (ADR-0018, 2026-08-17 amendment, decision 4).
     refuse_straddling_rows(row, bits)
     round_trip = _ASSISTED_ROUND_TRIPS[bits]
 

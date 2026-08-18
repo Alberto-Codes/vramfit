@@ -19,7 +19,8 @@ Examples:
     Perturb one tensor under the gguf method:
 
     ```python
-    perturbed = perturb(weight, 2, "blk.0.ffn_up_exps", "gguf", 32, None)
+    name = "model.layers.0.mixer.experts.up_proj"
+    perturbed = perturb(weight, 2, name, "gguf", 32, None)
     ```
 
 See Also:

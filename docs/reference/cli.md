@@ -216,10 +216,11 @@ A `kquant` scan also refuses a cell whose mapped type cannot tile the
 tensor's rows, and the message names the parameter, the type, the
 block size, and the row length. `Q2_K`, `Q3_K`, and `Q4_K` block 256
 elements, which divides neither 2688 nor 1856 — the routed-expert row
-lengths on the 30B target. `llama-quantize` refuses those types there,
-so pricing them records a frame the pack cannot apply. `Q8_0` blocks
-32 elements and reaches both rows, so nominal 8 never refuses. Use
-`--within-group gguf` for those rows.
+lengths on the 30B target. `llama-quantize` never applies those types
+there. `tensor_type_fallback` warns and substitutes `Q4_0` or `Q5_0`,
+so pricing the requested type records a frame the pack cannot apply.
+`Q8_0` blocks 32 elements and reaches both rows, so nominal 8 never
+refuses. Use `--within-group gguf` for those rows.
 
 ## `vramfit validate`
 

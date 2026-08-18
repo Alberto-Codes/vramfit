@@ -29,6 +29,7 @@ import pytest
 torch = pytest.importorskip("torch", reason="scan extra not installed")
 np = pytest.importorskip("numpy", reason="scan extra not installed")
 
+from vramfit.adapters.outbound.scan import kquant
 from vramfit.adapters.outbound.scan.gguf_ref import (
     _ROUND_TRIPS,
     GGUF_REF_BITS,
@@ -50,6 +51,7 @@ CASES = (
     "subnormal",
     "ties",
     "halfway",
+    "near_half",
 )
 # The routed-expert row lengths on the 30B target (#159). Every
 # block size here divides both, which is the point of the method.
@@ -107,6 +109,23 @@ class TestAgainstReference:
 
         expected = torch.from_numpy(golden["q2_0_halfway"]).reshape(-1, QK2_0)
         assert not torch.equal(half_to_even, expected)
+
+    def test_a_shift_and_truncate_round_would_fail_the_near_half_case(
+        self, golden: dict[str, np.ndarray]
+    ) -> None:
+        # `trunc(v + 0.5 * sign(v))` is the obvious way to write
+        # round-half-away, and the add is inexact: 0.49999997 + 0.5
+        # reaches the exact midpoint under 1.0 and snaps up, where
+        # `roundf` returns 0. This case pins the difference.
+        x = torch.from_numpy(golden["x_near_half"]).reshape(-1, QK2_0)
+        scale = x.abs().amax(dim=1, keepdim=True)
+        v = x / scale
+
+        shifted = torch.trunc(v + 0.5 * torch.sign(v)).clamp(-1, 2)
+        shifted = shifted * scale.half().float()
+
+        expected = torch.from_numpy(golden["q2_0_near_half"]).reshape(-1, QK2_0)
+        assert not torch.equal(shifted, expected)
 
     def test_a_last_maximum_pick_would_fail_the_q4_0_tie_case(
         self, golden: dict[str, np.ndarray]
@@ -178,15 +197,21 @@ class TestRoundTripProperties:
         assert q.dtype == w.dtype
         assert q.device == w.device
 
-    def test_a_row_length_off_the_block_multiple_still_round_trips(self) -> None:
-        # The flat layout pads to the block multiple. A short tail
-        # must not change the tensor's shape.
+    @pytest.mark.parametrize("chunk_rows", [7, 8], ids=["remainder", "exact"])
+    def test_slicing_is_bit_invisible(self, monkeypatch, chunk_rows: int) -> None:
+        # Every fit is local to one block, so a slice boundary must
+        # not change a value. Slicing only caps the fp32 workspace.
+        # `_sliced` is shared with kquant and reads the constant from
+        # that module, so the patch lands there.
         torch.manual_seed(0)
-        w = torch.randn(3, 100)
+        w = torch.randn(64, QK2_0)
 
-        q = gguf_ref_quantize_dequantize(w, 2)
+        whole = {bits: gguf_ref_quantize_dequantize(w, bits) for bits in GGUF_REF_BITS}
+        monkeypatch.setattr(kquant, "_CHUNK_ROWS", chunk_rows)
+        sliced = {bits: gguf_ref_quantize_dequantize(w, bits) for bits in GGUF_REF_BITS}
 
-        assert q.shape == w.shape
+        for bits in GGUF_REF_BITS:
+            assert torch.equal(whole[bits], sliced[bits]), bits
 
 
 class TestRefusals:
@@ -194,7 +219,7 @@ class TestRefusals:
     def test_uncovered_bits_are_refused(self, bits: int) -> None:
         # ADR-0028 refuses nominal 3 at pack, and 5 and 6 have no
         # port. A silent fallback would price an unreachable frame.
-        with pytest.raises(ValueError, match="gguf supports bits"):
+        with pytest.raises(ValueError, match="gguf covers bits"):
             gguf_ref_quantize_dequantize(torch.randn(2, 64), bits)
 
         assert bits not in GGUF_REF_BITS

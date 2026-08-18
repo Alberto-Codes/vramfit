@@ -112,6 +112,10 @@ def _cases(rng: np.random.Generator) -> dict[str, np.ndarray]:
     first-maximum rule decides the whole block's sign. ``halfway``
     lands values exactly on ``.5`` boundaries, where ``Q2_0``'s
     ``roundf`` and ``Q4_0``'s truncating cast disagree.
+    ``near_half`` lands one ulp *below* those boundaries, where
+    ``roundf`` rounds down but a shift-and-truncate rounds up — the
+    float32 add ``0.49999997 + 0.5`` reaches the exact midpoint
+    under 1.0 and snaps to it.
 
     Args:
         rng: Seeded generator, so fixtures regenerate identically.
@@ -130,6 +134,15 @@ def _cases(rng: np.random.Generator) -> dict[str, np.ndarray]:
     # x*id + 8.5 on exact integers.
     halfway = (rng.integers(-4, 5, shape) / 4.0).astype(np.float32)
     halfway[:, 0] = 1.0
+    # One ulp below each half-integer step, against an absmax of 1.
+    # Q2_0 sees w/d just under 0.5, and Q8_0 sees w/d just under
+    # each of 0.5, 1.5, ... 126.5.
+    below = np.nextafter(np.float32(0.5), np.float32(0))
+    near_half = np.tile(
+        np.array([below, -below, below / 127.0, -below / 127.0], dtype=np.float32),
+        (ROWS, N_PER_ROW // 4),
+    )
+    near_half[:, 0] = 1.0
     return {
         "gauss": gauss,
         "outliers": outliers,
@@ -139,6 +152,7 @@ def _cases(rng: np.random.Generator) -> dict[str, np.ndarray]:
         "subnormal": gauss * np.float32(1e-38),
         "ties": ties,
         "halfway": halfway,
+        "near_half": near_half,
     }
 
 
@@ -173,6 +187,20 @@ def _check_library(lib: ctypes.CDLL) -> None:
     )
     if not np.array_equal(out.reshape(x.shape), expected):
         sys.exit("library replay diverges from golden.npz — wrong llama.cpp build?")
+    # The Q3_K replay proves the checkout, not these three types — a
+    # build where Q2_0 moved and Q3_K did not would pass it. Replay
+    # the committed gguf fixtures too, once they exist.
+    existing = OUT / "golden.npz"
+    if not existing.exists():
+        return
+    with np.load(existing) as committed:
+        for name, type_id in TYPES.items():
+            key = f"{name}_gauss"
+            if key not in committed:
+                continue
+            replay = _round_trip(lib, type_id, committed["x_gauss"])
+            if not np.array_equal(replay, committed[key]):
+                sys.exit(f"{name} replay diverges from golden.npz — wrong build?")
 
 
 def main() -> None:

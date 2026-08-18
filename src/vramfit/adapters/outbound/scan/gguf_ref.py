@@ -15,10 +15,11 @@ routed-expert stacks, whose rows of 2688 and 1856 refuse every
 refuses it.
 
 The two types round differently and the port keeps them apart.
-``Q2_0`` calls ``roundf``, which rounds half away from zero.
-``Q4_0`` truncates through ``(int8_t)(x*id + 8.5f)``, which rounds
-half up. Both quantize against the pre-fp16 scale and dequantize
-with the fp16-stored one.
+``Q2_0`` calls ``roundf``, which rounds half away from zero — it
+shares `kquant.round_half_away` with ``Q8_0``. ``Q4_0`` truncates
+through ``(int8_t)(x*id + 8.5f)``, which rounds half up. Both
+quantize against the pre-fp16 scale and dequantize with the
+fp16-stored one.
 
 ``Q2_0`` reaches three levels, not four. The reference clamps
 ``round(w/amax)`` to ``[-1, 2]``, and ``|w| <= amax`` caps it at 1.
@@ -44,25 +45,13 @@ from vramfit.adapters.outbound.scan.kquant import (
     _fp16,
     _q8_0_round_trip,
     _sliced,
+    round_half_away,
 )
 
-# ggml-common.h: QK2_0 groups 64 elements, QK4_0 groups 32.
+# ggml-common.h: QK2_0 groups 64 elements, QK4_0 and QK8_0 group 32.
 QK2_0 = 64
 QK4_0 = 32
-
-
-def _round_half_away(v: torch.Tensor) -> torch.Tensor:
-    """Round half away from zero, like C's ``roundf``.
-
-    ``torch.round`` rounds half to even, so it cannot stand in here.
-
-    Args:
-        v: Float32 values.
-
-    Returns:
-        The rounded values, still float32.
-    """
-    return torch.trunc(v + 0.5 * torch.sign(v))
+QK8_0 = 32
 
 
 def _safe_inverse(d: torch.Tensor) -> torch.Tensor:
@@ -89,7 +78,8 @@ def _q2_0_round_trip(blocks: torch.Tensor) -> torch.Tensor:
     """Round-trip 64-element blocks through Q2_0.
 
     ``quantize_row_q2_0_ref`` sets the scale to the block absmax and
-    stores ``roundf(w/d) + 1`` clamped to ``[0, 3]``.
+    stores ``roundf(w*id) + 1`` clamped to ``[0, 3]``, where ``id``
+    is the reciprocal of the pre-fp16 scale.
     ``dequantize_row_q2_0`` returns ``(q - 1) * fp16(d)``, so the
     level lives in ``[-1, 2]``.
 
@@ -100,7 +90,7 @@ def _q2_0_round_trip(blocks: torch.Tensor) -> torch.Tensor:
         Dequantized values, same shape.
     """
     d = blocks.abs().amax(dim=1, keepdim=True)
-    levels = _round_half_away(blocks * _safe_inverse(d)).clamp(-1.0, 2.0)
+    levels = round_half_away(blocks * _safe_inverse(d)).clamp(-1.0, 2.0)
     return levels * _fp16(d)
 
 
@@ -109,13 +99,15 @@ def _q4_0_round_trip(blocks: torch.Tensor) -> torch.Tensor:
 
     ``quantize_row_q4_0_ref`` takes the signed value at the first
     absmax position, sets ``d`` to ``max / -8``, and stores
-    ``MIN(15, (int8_t)(x/d + 8.5f))``. The cast truncates toward
-    zero. ``dequantize_row_q4_0`` returns ``(q - 8) * fp16(d)``.
+    ``MIN(15, (int8_t)(x*id + 8.5f))``. The C builds the reciprocal
+    once and multiplies, which is not bit-identical to dividing, so
+    this port multiplies too. The cast truncates toward zero.
+    ``dequantize_row_q4_0`` returns ``(q - 8) * fp16(d)``.
 
     The C loop keeps the *first* strict maximum, so a block holding
     ``+a`` and ``-a`` takes the sign of whichever comes first. An
-    index reduction reproduces that; a plain ``argmax`` does not
-    promise it.
+    index reduction states that rule in the code rather than leaning
+    on ``argmax``'s tie behavior.
 
     Args:
         blocks: Shape ``(n, QK4_0)``, float32.
@@ -140,7 +132,7 @@ def _q4_0_round_trip(blocks: torch.Tensor) -> torch.Tensor:
 _ROUND_TRIPS = {
     2: (_q2_0_round_trip, QK2_0),
     4: (_q4_0_round_trip, QK4_0),
-    8: (_q8_0_round_trip, QK4_0),
+    8: (_q8_0_round_trip, QK8_0),
 }
 # The ported coverage, derived from the dispatch table so the two
 # cannot drift. domain.scan.GGUF_REF_PRECISIONS must mirror this —
@@ -148,7 +140,7 @@ _ROUND_TRIPS = {
 GGUF_REF_BITS = tuple(sorted(_ROUND_TRIPS))
 
 # The GGUF type each precision maps onto (ADR-0028 decision 1), for
-# error messages and for the block-size refusal in kquant.
+# the refusal message below.
 GGUF_TYPE_NAMES = {2: "Q2_0", 4: "Q4_0", 8: "Q8_0"}
 
 
@@ -175,8 +167,9 @@ def gguf_ref_quantize_dequantize(weight: torch.Tensor, bits: int) -> torch.Tenso
         input.
 
     Raises:
-        ValueError: If ``bits`` has no port. ADR-0028 refuses
-            nominal 3 at pack, and 5 and 6 wait for ports.
+        ValueError: If ``bits`` has no port, naming the types it
+            does cover. ADR-0028 refuses nominal 3 at pack, and 5
+            and 6 wait for ports.
 
     Examples:
         Q2_0 keeps at most three levels per 64-element block:
@@ -190,9 +183,12 @@ def gguf_ref_quantize_dequantize(weight: torch.Tensor, bits: int) -> torch.Tenso
         ```
     """
     if bits not in _ROUND_TRIPS:
+        covered = ", ".join(
+            f"{b} ({GGUF_TYPE_NAMES[b]})" for b in sorted(GGUF_REF_BITS, reverse=True)
+        )
         raise ValueError(
-            f"gguf supports bits in {GGUF_REF_BITS}, got {bits} — ADR-0028 "
-            "refuses nominal 3 at pack, and 5 and 6 have no port (ADR-0018)"
+            f"gguf covers bits {covered}, got {bits} — ADR-0028 refuses "
+            "nominal 3 at pack, and 5 and 6 have no port (ADR-0018)"
         )
     round_trip, block = _ROUND_TRIPS[bits]
 

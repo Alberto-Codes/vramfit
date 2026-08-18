@@ -340,9 +340,10 @@ def scan(
     quantizers, and ``gguf`` prices them with the ported block
     quantizers ``Q2_0``, ``Q4_0``, and ``Q8_0``. Each pairs only
     with precisions its port covers. ``gguf`` reaches the rows no
-    K-quant tiles — ``llama-quantize`` refuses a 256-element
-    super-block on rows of 2688 or 1856, and ``kquant`` now refuses
-    such a cell instead of pricing a frame the pack cannot apply.
+    K-quant tiles — ``llama-quantize`` substitutes another type for a
+    256-element super-block on rows of 2688 or 1856, and ``kquant``
+    now refuses such a cell instead of pricing a frame the pack
+    cannot apply.
     ``--imatrix`` adds the pack's importance matrix to the kquant
     fit (assisted pricing, ADR-0020) — the map then records the
     resolved imatrix path beside the method, and the run log

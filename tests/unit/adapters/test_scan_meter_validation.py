@@ -93,7 +93,7 @@ class TestWithinGroupDispatch:
         # damage the meter measures.
         unknown = cast("Literal['rtn', 'kquant', 'gguf']", "gptq")
 
-        with pytest.raises(ValueError, match='"rtn", "kquant", or "gguf"'):
+        with pytest.raises(ValueError, match="within_group must be one of"):
             TorchDamageMeter(
                 "hub/never-local",
                 Path("never-read.txt"),

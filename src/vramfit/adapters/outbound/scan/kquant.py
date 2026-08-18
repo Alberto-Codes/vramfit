@@ -16,12 +16,14 @@ there, so pricing it would record a frame the pack cannot apply.
 The check reads the mapped type and never a constant, because
 ``Q8_0`` blocks 32 elements and reaches rows a super-block cannot.
 
-The C reference rounds with ``nearest_int``, a round-half-to-even
-magic-number trick. ``torch.round`` rounds half to even, so the
-rounding modes match. Vectorized reductions can still order float
-sums differently from the C loops, so knife-edge fitting choices may
-diverge on isolated sub-blocks. The golden fixtures bound that
-drift.
+The K-quant fits round with ``nearest_int``, a round-half-to-even
+magic-number trick. ``torch.round`` rounds half to even, so those
+rounding modes match. ``Q8_0`` instead calls ``roundf``, which
+breaks ties away from zero — `round_half_away` carries that rule
+and the ``gguf`` port shares it. Vectorized reductions can still
+order float sums differently from the C loops, so knife-edge
+fitting choices may diverge on isolated sub-blocks. The golden
+fixtures bound that drift.
 
 Examples:
     Simulate Q2_K damage on one weight matrix:
@@ -47,6 +49,8 @@ SUB_BLOCK = 16
 Q8_BLOCK = 32
 # llama.cpp's all-zero guard for a sub-block (GROUP_MAX_EPS).
 _GROUP_MAX_EPS = 1e-15
+# The fractional part `roundf` breaks away from zero.
+_HALF = 0.5
 
 
 def _fp16(t: torch.Tensor) -> torch.Tensor:
@@ -59,6 +63,29 @@ def _fp16(t: torch.Tensor) -> torch.Tensor:
         The values after an fp16 round trip, as float32.
     """
     return t.half().float()
+
+
+def round_half_away(v: torch.Tensor) -> torch.Tensor:
+    """Round half away from zero, like C's ``roundf``.
+
+    ``torch.round`` rounds half to even, so it disagrees at exact
+    ties and only there. This detects a tie and resolves it, rather
+    than shifting by 0.5 and truncating. That shift is a float32
+    add, so it is inexact: ``0.49999997 + 0.5`` lands on the exact
+    midpoint below 1.0 and rounds up, where ``roundf`` returns 0.
+
+    ``v - trunc(v)`` is exact for ``|v| < 2**23``, which covers every
+    value the ports feed it — at most 1 for ``Q2_0`` and 127 for
+    ``Q8_0``.
+
+    Args:
+        v: Float32 values.
+
+    Returns:
+        The rounded values, still float32.
+    """
+    tie = (v - torch.trunc(v)).abs() == _HALF
+    return torch.where(tie, torch.trunc(v) + torch.sign(v), torch.round(v))
 
 
 def _make_qkx2_quants(
@@ -335,9 +362,10 @@ def _q8_0_round_trip(blocks: torch.Tensor) -> torch.Tensor:
     """Round-trip 32-element blocks through Q8_0.
 
     ``quantize_row_q8_0_ref`` rounds with ``roundf`` — half away from
-    zero — and quantizes against the pre-fp16 scale while dequantizing
-    with the fp16-stored one. A subnormal scale dequantizes to zero,
-    matching the C path, whose fp16 scale underflows.
+    zero, through `round_half_away` — and quantizes against the
+    pre-fp16 scale while dequantizing with the fp16-stored one. A
+    subnormal scale dequantizes to zero, matching the C path, whose
+    fp16 scale underflows.
 
     Args:
         blocks: Shape ``(n, Q8_BLOCK)``, float32.
@@ -353,9 +381,7 @@ def _q8_0_round_trip(blocks: torch.Tensor) -> torch.Tensor:
     # inf * fp16(d) is NaN where the C path dequantizes to zero —
     # its fp16 scale underflows first. Zero the levels instead.
     inverse = torch.where((d != 0) & torch.isfinite(raw), raw, torch.zeros_like(d))
-    v = blocks * inverse
-    levels = torch.trunc(v + 0.5 * torch.sign(v))
-    return levels * _fp16(d)
+    return round_half_away(blocks * inverse) * _fp16(d)
 
 
 _ROUND_TRIPS = {
@@ -377,10 +403,11 @@ def refuse_straddling_rows(row_length: int, bits: int) -> None:
     """Refuse a cell whose mapped type cannot tile the tensor's rows.
 
     ADR-0018's 2026-08-17 amendment, decision 4. ``tensor_type_fallback``
-    rejects any type whose block does not divide ``ne[0]``, so
-    `llama-quantize` never applies that type to this tensor. Pricing
-    it anyway records one map under two frames. The port would also
-    straddle two rows with one flat block.
+    rejects any type whose block does not divide ``ne[0]``: it warns
+    and substitutes a compatible type, so `llama-quantize` never
+    applies the requested type to this tensor. Pricing it anyway
+    records one map under two frames. The port would also straddle
+    two rows with one flat block.
 
     The check reads the mapped type's block size, never a constant.
     ``Q8_0`` blocks 32 elements and ADR-0028 decision 1 packs it on
@@ -410,8 +437,9 @@ def refuse_straddling_rows(row_length: int, bits: int) -> None:
     raise ValueError(
         f"kquant maps {bits} bits onto {KQUANT_TYPE_NAMES[bits]}, which blocks "
         f"{block} elements. {block} does not divide the row length "
-        f"{row_length}, so llama-quantize refuses that type here and the fit "
-        f"would straddle two rows (ADR-0018). Scan these rows with "
+        f"{row_length}. llama-quantize substitutes another type here, so this "
+        f"cell would price a frame the pack cannot apply, and the fit would "
+        f"straddle two rows (ADR-0018). Scan these rows unassisted with "
         f"--within-group gguf, which covers nominal 8, 4, and 2."
     )
 
