@@ -6,15 +6,18 @@ the map with ``tensor_bytes`` on every group (the map-copy mechanism
 from ADR-0021 decision 4). Sizes are element counts at 2 bytes per
 parameter, matching the scan's bf16 reference convention.
 
-The script reports every refusal as ``error:`` on stderr and exits 1.
-It refuses a document that is not a sensitivity map (#298). It refuses
-a map whose tensors the checkpoint does not cover. It refuses a group
-whose checkpoint sizes disagree with its recorded ``bytes_fp16``. It
-refuses two shards that define one tensor name (#297). It refuses to
+The script reports each refusal below as ``error:`` on stderr and exits
+1. It refuses a document that is not a sensitivity map (#298). It
+refuses a map whose tensors the checkpoint does not cover. It refuses a
+group whose checkpoint sizes disagree with its recorded ``bytes_fp16``.
+It refuses two shards that define one tensor name (#297). It refuses to
 overwrite the input. It refuses a shard it cannot parse. It refuses a
 JSON document that defines the same key twice, under the rule #262 set
 for every vramfit reader. Both reads apply that rule: the map and each
 shard header.
+
+Seven inputs outside the map still escape that contract and reach a
+traceback. #335 carries them.
 
 Examples:
     Annotate an existing map:
@@ -42,6 +45,18 @@ from vramfit.adapters.outbound.json_duplicate_key import (
 
 # A safetensors file opens with a little-endian u64 header length.
 HEADER_PREFIX_BYTES = 8
+
+
+class MapRefusal(ValueError):
+    """The input document is not a sensitivity map this script can read.
+
+    `main` catches `ValueError` to print one ``error:`` line and exit 1,
+    so this subclass reaches that path unchanged. It exists because the
+    guards behind it test types, and a bare `ValueError` there fights
+    ruff's `TRY004`. Raising `TypeError` instead would force `main` to
+    catch `TypeError` as well, and that wider clause would relabel a
+    real one from `checkpoint_tensor_bytes` as an operator mistake.
+    """
 
 
 def read_safetensors_header(path: Path) -> dict[str, dict]:
@@ -106,60 +121,85 @@ def checkpoint_tensor_bytes(model_dir: Path) -> dict[str, int]:
             if name in origin:
                 raise ValueError(
                     f'{shard}: tensor "{name}" is already defined by '
-                    f"{origin[name]} — remove the extra shard"
+                    f"{origin[name]} — two copies of one checkpoint here?"
                 )
             sizes[name] = math.prod(record["shape"]) * 2
             origin[name] = shard
     return sizes
 
 
+def _require_group_fields(group: dict, where: str) -> None:
+    """Refuse a group the annotation loop cannot read.
+
+    The loop reads three fields off every group. It reports a refusal
+    under ``name``, it tests membership over ``tensors``, and it compares
+    a sum against ``bytes_fp16``. A group missing one reaches a bare
+    `KeyError`. A group carrying the wrong type is worse. A string
+    ``tensors`` iterates per character, so the loop blames the checkpoint
+    for a tensor the map never named.
+
+    Args:
+        group: One element of the map's ``groups`` list.
+        where: The file and index, for the refusal message.
+
+    Raises:
+        MapRefusal: If a field is absent, or carries the wrong type.
+    """
+    for field in ("name", "tensors", "bytes_fp16"):
+        if field not in group:
+            raise MapRefusal(f'{where}: no "{field}" — not a sensitivity map')
+    if not isinstance(group["name"], str):
+        raise MapRefusal(f'{where}: "name" is not a string')
+    if not isinstance(group["bytes_fp16"], int) or isinstance(
+        group["bytes_fp16"], bool
+    ):
+        raise MapRefusal(f'{where}: "bytes_fp16" is not an integer')
+    tensors = group["tensors"]
+    if not isinstance(tensors, list) or not all(isinstance(t, str) for t in tensors):
+        raise MapRefusal(f'{where}: "tensors" is not a list of names')
+    if not tensors:
+        raise MapRefusal(f'{where}: "tensors" is empty — a group names one tensor')
+
+
 def map_groups(raw: object, path: Path) -> list[dict]:
     """Return the map's groups, refusing a document that is not a map.
 
-    The script reaches for ``groups`` and annotates each element. A
-    document without that key iterates zero times and writes an
-    unannotated copy on a zero exit, which reads the same as a genuinely
-    empty map (#298). Handing the script the wrong artifact is the most
-    likely operator mistake, so it refuses here rather than reporting
-    success.
+    The script reaches for ``groups`` and annotates each element. Given a
+    recipe, it iterated zero times and wrote an unannotated copy on a
+    zero exit (#298). That report also worded a genuinely empty map, so
+    the two cases read alike. Handing the script the wrong artifact is
+    the most likely operator mistake, so it refuses here.
 
     An empty ``groups`` list refuses too. `map_from_dict` already
     requires a map to carry one group, so a zero-group document is not a
     map the project accepts.
 
-    This guard reads only the fields the script itself reads.
-    `vramfit.adapters.outbound.sensitivity_map_json` owns schema
-    validation, and duplicating it here would give the project two
-    sources of truth (#190).
+    This guard checks the fields the annotation loop dereferences and
+    stops there. `vramfit.adapters.outbound.sensitivity_map_json` owns
+    schema validation, and this script never grows a second copy of it.
 
     Args:
         raw: The parsed input document.
         path: The file it came from, for the refusal message.
 
     Returns:
-        The ``groups`` list, every element a JSON object.
+        The ``groups`` list, every element a readable group.
 
     Raises:
-        ValueError: If the document is not a sensitivity map.
+        MapRefusal: If the document is not a sensitivity map.
     """
     if not isinstance(raw, dict) or "groups" not in raw:
-        raise ValueError(f'{path}: not a sensitivity map — no "groups" key')
+        raise MapRefusal(f'{path}: not a sensitivity map — no "groups" key')
     groups = raw["groups"]
     if not isinstance(groups, list):
-        # A wrong file is an operator mistake, not a caller's type
-        # mistake. `main` catches ValueError to print `error:` and exit
-        # 1. Raising TypeError would widen that catch to swallow a real
-        # one from `checkpoint_tensor_bytes`.
-        raise ValueError(  # noqa: TRY004 - an input refusal, not a type error
-            f'{path}: "groups" is not a list — not a sensitivity map'
-        )
+        raise MapRefusal(f'{path}: "groups" is not a list — not a sensitivity map')
     if not groups:
-        raise ValueError(f'{path}: "groups" is empty — the map prices nothing')
+        raise MapRefusal(f'{path}: "groups" is empty — a map carries one group')
     for i, group in enumerate(groups):
+        where = f"{path}: groups[{i}]"
         if not isinstance(group, dict):
-            raise ValueError(  # noqa: TRY004 - an input refusal, not a type error
-                f"{path}: groups[{i}] is not an object"
-            )
+            raise MapRefusal(f"{where} is not an object — not a sensitivity map")
+        _require_group_fields(group, where)
     return groups
 
 
