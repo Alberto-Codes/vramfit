@@ -14,6 +14,12 @@ alternative keeps the last value, so a repeated ``num_hidden_layers``
 would give a wrong `ModelShape` and a wrong weight budget with no
 report.
 
+Every integer the reader admits fits the signed 64-bit range. Every
+parse failure names the file. ADR-0008's 2026-08-16 amendment gives a
+reader the format bound and the domain the meaning bound. So this
+module answers whether a value is representable. It never answers
+whether a layer count is plausible (#314, #287).
+
 Examples:
     Parse a downloaded config:
 
@@ -36,13 +42,20 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 from vramfit.adapters.outbound.json_duplicate_key import (
     DuplicateKeyError,
     object_from_pairs,
 )
 from vramfit.domain.budget import ModelShape
+
+# The largest integer this reader admits. ADR-0008's 2026-08-16
+# amendment gives the reader the format bound. The signed 64-bit range
+# is that bound, and the four artifact readers already apply it (#260).
+# Without it a declared count reaches `ModelShape` and raises
+# `OverflowError` past the error root (#314).
+_INT_MAX: Final[int] = 2**63 - 1
 
 
 def shape_from_config_json(path: Path) -> ModelShape:
@@ -61,8 +74,9 @@ def shape_from_config_json(path: Path) -> ModelShape:
 
     Raises:
         ValueError: If the file is not UTF-8, is not valid JSON, defines
-            the same key twice, required fields are missing, or the
-            attention geometry is inconsistent.
+            the same key twice, declares an integer outside the signed
+            64-bit range, required fields are missing, or the attention
+            geometry is inconsistent. Every message names ``path``.
 
     Examples:
         Standard llama-style configs parse to uniform layers:
@@ -82,6 +96,13 @@ def shape_from_config_json(path: Path) -> ModelShape:
         raise ValueError(f"{path}: invalid JSON: {exc}") from exc
     except UnicodeDecodeError as exc:
         raise ValueError(f"{path}: not valid UTF-8: {exc}") from exc
+    except ValueError as exc:
+        # An integer literal past `sys.get_int_max_str_digits` (4300 by
+        # default) fails here, before any extractor sees it (#287). The
+        # clause sits below the two ValueError subclasses above, which
+        # carry their own messages. `DuplicateKeyError` is no
+        # `ValueError`, so the structural refusal cannot land here.
+        raise ValueError(f"{path}: cannot parse JSON: {exc}") from exc
     if not isinstance(config, dict):
         raise ValueError(f"{path}: expected a JSON object")
     if "block_configs" in config:
@@ -135,8 +156,11 @@ def _from_decilm_config(config: dict[str, Any], path: Path) -> ModelShape:
     Raises:
         ValueError: If required fields are missing, ``block_configs`` is
             not a list, no block has real attention, a skip flag is not
-            a boolean, or a block's ``n_heads_in_group`` is not a
-            positive divisor of ``num_attention_heads``.
+            a boolean, an integer exceeds the largest signed 64-bit
+            integer, or a block's ``n_heads_in_group`` is not a positive
+            divisor of ``num_attention_heads``. A boolean
+            ``n_heads_in_group`` refuses as a non-integer, and the bound
+            runs before the divisor message renders the value.
     """
     heads = _config_int(config, "num_attention_heads", path)
     head_dim = _head_dim(config, heads, path)
@@ -159,11 +183,25 @@ def _from_decilm_config(config: dict[str, Any], path: Path) -> ModelShape:
         if skip:
             continue
         group_size = attention.get("n_heads_in_group")
-        if not isinstance(group_size, int) or group_size <= 0:
+        # `bool` subclasses `int`, so `true` read as one head group and
+        # reported a shape. The two sibling extractors already guard it
+        # (#348).
+        if (
+            isinstance(group_size, bool)
+            or not isinstance(group_size, int)
+            or group_size <= 0
+        ):
             raise ValueError(
                 f"{path}: block_configs[{i}].attention.n_heads_in_group "
                 "must be a positive integer"
             )
+        # Bound before the divisibility check below renders the value.
+        # That message prints `group_size`. `json.loads` admits 4300
+        # digits and refuses at 4301, so a 4000-digit literal reaches
+        # the message and fills a terminal.
+        group_size = _bounded(
+            group_size, f"block_configs[{i}].attention.n_heads_in_group", path
+        )
         if heads % group_size != 0:
             raise ValueError(
                 f"{path}: block_configs[{i}].attention.n_heads_in_group "
@@ -210,11 +248,51 @@ def _config_int(config: dict[str, Any], key: str, path: Path) -> int:
         The integer value.
 
     Raises:
-        ValueError: If the field is missing or not a positive integer.
+        ValueError: If the field is missing, is not a positive integer,
+            or is outside the signed 64-bit range.
     """
     value = config.get(key)
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
         raise ValueError(f'{path}: "{key}" must be a positive integer')
+    return _bounded(value, f'"{key}"', path)
+
+
+def _bounded(value: int, label: str, path: Path) -> int:
+    """Refuse an integer the wire format cannot carry.
+
+    Each caller rejects a boolean and a value at or below zero first.
+    So this checks the upper bound alone. A publisher's ``config.json``
+    is an input vramfit never writes, and Python integers carry
+    unlimited precision. Without the bound ``num_hidden_layers`` at
+    10^30 reached `ModelShape.uniform`. Its repeat expression raised
+    `OverflowError`, which the CLI's ``(OSError, ValueError)`` clause
+    does not catch (#314).
+
+    The bound answers representability alone. It does not answer
+    whether a layer count is plausible. ADR-0008's 2026-08-16 amendment
+    gives that question to the domain, and `ModelShape.uniform` still
+    repeats a tuple by the layer count. So a count below this bound
+    raises `MemoryError` and escapes the root the same way (#314).
+
+    Args:
+        value: A positive integer the caller has already type-checked.
+        label: How the field names itself in a refusal. Match that
+            field's other messages, which quote a top-level key and
+            leave a path expression bare.
+        path: Source path, for error messages.
+
+    Returns:
+        The integer value.
+
+    Raises:
+        ValueError: If the value exceeds the largest signed 64-bit
+            integer.
+    """
+    if value > _INT_MAX:
+        raise ValueError(
+            f"{path}: {label} exceeds {_INT_MAX}, "
+            "the largest integer this format carries"
+        )
     return value
 
 
@@ -232,15 +310,16 @@ def _head_dim(config: dict[str, Any], num_heads: int, path: Path) -> int:
 
     Raises:
         ValueError: If a present ``head_dim`` is not a positive integer
-            (a present-but-invalid value is rejected, never silently
-            replaced by the fallback), or ``hidden_size`` is missing or
-            not an exact multiple of ``num_heads``.
+            inside the signed 64-bit range (a present-but-invalid value
+            is rejected, never silently replaced by the fallback), or
+            ``hidden_size`` is missing or not an exact multiple of
+            ``num_heads``.
     """
     head_dim = config.get("head_dim")
     if head_dim is not None:
         if isinstance(head_dim, bool) or not isinstance(head_dim, int) or head_dim <= 0:
             raise ValueError(f'{path}: "head_dim" must be a positive integer')
-        return head_dim
+        return _bounded(head_dim, '"head_dim"', path)
     hidden = _config_int(config, "hidden_size", path)
     if hidden % num_heads != 0:
         raise ValueError(

@@ -106,6 +106,53 @@ def test_budget_flow_prints_breakdown(tmp_path) -> None:
     assert "weight budget" in result.stdout
 
 
+def test_budget_with_an_unrepresentable_layer_count_reports_and_exits_1(
+    tmp_path,
+) -> None:
+    # #314 is about what the operator sees. A unit test pins the
+    # exception type, and only the console script proves the halt
+    # reaches stderr as an `error:` line (ADR-0011 decision 5).
+    config = tmp_path / "config.json"
+    config.write_text(
+        json.dumps(
+            {
+                "num_hidden_layers": 10**30,
+                "num_key_value_heads": 8,
+                "num_attention_heads": 32,
+                "hidden_size": 4096,
+            }
+        )
+    )
+
+    result = run(
+        "budget", "--model-config", str(config), "--vram", "24GiB", cwd=tmp_path
+    )
+
+    assert result.returncode == 1
+    assert result.stderr.startswith("error: ")
+    assert "config.json" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
+def test_budget_with_an_oversized_integer_literal_names_the_file(tmp_path) -> None:
+    # #287's `hf_config` row. The digit-limit failure reported
+    # CPython's remedy and named no file.
+    config = tmp_path / "config.json"
+    config.write_text(
+        '{"num_hidden_layers": ' + "9" * 5000 + ', "num_key_value_heads": 8, '
+        '"num_attention_heads": 32, "hidden_size": 4096}'
+    )
+
+    result = run(
+        "budget", "--model-config", str(config), "--vram", "24GiB", cwd=tmp_path
+    )
+
+    assert result.returncode == 1
+    assert result.stderr.startswith("error: ")
+    assert "config.json" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
 def test_scan_without_the_extra_reports_the_install_hint(tmp_path) -> None:
     if importlib.util.find_spec("torch") is not None:
         pytest.skip("scan extra installed — the ImportError path cannot trigger")
