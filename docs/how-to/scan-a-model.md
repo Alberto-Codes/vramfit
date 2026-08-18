@@ -114,26 +114,26 @@ the model's parameters, and
 [ADR-0028](../adr/0028-expert-stack-type-table.md) packs them
 at `Q8_0`, `Q4_0`, and `Q2_0` instead.
 
-Scan them with the `gguf` method, which ports those three block
+Scan them with the `q0` method, which ports those three block
 quantizers
 ([ADR-0018](../adr/0018-kquant-within-group-method.md), 2026-08-17
-amendment):
+amendment, token renamed by the 2026-08-18 amendment):
 
 ```bash
 uv run vramfit scan ./model --calibration calibration.txt \
   --group-by stack \
   --precisions 4,2 \
-  --within-group gguf \
-  --out sensitivity-gguf.json
+  --within-group q0 \
+  --out sensitivity-q0.json
 ```
 
 The method covers nominal 8, 4, and 2. It refuses nominal 3, which
 [ADR-0028](../adr/0028-expert-stack-type-table.md) refuses at pack,
 and 5 and 6 until ports exist.
-`--imatrix` does not pair with it. The `gguf-imx` token is reserved
+`--imatrix` does not pair with it. The `q0-imx` token is reserved
 for a real assisted path — `quantize_row_q4_0_impl` fits with
 imatrix weights — and nothing builds it yet. `quantize_q2_0` ignores
-the matrix, so an assisted gguf method could only ever differ at
+the matrix, so an assisted q0 method could only ever differ at
 nominal 4.
 
 A `kquant` scan now refuses such a cell. The message names the
@@ -142,7 +142,7 @@ never refuses there, because `Q8_0` blocks 32 elements and 32
 divides both rows.
 
 Maps priced under different methods do not compare. `scan.within_group`
-is one token for the whole map, so a `gguf-ref` map and a `kquant-imx`
+is one token for the whole map, so a `q0-ref` map and a `kquant-imx`
 map cannot merge.
 
 ## Pricing a subset of the groups
@@ -157,7 +157,7 @@ uv run vramfit scan ./model --calibration calibration.txt \
   --group-by stack \
   --groups backbone.layers.1.mixer.experts.up_proj,backbone.layers.1.mixer.experts.down_proj \
   --precisions 4,2 \
-  --within-group gguf \
+  --within-group q0 \
   --out sensitivity-stacks.json
 ```
 

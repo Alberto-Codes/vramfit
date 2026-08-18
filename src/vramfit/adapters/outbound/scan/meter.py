@@ -194,7 +194,7 @@ class TorchDamageMeter:
             within_group: Within-group method (ADR-0018). ``rtn`` is
                 the v1 round-to-nearest. ``kquant`` round-trips cells
                 through the ported K-quant reference quantizers and
-                refuses precisions outside their coverage. ``gguf``
+                refuses precisions outside their coverage. ``q0``
                 round-trips through the ported block quantizers —
                 ``Q2_0``, ``Q4_0``, and ``Q8_0`` — which reach the
                 rows no K-quant can tile.
@@ -252,7 +252,7 @@ class TorchDamageMeter:
                 raise ValueError(
                     "imatrix weights require the kquant within-group method "
                     "(ADR-0020) — RTN has no weighted C counterpart, and "
-                    "gguf-imx is reserved but unbuilt (ADR-0018)"
+                    "q0-imx is reserved but unbuilt (ADR-0018)"
                 )
             if imatrix_weights is not None and not imatrix_weights:
                 raise ValueError(
@@ -614,7 +614,7 @@ class TorchDamageMeter:
 
         Raises:
             ValueError: If the method has no port for ``bits`` —
-                ``kquant`` covers 8, 4, 3, and 2, and ``gguf``
+                ``kquant`` covers 8, 4, 3, and 2, and ``q0``
                 covers 8, 4, and 2 — or the mapped type's block size
                 does not divide the tensor's row length. The message
                 names the parameter.

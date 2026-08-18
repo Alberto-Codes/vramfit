@@ -1,4 +1,4 @@
-"""Block-quantizer quantize-dequantize (ADR-0018, `gguf-ref`).
+"""Block-quantizer quantize-dequantize (ADR-0018, `q0-ref`).
 
 Torch ports of llama.cpp's reference quantizers for ``Q2_0`` and
 ``Q4_0`` (``ggml-quants.c``, checkout 3653e6d6d, release b10326).
@@ -28,7 +28,7 @@ Examples:
     Simulate Q2_0 damage on one weight matrix:
 
     ```python
-    perturbed = gguf_ref_quantize_dequantize(weight, bits=2)
+    perturbed = q0_ref_quantize_dequantize(weight, bits=2)
     ```
 
 See Also:
@@ -135,16 +135,16 @@ _ROUND_TRIPS = {
     8: (_q8_0_round_trip, QK8_0),
 }
 # The ported coverage, derived from the dispatch table so the two
-# cannot drift. domain.scan.GGUF_REF_PRECISIONS must mirror this —
+# cannot drift. domain.scan.Q0_REF_PRECISIONS must mirror this —
 # the CLI validates against the domain copy before a model loads.
-GGUF_REF_BITS = tuple(sorted(_ROUND_TRIPS))
+Q0_REF_BITS = tuple(sorted(_ROUND_TRIPS))
 
 # The GGUF type each precision maps onto (ADR-0028 decision 1), for
 # the refusal message below.
 GGUF_TYPE_NAMES = {2: "Q2_0", 4: "Q4_0", 8: "Q8_0"}
 
 
-def gguf_ref_quantize_dequantize(weight: torch.Tensor, bits: int) -> torch.Tensor:
+def q0_ref_quantize_dequantize(weight: torch.Tensor, bits: int) -> torch.Tensor:
     """Quantize a tensor through the GGUF block type for ``bits``.
 
     The tensor is flattened in row-major order — the order
@@ -167,9 +167,10 @@ def gguf_ref_quantize_dequantize(weight: torch.Tensor, bits: int) -> torch.Tenso
         input.
 
     Raises:
-        ValueError: If ``bits`` has no port, naming the types it
-            does cover. ADR-0028 refuses nominal 3 at pack, and 5
-            and 6 wait for ports.
+        ValueError: If ``bits`` has no port. The message names the
+            method as ``q0`` and lists the types it does cover.
+            ADR-0028 refuses nominal 3 at pack, and 5 and 6 wait for
+            ports.
 
     Examples:
         Q2_0 keeps at most three levels per 64-element block:
@@ -178,16 +179,16 @@ def gguf_ref_quantize_dequantize(weight: torch.Tensor, bits: int) -> torch.Tenso
         import torch
 
         w = torch.randn(4, 128)
-        q = gguf_ref_quantize_dequantize(w, 2)
+        q = q0_ref_quantize_dequantize(w, 2)
         assert all(len(block.unique()) <= 3 for block in q.reshape(-1, 64))
         ```
     """
     if bits not in _ROUND_TRIPS:
         covered = ", ".join(
-            f"{b} ({GGUF_TYPE_NAMES[b]})" for b in sorted(GGUF_REF_BITS, reverse=True)
+            f"{b} ({GGUF_TYPE_NAMES[b]})" for b in sorted(Q0_REF_BITS, reverse=True)
         )
         raise ValueError(
-            f"gguf covers bits {covered}, got {bits} — ADR-0028 refuses "
+            f"q0 covers bits {covered}, got {bits} — ADR-0028 refuses "
             "nominal 3 at pack, and 5 and 6 have no port (ADR-0018)"
         )
     round_trip, block = _ROUND_TRIPS[bits]

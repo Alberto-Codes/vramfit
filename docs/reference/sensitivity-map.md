@@ -121,7 +121,7 @@ below remain, the sub-4-bit pricing claims do not.
   (the ported llama.cpp reference quantizers), `kquant-imx`
   (the same port with assisted pricing,
   [ADR-0020](../adr/0020-imatrix-assisted-pricing.md)), or
-  `gguf-ref` (the ported block quantizers `Q2_0`, `Q4_0`, and
+  `q0-ref` (the ported block quantizers `Q2_0`, `Q4_0`, and
   `Q8_0`, which reach the rows no K-quant tiles). The writer
   always records it. The loader accepts an absent field as
   `rtn-block32` — every map written before the field existed

@@ -12,15 +12,15 @@ The methods:
 - ``kquant`` — the ported K-quant reference quantizers, assisted by
   an imatrix wherever the parameter carries column weights
   (ADR-0020).
-- ``gguf`` — the ported block quantizers ``Q2_0``, ``Q4_0``, and
+- ``q0`` — the ported block quantizers ``Q2_0``, ``Q4_0``, and
   ``Q8_0``, which reach the rows no K-quant tiles.
 
 Examples:
-    Perturb one tensor under the gguf method:
+    Perturb one tensor under the q0 method:
 
     ```python
     name = "model.layers.0.mixer.experts.up_proj"
-    perturbed = perturb(weight, 2, name, "gguf", 32, None)
+    perturbed = perturb(weight, 2, name, "q0", 32, None)
     ```
 
 See Also:
@@ -33,18 +33,18 @@ from typing import Literal
 
 import torch
 
-from vramfit.adapters.outbound.scan.gguf_ref import gguf_ref_quantize_dequantize
 from vramfit.adapters.outbound.scan.kquant import kquant_quantize_dequantize
 from vramfit.adapters.outbound.scan.kquant_assisted import (
     kquant_assisted_quantize_dequantize,
 )
+from vramfit.adapters.outbound.scan.q0_ref import q0_ref_quantize_dequantize
 from vramfit.adapters.outbound.scan.quantize import rtn_quantize_dequantize
 
-WithinGroupMethod = Literal["rtn", "kquant", "gguf"]
+WithinGroupMethod = Literal["rtn", "kquant", "q0"]
 # The method names the meter and the CLI accept. An unknown value
 # must refuse rather than fall back — a silent RTN fallback would
 # record every damage under the wrong token.
-METHODS: tuple[WithinGroupMethod, ...] = ("rtn", "kquant", "gguf")
+METHODS: tuple[WithinGroupMethod, ...] = ("rtn", "kquant", "q0")
 
 
 def perturb(
@@ -72,14 +72,14 @@ def perturb(
 
     Raises:
         ValueError: If the method has no port for ``bits`` —
-            ``kquant`` covers 8, 4, 3, and 2, and ``gguf`` covers 8,
+            ``kquant`` covers 8, 4, 3, and 2, and ``q0`` covers 8,
             4, and 2 — or the mapped type's block size does not
             divide the tensor's row length. The message names the
             parameter.
     """
     try:
-        if method == "gguf":
-            return gguf_ref_quantize_dequantize(param, bits)
+        if method == "q0":
+            return q0_ref_quantize_dequantize(param, bits)
         if method == "kquant":
             if column_weights is not None:
                 return kquant_assisted_quantize_dequantize(param, bits, column_weights)

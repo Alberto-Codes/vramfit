@@ -1,6 +1,6 @@
-"""Checks of the `gguf-ref` port against libggml goldens.
+"""Checks of the `q0-ref` port against libggml goldens.
 
-The fixtures in ``tests/data/gguf_ref/golden.npz`` hold inputs and
+The fixtures in ``tests/data/q0_ref/golden.npz`` hold inputs and
 the dequantized outputs of llama.cpp's reference quantizers for
 ``Q2_0``, ``Q4_0``, and ``Q8_0`` (``ggml_quantize_chunk``, no
 imatrix). ADR-0018's 2026-08-17 amendment sets the bar at
@@ -30,18 +30,18 @@ torch = pytest.importorskip("torch", reason="scan extra not installed")
 np = pytest.importorskip("numpy", reason="scan extra not installed")
 
 from vramfit.adapters.outbound.scan import kquant
-from vramfit.adapters.outbound.scan.gguf_ref import (
+from vramfit.adapters.outbound.scan.q0_ref import (
     _ROUND_TRIPS,
-    GGUF_REF_BITS,
+    Q0_REF_BITS,
     QK2_0,
     QK4_0,
-    gguf_ref_quantize_dequantize,
+    q0_ref_quantize_dequantize,
 )
-from vramfit.domain.scan import GGUF_REF_PRECISIONS
+from vramfit.domain.scan import Q0_REF_PRECISIONS
 
 pytestmark = pytest.mark.unit
 
-GOLDEN = Path(__file__).parent.parent.parent / "data" / "gguf_ref" / "golden.npz"
+GOLDEN = Path(__file__).parent.parent.parent / "data" / "q0_ref" / "golden.npz"
 CASES = (
     "gauss",
     "outliers",
@@ -71,7 +71,7 @@ class TestAgainstReference:
     ) -> None:
         x = torch.from_numpy(golden[f"x_{case}"])
 
-        ours = gguf_ref_quantize_dequantize(x, 2).numpy()
+        ours = q0_ref_quantize_dequantize(x, 2).numpy()
 
         assert np.array_equal(ours, golden[f"q2_0_{case}"])
 
@@ -81,7 +81,7 @@ class TestAgainstReference:
     ) -> None:
         x = torch.from_numpy(golden[f"x_{case}"])
 
-        ours = gguf_ref_quantize_dequantize(x, 4).numpy()
+        ours = q0_ref_quantize_dequantize(x, 4).numpy()
 
         assert np.array_equal(ours, golden[f"q4_0_{case}"])
 
@@ -93,7 +93,7 @@ class TestAgainstReference:
         # Q8_0 twice. These fixtures prove the reuse is sound.
         x = torch.from_numpy(golden[f"x_{case}"])
 
-        ours = gguf_ref_quantize_dequantize(x, 8).numpy()
+        ours = q0_ref_quantize_dequantize(x, 8).numpy()
 
         assert np.array_equal(ours, golden[f"q8_0_{case}"])
 
@@ -152,7 +152,7 @@ class TestRoundTripProperties:
         torch.manual_seed(0)
         w = torch.randn(4, QK2_0 * 8)
 
-        q = gguf_ref_quantize_dequantize(w, 2)
+        q = q0_ref_quantize_dequantize(w, 2)
 
         for block in q.reshape(-1, QK2_0):
             assert len(block.unique()) <= 3
@@ -161,12 +161,12 @@ class TestRoundTripProperties:
         torch.manual_seed(0)
         w = torch.randn(4, QK4_0 * 8)
 
-        q = gguf_ref_quantize_dequantize(w, 4)
+        q = q0_ref_quantize_dequantize(w, 4)
 
         for block in q.reshape(-1, QK4_0):
             assert len(block.unique()) <= 16
 
-    @pytest.mark.parametrize("bits", GGUF_REF_PRECISIONS)
+    @pytest.mark.parametrize("bits", Q0_REF_PRECISIONS)
     @pytest.mark.parametrize("row", EXPERT_ROWS)
     def test_the_routed_expert_rows_round_trip(self, bits: int, row: int) -> None:
         # 2688 and 1856 refuse every 256-element super-block type.
@@ -174,7 +174,7 @@ class TestRoundTripProperties:
         torch.manual_seed(0)
         w = torch.randn(2, row)
 
-        q = gguf_ref_quantize_dequantize(w, bits)
+        q = q0_ref_quantize_dequantize(w, bits)
 
         assert q.shape == w.shape
         assert torch.isfinite(q).all()
@@ -184,14 +184,14 @@ class TestRoundTripProperties:
         w = torch.randn(2, 256)
         before = w.clone()
 
-        gguf_ref_quantize_dequantize(w, 2)
+        q0_ref_quantize_dequantize(w, 2)
 
         assert torch.equal(w, before)
 
     def test_shape_dtype_and_device_survive(self) -> None:
         w = torch.randn(3, 5, 64, dtype=torch.bfloat16)
 
-        q = gguf_ref_quantize_dequantize(w, 4)
+        q = q0_ref_quantize_dequantize(w, 4)
 
         assert q.shape == w.shape
         assert q.dtype == w.dtype
@@ -206,11 +206,11 @@ class TestRoundTripProperties:
         torch.manual_seed(0)
         w = torch.randn(64, QK2_0)
 
-        whole = {bits: gguf_ref_quantize_dequantize(w, bits) for bits in GGUF_REF_BITS}
+        whole = {bits: q0_ref_quantize_dequantize(w, bits) for bits in Q0_REF_BITS}
         monkeypatch.setattr(kquant, "_CHUNK_ROWS", chunk_rows)
-        sliced = {bits: gguf_ref_quantize_dequantize(w, bits) for bits in GGUF_REF_BITS}
+        sliced = {bits: q0_ref_quantize_dequantize(w, bits) for bits in Q0_REF_BITS}
 
-        for bits in GGUF_REF_BITS:
+        for bits in Q0_REF_BITS:
             assert torch.equal(whole[bits], sliced[bits]), bits
 
 
@@ -219,13 +219,13 @@ class TestRefusals:
     def test_uncovered_bits_are_refused(self, bits: int) -> None:
         # ADR-0028 refuses nominal 3 at pack, and 5 and 6 have no
         # port. A silent fallback would price an unreachable frame.
-        with pytest.raises(ValueError, match="gguf covers bits"):
-            gguf_ref_quantize_dequantize(torch.randn(2, 64), bits)
+        with pytest.raises(ValueError, match="q0 covers bits"):
+            q0_ref_quantize_dequantize(torch.randn(2, 64), bits)
 
-        assert bits not in GGUF_REF_BITS
+        assert bits not in Q0_REF_BITS
 
     def test_the_domain_copy_mirrors_the_dispatch_table(self) -> None:
         # The CLI validates precisions against the domain copy
         # before a model loads, so the two must not drift.
-        assert sorted(GGUF_REF_PRECISIONS) == sorted(GGUF_REF_BITS)
-        assert sorted(_ROUND_TRIPS) == sorted(GGUF_REF_PRECISIONS)
+        assert sorted(Q0_REF_PRECISIONS) == sorted(Q0_REF_BITS)
+        assert sorted(_ROUND_TRIPS) == sorted(Q0_REF_PRECISIONS)

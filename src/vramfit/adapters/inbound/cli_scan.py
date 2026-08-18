@@ -2,7 +2,7 @@
 
 The scan loop lives here because the inbound adapter is the
 composition root: it validates every option up front (sizes parse
-with the project grammar, ``--within-group kquant`` and ``gguf``
+with the project grammar, ``--within-group kquant`` and ``q0``
 must each pair with precisions their port covers, ADR-0018, and
 ``--imatrix`` pairs only with the kquant method, ADR-0020), builds
 the
@@ -62,11 +62,11 @@ from vramfit.adapters.outbound.sensitivity_map_json import JsonSensitivityMapFil
 from vramfit.domain.errors import VramfitError
 from vramfit.domain.model import ScanMeta
 from vramfit.domain.scan import (
-    GGUF_REF_METHOD,
-    GGUF_REF_PRECISIONS,
     KQUANT_IMX_METHOD,
     KQUANT_METHOD,
     KQUANT_PRECISIONS,
+    Q0_REF_METHOD,
+    Q0_REF_PRECISIONS,
     SCAN_METHOD,
     assemble_map,
     scan_fingerprint,
@@ -107,7 +107,7 @@ def _build_meter(
     device: str,
     trust_remote_code: bool,
     gpu_memory: int | None,
-    within_group: Literal["rtn", "kquant", "gguf"] = "rtn",
+    within_group: Literal["rtn", "kquant", "q0"] = "rtn",
     imatrix: Path | None = None,
 ) -> DamageMeter:
     """Build the torch-backed meter, importing torch only now.
@@ -128,7 +128,7 @@ def _build_meter(
         gpu_memory: Byte cap on GPU 0 model shards under ``auto``
             sharding.
         within_group: Within-group method (ADR-0018) — ``rtn``,
-            ``kquant``, or ``gguf``.
+            ``kquant``, or ``q0``.
         imatrix: GGUF imatrix file for assisted pricing (ADR-0020),
             or None for an unassisted meter.
 
@@ -257,7 +257,7 @@ def _parse_groups(text: str | None) -> tuple[str, ...]:
 
 def _parse_within_group(
     text: str, precisions: tuple[int, ...], imatrix: Path | None
-) -> tuple[Literal["rtn", "kquant", "gguf"], str]:
+) -> tuple[Literal["rtn", "kquant", "q0"], str]:
     """Validate the ``--within-group`` choice against the precisions.
 
     Args:
@@ -273,17 +273,17 @@ def _parse_within_group(
 
     Raises:
         typer.BadParameter: If the method is unknown, ``kquant`` or
-            ``gguf`` is combined with precisions outside its port
+            ``q0`` is combined with precisions outside its port
             coverage (ADR-0018), ``--imatrix`` arrives without the
             kquant method, or the imatrix file does not exist — each
             rejected before the model load burns an hour.
     """
-    if text not in ("rtn", "kquant", "gguf"):
+    if text not in ("rtn", "kquant", "q0"):
         raise typer.BadParameter(
-            f'--within-group: expected "rtn", "kquant", or "gguf", got "{text}"'
+            f'--within-group: expected "rtn", "kquant", or "q0", got "{text}"'
         )
     check_imatrix(imatrix, text)
-    covered = {"kquant": KQUANT_PRECISIONS, "gguf": GGUF_REF_PRECISIONS}.get(text)
+    covered = {"kquant": KQUANT_PRECISIONS, "q0": Q0_REF_PRECISIONS}.get(text)
     if covered is not None:
         uncovered = [p for p in precisions if p not in covered]
         if uncovered:
@@ -294,8 +294,8 @@ def _parse_within_group(
             )
     if text == "rtn":
         return text, SCAN_METHOD
-    if text == "gguf":
-        return text, GGUF_REF_METHOD
+    if text == "q0":
+        return text, Q0_REF_METHOD
     return text, KQUANT_METHOD if imatrix is None else KQUANT_IMX_METHOD
 
 
@@ -346,7 +346,7 @@ def scan(
         typer.Option(
             help="Within-group method: rtn, kquant for the "
             "K-quant-faithful port (ADR-0018, precisions 8/4/3/2), "
-            "or gguf for the block quantizers Q2_0/Q4_0/Q8_0 "
+            "or q0 for the block quantizers Q2_0/Q4_0/Q8_0 "
             "(precisions 8/4/2)."
         ),
     ] = "rtn",
@@ -377,12 +377,13 @@ def scan(
     the count. Groups offloaded to host RAM under the cap measure
     through accelerate's weights map (ADR-0015). The meter refuses
     weights offloaded beyond host RAM — see the how-to.
-    ``--within-group`` selects the quantization the meter applies
+    ``--within-group`` takes ``rtn``, ``kquant``, or ``q0``, and it
+    selects the quantization the meter applies
     inside a perturbed group (ADR-0018): ``rtn`` is the v1 default,
     ``kquant`` prices cells with the ported K-quant reference
-    quantizers, and ``gguf`` prices them with the ported block
+    quantizers, and ``q0`` prices them with the ported block
     quantizers ``Q2_0``, ``Q4_0``, and ``Q8_0``. Each pairs only
-    with precisions its port covers. ``gguf`` reaches the rows no
+    with precisions its port covers. ``q0`` reaches the rows no
     K-quant tiles — ``llama-quantize`` substitutes another type for a
     256-element super-block on rows of 2688 or 1856, and ``kquant``
     now refuses such a cell instead of pricing a frame the pack
@@ -393,7 +394,7 @@ def scan(
     records how many parameters the imatrix covers. The map, the
     fingerprint, and the run log all record the method as its token
     (``rtn-block32``, ``kquant-ref``, ``kquant-imx``, or
-    ``gguf-ref``).
+    ``q0-ref``).
     ``--group-by`` sets the map key. ``stack`` keys on the unit a
     pack addresses (#161): it collapses a mixture-of-experts layer's
     routed experts into one group per projection, and keeps every
@@ -414,7 +415,7 @@ def scan(
             ``--groups``,
             ``--within-group``, or ``--gpu-memory`` is malformed,
             ``--gpu-memory`` is given without ``--device auto``,
-            ``--within-group kquant`` or ``gguf`` is combined with
+            ``--within-group kquant`` or ``q0`` is combined with
             precisions its port does not cover, ``--imatrix`` is
             given without
             ``--within-group kquant`` or is not a file, or the

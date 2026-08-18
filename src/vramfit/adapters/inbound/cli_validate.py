@@ -3,7 +3,7 @@
 The composition root for the validation pass (ADR-0006). It loads the
 recipe, builds the same torch-backed meter the scan uses (including
 the scan's within-group method and imatrix selection, ADR-0018 and
-ADR-0020 — a recipe priced on a ``gguf-ref`` map validates in that
+ADR-0020 — a recipe priced on a ``q0-ref`` map validates in that
 frame too), perturbs
 every group to its assigned precision in one pass, and compares the
 measured whole-recipe damage against the recipe's summed marginal
@@ -51,11 +51,11 @@ from vramfit.adapters.outbound.recipe_json import load_recipe
 from vramfit.adapters.outbound.run_log_jsonl import JsonlRunLogFile
 from vramfit.domain.model import Recipe
 from vramfit.domain.scan import (
-    GGUF_REF_METHOD,
-    GGUF_REF_PRECISIONS,
     KQUANT_IMX_METHOD,
     KQUANT_METHOD,
     KQUANT_PRECISIONS,
+    Q0_REF_METHOD,
+    Q0_REF_PRECISIONS,
     SCAN_METHOD,
 )
 from vramfit.domain.validation import validation_result
@@ -63,23 +63,23 @@ from vramfit.ports.outbound import DamageMeter
 
 # Method token -> the meter method that measures it. The assisted
 # token measures through kquant with the imatrix (ADR-0020).
-_TOKEN_TO_METHOD: dict[str, Literal["rtn", "kquant", "gguf"]] = {
+_TOKEN_TO_METHOD: dict[str, Literal["rtn", "kquant", "q0"]] = {
     SCAN_METHOD: "rtn",
     KQUANT_METHOD: "kquant",
     KQUANT_IMX_METHOD: "kquant",
-    GGUF_REF_METHOD: "gguf",
+    Q0_REF_METHOD: "q0",
 }
 # Each method's ported precision coverage (ADR-0018). RTN covers
 # every precision, so it is absent.
 _METHOD_COVERAGE: dict[str, tuple[int, ...]] = {
     "kquant": KQUANT_PRECISIONS,
-    "gguf": GGUF_REF_PRECISIONS,
+    "q0": Q0_REF_PRECISIONS,
 }
 
 
 def _resolve_within_group(
     text: str | None, imatrix: Path | None, recipe: Recipe
-) -> tuple[Literal["rtn", "kquant", "gguf"], str]:
+) -> tuple[Literal["rtn", "kquant", "q0"], str]:
     """Resolve the pass's method against the recipe's provenance.
 
     The pass only checks additivity when its frame matches the map
@@ -103,7 +103,7 @@ def _resolve_within_group(
 
     Raises:
         typer.BadParameter: If the method is unknown, ``kquant`` or
-            ``gguf`` meets assignments outside its port coverage
+            ``q0`` meets assignments outside its port coverage
             (ADR-0018), ``--imatrix`` arrives without the kquant
             method or is not a file, the recipe records a token this
             version does not know, or the resolved frame contradicts
@@ -117,11 +117,11 @@ def _resolve_within_group(
         )
     if text is None:
         method = _TOKEN_TO_METHOD[recorded] if recorded is not None else "rtn"
-    elif text in ("rtn", "kquant", "gguf"):
+    elif text in ("rtn", "kquant", "q0"):
         method = text
     else:
         raise typer.BadParameter(
-            f'--within-group: expected "rtn", "kquant", or "gguf", got "{text}"'
+            f'--within-group: expected "rtn", "kquant", or "q0", got "{text}"'
         )
     # Record conflicts refuse first — their messages name the real
     # cause. A flag-level message here ("--imatrix requires kquant")
@@ -141,8 +141,8 @@ def _resolve_within_group(
             )
     if method == "rtn":
         token = SCAN_METHOD
-    elif method == "gguf":
-        token = GGUF_REF_METHOD
+    elif method == "q0":
+        token = Q0_REF_METHOD
     else:
         token = KQUANT_METHOD if imatrix is None else KQUANT_IMX_METHOD
     return method, token
@@ -292,7 +292,7 @@ def validate(
         str | None,
         typer.Option(
             help="Within-group method: rtn, kquant for the "
-            "K-quant-faithful port, or gguf for the block "
+            "K-quant-faithful port, or q0 for the block "
             "quantizers Q2_0/Q4_0/Q8_0 (ADR-0018). Default: the "
             "method the recipe records, or rtn for recipes without "
             "the record."
@@ -340,9 +340,10 @@ def validate(
 
     Raises:
         typer.BadParameter: If ``--group-by``, ``--within-group``, or
-            ``--gpu-memory`` is malformed, ``--gpu-memory`` is given
+            ``--gpu-memory`` is malformed — ``--within-group`` takes
+            ``rtn``, ``kquant``, or ``q0`` — ``--gpu-memory`` is given
             without ``--device auto``, ``--within-group kquant`` or
-            ``gguf`` meets recipe assignments the port does not
+            ``q0`` meets recipe assignments the port does not
             cover,
             ``--imatrix`` arrives without the kquant method or is
             not a file, the resolved frame contradicts the recipe's
