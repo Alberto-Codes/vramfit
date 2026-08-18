@@ -10,9 +10,9 @@ validate command reuses `start_run` with its own event prefix.
 
 `resolve_grid` sits between the two: it applies the ``--groups``
 selection (#282), loads the checkpoint, and plans the remaining
-cells. A selection stays out of the fingerprint, so it drops the
-checkpoint's unselected cells rather than reading them as a foreign
-checkpoint.
+cells. It validates the whole checkpoint against the whole model
+first, so a selection never hides a foreign or a damaged file. It
+then drops the cells in deselected groups and reports the count.
 
 Examples:
     Measure the remaining cells of a scan:
@@ -165,11 +165,14 @@ def resolve_grid(
     """Select the groups, load the checkpoint, and plan the work.
 
     A ``--groups`` selection stays out of the fingerprint, so the
-    checkpoint may hold cells this run does not measure. Those cells
-    drop before planning. `plan_measurements` reads an out-of-grid cell
-    as a foreign checkpoint, so refusing here would throw away the
-    selected cells the caller is paying to keep. The dropped cells stay
-    in the file for a later, wider run.
+    checkpoint may hold cells this run does not measure. Only a cell in
+    a discovered but deselected group drops.
+
+    The checkpoint validates against the whole model first, before any
+    narrowing. `plan_measurements` refuses a cell outside the full grid
+    and a cell that repeats. Both mean a foreign or damaged checkpoint,
+    and a selection must never hide either. Narrowing first would
+    discard that guard on every run.
 
     Args:
         meter: The loaded meter, which discovers the groups.
@@ -187,11 +190,12 @@ def resolve_grid(
 
     Raises:
         typer.Exit: With code 1 when a requested group name matches no
-            discovered group, or the checkpoint cannot load and belongs
-            to this scan's grid.
+            discovered group, or the checkpoint cannot load, or it
+            belongs to a different scan.
     """
+    discovered = meter.groups()
     try:
-        specs = select_groups(meter.groups(), groups)
+        specs = select_groups(discovered, groups)
     except ValueError as exc:
         typer.echo(f"error: --groups: {exc}", err=True)
         run_log.emit(
@@ -206,8 +210,13 @@ def resolve_grid(
         raise typer.Exit(code=1) from exc
 
     try:
-        selected = {spec.name for spec in specs}
-        done = [m for m in store.load(fingerprint) if m.group in selected]
+        loaded = store.load(fingerprint)
+        # Validate the whole file against the whole model before any
+        # narrowing, and discard the plan. This is the foreign-cell and
+        # repeated-cell guard, and a selection must not weaken it.
+        plan_measurements(discovered, precisions, [(m.group, m.bits) for m in loaded])
+        deselected = {spec.name for spec in discovered} - {spec.name for spec in specs}
+        done = [m for m in loaded if m.group not in deselected]
         todo = plan_measurements(specs, precisions, [(m.group, m.bits) for m in done])
     except (ArtifactError, ValueError, OSError) as exc:
         typer.echo(
@@ -225,9 +234,16 @@ def resolve_grid(
         )
         raise typer.Exit(code=1) from exc
 
+    dropped = len(loaded) - len(done)
+    if dropped:
+        typer.echo(f"ignoring {dropped} checkpoint cells outside the selection")
     if done:
         typer.echo(f"resuming: {len(done)} of {len(done) + len(todo)} cells done")
-        run_log.emit("resume_loaded", {"cells": len(done), "remaining": len(todo)})
+    if done or dropped:
+        run_log.emit(
+            "resume_loaded",
+            {"cells": len(done), "remaining": len(todo), "dropped": dropped},
+        )
     return specs, done, todo
 
 

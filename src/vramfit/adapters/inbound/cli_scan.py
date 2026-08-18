@@ -403,10 +403,11 @@ def scan(
     ``--group-by`` produces. A name matching no discovered group halts
     the run, after the model loads and before any cell measures. The
     map then carries the selected groups alone.
-    The selection stays out of the fingerprint, so a narrow run and a
-    wide run share one checkpoint. A narrowed run reuses the wide
-    run's cells for the groups it selects, and it leaves the rest in
-    the checkpoint for a later run to reuse.
+    The selection stays out of the fingerprint. So a narrow run and a
+    wide run share one checkpoint. A narrowed run reuses the wide run's
+    cells for the groups it selects. The cells in deselected groups
+    stay in the file, and the run reports how many it ignored. A
+    checkpoint from a different scan still halts the run.
 
     Raises:
         typer.BadParameter: If ``--precisions``, ``--group-by``,

@@ -1,59 +1,21 @@
 from __future__ import annotations
 
 import pytest
-from typer.testing import CliRunner
 
 from tests.fakes import MemoryDamageMeter
+from tests.unit.adapters.conftest import (
+    DAMAGES,
+    SPECS,
+    install_meter,
+    invoke_scan,
+)
 from vramfit.adapters.inbound import cli_scan
-from vramfit.adapters.inbound.cli import app
 from vramfit.adapters.outbound.scan_checkpoint_json import JsonScanCheckpointFile
 from vramfit.adapters.outbound.sensitivity_map_json import load_sensitivity_map
 from vramfit.domain.model import ScanMeta
-from vramfit.domain.scan import GroupSpec, Measurement, scan_fingerprint
-
-runner = CliRunner()
+from vramfit.domain.scan import Measurement, scan_fingerprint
 
 pytestmark = pytest.mark.unit
-
-SPECS = (
-    GroupSpec(name="model.layers.0", tensors=("model.layers.0.w",), bytes_fp16=1000),
-    GroupSpec(name="model.layers.1", tensors=("model.layers.1.w",), bytes_fp16=2000),
-)
-DAMAGES = {
-    ("model.layers.0", 8): 0.001,
-    ("model.layers.0", 4): 0.01,
-    ("model.layers.1", 8): 0.0,
-    ("model.layers.1", 4): 0.2,
-}
-
-
-def install_meter(monkeypatch, meter) -> dict:
-    captured: dict = {}
-
-    def build(model, calibration, **options):
-        captured.update(options)
-        return meter
-
-    monkeypatch.setattr(cli_scan, "_build_meter", build)
-    return captured
-
-
-def invoke_scan(tmp_path, *extra: str):
-    calibration = tmp_path / "calib.txt"
-    calibration.write_text("calibration text")
-    out = tmp_path / "sensitivity.json"
-    args = [
-        "scan",
-        "test/model",
-        "--calibration",
-        str(calibration),
-        "--out",
-        str(out),
-        "--precisions",
-        "8,4",
-        *extra,
-    ]
-    return runner.invoke(app, args), out
 
 
 def test_scan_writes_a_loadable_map_and_checkpoint(tmp_path, monkeypatch) -> None:
