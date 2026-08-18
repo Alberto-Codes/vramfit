@@ -621,6 +621,79 @@ class TestPackCommand:
         assert log[-1]["stage"] == "quantize"
         assert not out.exists()
 
+    def test_scanned_head_no_output_tensor_exits_1_and_halts_at_quantize(
+        self, tmp_path, monkeypatch, llama_cpp_dir
+    ) -> None:
+        # The base GGUF ties its head, so it declares no
+        # `output.weight`. The recipe's lm_head group still drives
+        # --output-tensor-type, which binds nothing on a zero exit
+        # (#306).
+        model_dir = tmp_path / "model"
+        model_dir.mkdir()
+        recipe = replace(
+            make_recipe(str(model_dir)),
+            assignments=(
+                Assignment(
+                    group="model.embed_tokens", bits=8, bytes=1_000, damage=0.001
+                ),
+                Assignment(group="lm_head", bits=4, bytes=800, damage=0.002),
+                Assignment(group="model.layers.0", bits=4, bytes=500, damage=0.01),
+            ),
+        )
+        path = tmp_path / "recipe.json"
+        save_recipe(recipe, path)
+        patch_packer(
+            monkeypatch,
+            MemoryRecipePacker(
+                base_tensor_names=("token_embd.weight", "blk.0.attn_v.weight")
+            ),
+        )
+        out = tmp_path / "packed.gguf"
+
+        result = runner.invoke(
+            app,
+            ["pack", str(path), "--llama-cpp", str(llama_cpp_dir), "--out", str(out)],
+        )
+
+        assert result.exit_code == 1
+        assert "no target tensor for 1 dedicated flag" in result.output
+        assert "--output-tensor-type" in result.output
+        assert "output.weight" in result.output
+        log = read_run_log(out.with_name(out.stem + ".runlog.jsonl"))
+        assert log[-1]["event"] == "pack_halted"
+        assert log[-1]["stage"] == "quantize"
+        assert not out.exists()
+
+    def test_tied_recipe_no_output_tensor_packs(
+        self, tmp_path, monkeypatch, llama_cpp_dir, recipe_path
+    ) -> None:
+        # The same base GGUF against a recipe with no lm_head group.
+        # The embedding assignment drives the output flag, and
+        # ADR-0012 decision 2 rules that flag a no-op on a tied model.
+        # Refusing here would refuse a pack the record sanctions.
+        patch_packer(
+            monkeypatch,
+            MemoryRecipePacker(
+                base_tensor_names=("token_embd.weight", "blk.0.attn_v.weight")
+            ),
+        )
+        out = tmp_path / "packed.gguf"
+
+        result = runner.invoke(
+            app,
+            [
+                "pack",
+                str(recipe_path),
+                "--llama-cpp",
+                str(llama_cpp_dir),
+                "--out",
+                str(out),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "dedicated flag" not in result.output
+
     def test_layer_no_override_reaches_warns_and_packs(
         self, tmp_path, monkeypatch, llama_cpp_dir, recipe_path
     ) -> None:
@@ -628,10 +701,18 @@ class TestPackCommand:
         # and the file also numbers `blk.52`. That block takes the
         # --pure floor on a zero exit (ADR-0012 decision 3), so the
         # pack warns and continues (#307).
+        #
+        # `token_embd.weight` is here because the recipe carries an
+        # embedding group, and a base GGUF that declares no embedding
+        # tensor refuses it (#306). Every real base file carries one.
         patch_packer(
             monkeypatch,
             MemoryRecipePacker(
-                base_tensor_names=("blk.0.attn_v.weight", "blk.52.attn_v.weight")
+                base_tensor_names=(
+                    "token_embd.weight",
+                    "blk.0.attn_v.weight",
+                    "blk.52.attn_v.weight",
+                )
             ),
         )
         out = tmp_path / "packed.gguf"

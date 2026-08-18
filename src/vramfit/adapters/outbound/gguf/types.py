@@ -24,6 +24,13 @@ quantizer's priority order. One function owns that composition, so
 the pack step and its pre-run match check cannot disagree on which
 overrides exist (#303).
 
+`output_group_type` and `output_tensor_type` split one question in
+two. The second answers what value the output flag carries. The first
+answers whether the recipe scanned a head at all, which is what
+decides whether that flag must reach a tensor in the base GGUF (#306).
+Only a scanned `lm_head` group makes it load-bearing — ADR-0012
+decision 2 rules the tied fallback a no-op.
+
 Examples:
     Map a recipe to quantizer inputs:
 
@@ -328,14 +335,55 @@ def token_embedding_type(recipe: Recipe) -> str | None:
     return None
 
 
+def output_group_type(recipe: Recipe) -> str | None:
+    """Map a scanned ``lm_head`` group's own assignment to a type.
+
+    The scan produces this group on models with an untied head, and
+    the 2026-07-29 amendment gives it its own assignment. So a
+    non-None result means the recipe asks the output head for a type
+    of its own, rather than inheriting the embedding's.
+
+    `output_tensor_type` reads it for the flag's value. The pack step
+    reads it for a second reason: only a scanned head makes the flag
+    load-bearing, so only then must the base GGUF carry
+    ``output.weight`` (#306).
+
+    Args:
+        recipe: The recipe to pack.
+
+    Returns:
+        The tensor-type name the ``lm_head`` group assigns, or None
+        when the recipe carries no such group.
+
+    Raises:
+        PackError: If the head assignment's precision has no table
+            entry.
+
+    Examples:
+        A recipe scanned on a tied model carries no head group:
+
+        ```python
+        assert output_group_type(recipe) is None
+        ```
+    """
+    for assignment in recipe.assignments:
+        if assignment.group == OUTPUT_GROUP:
+            return ggml_type_for(assignment.bits)
+    return None
+
+
 def output_tensor_type(recipe: Recipe) -> str | None:
     """Map the output head's assignment to the output flag.
 
     ``--output-tensor-type`` binds the output tensor before any
     pattern override. An ``lm_head`` group — scanned on models with
-    an untied head — carries its own assignment. Without one, the
-    embedding assignment pins the head, so a tied model's single
-    scanned group governs both tensors (ADR-0012).
+    an untied head — carries its own assignment, which
+    `output_group_type` reads. Without one, the embedding assignment
+    pins the head, so a tied model's single scanned group governs
+    both tensors (ADR-0012).
+
+    This collapses the two sources into the flag's value. A caller
+    that needs to tell them apart reads `output_group_type` instead.
 
     Args:
         recipe: The recipe to pack.
@@ -355,9 +403,9 @@ def output_tensor_type(recipe: Recipe) -> str | None:
         assert output_tensor_type(recipe) == "q4_k"
         ```
     """
-    for assignment in recipe.assignments:
-        if assignment.group == OUTPUT_GROUP:
-            return ggml_type_for(assignment.bits)
+    scanned = output_group_type(recipe)
+    if scanned is not None:
+        return scanned
     return token_embedding_type(recipe)
 
 

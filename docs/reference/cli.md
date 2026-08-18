@@ -341,7 +341,24 @@ a refusal: packing itself works either way.
 
 Every pack holds the recipe's overrides against the base GGUF's
 tensor names before the quantizer runs. An override no tensor matches
-refuses the pack (#303). A layer the file numbers that no override
+refuses the pack (#303).
+
+The same read holds the two dedicated flags against the exact tensors
+they bind. `--token-embedding-type` reaches `token_embd.weight` or
+`per_layer_token_embd.weight`, and `--output-tensor-type` reaches
+`output.weight`. The base GGUF may carry none of a flag's target
+tensors. The flag then binds nothing and the quantizer exits 0, so
+that tensor takes the floor while the record states the recipe's
+type. The command refuses a recipe whose `lm_head` group meets a base
+GGUF with no `output.weight`. It refuses an embedding group the same
+way, against a file carrying neither embedding tensor (#306).
+
+A recipe with no `lm_head` group does not refuse. Its output flag
+carries the embedding's assignment, and ADR-0012 decision 2 rules that
+flag a no-op on a model that ties embeddings. The head is the
+embedding tensor there, which the embedding flag already typed.
+
+A layer the file numbers that no override
 reaches does not refuse: it packs at the base-type floor, which
 ADR-0012 decision 3 describes. The quantizer prints nothing for it,
 so a console warning states the count and names the layers, and the

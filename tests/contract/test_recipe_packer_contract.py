@@ -214,12 +214,13 @@ def _real_packer(  # noqa: PLR0913 - the contract fixture surface: one flag per 
     with_undecodable_excluded_miss: bool = False,
     with_unreached_exclusion: bool = False,
     with_unmatched_override: bool = False,
+    with_tied_base: bool = False,
 ) -> RecipePacker:
-    # These two configure the fake alone. The real adapter reads both
+    # These three configure the fake alone. The real adapter reads both
     # name lists through the module seams the conftest fixtures patch,
     # so a test wanting either refusal re-patches the seam and passes
     # the flag for the other side.
-    del with_unreached_exclusion, with_unmatched_override
+    del with_unreached_exclusion, with_unmatched_override, with_tied_base
 
     # The undecodable-name flags have no fake counterpart. The fake
     # receives structured names and never decodes a stream, so the
@@ -275,6 +276,18 @@ def _real_packer(  # noqa: PLR0913 - the contract fixture surface: one flag per 
 UNREACHED_ENTRY_NAMES = ("blk.1.attn_v.weight",)
 # A base GGUF the sample recipe's layer overrides do not address.
 UNMATCHED_BASE_NAMES = ("token_embd.weight", "blk.9.attn_v.weight")
+# A base GGUF converted from a checkpoint that ties its head, so it
+# declares no `output.weight` (#306). Every override still matches.
+TIED_BASE_NAMES = tuple(
+    name for name in decoder_tensor_names() if name != "output.weight"
+)
+
+
+def _base_names(*, unmatched: bool, tied: bool) -> tuple[str, ...]:
+    """Pick the base GGUF tensor names the fake answers from."""
+    if unmatched:
+        return UNMATCHED_BASE_NAMES
+    return TIED_BASE_NAMES if tied else decoder_tensor_names()
 
 
 def _entry_names(*, with_imatrix: bool, unreached: bool) -> tuple[str, ...] | None:
@@ -297,6 +310,7 @@ def _fake_packer(  # noqa: PLR0913 - mirrors _real_packer's fixture surface
     with_f16_fallback: bool = False,
     with_unreached_exclusion: bool = False,
     with_unmatched_override: bool = False,
+    with_tied_base: bool = False,
 ) -> RecipePacker:
     uncovered = ("token_embd.weight",) if with_uncovered else ()
     if with_excluded_miss:
@@ -313,11 +327,12 @@ def _fake_packer(  # noqa: PLR0913 - mirrors _real_packer's fixture surface
         imatrix_uncovered=uncovered,
         type_fallbacks=fallbacks,
         # The same names `base_gguf_names` serves the real adapter, so
-        # both sides run the #303 refusal and the #307 report over one
-        # tensor list. The matrix's entries are the narrower list the
-        # `imatrix_entry_names` fixture serves, for the same reason.
-        base_tensor_names=(
-            UNMATCHED_BASE_NAMES if with_unmatched_override else decoder_tensor_names()
+        # both sides run the #303 refusal, the #306 refusal, and the
+        # #307 report over one tensor list. The matrix's entries are
+        # the narrower list the `imatrix_entry_names` fixture serves,
+        # for the same reason.
+        base_tensor_names=_base_names(
+            unmatched=with_unmatched_override, tied=with_tied_base
         ),
         imatrix_entry_names=_entry_names(
             with_imatrix=with_imatrix, unreached=with_unreached_exclusion
@@ -592,6 +607,48 @@ class TestRecipePackerContract:
 
         with pytest.raises(PackError, match="carries no tensor for"):
             packer.pack(excluded_pack_recipe())
+
+    def test_pack_refuses_a_scanned_head_the_base_gguf_cannot_honour(
+        self, build, tmp_path, monkeypatch
+    ) -> None:
+        # The sample recipe carries an lm_head group, so the pack
+        # emits --output-tensor-type. This base GGUF ties its head and
+        # declares no `output.weight`, so the flag binds nothing and
+        # the quantizer exits 0 (#306).
+        monkeypatch.setattr(
+            override_match, "base_tensor_names", lambda _: TIED_BASE_NAMES
+        )
+        packer: RecipePacker = build(tmp_path, with_tied_base=True)
+        packer.convert()
+
+        with pytest.raises(PackError) as exc:
+            packer.pack(sample_pack_recipe())
+
+        message = str(exc.value)
+        assert "no target tensor for 1 dedicated flag" in message
+        assert "--output-tensor-type" in message
+        assert '"output.weight"' in message
+        # The remedy is what the operator acts on, so both sides carry
+        # it rather than a bare summary.
+        assert "Check the recipe's embedding and lm_head groups" in message
+
+    def test_pack_accepts_the_tied_fallback_against_the_same_base(
+        self, build, tmp_path, monkeypatch
+    ) -> None:
+        # The exempt half. `stack_pack_recipe` carries an embedding
+        # group and no lm_head, so the output flag takes the
+        # embedding's type. ADR-0012 decision 2 rules that flag a
+        # no-op on a model that ties embeddings, so refusing it would
+        # refuse a pack the record sanctions.
+        monkeypatch.setattr(
+            override_match, "base_tensor_names", lambda _: TIED_BASE_NAMES
+        )
+        packer: RecipePacker = build(tmp_path, with_tied_base=True)
+        packer.convert()
+
+        result = packer.pack(stack_pack_recipe())
+
+        assert result.packed_bytes == PACKED_BYTES
 
     def test_pack_records_the_layers_no_override_reached(self, build, tmp_path) -> None:
         # The sample recipe addresses layers 0 and 1. Both sides read

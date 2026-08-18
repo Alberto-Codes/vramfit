@@ -1,8 +1,9 @@
 r"""Override matching: hold a recipe against the base GGUF's tensor names.
 
-Two checks share one memory-mapped header read. The first refuses an
-override pattern no tensor carries (#303). The second names the layers
-the file carries that no override reaches (#307).
+Three checks share one memory-mapped header read. The first refuses an
+override pattern no tensor carries (#303). The second refuses a
+dedicated flag whose target tensor the file lacks (#306). The third
+names the layers the file carries that no override reaches (#307).
 
 ``llama-quantize`` compiles each ``--tensor-type`` pattern once and
 searches it against every tensor name. A pattern that matches nothing
@@ -42,11 +43,44 @@ nothing:
 
 So a pattern whose only match is a norm, the embedding, or the output
 head passes this check and changes no type. #305 carries that
-residual, and the flags themselves are unchecked (#306).
+residual.
 
 Every pattern the pack step builds is a ``blk\.<n>\.`` or
 ``blk\.<n>\.<class>\.`` prefix over real GGUF tensor classes, so
 none of the three is reachable through this backend today.
+
+`unmatched_flags` closes the third filter from the other side. The two
+dedicated flags carry no pattern. Each binds an exact tensor name, by
+`strcmp` and not by search. The embedding flag accepts either of two
+names and the output flag accepts one. The base GGUF may carry none of
+a flag's targets. That flag then binds nothing, applies nothing,
+prints nothing, and the quantizer exits 0. The tensor takes the
+``--pure`` floor while `PackResult` records the type the recipe asked
+for (#306).
+
+**Only a flag the recipe made load-bearing refuses.** Decision 2 of
+ADR-0012 gives a scanned ``lm_head`` group its own
+``--output-tensor-type`` assignment, and its 2026-08-16 (#307)
+amendment reads that clause as the record's answer to one unscanned
+unit silently taking the floor: prevent it. A base GGUF with no
+``output.weight`` defeats exactly that, so this refuses.
+
+**The tied fallback is exempt, because decision 2 already answers
+it.** Without an ``lm_head`` group the embedding assignment drives the
+output flag, and the decision states that on a model that ties
+embeddings "the flag never applies". That is a ruled outcome and not a
+malformed input, so refusing it would refuse a pack the record
+sanctions. The recorded type also stays true there — a tied model's
+head *is* the embedding tensor, which took ``--token-embedding-type``
+at that same type. `output_group_type` is what separates the two
+cases, and `LlamaCppPacker.pack` reads it for this check alone.
+
+The comparison is the tool's own, and it folds no case.
+``quantize.cpp:332`` lower-cases a ``--tensor-type`` pattern, and
+these two flags reach `tensor_get_category` instead. That delegates to
+two helpers which compare with `std::strcmp`
+(``src/llama-quant.cpp:101-108``). So folding case here would pass a
+file the quantizer never binds.
 
 `floored_layers` runs the same comparison the other way. A layer the
 base GGUF numbers that no override reaches takes the ``--pure`` base
@@ -115,6 +149,22 @@ _READER_FAILURES: Final[tuple[type[Exception], ...]] = (
 # `v.blk.<n>.` does not read as a decoder layer — #236 owns that root
 # question and this report must not pre-empt it.
 _BLK_LAYER: Final[re.Pattern[str]] = re.compile(r"^blk\.(\d+)\.")
+
+# The exact tensor names each dedicated flag binds. `--token-embedding-type`
+# takes either name and `--output-tensor-type` takes the one
+# (`tensor_name_match_token_embd` and `tensor_name_match_output_weight`,
+# llama.cpp src/llama-quant.cpp:101-108). Both flags bind through the
+# tensor's category, so a file carrying no such tensor gives the flag
+# nothing to bind and the early return at :678-683 never fires.
+# Verified at commit `3653e6d6d` (b10326, the pinned instrument) and at
+# `e9fa0781f`, which carry the same two matchers.
+EMBEDDING_FLAG: Final[str] = "--token-embedding-type"
+EMBEDDING_TARGETS: Final[tuple[str, ...]] = (
+    "token_embd.weight",
+    "per_layer_token_embd.weight",
+)
+OUTPUT_FLAG: Final[str] = "--output-tensor-type"
+OUTPUT_TARGETS: Final[tuple[str, ...]] = ("output.weight",)
 
 
 def _load_gguf() -> Any:
@@ -254,6 +304,48 @@ def unmatched_patterns(
     return tuple(unmatched)
 
 
+def unmatched_flags(
+    names: Iterable[str], *, embedding: bool, output: bool
+) -> tuple[tuple[str, tuple[str, ...]], ...]:
+    """Name the dedicated flags whose target tensor the file lacks.
+
+    Each flag binds an exact tensor name, so the comparison is
+    membership and not a search. The embedding flag accepts either of
+    two names, so a file carrying one of them satisfies it. The
+    comparison folds no case, which is what ``llama-quantize`` does
+    with the same strings.
+
+    Args:
+        names: The base GGUF's tensor names.
+        embedding: Whether the pack emits ``--token-embedding-type``.
+        output: Whether the pack emits ``--output-tensor-type`` for a
+            scanned ``lm_head`` group. False for the tied fallback,
+            which ADR-0012 decision 2 already rules a no-op.
+
+    Returns:
+        One ``(flag, targets)`` pair per unmatched flag, embedding
+        first. Empty when every emitted flag has a target in the
+        file.
+
+    Examples:
+        A base GGUF with no untied head cannot honour the flag:
+
+        ```python
+        names = ("token_embd.weight", "blk.0.attn_v.weight")
+        assert unmatched_flags(names, embedding=True, output=True) == (
+            ("--output-tensor-type", ("output.weight",)),
+        )
+        ```
+    """
+    carried = frozenset(names)
+    unmatched: list[tuple[str, tuple[str, ...]]] = []
+    if embedding and carried.isdisjoint(EMBEDDING_TARGETS):
+        unmatched.append((EMBEDDING_FLAG, EMBEDDING_TARGETS))
+    if output and carried.isdisjoint(OUTPUT_TARGETS):
+        unmatched.append((OUTPUT_FLAG, OUTPUT_TARGETS))
+    return tuple(unmatched)
+
+
 def floored_layers(
     overrides: Sequence[TypeOverride], names: Iterable[str]
 ) -> tuple[str, ...]:
@@ -308,32 +400,46 @@ def floored_layers(
 
 
 def check_base_coverage(
-    overrides: Sequence[TypeOverride], base_gguf: Path
+    overrides: Sequence[TypeOverride],
+    base_gguf: Path,
+    *,
+    embedding_flag: bool = False,
+    output_flag: bool = False,
 ) -> tuple[str, ...]:
-    """Hold a recipe's overrides against the base GGUF, both ways.
+    """Hold a recipe's overrides and flags against the base GGUF.
 
-    One header read serves both checks. The refusal runs before the
-    quantizer, so a recipe naming the wrong tensor tree costs no
+    One header read serves all three checks. Both refusals run before
+    the quantizer, so a recipe naming the wrong tensor tree costs no
     quantize run and writes no file.
+
+    The override refusal reports first. A recipe that fails both
+    names the patterns, which is the coarser mismatch and the likelier
+    cause.
 
     Args:
         overrides: The overrides the pack would drive into the
-            quantizer. An empty sequence skips the read, because a
-            recipe driving no override packs everything at the floor
-            on purpose.
+            quantizer. An empty sequence reports no floored layer,
+            because a recipe driving no override packs everything at
+            the floor on purpose.
         base_gguf: The base GGUF the quantizer reads.
+        embedding_flag: Whether the pack emits
+            ``--token-embedding-type``.
+        output_flag: Whether the pack emits ``--output-tensor-type``
+            for a scanned ``lm_head`` group. False for the tied
+            fallback, which ADR-0012 decision 2 rules a no-op.
 
     Returns:
         The layer prefixes the file carries that no override reaches
-        (#307). Empty for an empty override sequence, which skips the
-        read rather than reporting every layer. Such a recipe floors
-        the whole model and #307 does not cover it.
+        (#307). Empty for an empty override sequence, which reports
+        no layer rather than reporting every layer. Such a recipe
+        floors the whole model and #307 does not cover it.
 
     Raises:
-        PackError: If any override matches no tensor (#303), if
-            gguf-py is missing, or if the reader cannot read the base
-            file. `base_tensor_names` wraps every reader failure, so
-            no `OSError` reaches the caller.
+        PackError: If any override matches no tensor (#303), if a
+            dedicated flag has no target tensor (#306), if gguf-py is
+            missing, or if the reader cannot read the base file.
+            `base_tensor_names` wraps every reader failure, so no
+            `OSError` reaches the caller.
 
     Examples:
         A recipe naming a layer the base GGUF does not carry refuses
@@ -343,7 +449,7 @@ def check_base_coverage(
         floored = check_base_coverage(overrides, Path("model-f16.gguf"))
         ```
     """
-    if not overrides:
+    if not overrides and not (embedding_flag or output_flag):
         return ()
     names = base_tensor_names(base_gguf)
     unmatched = unmatched_patterns(overrides, names)
@@ -356,4 +462,21 @@ def check_base_coverage(
             f"drop that part of the recipe without a report (#303). Check the "
             f"recipe's group names against the base GGUF's tensor names"
         )
+    unreached = unmatched_flags(names, embedding=embedding_flag, output=output_flag)
+    if unreached:
+        details = ", ".join(
+            f"{flag} (needs " + " or ".join(f'"{name}"' for name in targets) + ")"
+            for flag, targets in unreached
+        )
+        raise PackError(
+            f"the base GGUF {base_gguf} carries no target tensor for "
+            f"{len(unreached)} dedicated flag"
+            f"{'' if len(unreached) == 1 else 's'}: {details}. The quantizer "
+            f"binds each flag by exact tensor name and exits 0 when the file "
+            f"carries none, so that tensor would take the --pure floor while "
+            f"the record states the recipe's type (#306). Check the recipe's "
+            f"embedding and lm_head groups against the base GGUF"
+        )
+    if not overrides:
+        return ()
     return floored_layers(overrides, names)

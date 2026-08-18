@@ -17,6 +17,7 @@ from vramfit.adapters.outbound.gguf.types import (
     gguf_stack_prefix,
     gguf_tensor_name,
     imatrix_exclusion_names,
+    output_group_type,
     output_tensor_type,
     protection_overrides,
     tensor_overrides,
@@ -172,6 +173,22 @@ def test_output_tensor_type_without_either_group_is_none() -> None:
     recipe = make_recipe(("model.layers.0", 4))
 
     assert output_tensor_type(recipe) is None
+
+
+def test_output_group_type_with_lm_head_group_reads_its_assignment() -> None:
+    recipe = make_recipe(("model.embed_tokens", 8), ("lm_head", 4))
+
+    assert output_group_type(recipe) == "q4_k"
+
+
+def test_output_group_type_without_lm_head_group_is_none() -> None:
+    # The distinction the pack step reads (#306). `output_tensor_type`
+    # returns the embedding's `q8_0` here, and that flag is a ruled
+    # no-op on a tied model — so it must not be held against the file.
+    recipe = make_recipe(("model.embed_tokens", 8), ("model.layers.0", 4))
+
+    assert output_tensor_type(recipe) == "q8_0"
+    assert output_group_type(recipe) is None
 
 
 def test_tensor_overrides_escape_dots_so_layer_1_never_matches_layer_11() -> None:

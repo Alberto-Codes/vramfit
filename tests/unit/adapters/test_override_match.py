@@ -1,4 +1,4 @@
-"""Override matching against the base GGUF's tensor names (#303, #307).
+"""Override matching against the base GGUF's tensor names (#303, #306, #307).
 
 The pure matching runs everywhere. The one function that opens a
 GGUF is exercised through a stub here and against a written file in
@@ -15,6 +15,7 @@ from vramfit.adapters.outbound.gguf import override_match
 from vramfit.adapters.outbound.gguf.override_match import (
     check_base_coverage,
     floored_layers,
+    unmatched_flags,
     unmatched_patterns,
 )
 from vramfit.adapters.outbound.gguf.types import PackError
@@ -85,6 +86,73 @@ class TestUnmatchedPatterns:
         overrides = (TypeOverride("blk[", "q4_k"),)
         with pytest.raises(PackError, match="does not compile"):
             unmatched_patterns(overrides, _DECODER_NAMES)
+
+
+class TestUnmatchedFlags:
+    def test_both_flags_reaching_their_target_report_nothing(self) -> None:
+        assert unmatched_flags(_DECODER_NAMES, embedding=True, output=True) == ()
+
+    def test_no_output_weight_reports_the_output_flag_and_its_target(self) -> None:
+        # The #306 case: a tied base GGUF carries no `output.weight`,
+        # so a scanned lm_head group's flag binds nothing.
+        names = ("token_embd.weight", "blk.0.attn_v.weight")
+        assert unmatched_flags(names, embedding=True, output=True) == (
+            ("--output-tensor-type", ("output.weight",)),
+        )
+
+    def test_no_embedding_tensor_reports_the_embedding_flag(self) -> None:
+        names = ("blk.0.attn_v.weight", "output.weight")
+        assert unmatched_flags(names, embedding=True, output=True) == (
+            (
+                "--token-embedding-type",
+                ("token_embd.weight", "per_layer_token_embd.weight"),
+            ),
+        )
+
+    def test_per_layer_embedding_alone_satisfies_the_embedding_flag(self) -> None:
+        # llama.cpp's `tensor_name_match_token_embd` accepts either
+        # name, so this check must accept either too.
+        names = ("per_layer_token_embd.weight", "output.weight")
+        assert unmatched_flags(names, embedding=True, output=True) == ()
+
+    def test_unemitted_flags_report_nothing_on_an_empty_file(self) -> None:
+        assert unmatched_flags((), embedding=False, output=False) == ()
+
+    def test_an_unemitted_embedding_flag_is_not_held(self) -> None:
+        # A recipe carrying an lm_head group and no embedding group
+        # emits the output flag alone. The embedding tensor is then
+        # nobody's target, so its absence refuses nothing.
+        names = ("output.weight", "blk.0.attn_v.weight")
+        assert unmatched_flags(names, embedding=False, output=True) == ()
+
+    def test_an_unemitted_embedding_flag_leaves_the_output_flag_held(self) -> None:
+        # The same recipe against a tied base GGUF. `--pure` keeps
+        # llama-quant.cpp:452 dead, so the output flag applies nothing
+        # and the head takes the floor.
+        names = ("token_embd.weight", "blk.0.attn_v.weight")
+        assert unmatched_flags(names, embedding=False, output=True) == (
+            ("--output-tensor-type", ("output.weight",)),
+        )
+
+    def test_both_unmatched_report_the_embedding_first(self) -> None:
+        unmatched = unmatched_flags((), embedding=True, output=True)
+        assert [flag for flag, _ in unmatched] == [
+            "--token-embedding-type",
+            "--output-tensor-type",
+        ]
+
+    def test_uppercase_tensor_name_does_not_satisfy_a_flag(self) -> None:
+        # The two flags bind through `std::strcmp`, which folds no
+        # case. `unmatched_patterns` lower-cases because the tool
+        # lower-cases a --tensor-type pattern. Neither applies here.
+        names = ("TOKEN_EMBD.WEIGHT", "OUTPUT.WEIGHT")
+        assert len(unmatched_flags(names, embedding=True, output=True)) == 2
+
+    def test_a_name_carrying_the_target_does_not_satisfy_a_flag(self) -> None:
+        # The comparison is equality and not a search, because the
+        # tool compares whole names here.
+        names = ("blk.0.output.weight", "v.token_embd.weight")
+        assert len(unmatched_flags(names, embedding=True, output=True)) == 2
 
 
 class TestFlooredLayers:
@@ -269,6 +337,107 @@ class TestCheckBaseCoverage:
         )
         with pytest.raises(PackError, match="no tensor for 2 of 2"):
             check_base_coverage(overrides, Path("model-f16.gguf"))
+
+    def test_scanned_head_against_a_tied_base_refuses(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # #306's concrete case. The recipe carries an lm_head group,
+        # so the pack emits --output-tensor-type, and the base GGUF
+        # came from a conversion that tied the head. The flag binds
+        # nothing, the quantizer exits 0, and the head lands at the
+        # --pure floor while PackResult records the recipe's type.
+        monkeypatch.setattr(
+            override_match,
+            "base_tensor_names",
+            lambda _: ("token_embd.weight", "blk.0.attn_v.weight"),
+        )
+        overrides = (TypeOverride(r"blk\.0\.", "q4_k"),)
+        with pytest.raises(PackError) as caught:
+            check_base_coverage(
+                overrides,
+                Path("model-f16.gguf"),
+                embedding_flag=True,
+                output_flag=True,
+            )
+        message = str(caught.value)
+        assert "--output-tensor-type" in message
+        assert "output.weight" in message
+        assert "model-f16.gguf" in message
+        assert "no target tensor for 1 dedicated flag" in message
+        # The flag that does bind must stay out of the message.
+        assert "--token-embedding-type" not in message
+
+    def test_tied_fallback_against_a_tied_base_passes(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The exempt case. Without an lm_head group the embedding
+        # assignment drives the output flag, and ADR-0012 decision 2
+        # states the flag never applies on a model that ties
+        # embeddings. Refusing here would refuse a pack the record
+        # sanctions, which is why `output_flag` is False.
+        monkeypatch.setattr(
+            override_match,
+            "base_tensor_names",
+            lambda _: ("token_embd.weight", "blk.0.attn_v.weight"),
+        )
+        overrides = (TypeOverride(r"blk\.0\.", "q4_k"),)
+        assert (
+            check_base_coverage(
+                overrides,
+                Path("base.gguf"),
+                embedding_flag=True,
+                output_flag=False,
+            )
+            == ()
+        )
+
+    def test_the_pattern_refusal_wins_over_the_flag_refusal(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A recipe can fail both. The pattern mismatch is the coarser
+        # one and the likelier cause, so it reports first.
+        monkeypatch.setattr(
+            override_match, "base_tensor_names", lambda _: ("blk.0.attn_v.weight",)
+        )
+        overrides = (TypeOverride(r"blk\.99\.", "q4_k"),)
+        with pytest.raises(PackError, match="no tensor for 1 of 1"):
+            check_base_coverage(
+                overrides,
+                Path("base.gguf"),
+                embedding_flag=True,
+                output_flag=True,
+            )
+
+    def test_an_emitted_flag_opens_a_base_gguf_no_override_would(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A recipe of embedding and lm_head groups alone drives no
+        # pattern override. The flags still need holding, so the
+        # empty-override shortcut must not skip the read.
+        monkeypatch.setattr(
+            override_match, "base_tensor_names", lambda _: ("blk.0.attn_v.weight",)
+        )
+        with pytest.raises(PackError, match="no target tensor for 2 dedicated flags"):
+            check_base_coverage(
+                (), Path("base.gguf"), embedding_flag=True, output_flag=True
+            )
+
+    def test_an_emitted_flag_alone_reports_no_floored_layer(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The read happens for the flags, and `floored_layers` would
+        # name every layer against an empty override set. #307 does
+        # not cover a recipe that floors the whole model, so the
+        # report stays empty.
+        monkeypatch.setattr(
+            override_match, "base_tensor_names", lambda _: _DECODER_NAMES
+        )
+        assert (
+            check_base_coverage(
+                (), Path("base.gguf"), embedding_flag=True, output_flag=True
+            )
+            == ()
+        )
 
     def test_prefixed_tensor_tree_still_matches(
         self, monkeypatch: pytest.MonkeyPatch
