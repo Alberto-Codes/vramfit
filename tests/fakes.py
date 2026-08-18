@@ -8,6 +8,7 @@ from typing import Literal
 from vramfit.adapters.outbound.gguf.exclusion_match import unmatched_exclusions
 from vramfit.adapters.outbound.gguf.override_match import (
     floored_layers,
+    unmatched_flags,
     unmatched_patterns,
 )
 from vramfit.adapters.outbound.gguf.pack import TypeFallbackError
@@ -17,6 +18,7 @@ from vramfit.adapters.outbound.gguf.types import (
     base_type,
     check_runtime,
     imatrix_exclusion_names,
+    output_group_type,
     output_tensor_type,
     token_embedding_type,
 )
@@ -171,11 +173,13 @@ class MemoryRecipePacker:
     and a mapping failure packs nothing.
 
     ``base_tensor_names`` gives the fake the real adapter's pre-run
-    override refusal (#303) and its uncovered-layer report (#307). It
-    holds the names a base GGUF would declare. None skips both,
-    because most suites configure no model shape and only care about
-    the sizes. ``imatrix_entry_names`` does the same for the
-    exclusion refusal (#309), and None skips it the same way.
+    override refusal (#303), its dedicated-flag refusal (#306), and
+    its uncovered-layer report (#307). It holds the names a base GGUF
+    would declare, so a suite that sets it must name the embedding
+    tensor a real file carries. None skips all three, because most
+    suites configure no model shape and only care about the sizes.
+    ``imatrix_entry_names`` does the same for the exclusion refusal
+    (#309), and None skips it the same way.
     """
 
     base_bytes: int = 1_000
@@ -212,12 +216,12 @@ class MemoryRecipePacker:
         output = output_tensor_type(recipe)
         overrides = all_overrides(recipe)
         layer_gaps: tuple[str, ...] = ()
-        if self.base_tensor_names is not None and overrides:
+        if self.base_tensor_names is not None:
             # Parity with the real adapter's pre-run checks (#303,
-            # #307). A fake left at None keeps the old behavior, so a
-            # suite that does not care about them stays unchanged. An
-            # empty override set skips both, as `check_base_coverage`
-            # does.
+            # #306, #307). A fake left at None keeps the old behavior,
+            # so a suite that does not care about them stays
+            # unchanged. An empty override set reports no floored
+            # layer, as `check_base_coverage` does.
             unmatched = unmatched_patterns(overrides, self.base_tensor_names)
             if unmatched:
                 raise PackError(
@@ -225,7 +229,32 @@ class MemoryRecipePacker:
                     f"of {len(overrides)} override patterns: "
                     + ", ".join(f'"{pattern}"' for pattern in unmatched)
                 )
-            layer_gaps = floored_layers(overrides, self.base_tensor_names)
+            # The tied fallback emits a flag the record already rules
+            # a no-op, so only a scanned lm_head group is held here.
+            unreached = unmatched_flags(
+                self.base_tensor_names,
+                embedding=embedding is not None,
+                output=output_group_type(recipe) is not None,
+            )
+            if unreached:
+                raise PackError(
+                    f"the base GGUF carries no target tensor for "
+                    f"{len(unreached)} dedicated flag"
+                    f"{'' if len(unreached) == 1 else 's'}: "
+                    + ", ".join(
+                        f"{flag} (needs "
+                        + " or ".join(f'"{name}"' for name in targets)
+                        + ")"
+                        for flag, targets in unreached
+                    )
+                    + ". The quantizer binds each flag by exact tensor name "
+                    "and exits 0 when the file carries none, so that tensor "
+                    "would take the --pure floor while the record states the "
+                    "recipe's type (#306). Check the recipe's embedding and "
+                    "lm_head groups against the base GGUF"
+                )
+            if overrides:
+                layer_gaps = floored_layers(overrides, self.base_tensor_names)
         # The real adapter resolves the exclusion names after the
         # base-GGUF checks, so a recipe failing both reports the
         # mapping error (`pack.py`). This block sits here to match.

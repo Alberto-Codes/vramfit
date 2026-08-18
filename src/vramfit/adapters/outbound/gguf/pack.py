@@ -14,7 +14,12 @@ holds every override against the base GGUF's tensor names and refuses
 one that matches nothing
 ([vramfit.adapters.outbound.gguf.override_match][]) — such an
 override changes no type and the quantizer exits 0 without reporting
-it (ADR-0012 as amended 2026-08-16). That one header read also names
+it (ADR-0012 as amended 2026-08-16). That one header read also holds
+the embedding and output-head flags against the exact tensors they
+bind, and refuses a scanned ``lm_head`` group the file carries no
+``output.weight`` for — the head would take the ``--pure`` floor while
+the record states the recipe's type (#306). The tied fallback stays
+exempt, because decision 2 rules that flag a no-op. The read also names
 the layers the file carries that no override reaches. They take the
 ``--pure`` floor, which decision 3 makes the designed outcome, so the
 result records them and the pack continues (#307). The
@@ -77,6 +82,7 @@ from vramfit.adapters.outbound.gguf.types import (
     base_type,
     check_runtime,
     imatrix_exclusion_names,
+    output_group_type,
     output_tensor_type,
     token_embedding_type,
 )
@@ -291,7 +297,11 @@ class LlamaCppPacker:
         resolved pairs become the leading overrides (ADR-0022). Every
         override must match a tensor the base GGUF carries, and one
         that matches nothing refuses before the quantizer runs
-        (#303). The same read names the layers the file carries that
+        (#303). Each dedicated flag must reach its exact target
+        tensor, and a scanned ``lm_head`` group against a file with no
+        ``output.weight`` refuses there too (#306). The tied fallback
+        does not, because decision 2 rules that flag a no-op. The same
+        read names the layers the file carries that
         no override reaches. They take the ``--pure`` floor, so the
         result records them and the pack continues (#307). A
         configured importance
@@ -317,8 +327,9 @@ class LlamaCppPacker:
             PackError: If the recipe targets another runtime
                 (ADR-0013), the base GGUF is missing, the recipe
                 cannot be mapped (ADR-0012), an override matches no
-                tensor in the base GGUF (#303), an exclusion reaches
-                no imatrix row (#309), the quantizer fails, it writes
+                tensor in the base GGUF (#303), a dedicated flag
+                reaches no target tensor there (#306), an exclusion
+                reaches no imatrix row (#309), the quantizer fails, it writes
                 no usable file, or it names an imatrix-miss tensor
                 the reader could not decode (#252).
             TypeFallbackError: If the quantizer's output carries the
@@ -343,10 +354,21 @@ class LlamaCppPacker:
         # type, and the quantizer reports nothing and exits 0. It runs
         # after the table lookups above, so a recipe that fails both
         # still reports the table error first (ADR-0012 as amended
-        # 2026-08-16, #303). The same read names the layers the file
-        # carries that no override reaches, which take the --pure
-        # floor on a zero exit (#307).
-        floored_layers = check_base_coverage(overrides, self.base_gguf)
+        # 2026-08-16, #303). The same read holds the two dedicated
+        # flags against their target tensors (#306), and names the
+        # layers the file carries that no override reaches, which take
+        # the --pure floor on a zero exit (#307).
+        #
+        # Only a scanned lm_head group makes the output flag
+        # load-bearing. Without one the flag carries the embedding's
+        # type, and decision 2 already rules that it never applies on
+        # a tied model — a ruled no-op, not a malformed input.
+        floored_layers = check_base_coverage(
+            overrides,
+            self.base_gguf,
+            embedding_flag=embedding is not None,
+            output_flag=output_group_type(recipe) is not None,
+        )
         excluded: tuple[str, ...] = ()
         if self.imatrix is not None:
             excluded = imatrix_exclusion_names(recipe)

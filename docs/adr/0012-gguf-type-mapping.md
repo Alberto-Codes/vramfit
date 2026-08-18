@@ -113,16 +113,18 @@
     `tensor_allows_quantization` gate at `:675`, and the early
     returns for the embedding and the output head at `:678-683`.
     Re-deriving any of them would make the backend a second source
-    of truth for upstream (#190). #305 carries the residual, and
-    #306 carries the two flags, which no check holds against the
-    file at all. No pattern this backend builds reaches any of the
-    three today.
+    of truth for upstream (#190). #305 carries the residual. The two
+    flags gained their own check on 2026-08-17, in the #306
+    amendment below. No pattern this backend builds reaches any of
+    the three today.
 
     The read needs gguf-py, so every pack carrying at least one
-    override requires it. A recipe yielding no override skips the
-    read. An `--imatrix` pack already required gguf-py (ADR-0026,
-    the #198 amendment), and #310 carries giving pack a thin extra
-    that does not also install torch.
+    override requires it. A recipe yielding no override skipped the
+    read until 2026-08-17. The #306 amendment below widened that:
+    such a recipe now reads whenever it emits a dedicated flag. An
+    `--imatrix` pack already required gguf-py (ADR-0026, the #198
+    amendment), and #310 carries giving pack a thin extra that does
+    not also install torch.
 
     The refusal reports halt stage `quantize`. Decision 5 lists
     `convert`, `quantize`, and `size_check`, and `convert` does run
@@ -190,6 +192,72 @@
     `v.blk.<n>.` reports nothing here. #236 still owns the root
     question, and this report does not pre-empt it.
 
+- **Amendment (2026-08-17, issue #306):** decision 2 gains a second
+  pre-run check. A dedicated flag must reach the tensor it binds. The
+  backend refuses a scanned `lm_head` group when the base GGUF
+  declares no `output.weight`, and an embedding group when it declares
+  neither `token_embd.weight` nor `per_layer_token_embd.weight`. The
+  refusal names each flag and its targets, on the #303 read. A recipe
+  that drives no override reads the file for the flags alone, which
+  widens the #303 amendment's gguf-py clause above.
+
+    The two flags carry no pattern. Each binds an exact tensor name
+    through `tensor_get_category`, which delegates to two helpers that
+    compare with `std::strcmp` (`src/llama-quant.cpp:101-108`). The
+    embedding flag accepts either of two names and the output flag
+    accepts one. The base GGUF may carry none of a flag's targets.
+    That flag then binds nothing, so the early return at `:678-683`
+    never fires. The quantizer applies
+    nothing, prints nothing, and exits 0. The tensor takes the
+    `--pure` floor while `PackResult` records the recipe's type as
+    fact. Checked at commit `3653e6d6d` (b10326, the pinned
+    instrument) and at `e9fa0781f`. This closes the half the #303
+    amendment left open, where it named #306 beside #305.
+
+    **The refusal depends on `--pure`, and decision 3 supplies it.**
+    `llama_tensor_get_type_impl` carries a tied-embedding branch at
+    `:452`. It applies `--output-tensor-type` to `token_embd.weight`
+    whenever `has_tied_embeddings` holds, which is the exact condition
+    this refusal fires on. That branch is dead here. `:708` calls the
+    function only under `if (!manual && !params->pure)`, and
+    `LlamaCppPacker.pack` passes `--pure` on every command. So the
+    flag really does apply nothing. A future pack that drops `--pure`
+    makes `:452` live and this refusal wrong. Decision 3 makes
+    `--pure` the mechanism that keeps a packed file recipe-driven, so
+    the dependency is on a ruled property rather than an accident.
+
+    **The tied fallback is exempt, and that is this amendment's
+    load-bearing clause.** Decision 2 states that without an `lm_head`
+    group the embedding assignment drives the output flag, and that on
+    a model that ties embeddings "the flag never applies". That is a
+    ruled outcome, so refusing it would refuse a pack this record
+    sanctions. It would also refuse every tied model, because such a
+    conversion writes no `output.weight` at all. The recorded type
+    stays true there: a tied model's head *is* the embedding tensor,
+    which took `--token-embedding-type` at that same type. So the
+    refusal reads the recipe's groups and never the flag's value.
+
+    **The exemption's test is narrower than its reason, and it still
+    holds.** `output_group_type` returns None when the scan measured
+    no head group, which is not the same proposition as "the model
+    ties embeddings". The two coincide on every reachable pack. On the
+    exempt path `output_tensor_type` is non-None only when
+    `token_embedding_type` is, so the pack always emits
+    `--token-embedding-type` beside the output flag. The early return
+    at `:678` then fires for `token_embd` before the output flag is
+    read. An untied file reached by the same path carries
+    `output.weight`, so the flag binds and nothing refuses.
+
+    **What makes the scanned case different.** The 2026-08-16 (#307)
+    amendment reads decision 2's untied-head clause as the record's
+    answer to one unscanned unit silently taking the floor: prevent
+    it. A base GGUF with no `output.weight` defeats exactly that
+    prevention, and no clause addresses the pairing. So it is a
+    malformed input rather than a ruled outcome, which is the line
+    #309 drew for the exclusion refusal.
+
+    The refusal reports halt stage `quantize`, matching #303. #275
+    still owns whether a zero-exit refusal earns its own stage.
 ## Context
 
 ADR-0010 routes sub-4-bit serving through llama.cpp and leaves one
