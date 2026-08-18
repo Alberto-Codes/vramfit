@@ -145,6 +145,40 @@ Maps priced under different methods do not compare. `scan.within_group`
 is one token for the whole map, so a `gguf-ref` map and a `kquant-imx`
 map cannot merge.
 
+## Pricing a subset of the groups
+
+`--group-by stack` returns 210 groups on Nemotron 3.5 Lightning
+30B-A3B. The 46 routed-expert stacks are the unit `vramfit pack`
+addresses, so a campaign that needs those alone pays for 420 cells
+without a filter. `--groups` names the subset:
+
+```bash
+uv run vramfit scan ./model --calibration calibration.txt \
+  --group-by stack \
+  --groups blk.1.ffn_up_exps,blk.1.ffn_down_exps \
+  --precisions 4,2 \
+  --within-group gguf \
+  --out sensitivity-stacks.json
+```
+
+The names must be keys `--group-by` produces. A name that matches no
+discovered group halts the run, after the model loads and before any
+cell measures. The halt names every unmatched name at once, so one
+run reports every typo. Read the group names off a full map, or off
+`--group-by tensor` on a small model of the same architecture.
+
+The map then carries the selected groups alone. A solver reads it the
+same way — it prices what the map holds.
+
+The selection stays out of the fingerprint, because a group subset is
+not provenance. So a narrow run and a wide run share one checkpoint on
+purpose. Two consequences follow, and both save measurement time:
+
+- A narrowed run reuses a wide run's cells for the groups it selects.
+  It measures nothing that the checkpoint already holds.
+- The cells outside the selection stay in the checkpoint. A later,
+  wider run picks them up instead of re-measuring them.
+
 ## Scanning a model that doesn't fit in VRAM
 
 Models larger than the card scan through accelerate's weights map

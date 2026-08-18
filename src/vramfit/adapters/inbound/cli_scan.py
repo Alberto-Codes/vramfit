@@ -14,6 +14,10 @@ the finished measurements to the pure assembly logic in
 ``kquant-imx`` token and the resolved imatrix path in the map, the
 fingerprint, and the run log — relative spellings must not split
 or mix checkpoint identities.
+``--groups`` restricts a run to named groups, so a caller that wants
+46 of 210 groups pays for 46 (#282). Only the list shape checks here.
+`resolve_grid` matches each name against the loaded meter's groups,
+after the model loads and before any cell measures.
 Every failure — a missing extra, a bad destination, an unstable
 measurement, a checkpoint write — halts with a clean ``error:`` line.
 The checkpoint keeps every finished cell. The run log records the
@@ -48,10 +52,10 @@ from vramfit.adapters.inbound.cli_options import (
 from vramfit.adapters.inbound.scan_events import (
     SafeRunLog,
     measure_cells,
+    resolve_grid,
     rss_hwm_gb,
     start_run,
 )
-from vramfit.adapters.outbound.json_common import ArtifactError
 from vramfit.adapters.outbound.run_log_jsonl import JsonlRunLogFile
 from vramfit.adapters.outbound.scan_checkpoint_json import JsonScanCheckpointFile
 from vramfit.adapters.outbound.sensitivity_map_json import JsonSensitivityMapFile
@@ -65,7 +69,6 @@ from vramfit.domain.scan import (
     KQUANT_PRECISIONS,
     SCAN_METHOD,
     assemble_map,
-    plan_measurements,
     scan_fingerprint,
 )
 from vramfit.ports.outbound import (
@@ -220,6 +223,38 @@ def _parse_precisions(text: str) -> tuple[int, ...]:
     return precisions
 
 
+def _parse_groups(text: str | None) -> tuple[str, ...]:
+    """Parse the ``--groups`` CSV into a validated tuple.
+
+    Only the list shape is checkable here. Whether each name matches a
+    discovered group needs the loaded meter, so `select_groups` decides
+    that after the model loads and before any cell measures.
+
+    Args:
+        text: Comma-separated group names, or None for every group.
+
+    Returns:
+        The requested names, or an empty tuple for every group.
+
+    Raises:
+        typer.BadParameter: If an entry is blank or a name repeats.
+            Each is a typo, and a typo must not survive the model load.
+    """
+    if text is None:
+        return ()
+    names = tuple(part.strip() for part in text.split(","))
+    if any(not name for name in names):
+        raise typer.BadParameter(
+            f'--groups: an entry is empty, got "{text}" — '
+            "omit the flag to scan every group"
+        )
+    repeated = sorted({name for name in names if names.count(name) > 1})
+    if repeated:
+        listed = ", ".join(f'"{name}"' for name in repeated)
+        raise typer.BadParameter(f"--groups: {listed} repeats")
+    return names
+
+
 def _parse_within_group(
     text: str, precisions: tuple[int, ...], imatrix: Path | None
 ) -> tuple[Literal["rtn", "kquant", "gguf"], str]:
@@ -278,6 +313,14 @@ def scan(
     group_by: Annotated[
         str, typer.Option(help="Grouping granularity: layer, tensor, or stack.")
     ] = "layer",
+    groups: Annotated[
+        str | None,
+        typer.Option(
+            help="Restrict the run to these group names (CSV). Names "
+            "must be keys --group-by produces. Default: every "
+            "discovered group."
+        ),
+    ] = None,
     max_tokens: Annotated[
         int, typer.Option(min=2, help="Calibration token budget.")
     ] = 131072,
@@ -355,9 +398,19 @@ def scan(
     pack addresses (#161): it collapses a mixture-of-experts layer's
     routed experts into one group per projection, and keeps every
     other weight separate. On a dense model it matches ``tensor``.
+    ``--groups`` restricts the run to named groups, so a caller that
+    wants 46 of 210 groups pays for 46. The names must be keys
+    ``--group-by`` produces. A name matching no discovered group halts
+    the run, after the model loads and before any cell measures. The
+    map then carries the selected groups alone.
+    The selection stays out of the fingerprint, so a narrow run and a
+    wide run share one checkpoint. A narrowed run reuses the wide
+    run's cells for the groups it selects, and it leaves the rest in
+    the checkpoint for a later run to reuse.
 
     Raises:
         typer.BadParameter: If ``--precisions``, ``--group-by``,
+            ``--groups``,
             ``--within-group``, or ``--gpu-memory`` is malformed,
             ``--gpu-memory`` is given without ``--device auto``,
             ``--within-group kquant`` or ``gguf`` is combined with
@@ -366,7 +419,8 @@ def scan(
             ``--within-group kquant`` or is not a file, or the
             ``--out`` or ``--runlog`` directory does not exist.
         typer.Exit: With code 1 when the scan extra is missing, the
-            model or calibration cannot load, the checkpoint belongs to
+            model or calibration cannot load, a ``--groups`` name
+            matches no discovered group, the checkpoint belongs to
             a different scan, a measurement fails, a checkpoint write
             fails, or the map cannot be written.
 
@@ -378,6 +432,7 @@ def scan(
         ```
     """
     parsed_precisions = _parse_precisions(precisions)
+    parsed_groups = _parse_groups(groups)
     if group_by not in ("layer", "tensor", "stack"):
         raise typer.BadParameter(
             f'--group-by: expected "layer", "tensor", or "stack", got "{group_by}"'
@@ -408,6 +463,7 @@ def scan(
             "gpu_memory_bytes": gpu_memory_bytes,
             "within_group": method_token,
             "imatrix": None if imatrix is None else str(imatrix),
+            "groups": list(parsed_groups) or None,
         },
         lambda: _build_meter(
             model,
@@ -444,32 +500,16 @@ def scan(
         typer.echo(f"discarded checkpoint {checkpoint_path}")
     store: ScanCheckpointStore = JsonScanCheckpointFile(checkpoint_path)
 
-    specs = meter.groups()
-    try:
-        done = store.load(fingerprint)
-        todo = plan_measurements(
-            specs, parsed_precisions, [(m.group, m.bits) for m in done]
-        )
-    except (ArtifactError, ValueError, OSError) as exc:
-        typer.echo(
-            f"error: {checkpoint_path}: {exc} — pass --no-resume to discard it",
-            err=True,
-        )
-        run_log.emit(
-            "scan_halted",
-            {
-                "stage": "checkpoint_load",
-                "error": str(exc),
-                "cells_kept": None,
-                "rss_hwm_gb": rss_hwm_gb(),
-            },
-        )
-        raise typer.Exit(code=1) from exc
-
-    if done:
-        typer.echo(f"resuming: {len(done)} of {len(done) + len(todo)} cells done")
-        run_log.emit("resume_loaded", {"cells": len(done), "remaining": len(todo)})
-    measurements = measure_cells(meter, store, fingerprint, list(done), todo, run_log)
+    specs, done, todo = resolve_grid(
+        meter,
+        store,
+        run_log,
+        fingerprint=fingerprint,
+        precisions=parsed_precisions,
+        groups=parsed_groups,
+        checkpoint_path=checkpoint_path,
+    )
+    measurements = measure_cells(meter, store, fingerprint, done, todo, run_log)
 
     sink: SensitivityMapSink = JsonSensitivityMapFile(out)
     try:
