@@ -14,6 +14,7 @@ from vramfit.domain.scan import (
     matches_a_layer,
     plan_measurements,
     scan_fingerprint,
+    select_groups,
     summarize_imatrix_counts,
 )
 
@@ -62,6 +63,46 @@ class TestSpecAndMeasurementInvariants:
 
     def test_measurement_with_zero_damage_is_valid(self) -> None:
         assert Measurement(group="g", bits=8, damage=0.0).damage == 0.0
+
+
+class TestSelectGroups:
+    def test_empty_selection_keeps_every_group(self) -> None:
+        assert select_groups(SPECS, ()) == SPECS
+
+    def test_named_group_is_the_only_one_kept(self) -> None:
+        kept = select_groups(SPECS, ["g1"])
+
+        assert tuple(spec.name for spec in kept) == ("g1",)
+
+    def test_selection_follows_discovery_order_not_the_caller_order(self) -> None:
+        kept = select_groups(SPECS, ["g1", "g0"])
+
+        assert tuple(spec.name for spec in kept) == ("g0", "g1")
+
+    def test_unknown_name_raises_naming_it(self) -> None:
+        with pytest.raises(ValueError, match='"g9"'):
+            select_groups(SPECS, ["g9"])
+
+    def test_every_unknown_name_is_named_in_one_message(self) -> None:
+        with pytest.raises(ValueError) as caught:
+            select_groups(SPECS, ["g8", "g9"])
+
+        assert '"g8"' in str(caught.value)
+        assert '"g9"' in str(caught.value)
+
+    def test_one_unknown_name_beside_a_known_one_raises(self) -> None:
+        with pytest.raises(ValueError, match='"g9"'):
+            select_groups(SPECS, ["g0", "g9"])
+
+    def test_selected_specs_ride_through_unchanged(self) -> None:
+        kept = select_groups(SPECS, ["g1"])
+
+        assert kept[0] is SPECS[1]
+
+    def test_selection_plans_only_the_selected_cells(self) -> None:
+        kept = select_groups(SPECS, ["g1"])
+
+        assert plan_measurements(kept, (8, 4)) == (("g1", 8), ("g1", 4))
 
 
 class TestPlanMeasurements:

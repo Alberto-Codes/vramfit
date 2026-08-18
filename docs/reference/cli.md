@@ -136,6 +136,9 @@ vramfit scan MODEL
                          2-bit floor, default per ADR-0010
                          [default: 8,4,3,2]
   --group-by TEXT        Grouping granularity (layer | tensor | stack)  [default: layer]
+  --groups TEXT          Restrict the run to these group names (CSV).
+                         Names must be keys --group-by produces
+                         [default: every discovered group]
   --max-tokens INT       Calibration token budget  [default: 131072]
   --device TEXT          Device map: auto | cpu | cuda  [default: auto]
   --trust-remote-code    Allow model repos with custom code (the
@@ -176,6 +179,27 @@ The fingerprint identifies provenance, not content: do not swap weights
 or calibration text under an unchanged path between resumes.
 `--no-resume` deletes the checkpoint first and says so.
 
+`--groups` restricts the run to named groups. A caller that wants 46 of
+210 groups pays for 46. The map then carries the selected groups alone.
+A name that matches no discovered group halts the run. The halt runs
+after the model loads and before any cell measures. It names every
+unmatched name at once and records the stage `group_select`.
+
+The selection stays out of the fingerprint, because a group subset is
+not provenance. So a narrow run and a wide run share one checkpoint on
+purpose. A narrowed run reuses the wide run's cells for the groups it
+selects. The cells in deselected groups stay in the file, and the run
+reports how many it ignored.
+
+The checkpoint still validates against the whole model first. A cell
+outside the full grid, or a cell that repeats, halts the run whatever
+the selection. A selection narrows what a run measures and never what
+it checks.
+
+A narrowed map prices a subset of the model. `vramfit plan` sums the
+budget over the groups the map holds and reads no other size source.
+So a narrowed map is not a whole-model planning input.
+
 Groups that `auto` sharding offloads to host RAM measure through
 accelerate's weights map (ADR-0015) — `meter_built` reports the count
 as `offloaded_groups`. The scan refuses a model whose weights fall
@@ -202,10 +226,10 @@ without a resolved expert stack records none — see the
 
 Exit codes: 1 when the scan extra is missing, the model or calibration
 cannot load, sharding offloaded a quantizable group beyond host RAM,
-the checkpoint
+a `--groups` name matches no discovered group, the checkpoint
 belongs to a different scan, a measurement fails (the checkpoint keeps
 completed cells), a checkpoint write fails, or the map cannot be
-written. Exit 2 on malformed `--precisions`, `--group-by`,
+written. Exit 2 on malformed `--precisions`, `--group-by`, `--groups`,
 `--within-group`, or `--gpu-memory`, a `--gpu-memory` without
 `--device auto`, a `--within-group kquant` or `gguf` combined with
 precisions the port does not cover, an `--imatrix` without

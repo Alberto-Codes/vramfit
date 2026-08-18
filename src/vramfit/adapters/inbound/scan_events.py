@@ -8,6 +8,12 @@ high-water mark (ADR-0011). ``meter_built`` also records the
 imatrix coverage split for assisted meters (ADR-0020). The
 validate command reuses `start_run` with its own event prefix.
 
+`resolve_grid` sits between the two: it applies the ``--groups``
+selection (#282), loads the checkpoint, and plans the remaining
+cells. It validates the whole checkpoint against the whole model
+first, so a selection never hides a foreign or a damaged file. It
+then drops the cells in deselected groups and reports the count.
+
 Examples:
     Measure the remaining cells of a scan:
 
@@ -25,11 +31,18 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable, Mapping
+from pathlib import Path
 
 import typer
 
 from vramfit.adapters.inbound.run_log import SafeRunLog, rss_hwm_gb
-from vramfit.domain.scan import Measurement
+from vramfit.adapters.outbound.json_common import ArtifactError
+from vramfit.domain.scan import (
+    GroupSpec,
+    Measurement,
+    plan_measurements,
+    select_groups,
+)
 from vramfit.ports.outbound import DamageMeter, ScanCheckpointStore
 
 
@@ -137,6 +150,101 @@ def _imatrix_uncovered(meter: DamageMeter) -> list[str] | None:
     """
     uncovered = getattr(meter, "imatrix_uncovered", None)
     return None if uncovered is None else list(uncovered)
+
+
+def resolve_grid(
+    meter: DamageMeter,
+    store: ScanCheckpointStore,
+    run_log: SafeRunLog,
+    *,
+    fingerprint: str,
+    precisions: tuple[int, ...],
+    groups: tuple[str, ...],
+    checkpoint_path: Path,
+) -> tuple[tuple[GroupSpec, ...], list[Measurement], tuple[tuple[str, int], ...]]:
+    """Select the groups, load the checkpoint, and plan the work.
+
+    A ``--groups`` selection stays out of the fingerprint, so the
+    checkpoint may hold cells this run does not measure. Only a cell in
+    a discovered but deselected group drops.
+
+    The checkpoint validates against the whole model first, before any
+    narrowing. `plan_measurements` refuses a cell outside the full grid
+    and a cell that repeats. Both mean a foreign or damaged checkpoint,
+    and a selection must never hide either. Narrowing first would
+    discard that guard on every run.
+
+    Args:
+        meter: The loaded meter, which discovers the groups.
+        store: The checkpoint store to resume from.
+        run_log: Sink for ``resume_loaded`` and ``scan_halted`` events.
+        fingerprint: The scan's identity string.
+        precisions: Candidate precisions, in measurement order.
+        groups: Requested group names, or empty for every group.
+        checkpoint_path: The checkpoint's path, named in the halt
+            message.
+
+    Returns:
+        The selected specs, the reusable measurements, and the
+        remaining cells in measurement order.
+
+    Raises:
+        typer.Exit: With code 1 when a requested group name matches no
+            discovered group, or the checkpoint cannot load, or it
+            belongs to a different scan.
+    """
+    discovered = meter.groups()
+    try:
+        specs = select_groups(discovered, groups)
+    except ValueError as exc:
+        typer.echo(f"error: --groups: {exc}", err=True)
+        run_log.emit(
+            "scan_halted",
+            {
+                "stage": "group_select",
+                "error": str(exc),
+                "cells_kept": None,
+                "rss_hwm_gb": rss_hwm_gb(),
+            },
+        )
+        raise typer.Exit(code=1) from exc
+
+    try:
+        loaded = store.load(fingerprint)
+        # Validate the whole file against the whole model before any
+        # narrowing, and discard the plan. This is the foreign-cell and
+        # repeated-cell guard, and a selection must not weaken it.
+        plan_measurements(discovered, precisions, [(m.group, m.bits) for m in loaded])
+        deselected = {spec.name for spec in discovered} - {spec.name for spec in specs}
+        done = [m for m in loaded if m.group not in deselected]
+        todo = plan_measurements(specs, precisions, [(m.group, m.bits) for m in done])
+    except (ArtifactError, ValueError, OSError) as exc:
+        typer.echo(
+            f"error: {checkpoint_path}: {exc} — pass --no-resume to discard it",
+            err=True,
+        )
+        run_log.emit(
+            "scan_halted",
+            {
+                "stage": "checkpoint_load",
+                "error": str(exc),
+                "cells_kept": None,
+                "rss_hwm_gb": rss_hwm_gb(),
+            },
+        )
+        raise typer.Exit(code=1) from exc
+
+    dropped = len(loaded) - len(done)
+    if dropped:
+        typer.echo(f"ignoring {dropped} checkpoint cells outside the selection")
+    if done:
+        typer.echo(f"resuming: {len(done)} of {len(done) + len(todo)} cells done")
+    if done or dropped:
+        run_log.emit(
+            "resume_loaded",
+            {"cells": len(done), "remaining": len(todo), "dropped": dropped},
+        )
+    return specs, done, todo
 
 
 def measure_cells(

@@ -145,6 +145,58 @@ Maps priced under different methods do not compare. `scan.within_group`
 is one token for the whole map, so a `gguf-ref` map and a `kquant-imx`
 map cannot merge.
 
+## Pricing a subset of the groups
+
+`--group-by stack` returns 210 groups on Nemotron 3.5 Lightning
+30B-A3B. The 46 routed-expert stacks are the unit `vramfit pack`
+addresses, so a campaign that needs those alone pays for 420 cells
+without a filter. `--groups` names the subset:
+
+```bash
+uv run vramfit scan ./model --calibration calibration.txt \
+  --group-by stack \
+  --groups backbone.layers.1.mixer.experts.up_proj,backbone.layers.1.mixer.experts.down_proj \
+  --precisions 4,2 \
+  --within-group gguf \
+  --out sensitivity-stacks.json
+```
+
+The names must be keys `--group-by` produces, which are the checkpoint's
+parameter names. They are not the GGUF tensor names a recipe packs
+through — `group_key` collapses a routed-expert index and drops the
+`.weight` suffix, so a stack reads
+`backbone.layers.1.mixer.experts.up_proj` and never `blk.1.ffn_up_exps`.
+
+A name that matches no discovered group halts the run, after the model
+loads and before any cell measures. The halt names every unmatched name
+at once, so one run reports every typo. Read the group names from a full
+map's `groups[].name`, or from a `--group-by stack` run of a small model
+in the same family.
+
+!!! warning "A narrowed map is not a whole-model planning input"
+
+    The map carries the selected groups alone. `vramfit plan` sums its
+    budget over the groups the map holds, and it reads no other size
+    source. So a 46-of-210 map prices 46 groups and counts the other
+    164 as zero bytes. The recipe then reports a fit the packed model
+    does not honor. Use a narrowed map to compare groups against each
+    other, not to plan a whole model.
+
+The selection stays out of the fingerprint, because a group subset is
+not provenance. So a narrow run and a wide run share one checkpoint on
+purpose. Two consequences follow, and both save measurement time:
+
+- A narrowed run reuses a wide run's cells for the groups it selects.
+  It measures nothing that the checkpoint already holds.
+- The cells in deselected groups stay in the checkpoint. A later, wider
+  run reuses them instead of measuring them again. The narrowed run
+  reports how many cells it ignored.
+
+A selection narrows what a run measures and never what it checks. The
+checkpoint validates against the whole model before any narrowing. A
+cell outside the full grid, or a cell that repeats, halts the run
+whatever the selection names.
+
 ## Scanning a model that doesn't fit in VRAM
 
 Models larger than the card scan through accelerate's weights map

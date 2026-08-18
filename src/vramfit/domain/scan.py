@@ -6,6 +6,9 @@ under each granularity (`group_key`, the `layer`/`tensor`/`stack`
 naming rule that the torch meter applies but does not own), which
 group names are routed-expert stacks (`is_expert_stack`, the
 predicate the solver prices through — ADR-0028),
+which discovered groups a caller's selection keeps
+(`select_groups`, the subset rule that keeps a narrowed run out of
+the fingerprint),
 which (group x precision) cells still
 need measurement, how a finished pile of measurements becomes a
 `SensitivityMap` — per-tensor sizes and imatrix count summaries
@@ -332,6 +335,61 @@ def scan_fingerprint(model_id: str, meta: ScanMeta) -> str:
     )
     escaped = (f.replace("\\", "\\\\").replace("|", "\\|") for f in fields)
     return "|".join(escaped)
+
+
+def select_groups(
+    specs: Iterable[GroupSpec], names: Collection[str]
+) -> tuple[GroupSpec, ...]:
+    """Restrict discovered groups to a caller's named subset.
+
+    The result follows discovery order, never the caller's list, so a
+    narrowed scan measures its cells in the order a full scan would.
+    An empty ``names`` keeps every spec — a caller that names no group
+    wants the whole model.
+
+    The selection never reaches the fingerprint. Two scans that differ
+    only in selection share one checkpoint on purpose, so a narrow run
+    and a wide run reuse each other's finished cells.
+
+    Args:
+        specs: Discovered layer groups, in discovery order.
+        names: Group names to keep. Empty keeps every group.
+
+    Returns:
+        The selected specs, in discovery order.
+
+    Raises:
+        ValueError: If a name matches no discovered group. The message
+            lists every unmatched name, so one run reports them all
+            instead of one per attempt.
+
+    Examples:
+        Keep one group of two:
+
+        ```python
+        from vramfit.domain.scan import GroupSpec, select_groups
+
+        specs = (
+            GroupSpec(name="g0", tensors=("w",), bytes_fp16=8),
+            GroupSpec(name="g1", tensors=("w",), bytes_fp16=8),
+        )
+        kept = select_groups(specs, ["g1"])
+        assert tuple(spec.name for spec in kept) == ("g1",)
+        ```
+    """
+    spec_list = tuple(specs)
+    if not names:
+        return spec_list
+    wanted = set(names)
+    discovered = {spec.name for spec in spec_list}
+    unmatched = sorted(wanted - discovered)
+    if unmatched:
+        listed = ", ".join(f'"{name}"' for name in unmatched)
+        raise ValueError(
+            f"no discovered group matches {listed} — the model reports "
+            f"{len(discovered)} groups at this granularity"
+        )
+    return tuple(spec for spec in spec_list if spec.name in wanted)
 
 
 def plan_measurements(
