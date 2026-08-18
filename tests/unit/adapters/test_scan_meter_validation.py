@@ -12,12 +12,16 @@ extra is absent (ADR-0009).
 
 from __future__ import annotations
 
+from pathlib import Path
+from typing import cast
+
 import pytest
 
 torch = pytest.importorskip("torch", reason="scan extra not installed")
 pytest.importorskip("transformers", reason="scan extra not installed")
 
 from vramfit.adapters.outbound.scan.meter import TorchDamageMeter
+from vramfit.adapters.outbound.scan.within_group import WithinGroupMethod
 
 pytestmark = pytest.mark.unit
 
@@ -49,3 +53,51 @@ class TestValidationOrder:
     def test_measure_recipe_still_plans_shards_for_valid_bits(self) -> None:
         with pytest.raises(ValueError, match="not a local safetensors"):
             build_meter().measure_recipe({"model.layers.0": 4, "model.layers.1": 4})
+
+
+class TestWithinGroupDispatch:
+    """The meter routes each method and names what refused.
+
+    A scan spends hours over hundreds of cells, so a refusal must
+    name the tensor that stopped it, not the type alone.
+    """
+
+    def _meter(self, method: WithinGroupMethod) -> TorchDamageMeter:
+        meter = build_meter()
+        meter._within_group = method
+        meter._imatrix_weights = {}
+        meter._block_size = 32
+        return meter
+
+    def test_gguf_prices_a_routed_expert_row(self) -> None:
+        # 2688 refuses every 256-element super-block type. The gguf
+        # method's blocks of 64 and 32 both divide it (#159).
+        torch.manual_seed(0)
+        param = torch.randn(2, 2688)
+
+        result = self._meter("gguf")._quantize_dequantize(param, 2, UP)
+
+        assert result.shape == param.shape
+
+    def test_kquant_refusal_names_the_parameter(self) -> None:
+        param = torch.randn(2, 2688)
+
+        with pytest.raises(ValueError, match="does not divide the row length") as exc:
+            self._meter("kquant")._quantize_dequantize(param, 2, UP)
+
+        assert str(exc.value).startswith(f"{UP}: ")
+
+    def test_an_unknown_method_refuses_before_the_model_loads(self) -> None:
+        # The guard is the first statement in __init__, so neither
+        # the calibration file nor the model is ever read. A silent
+        # RTN fallback under a mistyped method would corrupt every
+        # damage the meter measures.
+        unknown = cast(WithinGroupMethod, "gptq")
+
+        with pytest.raises(ValueError, match="within_group must be one of"):
+            TorchDamageMeter(
+                "hub/never-local",
+                Path("never-read.txt"),
+                max_tokens=8,
+                within_group=unknown,
+            )

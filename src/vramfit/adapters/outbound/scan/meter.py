@@ -14,6 +14,11 @@ path (ADR-0026, the 2026-08-13 #200 amendment). Slice cells rank and
 weight in the scan frame and never set a recipe's price, so the path
 sits on the adapter only. The `DamageMeter` port does not carry it.
 
+The quantizer that perturbs a cell lives in
+[vramfit.adapters.outbound.scan.within_group][]. The meter holds the
+method name and that module turns it into a round trip, so a new
+method never touches the measurement loop.
+
 Only floating-point tensors with 2+ dimensions join layer groups —
 norms and biases stay at reference precision and are not scanned.
 Tied names that alias one storage collapse to one group.
@@ -85,22 +90,19 @@ from vramfit.adapters.outbound.scan.imatrix import (
     resolve_imatrix_counts,
 )
 from vramfit.adapters.outbound.scan.kl import mean_damage, reference_pass
-from vramfit.adapters.outbound.scan.kquant import kquant_quantize_dequantize
-from vramfit.adapters.outbound.scan.kquant_assisted import (
-    kquant_assisted_quantize_dequantize,
-)
 from vramfit.adapters.outbound.scan.offload import (
     ShardReader,
     dedupe_aliased_groups,
     open_shard_reader,
     resolve_offloaded_params,
 )
-from vramfit.adapters.outbound.scan.quantize import (
-    DEFAULT_BLOCK_SIZE,
-    MIN_BITS,
-    rtn_quantize_dequantize,
-)
+from vramfit.adapters.outbound.scan.quantize import DEFAULT_BLOCK_SIZE, MIN_BITS
 from vramfit.adapters.outbound.scan.slices import check_slice_cell
+from vramfit.adapters.outbound.scan.within_group import (
+    METHODS,
+    WithinGroupMethod,
+    perturb,
+)
 from vramfit.domain.model import ImatrixCountSummary
 from vramfit.domain.scan import GroupSpec
 
@@ -162,7 +164,7 @@ class TorchDamageMeter:
         trust_remote_code: bool = False,
         block_size: int = DEFAULT_BLOCK_SIZE,
         max_gpu_memory: int | None = None,
-        within_group: Literal["rtn", "kquant"] = "rtn",
+        within_group: WithinGroupMethod = "rtn",
         imatrix_weights: Mapping[str, torch.Tensor] | None = None,
         imatrix_path: Path | None = None,
     ) -> None:
@@ -192,7 +194,10 @@ class TorchDamageMeter:
             within_group: Within-group method (ADR-0018). ``rtn`` is
                 the v1 round-to-nearest. ``kquant`` round-trips cells
                 through the ported K-quant reference quantizers and
-                refuses precisions outside their coverage.
+                refuses precisions outside their coverage. ``gguf``
+                round-trips through the ported block quantizers —
+                ``Q2_0``, ``Q4_0``, and ``Q8_0`` — which reach the
+                rows no K-quant can tile.
             imatrix_weights: Imatrix column weights per parameter
                 name for assisted pricing (ADR-0020). Requires the
                 ``kquant`` method and must not be empty — an empty
@@ -214,9 +219,10 @@ class TorchDamageMeter:
                 still refuses, the #202 vouching rule.
 
         Raises:
-            ValueError: If ``within_group`` is not a known method —
-                an unknown value must not fall back to RTN and record
-                damages under the wrong token — imatrix input
+            ValueError: If ``within_group`` is not one of
+                `METHODS` — an unknown value must not fall back to
+                RTN and record damages under the wrong token —
+                imatrix input
                 arrives with the ``rtn`` method (RTN has no weighted
                 C counterpart), ``imatrix_weights`` and
                 ``imatrix_path`` arrive together, the imatrix file
@@ -231,9 +237,10 @@ class TorchDamageMeter:
         """
         # Checked before the model load: a silent RTN fallback under
         # a mistyped method corrupts every damage the meter measures.
-        if within_group not in ("rtn", "kquant"):
+        if within_group not in METHODS:
+            known = ", ".join(f'"{name}"' for name in METHODS)
             raise ValueError(
-                f'within_group must be "rtn" or "kquant", got "{within_group}"'
+                f'within_group must be one of {known}, got "{within_group}"'
             )
         if imatrix_weights is not None and imatrix_path is not None:
             raise ValueError(
@@ -244,7 +251,8 @@ class TorchDamageMeter:
             if within_group != "kquant":
                 raise ValueError(
                     "imatrix weights require the kquant within-group method "
-                    "(ADR-0020) — RTN has no weighted C counterpart"
+                    "(ADR-0020) — RTN has no weighted C counterpart, and "
+                    "gguf-imx is reserved but unbuilt (ADR-0018)"
                 )
             if imatrix_weights is not None and not imatrix_weights:
                 raise ValueError(
@@ -605,15 +613,20 @@ class TorchDamageMeter:
             The dequantized tensor, same shape, dtype, and device.
 
         Raises:
-            ValueError: If the ``kquant`` method has no port for
-                ``bits`` (ADR-0018 covers 8, 4, 3, and 2).
+            ValueError: If the method has no port for ``bits`` —
+                ``kquant`` covers 8, 4, 3, and 2, and ``gguf``
+                covers 8, 4, and 2 — or the mapped type's block size
+                does not divide the tensor's row length. The message
+                names the parameter.
         """
-        if self._within_group == "kquant":
-            column_weights = self._imatrix_weights.get(name)
-            if column_weights is not None:
-                return kquant_assisted_quantize_dequantize(param, bits, column_weights)
-            return kquant_quantize_dequantize(param, bits)
-        return rtn_quantize_dequantize(param, bits, self._block_size)
+        return perturb(
+            param,
+            bits,
+            name,
+            self._within_group,
+            self._block_size,
+            self._imatrix_weights.get(name),
+        )
 
     def _param(self, name: str) -> torch.Tensor:
         """Look up a parameter tensor by its dotted name.

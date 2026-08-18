@@ -10,8 +10,10 @@ pairing with their resolved pairs (ADR-0022), an ordered imatrix
 count summary (ADR-0026 decision 4), and a non-empty derived note
 (#136). The
 within-group method tokens live here — `SCAN_METHOD` beside the
-`ScanMeta` field it is the default for (ADR-0018), and the kquant
-tokens beside the `imatrix` invariant they anchor (ADR-0020).
+`ScanMeta` field it is the default for (ADR-0018), the kquant
+tokens beside the `imatrix` invariant they anchor (ADR-0020), and
+`GGUF_REF_METHOD` for the block quantizers (ADR-0018, 2026-08-17
+amendment).
 Serialization and the JSON schema envelope (including the
 ``vramfit_schema`` version field) live in
 [vramfit.adapters.outbound.sensitivity_map_json][] and
@@ -70,6 +72,11 @@ KQUANT_METHOD = "kquant-ref"
 # with the pack's imatrix weighting every covered fit. Defined here
 # because `ScanMeta` pairs the token with its `imatrix` field.
 KQUANT_IMX_METHOD = "kquant-imx"
+# The GGUF block-quantizer method (ADR-0018, 2026-08-17 amendment):
+# Q2_0, Q4_0, and Q8_0 ported from llama.cpp b10326. It prices the
+# rows no K-quant reaches. `gguf-imx` stays reserved — its assisted
+# path is unbuilt.
+GGUF_REF_METHOD = "gguf-ref"
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,7 +100,8 @@ class ScanMeta:
         started_at (str): ISO-8601 timestamp of the scan start.
         within_group (str): Within-group method token (ADR-0018) —
             `SCAN_METHOD` (``rtn-block32``) unless the scan selected
-            another method.
+            another method. `GGUF_REF_METHOD` (``gguf-ref``) prices
+            the rows no K-quant reaches.
         imatrix (str | None): Path of the imatrix that assisted the
             scan (ADR-0020), or None for an unassisted scan. Pairs
             with the `KQUANT_IMX_METHOD` token — a map cannot claim

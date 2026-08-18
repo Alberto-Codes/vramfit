@@ -102,6 +102,49 @@ Expect assisted cells to run longer than
 unassisted kquant cells, and both to run longer than RTN — the
 weighted fit searches more candidate scales.
 
+## Scanning rows no K-quant reaches
+
+`llama-quantize` applies no type whose block does not divide a
+tensor's row length. `tensor_type_fallback` warns and substitutes a
+compatible type instead — `Q2_K`, `Q3_K`, and `Q2_0` become `Q4_0`,
+and `Q4_K` becomes `Q5_0`. `Q2_K`, `Q3_K`, and `Q4_K` block 256
+elements, and Nemotron 3.5 Lightning 30B-A3B holds routed-expert
+rows of 2688 and 1856. Neither divides. Those stacks carry 93.0 % of
+the model's parameters, and
+[ADR-0028](../adr/0028-expert-stack-type-table.md) packs them
+at `Q8_0`, `Q4_0`, and `Q2_0` instead.
+
+Scan them with the `gguf` method, which ports those three block
+quantizers
+([ADR-0018](../adr/0018-kquant-within-group-method.md), 2026-08-17
+amendment):
+
+```bash
+uv run vramfit scan ./model --calibration calibration.txt \
+  --group-by stack \
+  --precisions 4,2 \
+  --within-group gguf \
+  --out sensitivity-gguf.json
+```
+
+The method covers nominal 8, 4, and 2. It refuses nominal 3, which
+[ADR-0028](../adr/0028-expert-stack-type-table.md) refuses at pack,
+and 5 and 6 until ports exist.
+`--imatrix` does not pair with it. The `gguf-imx` token is reserved
+for a real assisted path — `quantize_row_q4_0_impl` fits with
+imatrix weights — and nothing builds it yet. `quantize_q2_0` ignores
+the matrix, so an assisted gguf method could only ever differ at
+nominal 4.
+
+A `kquant` scan now refuses such a cell. The message names the
+parameter, the type, the block size, and the row length. Nominal 8
+never refuses there, because `Q8_0` blocks 32 elements and 32
+divides both rows.
+
+Maps priced under different methods do not compare. `scan.within_group`
+is one token for the whole map, so a `gguf-ref` map and a `kquant-imx`
+map cannot merge.
+
 ## Scanning a model that doesn't fit in VRAM
 
 Models larger than the card scan through accelerate's weights map

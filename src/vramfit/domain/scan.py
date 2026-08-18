@@ -11,10 +11,10 @@ need measurement, how a finished pile of measurements becomes a
 `SensitivityMap` — per-tensor sizes and imatrix count summaries
 riding through from `GroupSpec`
 (ADR-0022, ADR-0026 decision 4) — the pooled count reduction
-(`summarize_imatrix_counts`), the within-group method tokens and the kquant
-coverage set (ADR-0006, ADR-0018, ADR-0020 — every token
-re-exported from [vramfit.domain.model][], where `ScanMeta`
-anchors them), and
+(`summarize_imatrix_counts`), the within-group method tokens and each
+method's precision coverage set (ADR-0006, ADR-0018, ADR-0020 —
+every token re-exported from [vramfit.domain.model][], where
+`ScanMeta` anchors them), and
 the escaped fingerprint — carrying the method and the imatrix
 path — that guards resume against
 mixing two different scans' checkpoints.
@@ -45,6 +45,9 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Literal
 
+from vramfit.domain.model import (
+    GGUF_REF_METHOD as GGUF_REF_METHOD,  # noqa: PLC0414 - re-export: method tokens read from this module
+)
 from vramfit.domain.model import (
     KQUANT_IMX_METHOD as KQUANT_IMX_METHOD,  # noqa: PLC0414 - re-export: method tokens read from this module
 )
@@ -278,6 +281,10 @@ class Measurement:
 # The precisions the kquant port covers. The scan validates candidate
 # precisions against this before it loads a model.
 KQUANT_PRECISIONS = (8, 4, 3, 2)
+# The precisions the gguf port covers (ADR-0018, 2026-08-17
+# amendment). Nominal 3 is absent because ADR-0028 decision 2
+# refuses it at pack, and 5 and 6 wait for ports.
+GGUF_REF_PRECISIONS = (8, 4, 2)
 
 
 def scan_fingerprint(model_id: str, meta: ScanMeta) -> str:

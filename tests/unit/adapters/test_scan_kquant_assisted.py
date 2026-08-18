@@ -184,8 +184,19 @@ class TestRefusals:
     def test_rows_that_straddle_super_blocks_are_refused(self) -> None:
         # The C asserts n_per_row % QK_K == 0 — padding would
         # misalign every column weight after the first row.
-        with pytest.raises(ValueError, match="divisible"):
+        with pytest.raises(ValueError, match="does not divide the row length"):
             kquant_assisted_quantize_dequantize(torch.randn(4, 100), 2, torch.ones(100))
+
+    def test_8bit_reaches_a_row_no_super_block_tiles(self) -> None:
+        # The 8-bit route blocks 32 elements, which divides 2688,
+        # and ADR-0028 decision 1 packs Q8_0 on that row. The
+        # refusal reads the mapped type, never the constant 256
+        # (ADR-0018, 2026-08-17 amendment, decision 4).
+        result = kquant_assisted_quantize_dequantize(
+            torch.randn(2, 2688), 8, torch.ones(2688)
+        )
+
+        assert result.shape == (2, 2688)
 
     def test_wrong_length_weights_are_refused(self) -> None:
         with pytest.raises(ValueError, match="quant_weights"):
