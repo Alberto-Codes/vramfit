@@ -9,6 +9,13 @@ the functions return dequantized values — the scan measures
 round-trip damage, never keeps integers. Large tensors fit in
 bounded slices of whole blocks, which caps the fp32 workspace.
 
+A cell refuses when the mapped type's block size does not divide
+the tensor's row length (`refuse_straddling_rows`). ADR-0018's
+2026-08-17 amendment added it: `llama-quantize` refuses that type
+there, so pricing it would record a frame the pack cannot apply.
+The check reads the mapped type and never a constant, because
+``Q8_0`` blocks 32 elements and reaches rows a super-block cannot.
+
 The C reference rounds with ``nearest_int``, a round-half-to-even
 magic-number trick. ``torch.round`` rounds half to even, so the
 rounding modes match. Vectorized reductions can still order float
@@ -25,6 +32,8 @@ Examples:
 
 See Also:
     - [vramfit.adapters.outbound.scan.quantize][]: The RTN v1 method.
+    - [vramfit.adapters.outbound.scan.gguf_ref][]: The block
+      quantizers, for the rows this module refuses.
 """
 
 from __future__ import annotations
@@ -360,6 +369,53 @@ _ROUND_TRIPS = {
 # the CLI validates against the domain copy before a model loads.
 KQUANT_BITS = tuple(sorted(_ROUND_TRIPS))
 
+# The type each precision maps onto, for the refusal message below.
+KQUANT_TYPE_NAMES = {2: "Q2_K", 3: "Q3_K", 4: "Q4_K", 8: "Q8_0"}
+
+
+def refuse_straddling_rows(row_length: int, bits: int) -> None:
+    """Refuse a cell whose mapped type cannot tile the tensor's rows.
+
+    ADR-0018's 2026-08-17 amendment, decision 4. ``tensor_type_fallback``
+    rejects any type whose block does not divide ``ne[0]``, so
+    `llama-quantize` never applies that type to this tensor. Pricing
+    it anyway records one map under two frames. The port would also
+    straddle two rows with one flat block.
+
+    The check reads the mapped type's block size, never a constant.
+    ``Q8_0`` blocks 32 elements and ADR-0028 decision 1 packs it on
+    the routed-expert rows of 2688 and 1856, so a refusal keyed to
+    256 alone would refuse a cell the pack realizes.
+
+    Args:
+        row_length: Elements per row — the tensor's last dimension.
+        bits: The cell's nominal precision.
+
+    Raises:
+        ValueError: If the mapped type's block size does not divide
+            ``row_length``.
+
+    Examples:
+        `Q8_0` tiles a 2688-wide row and `Q2_K` does not:
+
+        ```python
+        from vramfit.adapters.outbound.scan.kquant import refuse_straddling_rows
+
+        refuse_straddling_rows(2688, 8)
+        ```
+    """
+    block = _ROUND_TRIPS[bits][1] if bits in _ROUND_TRIPS else None
+    if block is None or row_length % block == 0:
+        return
+    raise ValueError(
+        f"kquant maps {bits} bits onto {KQUANT_TYPE_NAMES[bits]}, which blocks "
+        f"{block} elements. {block} does not divide the row length "
+        f"{row_length}, so llama-quantize refuses that type here and the fit "
+        f"would straddle two rows (ADR-0018). Scan these rows with "
+        f"--within-group gguf, which covers nominal 8, 4, and 2."
+    )
+
+
 # Rows per fitting slice: 134M elements at super-block width, so
 # the candidate loops peak near 4 GiB of temporaries however large
 # the tensor. The 49B head fits 1.05B parameters in one call.
@@ -402,8 +458,8 @@ def kquant_quantize_dequantize(weight: torch.Tensor, bits: int) -> torch.Tensor:
     ``llama-quantize`` consumes rows — padded with zeros to the
     format's block multiple, and round-tripped through the ported
     reference quantizer. Flat blocks match the per-row C layout only
-    when row length divides by the block size. Rows that do not
-    divide would straddle blocks (every 49B weight row divides).
+    when the row length divides by the block size, so a row that does
+    not divide refuses — see `refuse_straddling_rows`.
     The input is never modified. Like the RTN
     round trip, the computation runs on the input's device first and
     retries on the CPU when the float32 workspace does not fit the
@@ -422,7 +478,8 @@ def kquant_quantize_dequantize(weight: torch.Tensor, bits: int) -> torch.Tensor:
 
     Raises:
         ValueError: If ``bits`` has no K-quant port (ADR-0018 leaves
-            5 and 6 open).
+            5 and 6 open), or the mapped type's block size does not
+            divide the tensor's row length.
 
     Examples:
         Q2_K keeps at most four levels per 16-element sub-block:
@@ -439,6 +496,7 @@ def kquant_quantize_dequantize(weight: torch.Tensor, bits: int) -> torch.Tensor:
         raise ValueError(
             f"kquant supports bits in {KQUANT_BITS}, got {bits} (ADR-0018)"
         )
+    refuse_straddling_rows(weight.shape[-1], bits)
     round_trip, block = _ROUND_TRIPS[bits]
 
     def prepare(device: torch.device | str) -> torch.Tensor:

@@ -3,7 +3,8 @@
 The composition root for the validation pass (ADR-0006). It loads the
 recipe, builds the same torch-backed meter the scan uses (including
 the scan's within-group method and imatrix selection, ADR-0018 and
-ADR-0020), perturbs
+ADR-0020 — a recipe priced on a ``gguf-ref`` map validates in that
+frame too), perturbs
 every group to its assigned precision in one pass, and compares the
 measured whole-recipe damage against the recipe's summed marginal
 damages — the direct test of the additivity assumption behind
@@ -50,6 +51,8 @@ from vramfit.adapters.outbound.recipe_json import load_recipe
 from vramfit.adapters.outbound.run_log_jsonl import JsonlRunLogFile
 from vramfit.domain.model import Recipe
 from vramfit.domain.scan import (
+    GGUF_REF_METHOD,
+    GGUF_REF_PRECISIONS,
     KQUANT_IMX_METHOD,
     KQUANT_METHOD,
     KQUANT_PRECISIONS,
@@ -60,16 +63,23 @@ from vramfit.ports.outbound import DamageMeter
 
 # Method token -> the meter method that measures it. The assisted
 # token measures through kquant with the imatrix (ADR-0020).
-_TOKEN_TO_METHOD: dict[str, Literal["rtn", "kquant"]] = {
+_TOKEN_TO_METHOD: dict[str, Literal["rtn", "kquant", "gguf"]] = {
     SCAN_METHOD: "rtn",
     KQUANT_METHOD: "kquant",
     KQUANT_IMX_METHOD: "kquant",
+    GGUF_REF_METHOD: "gguf",
+}
+# Each method's ported precision coverage (ADR-0018). RTN covers
+# every precision, so it is absent.
+_METHOD_COVERAGE: dict[str, tuple[int, ...]] = {
+    "kquant": KQUANT_PRECISIONS,
+    "gguf": GGUF_REF_PRECISIONS,
 }
 
 
 def _resolve_within_group(
     text: str | None, imatrix: Path | None, recipe: Recipe
-) -> tuple[Literal["rtn", "kquant"], str]:
+) -> tuple[Literal["rtn", "kquant", "gguf"], str]:
     """Resolve the pass's method against the recipe's provenance.
 
     The pass only checks additivity when its frame matches the map
@@ -92,12 +102,12 @@ def _resolve_within_group(
         under.
 
     Raises:
-        typer.BadParameter: If the method is unknown, ``kquant``
-            meets assignments outside its port coverage (ADR-0018),
-            ``--imatrix`` arrives without the kquant method or is
-            not a file, the recipe records a token this version
-            does not know, or the resolved frame contradicts the
-            recipe's recorded method (ADR-0019).
+        typer.BadParameter: If the method is unknown, ``kquant`` or
+            ``gguf`` meets assignments outside its port coverage
+            (ADR-0018), ``--imatrix`` arrives without the kquant
+            method or is not a file, the recipe records a token this
+            version does not know, or the resolved frame contradicts
+            the recipe's recorded method (ADR-0019).
     """
     recorded = recipe.within_group
     if recorded is not None and recorded not in _TOKEN_TO_METHOD:
@@ -107,29 +117,32 @@ def _resolve_within_group(
         )
     if text is None:
         method = _TOKEN_TO_METHOD[recorded] if recorded is not None else "rtn"
-    elif text in ("rtn", "kquant"):
+    elif text in ("rtn", "kquant", "gguf"):
         method = text
     else:
         raise typer.BadParameter(
-            f'--within-group: expected "rtn" or "kquant", got "{text}"'
+            f'--within-group: expected "rtn", "kquant", or "gguf", got "{text}"'
         )
     # Record conflicts refuse first — their messages name the real
     # cause. A flag-level message here ("--imatrix requires kquant")
     # would send the user into a second failure.
     _check_provenance(recorded, text, method, imatrix)
     check_imatrix(imatrix, method)
-    if method == "kquant":
+    covered = _METHOD_COVERAGE.get(method)
+    if covered is not None:
         uncovered = sorted(
-            {a.bits for a in recipe.assignments if a.bits not in KQUANT_PRECISIONS}
+            {a.bits for a in recipe.assignments if a.bits not in covered}
         )
         if uncovered:
             raise typer.BadParameter(
-                f"--within-group kquant covers precisions "
-                f"{sorted(KQUANT_PRECISIONS, reverse=True)} (ADR-0018) — "
+                f"--within-group {method} covers precisions "
+                f"{sorted(covered, reverse=True)} (ADR-0018) — "
                 f"the recipe assigns {uncovered}"
             )
     if method == "rtn":
         token = SCAN_METHOD
+    elif method == "gguf":
+        token = GGUF_REF_METHOD
     else:
         token = KQUANT_METHOD if imatrix is None else KQUANT_IMX_METHOD
     return method, token
@@ -278,10 +291,11 @@ def validate(
     within_group: Annotated[
         str | None,
         typer.Option(
-            help="Within-group method: rtn, or kquant for the "
-            "K-quant-faithful port (ADR-0018). Default: the method "
-            "the recipe records, or rtn for recipes without the "
-            "record."
+            help="Within-group method: rtn, kquant for the "
+            "K-quant-faithful port, or gguf for the block "
+            "quantizers Q2_0/Q4_0/Q8_0 (ADR-0018). Default: the "
+            "method the recipe records, or rtn for recipes without "
+            "the record."
         ),
     ] = None,
     imatrix: Annotated[
@@ -327,8 +341,9 @@ def validate(
     Raises:
         typer.BadParameter: If ``--group-by``, ``--within-group``, or
             ``--gpu-memory`` is malformed, ``--gpu-memory`` is given
-            without ``--device auto``, ``--within-group kquant``
-            meets recipe assignments the port does not cover,
+            without ``--device auto``, ``--within-group kquant`` or
+            ``gguf`` meets recipe assignments the port does not
+            cover,
             ``--imatrix`` arrives without the kquant method or is
             not a file, the resolved frame contradicts the recipe's
             recorded method (ADR-0019), or the ``--runlog``

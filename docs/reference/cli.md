@@ -141,11 +141,14 @@ vramfit scan MODEL
   --trust-remote-code    Allow model repos with custom code (the
                          north-star target needs this)
   --resume / --no-resume Continue from the checkpoint file  [default: resume]
-  --within-group TEXT    Within-group method: rtn | kquant (ADR-0018).
-                         kquant prices cells with the ported K-quant
-                         reference quantizers and pairs only with
-                         precisions the port covers (8, 4, 3, 2)
-                         [default: rtn]
+  --within-group TEXT    Within-group method: rtn | kquant | gguf
+                         (ADR-0018). kquant prices cells with the
+                         ported K-quant reference quantizers (8, 4,
+                         3, 2). gguf prices them with the ported
+                         block quantizers Q2_0, Q4_0, and Q8_0 (8,
+                         4, 2), which reach the rows no K-quant
+                         tiles. Each pairs only with precisions its
+                         port covers  [default: rtn]
   --imatrix PATH         GGUF imatrix for assisted K-quant pricing
                          (ADR-0020). Requires --within-group kquant.
                          Use the file the pack step will consume
@@ -204,10 +207,19 @@ belongs to a different scan, a measurement fails (the checkpoint keeps
 completed cells), a checkpoint write fails, or the map cannot be
 written. Exit 2 on malformed `--precisions`, `--group-by`,
 `--within-group`, or `--gpu-memory`, a `--gpu-memory` without
-`--device auto`, a `--within-group kquant` combined with precisions
-the port does not cover, an `--imatrix` without `--within-group
-kquant` or naming a missing file, or a missing `--out` or `--runlog`
-directory.
+`--device auto`, a `--within-group kquant` or `gguf` combined with
+precisions the port does not cover, an `--imatrix` without
+`--within-group kquant` or naming a missing file, or a missing
+`--out` or `--runlog` directory.
+
+A `kquant` scan also refuses a cell whose mapped type cannot tile the
+tensor's rows, and the message names the parameter, the type, the
+block size, and the row length. `Q2_K`, `Q3_K`, and `Q4_K` block 256
+elements, which divides neither 2688 nor 1856 — the routed-expert row
+lengths on the 30B target. `llama-quantize` refuses those types there,
+so pricing them records a frame the pack cannot apply. `Q8_0` blocks
+32 elements and reaches both rows, so nominal 8 never refuses. Use
+`--within-group gguf` for those rows.
 
 ## `vramfit validate`
 
@@ -236,9 +248,9 @@ vramfit validate RECIPE
   --trust-remote-code    Allow model repos with custom code
   --gpu-memory SIZE      Byte cap on GPU 0 model shards (e.g. 17GiB).
                          Requires --device auto  [default: none]
-  --within-group TEXT    Within-group method: rtn | kquant (ADR-0018)
-                         [default: the recipe's recorded method, or
-                         rtn without a record]
+  --within-group TEXT    Within-group method: rtn | kquant | gguf
+                         (ADR-0018)  [default: the recipe's recorded
+                         method, or rtn without a record]
   --imatrix PATH         GGUF imatrix for assisted K-quant measurement
                          (ADR-0020). Required when the recipe was
                          priced on an assisted map — use the map's
@@ -283,8 +295,8 @@ the model's, or the measurement fails. Exit 2 on a malformed
 `--group-by`, `--within-group`, or `--gpu-memory`, a `--gpu-memory`
 without `--device auto`, an `--imatrix` without the kquant method or
 naming a missing file, a frame that contradicts the recipe's
-recorded method, a `--within-group kquant` that meets recipe
-assignments the ported quantizers do not cover, or a missing
+recorded method, a `--within-group kquant` or `gguf` that meets
+recipe assignments the ported quantizers do not cover, or a missing
 `--runlog` directory.
 
 ## `vramfit pack`

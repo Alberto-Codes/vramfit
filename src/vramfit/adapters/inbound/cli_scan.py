@@ -2,9 +2,10 @@
 
 The scan loop lives here because the inbound adapter is the
 composition root: it validates every option up front (sizes parse
-with the project grammar, ``--within-group kquant`` must pair
-with precisions the port covers, ADR-0018, and ``--imatrix``
-pairs only with the kquant method, ADR-0020), builds the
+with the project grammar, ``--within-group kquant`` and ``gguf``
+must each pair with precisions their port covers, ADR-0018, and
+``--imatrix`` pairs only with the kquant method, ADR-0020), builds
+the
 torch-backed
 meter (lazily, so the base install never imports torch), drives the
 `DamageMeter` and `ScanCheckpointStore` ports cell by cell, and hands
@@ -57,6 +58,8 @@ from vramfit.adapters.outbound.sensitivity_map_json import JsonSensitivityMapFil
 from vramfit.domain.errors import VramfitError
 from vramfit.domain.model import ScanMeta
 from vramfit.domain.scan import (
+    GGUF_REF_METHOD,
+    GGUF_REF_PRECISIONS,
     KQUANT_IMX_METHOD,
     KQUANT_METHOD,
     KQUANT_PRECISIONS,
@@ -101,7 +104,7 @@ def _build_meter(
     device: str,
     trust_remote_code: bool,
     gpu_memory: int | None,
-    within_group: Literal["rtn", "kquant"] = "rtn",
+    within_group: Literal["rtn", "kquant", "gguf"] = "rtn",
     imatrix: Path | None = None,
 ) -> DamageMeter:
     """Build the torch-backed meter, importing torch only now.
@@ -121,7 +124,8 @@ def _build_meter(
         trust_remote_code: Allow repos with custom modeling code.
         gpu_memory: Byte cap on GPU 0 model shards under ``auto``
             sharding.
-        within_group: Within-group method (ADR-0018).
+        within_group: Within-group method (ADR-0018) — ``rtn``,
+            ``kquant``, or ``gguf``.
         imatrix: GGUF imatrix file for assisted pricing (ADR-0020),
             or None for an unassisted meter.
 
@@ -218,7 +222,7 @@ def _parse_precisions(text: str) -> tuple[int, ...]:
 
 def _parse_within_group(
     text: str, precisions: tuple[int, ...], imatrix: Path | None
-) -> tuple[Literal["rtn", "kquant"], str]:
+) -> tuple[Literal["rtn", "kquant", "gguf"], str]:
     """Validate the ``--within-group`` choice against the precisions.
 
     Args:
@@ -233,27 +237,30 @@ def _parse_within_group(
         (ADR-0020).
 
     Raises:
-        typer.BadParameter: If the method is unknown, ``kquant``
-            is combined with precisions outside its port coverage
-            (ADR-0018), ``--imatrix`` arrives without the kquant
-            method, or the imatrix file does not exist — each
+        typer.BadParameter: If the method is unknown, ``kquant`` or
+            ``gguf`` is combined with precisions outside its port
+            coverage (ADR-0018), ``--imatrix`` arrives without the
+            kquant method, or the imatrix file does not exist — each
             rejected before the model load burns an hour.
     """
-    if text not in ("rtn", "kquant"):
+    if text not in ("rtn", "kquant", "gguf"):
         raise typer.BadParameter(
-            f'--within-group: expected "rtn" or "kquant", got "{text}"'
+            f'--within-group: expected "rtn", "kquant", or "gguf", got "{text}"'
         )
     check_imatrix(imatrix, text)
-    if text == "kquant":
-        uncovered = [p for p in precisions if p not in KQUANT_PRECISIONS]
+    covered = {"kquant": KQUANT_PRECISIONS, "gguf": GGUF_REF_PRECISIONS}.get(text)
+    if covered is not None:
+        uncovered = [p for p in precisions if p not in covered]
         if uncovered:
             raise typer.BadParameter(
-                f"--within-group kquant covers precisions "
-                f"{sorted(KQUANT_PRECISIONS, reverse=True)} (ADR-0018) — "
+                f"--within-group {text} covers precisions "
+                f"{sorted(covered, reverse=True)} (ADR-0018) — "
                 f"remove {uncovered} from --precisions"
             )
     if text == "rtn":
         return text, SCAN_METHOD
+    if text == "gguf":
+        return text, GGUF_REF_METHOD
     return text, KQUANT_METHOD if imatrix is None else KQUANT_IMX_METHOD
 
 
@@ -294,8 +301,10 @@ def scan(
     within_group: Annotated[
         str,
         typer.Option(
-            help="Within-group method: rtn, or kquant for the "
-            "K-quant-faithful port (ADR-0018, precisions 8/4/3/2)."
+            help="Within-group method: rtn, kquant for the "
+            "K-quant-faithful port (ADR-0018, precisions 8/4/3/2), "
+            "or gguf for the block quantizers Q2_0/Q4_0/Q8_0 "
+            "(precisions 8/4/2)."
         ),
     ] = "rtn",
     imatrix: Annotated[
@@ -327,14 +336,20 @@ def scan(
     weights offloaded beyond host RAM — see the how-to.
     ``--within-group`` selects the quantization the meter applies
     inside a perturbed group (ADR-0018): ``rtn`` is the v1 default,
-    and ``kquant`` prices cells with the ported K-quant reference
-    quantizers, pairing only with precisions the port covers.
+    ``kquant`` prices cells with the ported K-quant reference
+    quantizers, and ``gguf`` prices them with the ported block
+    quantizers ``Q2_0``, ``Q4_0``, and ``Q8_0``. Each pairs only
+    with precisions its port covers. ``gguf`` reaches the rows no
+    K-quant tiles — ``llama-quantize`` refuses a 256-element
+    super-block on rows of 2688 or 1856, and ``kquant`` now refuses
+    such a cell instead of pricing a frame the pack cannot apply.
     ``--imatrix`` adds the pack's importance matrix to the kquant
     fit (assisted pricing, ADR-0020) — the map then records the
     resolved imatrix path beside the method, and the run log
     records how many parameters the imatrix covers. The map, the
     fingerprint, and the run log all record the method as its token
-    (``rtn-block32``, ``kquant-ref``, or ``kquant-imx``).
+    (``rtn-block32``, ``kquant-ref``, ``kquant-imx``, or
+    ``gguf-ref``).
     ``--group-by`` sets the map key. ``stack`` keys on the unit a
     pack addresses (#161): it collapses a mixture-of-experts layer's
     routed experts into one group per projection, and keeps every
@@ -344,8 +359,9 @@ def scan(
         typer.BadParameter: If ``--precisions``, ``--group-by``,
             ``--within-group``, or ``--gpu-memory`` is malformed,
             ``--gpu-memory`` is given without ``--device auto``,
-            ``--within-group kquant`` is combined with precisions the
-            port does not cover, ``--imatrix`` is given without
+            ``--within-group kquant`` or ``gguf`` is combined with
+            precisions its port does not cover, ``--imatrix`` is
+            given without
             ``--within-group kquant`` or is not a file, or the
             ``--out`` or ``--runlog`` directory does not exist.
         typer.Exit: With code 1 when the scan extra is missing, the

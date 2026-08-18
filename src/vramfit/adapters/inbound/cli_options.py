@@ -4,7 +4,9 @@ The two commands build the same meter, so their overlapping options
 follow one rule each: the ``--gpu-memory`` cap parses with the
 project size grammar and requires ``--device auto``, and
 ``--imatrix`` pairs only with the kquant within-group method
-(ADR-0020). Both reject before any model load burns an hour. The
+(ADR-0020) — RTN has no weighted C counterpart, and the ``gguf``
+method's assisted token stays reserved and unbuilt (ADR-0018).
+Both reject before any model load burns an hour. The
 imatrix coverage echo lives here too — the scan and the validation
 pass report the split identically.
 
@@ -42,13 +44,17 @@ def check_imatrix(imatrix: Path | None, method: str) -> None:
     Raises:
         typer.BadParameter: If the imatrix arrives without the
             kquant method (ADR-0020), or the file does not exist.
+            The ``gguf`` method refuses it too — ``quantize_q2_0``
+            accepts an importance matrix and ignores it, so the
+            ``gguf-imx`` token stays reserved (ADR-0018).
     """
     if imatrix is None:
         return
     if method != "kquant":
         raise typer.BadParameter(
             "--imatrix requires --within-group kquant (ADR-0020) — "
-            "RTN has no weighted C counterpart"
+            "RTN has no weighted C counterpart, and gguf-imx is "
+            "reserved and unbuilt (ADR-0018)"
         )
     if not imatrix.is_file():
         raise typer.BadParameter(f"--imatrix: {imatrix} is not a file")

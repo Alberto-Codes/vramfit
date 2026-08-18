@@ -13,7 +13,9 @@ has no weighted path — ``quantize_q8_0`` discards the imatrix — so
 Like the unassisted module, the functions return dequantized values,
 and knife-edge fitting ties may diverge from the C where vectorized
 float sums order differently. The assisted golden fixtures bound
-that drift.
+that drift. The row-length refusal is shared with that module and
+keys on the mapped type's block size, so an 8-bit cell reaches rows
+a super-block cannot (ADR-0018, 2026-08-17 amendment).
 
 The C's ``make_qkx3_quants`` reuses the ADR-0018 port of
 ``make_qkx2_quants``: the two C functions are identical when
@@ -50,6 +52,7 @@ from vramfit.adapters.outbound.scan.kquant import (
     _fp16,
     _make_qkx2_quants,
     kquant_quantize_dequantize,
+    refuse_straddling_rows,
 )
 
 # The precisions with a ported weighted path. 8 is assisted-valid but
@@ -366,9 +369,10 @@ def kquant_assisted_quantize_dequantize(
         input.
 
     Raises:
-        ValueError: If ``bits`` has no assisted port, the row length
-            does not divide into super-blocks (the C asserts
-            ``n_per_row % QK_K == 0``), ``quant_weights`` does not
+        ValueError: If ``bits`` has no assisted port, the mapped
+            type's block size does not divide the row length (the C
+            asserts ``n_per_row % QK_K == 0`` for the K-quants, and
+            the 8-bit route blocks 32), ``quant_weights`` does not
             match the row length, or a weight is negative or
             non-finite — garbage weights would corrupt every damage
             downstream. Every check runs for 8-bit too, before the
@@ -376,11 +380,6 @@ def kquant_assisted_quantize_dequantize(
             depend on which branch consumes the argument.
     """
     row = int(weight.shape[-1])
-    if row % SUPER_BLOCK:
-        raise ValueError(
-            f"assisted kquant needs rows divisible by {SUPER_BLOCK}, "
-            f"got row length {row}"
-        )
     if quant_weights.dim() != 1 or quant_weights.numel() != row:
         raise ValueError(
             f"quant_weights must be 1-D with {row} entries, got shape "
@@ -394,6 +393,10 @@ def kquant_assisted_quantize_dequantize(
         raise ValueError(
             f"assisted kquant supports bits in {ASSISTED_BITS}, got {bits} (ADR-0020)"
         )
+    # The mapped type decides, never a constant: the 8-bit route
+    # above blocks 32 elements and reaches rows a super-block cannot
+    # (ADR-0018, 2026-08-17 amendment, decision 4).
+    refuse_straddling_rows(row, bits)
     round_trip = _ASSISTED_ROUND_TRIPS[bits]
 
     def prepare(device: torch.device | str) -> tuple[torch.Tensor, torch.Tensor]:
