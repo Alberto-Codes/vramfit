@@ -7,7 +7,7 @@ from ADR-0021 decision 4). Sizes are element counts at 2 bytes per
 parameter, matching the scan's bf16 reference convention.
 
 The script reports each refusal below as ``error:`` on stderr and exits
-1. It refuses a document that is not a sensitivity map (#298). It
+1. It refuses a document whose ``groups`` it cannot read (#298). It
 refuses a map whose tensors the checkpoint does not cover. It refuses a
 group whose checkpoint sizes disagree with its recorded ``bytes_fp16``.
 It refuses two shards that define one tensor name (#297). It refuses to
@@ -16,8 +16,14 @@ JSON document that defines the same key twice, under the rule #262 set
 for every vramfit reader. Both reads apply that rule: the map and each
 shard header.
 
-Seven inputs outside the map still escape that contract and reach a
-traceback. #335 carries them.
+The first refusal reads ``groups`` and no more of the envelope. A
+document carrying a readable ``groups`` and no ``vramfit_schema``,
+``model_id``, or ``scan`` annotates here and still fails
+`vramfit.adapters.outbound.sensitivity_map_json.map_from_dict`. That
+reader owns the envelope.
+
+Seven inputs outside the map still escape the contract above and reach
+a traceback. #335 carries them.
 
 Examples:
     Annotate an existing map:
@@ -162,7 +168,7 @@ def _require_group_fields(group: dict, where: str) -> None:
 
 
 def map_groups(raw: object, path: Path) -> list[dict]:
-    """Return the map's groups, refusing a document that is not a map.
+    """Return the map's groups, refusing what the loop cannot read.
 
     The script reaches for ``groups`` and annotates each element. Given a
     recipe, it iterated zero times and wrote an unannotated copy on a
@@ -175,8 +181,10 @@ def map_groups(raw: object, path: Path) -> list[dict]:
     map the project accepts.
 
     This guard checks the fields the annotation loop dereferences and
-    stops there. `vramfit.adapters.outbound.sensitivity_map_json` owns
-    schema validation, and this script never grows a second copy of it.
+    stops there. It reads no other envelope field, so it accepts a
+    document that `map_from_dict` refuses.
+    `vramfit.adapters.outbound.sensitivity_map_json` owns schema
+    validation, and this script never grows a second copy of it.
 
     Args:
         raw: The parsed input document.
@@ -186,7 +194,7 @@ def map_groups(raw: object, path: Path) -> list[dict]:
         The ``groups`` list, every element a readable group.
 
     Raises:
-        MapRefusal: If the document is not a sensitivity map.
+        MapRefusal: If ``groups`` is absent, or the loop cannot read it.
     """
     if not isinstance(raw, dict) or "groups" not in raw:
         raise MapRefusal(f'{path}: not a sensitivity map — no "groups" key')
