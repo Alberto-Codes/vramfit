@@ -10,7 +10,8 @@ file.
 writer cannot produce one, because a colliding field is a duplicate
 keyword argument at the `msg` call. So a repeat means a hand edit or a
 foreign writer, and it raises at every line position. ADR-0011's
-crash-tolerance rule stays scoped to a torn final line.
+crash-tolerance rule stays scoped to a decode failure on the final
+line.
 
 Examples:
     Record a scan's first event:
@@ -118,13 +119,36 @@ def read_run_log(path: Path) -> list[dict[str, Any]]:
     crash mid-write) is dropped, honoring the crash-tolerance rule of
     ADR-0011. A torn line anywhere else is corruption and raises.
 
+    The drop covers every JSON decode failure on the final line, not
+    truncation alone. A tear and a bad prefix do not separate. A hand
+    edit that deletes the end of a line writes the same bytes a crash
+    writes, so no test of the content tells them apart.
+
+    One sub-case does separate, and the reader still drops it. A
+    complete value followed by trailing text decodes cleanly under
+    `json.JSONDecoder.raw_decode`, which a torn prefix never does.
+    Measured 2026-08-18: two crash artifacts take that shape. A
+    complete line padded with NUL bytes follows a power loss under
+    delayed allocation. A line that lost its newline before a restart
+    appended, ``{"a":1}{"b":2``, follows a crash. Refusing the shape
+    would refuse both, which ADR-0011 decision 2 forbids.
+
+    Every other failure raises, at every position (#315). A line
+    carrying an integer literal past ``sys.get_int_max_str_digits``
+    parses to no number, and that is not a crash signature. Dropping it
+    would report one event where the file records two. That refusal
+    drops the parser's closing advice, which recommends raising the
+    limit this reader enforces. Any other failure keeps its whole
+    text.
+
     A line that repeats a key raises at every position, including the
     last (#283). `emit` cannot write one: a `fields` entry named
     ``event`` or ``vramfit_runlog`` collides with the keyword argument
     and raises `TypeError` at the call. So a repeat means a hand edit or
-    a foreign writer, never a crash, and the drop rule stays scoped to
-    truncation. The refusal names the file line, counting blank lines
-    that the reader itself skips.
+    a foreign writer, never a crash. Every refusal names the file line,
+    counting blank lines that the reader itself skips. #283 gave the
+    duplicate-key refusal that locator, and #315 extends it to the
+    decode refusals, which reported the line inside the parsed string.
 
     Args:
         path: The run-log file.
@@ -134,8 +158,9 @@ def read_run_log(path: Path) -> list[dict[str, Any]]:
 
     Raises:
         OSError: If the file cannot be read.
-        ValueError: If a non-final line is not valid JSON, or any line
-            defines the same key twice.
+        ValueError: If a non-final line is not valid JSON. If any line
+            defines the same key twice. If any line carries a number
+            literal the parser refuses.
     """
     # Each line keeps its file number, because the blank-line filter
     # would otherwise make the refusal below name the wrong line. A hand
@@ -152,8 +177,27 @@ def read_run_log(path: Path) -> list[dict[str, Any]]:
             events.append(json.loads(line, object_pairs_hook=object_from_pairs))
         except DuplicateKeyError as exc:
             raise ValueError(f"{path}: line {number}: {exc.message}") from exc
-        except ValueError:
+        except json.JSONDecodeError as exc:
             if i == len(lines) - 1:
                 break
-            raise
+            raise ValueError(
+                f"{path}: line {number}: invalid JSON: {exc.msg}: column {exc.colno}"
+            ) from exc
+        except ValueError as exc:
+            # The syntax parsed and the value conversion failed. An
+            # integer literal past `sys.get_int_max_str_digits` lands
+            # here (#260, #315). A crash cannot write one, so the final
+            # line earns no drop.
+            #
+            # The clause after the first semicolon advises raising
+            # that limit, which would parse the value this reader
+            # refuses. Strict mode bans the semicolon too, so the
+            # message drops that clause. The test guards the wording,
+            # and an unrelated failure keeps its whole text.
+            reason = str(exc)
+            if "for integer string conversion" in reason:
+                reason = reason.split(";", 1)[0]
+            raise ValueError(
+                f"{path}: line {number}: cannot parse JSON: {reason}"
+            ) from exc
     return events

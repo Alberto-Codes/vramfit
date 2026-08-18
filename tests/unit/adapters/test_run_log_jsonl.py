@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import sys
+
 import pytest
 
 from vramfit.adapters.outbound.run_log_jsonl import (
@@ -9,6 +11,20 @@ from vramfit.adapters.outbound.run_log_jsonl import (
 )
 
 pytestmark = pytest.mark.unit
+
+
+@pytest.fixture
+def digit_limit():
+    """Pin the interpreter's integer digit limit, then restore it.
+
+    `PYTHONINTMAXSTRDIGITS=0` disables the limit, and a disabled limit
+    would let the refusal tests parse their own fixture.
+    """
+    previous = sys.get_int_max_str_digits()
+    limit = sys.int_info.str_digits_check_threshold
+    sys.set_int_max_str_digits(limit)
+    yield limit
+    sys.set_int_max_str_digits(previous)
 
 
 def test_every_line_carries_the_envelope_and_timestamp(tmp_path) -> None:
@@ -134,4 +150,71 @@ def test_reader_raises_on_a_duplicate_key_in_the_final_line(tmp_path) -> None:
         handle.write('{"event": "cell_measured", "damage": 1.0, "damage": 2.0}\n')
 
     with pytest.raises(ValueError, match='line 2: duplicate key "damage"'):
+        read_run_log(path)
+
+
+def test_reader_refuses_an_unparsable_number_in_the_final_line(
+    tmp_path, digit_limit
+) -> None:
+    # #315: the drop rule caught every `ValueError`, scoped by position
+    # and never by kind. An integer literal past
+    # `sys.get_int_max_str_digits` is complete, well-formed JSON that
+    # the parser still refuses. No crash writes one, so it raises.
+    huge = "9" * (digit_limit + 1)
+    path = tmp_path / "x.jsonl"
+    JsonlRunLogFile(path).emit("scan_started", {})
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(f'{{"event": "cell_measured", "n": {huge}}}\n')
+
+    with pytest.raises(
+        ValueError,
+        match=r"line 2: cannot parse JSON: Exceeds the limit .*digits\)"
+        r" for integer string conversion: value has \d+ digits$",
+    ):
+        read_run_log(path)
+
+
+def test_reader_refuses_an_unparsable_number_past_a_blank_line(
+    tmp_path, digit_limit
+) -> None:
+    # The locator must survive the blank-line filter on this path too.
+    huge = "9" * (digit_limit + 1)
+    path = tmp_path / "x.jsonl"
+    path.write_text(
+        f'{{"event": "scan_started"}}\n\n{{"event": "cell_measured", "n": {huge}}}\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="line 3: cannot parse JSON"):
+        read_run_log(path)
+
+
+def test_reader_drops_a_final_line_torn_mid_float(tmp_path) -> None:
+    # ADR-0011 decision 2. Narrowing the catch by kind must not reach
+    # the crash signature the rule protects.
+    path = tmp_path / "x.jsonl"
+    JsonlRunLogFile(path).emit("scan_started", {})
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write('{"event": "cell_measured", "ppl": 8.')  # crash mid-float
+
+    events = read_run_log(path)
+
+    assert [e["event"] for e in events] == ["scan_started"]
+
+
+def test_reader_names_the_file_line_for_a_torn_middle_line(tmp_path) -> None:
+    # The raw `JSONDecodeError` reports the line inside the string it
+    # parsed, which is always 1. The refusal names the file line.
+    path = tmp_path / "x.jsonl"
+    path.write_text(
+        '{"event": "scan_started"}\n'
+        '{"broken\n'
+        '{"event": "scan_finished", "vramfit_runlog": 2}\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"line 2: invalid JSON: Unterminated string starting at: column 2$",
+    ):
         read_run_log(path)
