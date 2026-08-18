@@ -2,10 +2,11 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-31 (accepted 2026-07-31)
-- **Amendment (2026-08-17, issue #319):** a fourth method token,
-  `gguf-ref`, ports the block quantizers `llama-quantize` applies where
-  no K-quant reaches. Maintainer ruling 2026-08-17. See
-  "Amendment: the `gguf-ref` method" below.
+- **Amendment (2026-08-17, issue #319):** a third method, `gguf`, ports
+  the block quantizers `llama-quantize` applies where no K-quant
+  reaches. Its token `gguf-ref` is the fourth, because `kquant` carries
+  two. Maintainer ruling 2026-08-17. See "Amendment: the `gguf-ref`
+  method" below.
 
 ## Context
 
@@ -147,7 +148,9 @@ the pack applied. This one replaces a frame the pack cannot apply.
 
 ### Decision
 
-1. **A third within-group method ports the block quantizers.** It
+1. **A third within-group method ports the block quantizers.** The
+   methods are `rtn`, `kquant`, and now `gguf`. The tokens number four,
+   because `kquant` carries `kquant-ref` and `kquant-imx`. It
    reimplements `quantize_row_q2_0_ref` and `quantize_row_q4_0_ref` from
    llama.cpp b10326, commit `3653e6d6d`, including the fp16 scale
    rounding. The two types round differently and the port must keep them
