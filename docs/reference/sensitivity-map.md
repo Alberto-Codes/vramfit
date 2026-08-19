@@ -98,6 +98,11 @@ below remain, the sub-4-bit pricing claims do not.
   older maps, `scripts/backfill_tensor_sizes.py` reads the
   checkpoint's safetensors headers — a JSON parse, no torch — and
   writes an annotated map copy.
+  A tensor of zero elements has no positive size, so the map cannot
+  record it. The safetensors format permits such a tensor, and the
+  backfill refuses one rather than writing a size this field rejects
+  (maintainer ruling 2026-08-19 on #335). The operator learns at the
+  backfill instead of at the next read.
 - **`imatrix_counts`** — the group's pooled imatrix count
   distribution: `{"min": ..., "median": ..., "max": ...}`
   ([ADR-0026](../adr/0026-moe-expert-pricing.md) decision 4, scoped
