@@ -19,7 +19,12 @@ filter drops (ADR-0013), its ``--protect`` rules resolve to
 per-tensor floors with a warning for a dead rule and for each
 dropped no-op pair (ADR-0022, issue #59), and its
 ``--exclude-imatrix`` globs mark protected tensors with a warning
-when a glob overreaches the protected set (ADR-0023). ``--format-overhead`` defaults per size
+when a glob overreaches the protected set (ADR-0023). Its
+``--checkpoint`` reads the model's safetensors headers for a size
+source independent of the map, so a partial map no longer defines
+the model (ADR-0029) — that wiring lives in
+[vramfit.adapters.inbound.cli_plan_sizes][].
+``--format-overhead`` defaults per size
 model (ADR-0014): the residual when the runtime has an
 effective-bits table, the scalar otherwise. An artifact field a
 reader does not know draws a ``warning:`` line as well: the app
@@ -50,6 +55,7 @@ import typer
 
 from vramfit import __version__
 from vramfit.adapters.inbound import cli_pack, cli_scan, cli_validate
+from vramfit.adapters.inbound.cli_plan_sizes import discovered_bytes
 from vramfit.adapters.inbound.cli_protection_warnings import warn_protection_gaps
 from vramfit.adapters.outbound.hf_config import HfConfigFile
 from vramfit.adapters.outbound.json_common import (
@@ -290,6 +296,14 @@ def plan(
         Path, typer.Argument(help="Sensitivity map produced by vramfit scan.")
     ],
     vram: Annotated[str, typer.Option(help="Hard VRAM ceiling, e.g. 24GiB.")],
+    checkpoint: Annotated[
+        Path | None,
+        typer.Option(
+            help="Checkpoint the map was scanned from. Its safetensors "
+            "headers price every group, so a map covering part of the "
+            "model no longer defines it (ADR-0029)."
+        ),
+    ] = None,
     kv_headroom: Annotated[
         str, typer.Option(help="Reserved for KV cache and runtime.")
     ] = "4GiB",
@@ -350,6 +364,12 @@ def plan(
     nothing draws a warning, never silence — the recipe drops a
     no-op pair, which would otherwise falsely fail the
     reconstruction check (issue #59).
+
+    ``--checkpoint`` reads the model's safetensors headers for a size
+    source independent of the map (ADR-0029). A group the checkpoint
+    holds and the map does not measure holds at reference precision,
+    and the recipe assigns it there. Without the option the map
+    defines the model, and the command says so.
 
     A map field the reader does not know draws a warning too, and the
     plan continues (#261). The warning names the JSON path and states
@@ -420,6 +440,8 @@ def plan(
             f"{list(map_.scan.precisions)} — candidates {dropped} dropped"
         )
 
+    sizes = discovered_bytes(checkpoint, map_)
+
     try:
         recipe = solve(
             map_,
@@ -431,6 +453,7 @@ def plan(
             imatrix_exclusions=exclusions,
             format_overhead=format_overhead,
             runtime=runtime,
+            discovered_bytes=sizes,
         )
     except VramfitError as exc:
         # One honest catch for the root (ADR-0011): the solver's

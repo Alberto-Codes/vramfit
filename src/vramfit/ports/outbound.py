@@ -13,7 +13,10 @@ the reconstruction port (`ReconstructionChecker`) carries the
 per-tensor measurement that guards protected packs against fit
 collapse (ADR-0022), the count port (`ImatrixCountSource`) carries
 the importance matrix's per-expert tallies to the pack step's
-zero-count report (ADR-0026 decision 5), and the evals ports
+zero-count report (ADR-0026 decision 5), the size port
+(`TensorSizeSource`) carries the checkpoint's per-tensor sizes to
+the plan step, so the input map no longer defines the model
+(ADR-0029), and the evals ports
 (`EvalsSidecarSource`, `EvalsSidecarSink`) carry one evaluated
 artifact's scoreboard evidence to and from its published sidecar
 (ADR-0025).
@@ -45,6 +48,7 @@ from vramfit.domain.evals import EvalsSidecar
 from vramfit.domain.model import Recipe, SensitivityMap
 from vramfit.domain.pack import PackResult
 from vramfit.domain.scan import GroupSpec, Measurement
+from vramfit.domain.sizes import TensorSize
 
 
 class SensitivityMapSource(Protocol):
@@ -393,6 +397,54 @@ class ImatrixCountSource(Protocol):
                 not finite, or a count length that contradicts the
                 base tensor.
             OSError: If a file cannot be read.
+        """
+        ...
+
+
+class TensorSizeSource(Protocol):
+    """Reads a checkpoint's per-tensor sizes for the plan step.
+
+    The independent size source of ADR-0029: `plan` used to treat its
+    input map's group list as the model, so a group the map omitted
+    contributed zero bytes (#337). The safetensors adapter implements
+    it by parsing each shard's header, which needs no torch and keeps
+    the plan step importable under ADR-0005.
+
+    The record carries the dtype beside the bytes (decision 5), so
+    the domain recovers the element count instead of assuming two
+    bytes per parameter. Group aggregation is domain arithmetic
+    (`vramfit.domain.sizes.discovered_group_bytes`) — the port
+    returns raw checkpoint tensor names and reads no model structure
+    (decision 6).
+
+    Examples:
+        The plan command drives the port like this:
+
+        ```python
+        groups = discovered_group_bytes(source.tensor_sizes(), map_.scan.group_by)
+        ```
+    """
+
+    def tensor_sizes(self) -> Mapping[str, TensorSize]:
+        """Read every priced tensor's stored size and dtype.
+
+        Returns:
+            One record per checkpoint tensor the plan step prices,
+            keyed by the checkpoint's own tensor name. The MTP block
+            stays out (decision 2): GGUF numbers one layer stack, so
+            backbone and MTP cannot pack together and a source
+            summing both would overstate the weight budget.
+
+        Raises:
+            SizeSourceError: If the checkpoint holds no shards, or a
+                shard's contents refuse — a malformed header, an
+                entry the reader cannot price, or one tensor name
+                defined twice. Every refusal about what a file
+                *says* arrives as this type.
+            OSError: If a file cannot be opened, stat'd, or read.
+                Every failure about reaching a file at all stays an
+                `OSError`, so a caller can tell a missing checkpoint
+                from a corrupt one.
         """
         ...
 

@@ -59,6 +59,7 @@ class TestEffectiveBits:
     def test_llama_cpp_table_matches_the_kquant_block_layouts(self) -> None:
         # Exact ADR-0014 constants, verified against packed files.
         assert effective_bits("llama.cpp") == {
+            16: 16.0,
             8: 8.5,
             6: 6.5625,
             5: 5.5,
@@ -83,11 +84,14 @@ class TestEffectiveBits:
         for runtime, table in EFFECTIVE_BITS.items():
             assert set(table) == RUNTIME_CAPABILITIES[runtime]
 
-    def test_effective_bits_always_exceed_nominal_bits(self) -> None:
+    def test_effective_bits_never_fall_below_nominal_bits(self) -> None:
         # Block scales cost extra bits — a table entry below nominal
-        # would mean a type stores weights for free.
+        # would mean a type stores weights for free. The F16
+        # passthrough is the one equality: `F16` stores two bytes per
+        # weight and carries no block scale (ADR-0029 decision 4).
         for table in EFFECTIVE_BITS.values():
-            assert all(spent > bits for bits, spent in table.items())
+            assert all(spent >= bits for bits, spent in table.items())
+            assert all(spent > bits for bits, spent in table.items() if bits != 16)
 
     def test_effective_bits_tables_are_read_only(self) -> None:
         outer = cast("MutableMapping[str, object]", EFFECTIVE_BITS)
@@ -101,8 +105,15 @@ class TestEffectiveBits:
 class TestExpertStackEffectiveBits:
     def test_llama_cpp_table_carries_the_adr_0028_rows(self) -> None:
         # Q8_0 at 8.50, Q4_0 at 4.50, Q2_0 at 2.25 — exact
-        # block-layout constants for the expert-stack type table.
-        assert expert_stack_effective_bits("llama.cpp") == {8: 8.5, 4: 4.5, 2: 2.25}
+        # block-layout constants for the expert-stack type table. The
+        # 16 row is the ADR-0029 passthrough, which has no block to
+        # divide and so costs the same on a stack row.
+        assert expert_stack_effective_bits("llama.cpp") == {
+            16: 16.0,
+            8: 8.5,
+            4: 4.5,
+            2: 2.25,
+        }
 
     def test_table_has_no_3_bit_row(self) -> None:
         # No GGUF type lands between 2.25 and 4.25 bits per weight on

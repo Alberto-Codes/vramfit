@@ -3,7 +3,9 @@
 The decision core of the GGUF backend, kept free of IO so the mapping
 is testable and the verified fake can share it. Nominal precisions
 map to K-quant types (the full llama.cpp capability set since
-ADR-0013), layer groups map to escaped `blk.<n>.` regex patterns
+ADR-0013) and nominal 16 maps to `f16`, the passthrough a recipe
+holds an unmeasured group at (ADR-0029 decision 4), layer groups
+map to escaped `blk.<n>.` regex patterns
 across the three naming families the scan produces, routed-expert
 stack groups map to their fused `blk.<n>.ffn_<proj>_exps.` tensor
 (#159, #161) through their own type table — k-quant super-blocks do
@@ -57,7 +59,11 @@ from vramfit.domain.model import Recipe
 from vramfit.domain.pack import TypeOverride
 from vramfit.domain.runtime import LLAMA_CPP
 
+# The 16 row is the F16 passthrough (ADR-0029 decision 4). A recipe
+# holds an unmeasured group at reference precision, and `f16` is what
+# reference precision packs as.
 GGML_TYPE_BY_BITS: Final[dict[int, str]] = {
+    16: "f16",
     8: "q8_0",
     6: "q6_k",
     5: "q5_k",
@@ -70,8 +76,11 @@ GGML_TYPE_BY_BITS: Final[dict[int, str]] = {
 # 256-element super-blocks, and the expert-stack rows (2688, 1856) do
 # not divide by 256 — the quantizer would silently substitute. Every
 # entry here has a block size that divides both row widths. Effective
-# bits per weight: q8_0 at 8.50, q4_0 at 4.50, q2_0 at 2.25.
+# bits per weight: f16 at 16.00, q8_0 at 8.50, q4_0 at 4.50, q2_0 at
+# 2.25. The f16 row is the ADR-0029 passthrough, and it has no block
+# to divide.
 EXPERT_STACK_TYPE_BY_BITS: Final[dict[int, str]] = {
+    16: "f16",
     8: "q8_0",
     4: "q4_0",
     2: "q2_0",
@@ -81,6 +90,7 @@ EXPERT_STACK_TYPE_BY_BITS: Final[dict[int, str]] = {
 # tensor-type names. Each entry is the pure-type ftype for the same
 # nominal bits as GGML_TYPE_BY_BITS.
 BASE_FTYPE_BY_BITS: Final[dict[int, str]] = {
+    16: "F16",
     8: "Q8_0",
     6: "Q6_K",
     5: "Q5_K_S",
@@ -166,10 +176,10 @@ class PackError(VramfitError, RuntimeError):
     contract.
 
     Examples:
-        A 16-bit assignment has no mapping:
+        A 7-bit assignment has no mapping:
 
         ```python
-        ggml_type_for(16)  # raises PackError
+        ggml_type_for(7)  # raises PackError
         ```
     """
 

@@ -76,3 +76,24 @@ def raw_sensitivity_maps(draw: st.DrawFn) -> dict[str, Any]:
         curve = {bits: draw(damage) for bits in precisions}
         groups.append((f"model.layers.{i}.g", bytes_fp16, curve))
     return make_map(groups, precisions=precisions)
+
+
+@st.composite
+def raw_maps_with_discovered_bytes(
+    draw: st.DrawFn,
+) -> tuple[dict[str, Any], dict[str, int]]:
+    """Draw a map plus a checkpoint's group sizes that partly cover it.
+
+    The source always carries every group the map does, at the map's
+    own size, plus zero or more groups the map never measured
+    (ADR-0029). Those are the uncovered groups the solver holds at
+    reference precision.
+    """
+    raw = draw(raw_sensitivity_maps())
+    discovered = {g["name"]: g["bytes_fp16"] for g in raw["groups"]}
+    n_uncovered = draw(st.integers(min_value=0, max_value=4))
+    for i in range(n_uncovered):
+        discovered[f"model.uncovered.{i}"] = draw(
+            st.integers(min_value=1, max_value=10_000_000)
+        )
+    return raw, discovered
