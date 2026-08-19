@@ -54,6 +54,17 @@ class TestModelShapeFromConfig:
         with pytest.raises(ValueError, match="n_heads_in_group"):
             shape_from_config_json(path)
 
+    def test_decilm_config_boolean_group_size_raises(self, tmp_path) -> None:
+        # `bool` subclasses `int`, so `true` read as one head group and
+        # returned a shape with no report (#348).
+        config = self._decilm_config()
+        config["block_configs"][0]["attention"]["n_heads_in_group"] = True
+        path = tmp_path / "config.json"
+        path.write_text(json.dumps(config))
+
+        with pytest.raises(ValueError, match="must be a positive integer"):
+            shape_from_config_json(path)
+
     def test_decilm_config_non_divisible_group_size_raises(self, tmp_path) -> None:
         config = self._decilm_config()
         config["block_configs"][0]["attention"]["n_heads_in_group"] = 6
@@ -227,4 +238,105 @@ class TestModelShapeFromConfig:
         path.write_text(raw)
 
         with pytest.raises(ValueError, match='duplicate key "n_heads_in_group"'):
+            shape_from_config_json(path)
+
+    def test_layer_count_above_the_64_bit_range_raises(self, tmp_path) -> None:
+        # `ModelShape.uniform` repeats a tuple by this count, which
+        # raised `OverflowError` past the CLI's clause and printed a
+        # traceback where ADR-0011 decision 5 wants an `error:` line
+        # (#314).
+        path = tmp_path / "config.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "num_hidden_layers": 10**30,
+                    "num_key_value_heads": 8,
+                    "num_attention_heads": 32,
+                    "hidden_size": 4096,
+                }
+            )
+        )
+
+        with pytest.raises(ValueError, match="the largest integer this format"):
+            shape_from_config_json(path)
+
+    def test_kv_heads_one_past_the_64_bit_range_raises(self, tmp_path) -> None:
+        path = tmp_path / "config.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "num_hidden_layers": 2,
+                    "num_key_value_heads": 2**63,
+                    "num_attention_heads": 32,
+                    "hidden_size": 4096,
+                }
+            )
+        )
+
+        with pytest.raises(ValueError, match='"num_key_value_heads" exceeds'):
+            shape_from_config_json(path)
+
+    def test_head_dim_at_the_largest_representable_integer_parses(
+        self, tmp_path
+    ) -> None:
+        # The bound refuses what the format cannot carry and nothing
+        # else. The domain rules whether the value means anything
+        # (ADR-0008, 2026-08-16).
+        path = tmp_path / "config.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "num_hidden_layers": 2,
+                    "num_key_value_heads": 8,
+                    "num_attention_heads": 32,
+                    "head_dim": 2**63 - 1,
+                }
+            )
+        )
+
+        shape = shape_from_config_json(path)
+
+        assert shape.head_dim == 2**63 - 1
+
+    def test_head_dim_above_the_64_bit_range_raises(self, tmp_path) -> None:
+        path = tmp_path / "config.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "num_hidden_layers": 2,
+                    "num_key_value_heads": 8,
+                    "num_attention_heads": 32,
+                    "head_dim": 10**25,
+                }
+            )
+        )
+
+        with pytest.raises(ValueError, match='"head_dim" exceeds'):
+            shape_from_config_json(path)
+
+    def test_decilm_group_size_above_the_64_bit_range_raises(self, tmp_path) -> None:
+        # The divisibility refusal below this bound renders the value
+        # into its message, so an unbounded literal would reach the
+        # operator's terminal in full.
+        config = self._decilm_config()
+        config["block_configs"][0]["attention"]["n_heads_in_group"] = 10**40
+        path = tmp_path / "config.json"
+        path.write_text(json.dumps(config))
+
+        with pytest.raises(ValueError, match=r"n_heads_in_group exceeds \d+"):
+            shape_from_config_json(path)
+
+    def test_integer_literal_past_the_digit_limit_names_the_file(
+        self, tmp_path
+    ) -> None:
+        # `json.loads` raises a plain `ValueError` above
+        # `sys.get_int_max_str_digits`, which escaped both named
+        # clauses and reported CPython's remedy with no file (#287).
+        path = tmp_path / "config.json"
+        path.write_text(
+            '{"num_hidden_layers": ' + "9" * 5000 + ', "num_key_value_heads": 8, '
+            '"num_attention_heads": 32, "hidden_size": 4096}'
+        )
+
+        with pytest.raises(ValueError, match=r"config\.json: cannot parse JSON"):
             shape_from_config_json(path)
