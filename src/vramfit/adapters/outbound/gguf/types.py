@@ -15,9 +15,9 @@ through the class table to `blk.<n>.<stem>.` patterns, where an
 unquantizable class instead pins at the F16 passthrough and refuses
 any lower width (the 2026-08-20 amendment), protected tensors map
 through the same class table to per-tensor patterns under either
-scan root (ADR-0022, ADR-0012 as amended 2026-08-12), excluded
-pairs map to the full GGUF tensor names ``--exclude-weights``
-deletes by substring (ADR-0023),
+scan root (ADR-0022, the second root per #365), excluded pairs
+map to the full GGUF tensor names ``--exclude-weights`` deletes
+by substring (ADR-0023),
 and the embedding and `lm_head` groups map to the quantizer's
 dedicated embedding and output flags. The backend's own runtime
 name is the domain's `LLAMA_CPP` constant, so the table key and
@@ -200,8 +200,10 @@ GGUF_SUFFIX_BY_HF: Final[dict[str, str]] = {
 # A protection target, under either root the scan produces (#177) and
 # at whatever suffix depth the class table holds. ADR-0012 decision 2,
 # as amended 2026-08-12, drops the fixed `model.` prefix. The suffix
-# carries no depth limit because `mixer.shared_experts.down_proj`
-# holds three segments. `GGUF_SUFFIX_BY_HF` still decides what maps.
+# carries no depth limit, so a class-table key deeper than two
+# segments needs no pattern change. The shared-expert rows hold
+# three segments (the 2026-08-20 amendment, #183).
+# `GGUF_SUFFIX_BY_HF` still decides what maps.
 _LAYER_TENSOR: Final[re.Pattern[str]] = re.compile(
     r"^(?:model|backbone)\.layers\.(\d+)\.(.+)\.weight$"
 )

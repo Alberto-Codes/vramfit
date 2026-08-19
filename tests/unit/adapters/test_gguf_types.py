@@ -739,6 +739,23 @@ class TestGgufTensorName:
         with pytest.raises(PackError, match="no GGUF mapping"):
             gguf_tensor_name(tensor)
 
+    @pytest.mark.parametrize(
+        "tensor",
+        [
+            "backbone.layers.1.mixer.experts.0.up_proj.weight",
+            "model.layers.4.self_attn.v_proj.weight.weight",
+        ],
+        ids=["expert-stack", "double-suffix"],
+    )
+    def test_suffix_outside_the_class_table_raises_pack_error(
+        self, tensor: str
+    ) -> None:
+        # The class table holds the mixer and shared-expert rows now
+        # (the 2026-08-20 amendment), so only a suffix outside the
+        # table refuses here.
+        with pytest.raises(PackError, match="no GGUF mapping"):
+            gguf_tensor_name(tensor)
+
 
 class TestProtectionOverrides:
     def test_resolved_pair_becomes_escaped_override(self) -> None:
