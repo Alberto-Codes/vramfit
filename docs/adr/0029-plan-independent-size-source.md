@@ -156,12 +156,15 @@ A **base GGUF** exists only after a pack, and `plan` runs before packing.
    the roots for `plan`.
 
    The wildcard prohibition is not caution. Chart #158 records the
-   failure it prevents, from #177: the imatrix name table supports
-   `model.layers.N.` and `backbone.layers.N.` and no others, because "a
-   prefix wildcard mapped a vision tower's `layers.5` onto the decoder's
-   `blk.5` and would have priced it against the wrong columns". A size
-   source carries the same hazard. It would price a vision tower's
-   tensors against a decoder group.
+   failure it prevents, from #177. The imatrix name table supports
+   `model.layers.N.` and `backbone.layers.N.` and no others:
+
+   > A prefix wildcard mapped a vision tower's `layers.5` onto the
+   > decoder's `blk.5` and would have priced it against the wrong
+   > columns.
+
+   A size source carries the same hazard. It would price a vision
+   tower's tensors against a decoder group.
 
    One shared utility serves `plan` and `validate` together. #301
    records the same mismatch disabling `vramfit validate`, and this ADR
