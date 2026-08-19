@@ -871,8 +871,8 @@ class TestPlanProtect:
 class TestPlanCheckpointOption:
     """``plan --checkpoint`` reads the size source ADR-0029 rules."""
 
-    def _write_map(self, tmp_path):
-        raw = make_map([("model.layers.0", 160_000, CURVE)])
+    def _write_map(self, tmp_path, groups=None):
+        raw = make_map(groups or [("model.layers.0", 160_000, CURVE)])
         path = tmp_path / "sensitivity.json"
         path.write_text(json.dumps(raw))
         return path
@@ -980,9 +980,13 @@ class TestPlanCheckpointOption:
         assert "root the table does not carry" in result.stderr
 
     def test_a_map_group_the_checkpoint_lacks_warns(self, tmp_path) -> None:
-        map_path = self._write_map(tmp_path)
+        # A partial miss warns and plans. Only a total miss refuses.
+        map_path = self._write_map(
+            tmp_path,
+            [("model.layers.0", 160_000, CURVE), ("model.layers.9", 160_000, CURVE)],
+        )
         model_dir = self._write_checkpoint(
-            tmp_path, {"model.layers.9.mlp.up_proj.weight": 160_000}
+            tmp_path, {"model.layers.0.mlp.up_proj.weight": 160_000}
         )
         out = tmp_path / "recipe.json"
 
@@ -1005,3 +1009,55 @@ class TestPlanCheckpointOption:
 
         assert result.exit_code == 1
         assert "error:" in result.stderr
+
+    def test_a_checkpoint_carrying_no_map_group_exits_one(self, tmp_path) -> None:
+        # A total miss is the wrong directory, not the map-source
+        # disagreement ADR-0029 leaves unruled. Continuing would price
+        # both views of the model.
+        map_path = self._write_map(tmp_path)
+        model_dir = self._write_checkpoint(
+            tmp_path, {"model.layers.9.mlp.up_proj.weight": 160_000}
+        )
+        out = tmp_path / "recipe.json"
+
+        result = self._plan(map_path, out, "--checkpoint", str(model_dir))
+
+        assert result.exit_code == 1
+        assert "none of the map's 1 groups appear" in result.stderr
+
+    def test_the_recipe_a_checkpoint_plan_writes_loads_back(self, tmp_path) -> None:
+        # The solver refuses a runtime that cannot serve reference
+        # precision, so a saved recipe always survives its own reader.
+        map_path = self._write_map(tmp_path)
+        model_dir = self._write_checkpoint(
+            tmp_path,
+            {
+                "model.layers.0.mlp.up_proj.weight": 160_000,
+                "model.layers.1.mlp.up_proj.weight": 80_000,
+            },
+        )
+        out = tmp_path / "recipe.json"
+
+        result = self._plan(map_path, out, "--checkpoint", str(model_dir))
+
+        assert result.exit_code == 0, result.output
+        assert len(load_recipe(out).assignments) == 2
+
+    def test_a_runtime_without_reference_precision_exits_one(self, tmp_path) -> None:
+        map_path = self._write_map(tmp_path)
+        model_dir = self._write_checkpoint(
+            tmp_path,
+            {
+                "model.layers.0.mlp.up_proj.weight": 160_000,
+                "model.layers.1.mlp.up_proj.weight": 80_000,
+            },
+        )
+        out = tmp_path / "recipe.json"
+
+        result = self._plan(
+            map_path, out, "--checkpoint", str(model_dir), "--runtime", "vllm"
+        )
+
+        assert result.exit_code == 1
+        assert "cannot serve reference precision 16" in result.stderr
+        assert not out.exists()

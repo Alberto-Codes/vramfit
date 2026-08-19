@@ -7,21 +7,29 @@ header is a JSON parse and needs no torch, so the plan step stays
 importable under ADR-0005. The safetensors *index* carries no shapes,
 which is why the source reads the shards themselves.
 
-`read_safetensors_header` is the reader ADR-0022's Consequences
-promised would earn a second consumer:
-`scripts/backfill_tensor_sizes.py` imports it from here rather than
-carrying its own copy.
+ADR-0022's Consequences said the backfill script's header reader
+"earns a CLI command when a second consumer appears". This source is
+that second consumer, and ADR-0029 decision 1 rules that the two
+share the reader instead. So `read_safetensors_header` lives here and
+`scripts/backfill_tensor_sizes.py` imports it rather than carrying
+its own copy.
 
 Two filters shape what the source returns. The MTP block stays out
-(decision 2) — GGUF numbers one layer stack, so backbone and MTP
-cannot pack together, and a source summing both would overstate the
-weight budget by the block's 1.335B parameters. Tensors below two
-dimensions stay out because they are not quantizable, which is the
-same rule
-[vramfit.adapters.outbound.scan.discovery][] applies when the torch
-meter discovers groups. The two must agree, or the source would price
-groups the map can never carry. The residual overhead fraction covers
-those tensors, per ADR-0014.
+(decision 2). GGUF numbers one layer stack, so backbone and MTP cannot
+pack together, and a source summing both would overstate the weight
+budget by the block's 1.335B parameters. Tensors below two dimensions
+stay out because they are not quantizable, which is the rank half of
+the rule [vramfit.adapters.outbound.scan.discovery][] applies when the
+torch meter discovers groups. The two must agree, or the source would
+price groups the map can never carry. ADR-0014's residual overhead
+fraction covers the tensors both drop.
+
+The meter's other half diverges on purpose. `discover_groups` also
+skips a parameter that is not floating point, because it cannot
+perturb one. This source keeps it and lets
+[vramfit.domain.sizes][] refuse the dtype. A 2-D integer tensor is
+still weight bytes on the card, and skipping it would understate the
+budget — the direction ADR-0029 exists to stop.
 
 The adapter reports each header's dtype verbatim and computes no
 convention of its own (decision 5). Converting a stored size to
@@ -48,6 +56,7 @@ See Also:
 from __future__ import annotations
 
 import json
+import math
 import struct
 from dataclasses import dataclass
 from pathlib import Path
@@ -57,7 +66,11 @@ from vramfit.adapters.outbound.json_duplicate_key import (
     DuplicateKeyError,
     object_from_pairs,
 )
-from vramfit.domain.sizes import SizeSourceError, TensorSize
+from vramfit.domain.sizes import (
+    DTYPE_ELEMENT_BYTES,
+    SizeSourceError,
+    TensorSize,
+)
 
 # A safetensors file opens with a little-endian u64 header length.
 HEADER_PREFIX_BYTES: Final[int] = 8
@@ -68,8 +81,8 @@ HEADER_PREFIX_BYTES: Final[int] = 8
 MTP_ROOT: Final[str] = "mtp."
 
 # A quantizable parameter has at least this many dimensions. The
-# torch meter's `discover_groups` applies the same rule, and the two
-# must agree on what the model's groups are.
+# torch meter's `discover_groups` applies the same rule, so the source
+# and the meter discover the same groups.
 MIN_QUANTIZABLE_DIMENSIONS: Final[int] = 2
 
 
@@ -83,10 +96,11 @@ def read_safetensors_header(path: Path) -> dict[str, dict]:
         The header mapping, metadata entry removed.
 
     Raises:
-        ValueError: If the file is too short, the header is not valid
-            UTF-8 or valid JSON, or the header defines the same key
-            twice (#262).
-        OSError: If the file cannot be read.
+        ValueError: If the file is too short, the header declares more
+            bytes than the file holds, the header is not valid UTF-8
+            or valid JSON, or the header defines the same key twice
+            (#262).
+        OSError: If the file cannot be read or stat'd.
 
     Examples:
         ```python
@@ -99,11 +113,21 @@ def read_safetensors_header(path: Path) -> dict[str, dict]:
         header = read_safetensors_header(Path("model-00001-of-00014.safetensors"))
         ```
     """
+    size = path.stat().st_size
     with path.open("rb") as handle:
         prefix = handle.read(HEADER_PREFIX_BYTES)
         if len(prefix) < HEADER_PREFIX_BYTES:
             raise ValueError(f"{path}: too short for a safetensors header")
         (header_bytes,) = struct.unpack("<Q", prefix)
+        # A u64 spans further than any file, and `read` would try to
+        # allocate whatever it declares. That raises `OverflowError` or
+        # `MemoryError`, neither of which a caller catching `ValueError`
+        # sees. Compare against the file first (#335).
+        if header_bytes > size - HEADER_PREFIX_BYTES:
+            raise ValueError(
+                f"{path}: header declares {header_bytes} bytes, and the file "
+                f"holds {size - HEADER_PREFIX_BYTES} after the prefix"
+            )
         try:
             header = json.loads(
                 handle.read(header_bytes), object_pairs_hook=object_from_pairs
@@ -174,7 +198,10 @@ def _record_size(shard: Path, name: str, record: object) -> TensorSize | None:
     Raises:
         SizeSourceError: If the entry is not an object carrying a
             ``dtype`` string, a ``shape`` list of non-negative
-            integers, and a ``data_offsets`` range.
+            integers, and a ``data_offsets`` range. Also if the range
+            and the shape disagree about the tensor's size, for a
+            dtype the domain can price — a header that contradicts
+            itself would understate the weight budget.
     """
     if not isinstance(record, dict):
         raise SizeSourceError(f'{shard}: entry "{name}" is not an object')
@@ -188,9 +215,17 @@ def _record_size(shard: Path, name: str, record: object) -> TensorSize | None:
         raise SizeSourceError(
             f'{shard}: entry "{name}" has no shape of non-negative integers'
         )
-    if len(shape) < MIN_QUANTIZABLE_DIMENSIONS:
+    dims: list[int] = [dim for dim in shape if isinstance(dim, int)]
+    if len(dims) < MIN_QUANTIZABLE_DIMENSIONS:
         return None
-    return TensorSize(dtype=dtype, bytes=_stored_bytes(shard, name, record))
+    stored = _stored_bytes(shard, name, record)
+    element = DTYPE_ELEMENT_BYTES.get(dtype)
+    if element is not None and math.prod(dims) * element != stored:
+        raise SizeSourceError(
+            f'{shard}: entry "{name}" spans {stored} bytes, and its shape '
+            f"{dims} at {dtype} needs {math.prod(dims) * element}"
+        )
+    return TensorSize(dtype=dtype, bytes=stored)
 
 
 @dataclass(frozen=True, slots=True)

@@ -9,6 +9,10 @@ from tests.unit.conftest import make_map
 from vramfit.adapters.outbound.sensitivity_map_json import map_from_dict
 from vramfit.domain.budget import format_size
 from vramfit.domain.model import SensitivityMap
+from vramfit.domain.runtime import (
+    RuntimeCapabilityError,
+    expert_stack_effective_bits,
+)
 from vramfit.domain.solver import (
     DEFAULT_FORMAT_OVERHEAD,
     DEFAULT_RESIDUAL_OVERHEAD,
@@ -917,3 +921,59 @@ class TestUncoveredGroups:
 
         held = next(a for a in recipe.assignments if a.group == stack)
         assert held.bytes == group_bytes(1600, 16.0, DEFAULT_RESIDUAL_OVERHEAD)
+
+    def test_a_runtime_without_reference_precision_refuses(self) -> None:
+        # vLLM serves 8 and 4. A recipe carrying 16 fails its own
+        # reader, so the solver refuses at solve time rather than
+        # writing a file every downstream command rejects.
+        map_ = load(make_map([("model.layers.0", 1600, CONVEX_CURVE)]))
+
+        with pytest.raises(RuntimeCapabilityError, match="reference precision"):
+            solve_simple(
+                map_,
+                100_000,
+                discovered_bytes={"model.layers.0": 1600, "lm_head": 800},
+                runtime="vllm",
+            )
+
+    def test_a_runtime_without_reference_precision_still_plans_a_full_map(self) -> None:
+        # The refusal is about uncovered groups, not about the runtime.
+        map_ = load(make_map([("model.layers.0", 1600, CONVEX_CURVE)]))
+
+        recipe = solve_simple(
+            map_, 100_000, discovered_bytes={"model.layers.0": 1600}, runtime="vllm"
+        )
+
+        assert [a.bits for a in recipe.assignments] == [8]
+
+    def test_an_uncovered_expert_stack_prices_through_the_stack_table(self) -> None:
+        # The stack table and the dense table both read 16.0 today, so
+        # this pins the routing rather than a difference. A stack group
+        # priced through the dense table would drift the day either
+        # table moves.
+        map_ = load(make_map([("model.layers.0", 1600, CONVEX_CURVE)]))
+        stack = "model.layers.1.mixer.experts.up_proj"
+
+        recipe = solve_simple(
+            map_,
+            100_000,
+            discovered_bytes={"model.layers.0": 1600, stack: 1600},
+            runtime="llama.cpp",
+        )
+
+        held = next(a for a in recipe.assignments if a.group == stack)
+        table = expert_stack_effective_bits("llama.cpp")
+        assert table is not None
+        assert held.bytes == group_bytes(1600, table[16], DEFAULT_RESIDUAL_OVERHEAD)
+
+    def test_the_infeasible_message_names_the_held_groups(self) -> None:
+        map_ = load(make_map([("model.layers.0", 1600, CONVEX_CURVE)]))
+
+        with pytest.raises(InfeasibleBudgetError) as caught:
+            solve_simple(
+                map_, 2000, discovered_bytes={"model.layers.0": 1600, "big": 100_000}
+            )
+
+        message = str(caught.value)
+        assert "1 groups the map does not measure" in message
+        assert caught.value.held_count == 1

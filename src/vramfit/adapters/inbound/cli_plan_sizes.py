@@ -11,6 +11,11 @@ model as it did before ADR-0029. That reading is silent no longer:
 the command reports which groups it prices either way, on the same
 channel the runtime filter reports its own narrowing.
 
+A checkpoint that carries none of the map's groups refuses. ADR-0029
+leaves a map-source disagreement unruled, and this is not one — a
+total miss is the wrong directory. Continuing would price both views
+of the model and roughly double it.
+
 Examples:
     Read the checkpoint the map was scanned from:
 
@@ -58,7 +63,8 @@ def discovered_bytes(
 
     Raises:
         typer.Exit: With code 1 when the checkpoint cannot be read or
-            priced. The source's own message carries the reason.
+            priced, and when no map group appears in it. The source's
+            own message carries the reason for the first.
     """
     if checkpoint is None:
         # The runtime filter reports its narrowing on this channel for
@@ -88,6 +94,19 @@ def discovered_bytes(
         f"{len(held)} held at reference precision"
     )
     missing = [name for name in covered if name not in groups]
+    if len(missing) == len(covered):
+        # Not a disagreement between two views of one model, which
+        # ADR-0029 leaves unruled. Nothing matched, so this is the
+        # wrong checkpoint. Continuing would price the map's groups
+        # and the checkpoint's groups together and roughly double the
+        # model.
+        typer.echo(
+            f"error: {checkpoint}: none of the map's {len(covered)} groups "
+            f'appear in this checkpoint, starting with "{covered[0]}" — '
+            f"this is not the checkpoint the scan measured",
+            err=True,
+        )
+        raise typer.Exit(code=1)
     if missing:
         typer.echo(
             f"warning: the checkpoint does not carry {len(missing)} of the "

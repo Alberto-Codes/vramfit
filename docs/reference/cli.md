@@ -90,23 +90,37 @@ a table row (3, 5, 6) keeps its dense entry — pack refuses it, and
 the plan-time refusal stays an open question in ADR-0028.
 
 Size source ([ADR-0029](../adr/0029-plan-independent-size-source.md)):
-`--checkpoint` reads each safetensors shard header — a JSON parse, no
-torch — and sums the tensors into the groups the map names. The
-checkpoint roots at `backbone.` and the maps root at `model.`, so a
-domain table reconciles the two. The table is explicit and carries no
-prefix wildcard: a checkpoint rooted at neither name refuses rather
-than pricing one stack against another (#177). The MTP block stays
-out — a GGUF numbers one layer stack, so backbone and MTP cannot pack
-together.
+`--checkpoint` reads each safetensors shard header, which is a JSON
+parse and needs no torch. It sums the tensors into the groups the map
+names. The checkpoint roots at `backbone.` and the maps root at
+`model.`, so a domain table reconciles the two. The table is explicit
+and carries no prefix wildcard. A checkpoint rooted at neither name
+refuses, rather than pricing one stack against another (#177). The MTP
+block stays out, because a GGUF numbers one layer stack and backbone
+and MTP cannot pack together.
 
 A group the checkpoint holds and the map does not measure is
 *uncovered*. It prices at reference precision, and the recipe assigns
-it there at nominal 16, the F16 passthrough. Both halves matter:
-`pack` runs `llama-quantize --pure` at the recipe's precision floor,
-so a group the recipe leaves unnamed would reach the artifact at that
-floor and not at the reference bytes the plan reserved. An uncovered
-group carries no damage curve, so the solver never downgrades it and
-`--pin` does not reach it.
+it there at nominal 16, the F16 passthrough. Both halves matter.
+`pack` runs `llama-quantize --pure` at the recipe's precision floor. So
+a group the recipe leaves unnamed reaches the artifact at that floor,
+and not at the reference bytes the plan reserved.
+
+An uncovered group carries no damage curve, so the solver never
+downgrades it. `--pin` does not reach it either, because a pin matches
+against the map's groups. Whether it should is ADR-0029's first open
+question.
+
+The command refuses a target runtime that cannot serve reference
+precision, when the map leaves any group uncovered. It refuses a
+checkpoint carrying none of the map's groups. It warns and continues
+when the checkpoint carries only some of them.
+
+!!! warning "A whole-model `stack`-keyed recipe does not pack yet"
+
+    `--checkpoint` makes `plan` emit one. `pack` maps decoder-layer
+    groups and routed-expert stacks, and refuses every other `stack`
+    group by name. #183 carries the class table for the rest.
 
 Pin semantics: patterns are case-sensitive `fnmatch` globs matched against
 the full group name (`--pin "model.layers.0.*=8"`). A pattern that matches

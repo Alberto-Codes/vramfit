@@ -6,7 +6,11 @@ A group the checkpoint holds and the map omits is uncovered. It
 prices at reference precision, and the recipe assigns it there —
 `pack` runs the quantizer at the recipe's precision floor, so a
 group the recipe leaves unnamed would reach the artifact at that
-floor rather than at the reference bytes the plan reserved. Errors
+floor rather than at the reference bytes the plan reserved. An
+uncovered group carries no damage curve, so the solver never ranks a
+downgrade for it. A target runtime that cannot serve reference
+precision refuses the solve, because the recipe's own reader
+rejects an assignment the runtime cannot serve. Errors
 sit under the `VramfitError` root
 (ADR-0011) and carry user-facing messages the CLI prints verbatim.
 A target runtime narrows the candidate set through the ADR-0013
@@ -61,6 +65,8 @@ Examples:
     ```
 
 See Also:
+    - [vramfit.domain.solver_errors][]: `PinError` and
+      `InfeasibleBudgetError`, both re-exported here.
     - [vramfit.domain.model][]: The `SensitivityMap` input and `Recipe`
       output types.
     - [vramfit.domain.budget][]: Computes the weight budget this solver
@@ -74,8 +80,6 @@ from collections.abc import Callable, Mapping
 from fnmatch import fnmatchcase
 from typing import Final
 
-from vramfit.domain.budget import format_size
-from vramfit.domain.errors import VramfitError
 from vramfit.domain.model import (
     Assignment,
     LayerGroup,
@@ -97,113 +101,17 @@ from vramfit.domain.runtime import (
     servable_precisions,
 )
 from vramfit.domain.scan import is_expert_stack
-from vramfit.domain.sizes import REFERENCE_BITS, uncovered_groups
+from vramfit.domain.sizes import held_assignments
+from vramfit.domain.solver_errors import (
+    InfeasibleBudgetError as InfeasibleBudgetError,  # noqa: PLC0414 - re-export: the solver's errors read from this module
+)
+from vramfit.domain.solver_errors import (
+    PinError as PinError,  # noqa: PLC0414 - re-export: the solver's errors read from this module
+)
 
 SOLVER_NAME: Final[str] = "greedy-damage-per-byte"
 DEFAULT_FORMAT_OVERHEAD: Final[float] = 0.05
 DEFAULT_RESIDUAL_OVERHEAD: Final[float] = 0.005
-
-
-class PinError(VramfitError, ValueError):
-    """A ``--pin`` pattern is unusable. Under the `VramfitError` root.
-
-    Raised when a pin names a precision the scan did not measure, or when
-    its pattern matches no group (usually a typo).
-
-    Examples:
-        A pin against an unscanned precision:
-
-        ```python
-        from vramfit.domain.solver import PinError
-
-        try:
-            solve_with_pins(pins={"g*": 6})
-        except PinError as exc:
-            print(exc)
-        ```
-    """
-
-
-class InfeasibleBudgetError(VramfitError):
-    """No recipe fits the weight budget. Under the `VramfitError` root.
-
-    Attributes:
-        gap_bytes (int): How far the best possible total overshoots the
-            budget.
-        minimum_bytes (int): The smallest achievable total (pins
-            respected).
-        weight_budget_bytes (int): The budget that could not be met.
-        runtime (str | None): Target runtime the solve was constrained
-            to, when one was given.
-        dropped_precisions (tuple[int, ...]): Scanned precisions the
-            runtime cannot serve — the floor the message reports
-            excludes them.
-
-    Examples:
-        Report the gap to the user:
-
-        ```python
-        from vramfit.domain.solver import InfeasibleBudgetError
-
-        try:
-            solve_with_tiny_budget()
-        except InfeasibleBudgetError as exc:
-            print(f"over budget by {exc.gap_bytes} bytes")
-        ```
-    """
-
-    def __init__(
-        self,
-        gap_bytes: int,
-        minimum_bytes: int,
-        weight_budget_bytes: int,
-        *,
-        runtime: str | None = None,
-        dropped_precisions: tuple[int, ...] = (),
-        protected_count: int = 0,
-    ) -> None:
-        """Build the error from the budget arithmetic.
-
-        The message renders every size with `format_size`, so the CLI
-        can print it verbatim as its ``error:`` line. When a runtime
-        filter removed scanned precisions, the message names them —
-        the reported floor is higher than the scan alone allows, and
-        the user must see why. Protections raise the floor the same
-        way (ADR-0022), so the message counts them too.
-
-        Args:
-            gap_bytes: Overshoot of the smallest achievable total.
-            minimum_bytes: The smallest achievable total in bytes.
-            weight_budget_bytes: The budget that could not be met.
-            runtime: Target runtime that constrained the solve, when
-                one was given.
-            dropped_precisions: Scanned precisions the runtime cannot
-                serve.
-            protected_count: Tensors held at a protection floor.
-        """
-        message = (
-            f"no recipe fits the {format_size(weight_budget_bytes)} weight "
-            f"budget — minimum achievable is {format_size(minimum_bytes)} "
-            f"({format_size(gap_bytes)} over)"
-        )
-        if runtime is not None and dropped_precisions:
-            message += (
-                f'. The target runtime "{runtime}" cannot serve the scanned '
-                f"precisions {list(dropped_precisions)}, so the floor sits "
-                f"higher than the scan alone allows"
-            )
-        if protected_count:
-            message += (
-                f". Protections hold {protected_count} tensors at their "
-                "floors, raising the minimum (ADR-0022)"
-            )
-        super().__init__(message)
-        self.gap_bytes = gap_bytes
-        self.minimum_bytes = minimum_bytes
-        self.weight_budget_bytes = weight_budget_bytes
-        self.runtime = runtime
-        self.dropped_precisions = dropped_precisions
-        self.protected_count = protected_count
 
 
 def group_bytes(bytes_fp16: int, bits: float, format_overhead: float) -> int:
@@ -449,7 +357,9 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
             here that the map does not carry is uncovered: it prices
             at reference precision and the recipe assigns it there.
             None means the map defines the model, which is the
-            behavior ADR-0029 replaced.
+            behavior ADR-0029 replaced. An uncovered expert-stack
+            group prices through the ADR-0028 table, like a measured
+            one.
 
     Returns:
         The recipe, with assignments in sensitivity-map group order
@@ -462,8 +372,10 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
     Raises:
         ValueError: If ``format_overhead`` is negative, NaN, or
             infinite.
-        RuntimeCapabilityError: If the runtime is unknown or serves
-            none of the scanned precisions.
+        RuntimeCapabilityError: If the runtime is unknown, serves
+            none of the scanned precisions, or cannot serve reference
+            precision while ``discovered_bytes`` leaves a group
+            uncovered.
         PinError: If a pin is malformed with respect to the candidate
             set.
         ProtectionError: If a protection floor is unservable, a
@@ -573,16 +485,8 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
     # never a move. The recipe still assigns it, because `pack` runs
     # `--pure` at the recipe's floor and would otherwise quantize the
     # group the plan just reserved reference bytes for.
-    held = tuple(
-        Assignment(
-            group=name,
-            bits=REFERENCE_BITS,
-            bytes=price(bytes_fp16, REFERENCE_BITS),
-            damage=0.0,
-        )
-        for name, bytes_fp16 in uncovered_groups(
-            discovered_bytes or {}, [g.name for g in sensitivity_map.groups]
-        )
+    held = held_assignments(
+        discovered_bytes, sensitivity_map, runtime, price, stack_price
     )
     held_total = sum(a.bytes for a in held)
 
@@ -611,6 +515,8 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
             runtime=runtime,
             dropped_precisions=dropped,
             protected_count=raised,
+            held_count=len(held),
+            held_bytes=held_total,
         )
 
     trace: list[TraceStep] = []

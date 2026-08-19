@@ -58,6 +58,12 @@ Examples:
     }
     ```
 
+`held_assignments` turns the uncovered set into the recipe rows
+decision 3 requires. It lives here rather than in the solver, because
+it states what the size source implies and not how the budget is
+spent. The solver adds its bytes to the total and never ranks a
+downgrade for one.
+
 See Also:
     - [vramfit.ports.outbound][]: `TensorSizeSource`, the port that
       carries these values.
@@ -66,13 +72,15 @@ See Also:
 
 from __future__ import annotations
 
-from collections.abc import Collection, Mapping
+from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Final, Literal
 
 from vramfit.domain.errors import VramfitError
-from vramfit.domain.scan import group_key, matches_a_layer
+from vramfit.domain.model import Assignment, SensitivityMap
+from vramfit.domain.runtime import RUNTIME_CAPABILITIES, RuntimeCapabilityError
+from vramfit.domain.scan import group_key, is_expert_stack, matches_a_layer
 
 REFERENCE_BITS: Final[int] = 16
 
@@ -183,7 +191,9 @@ def reference_bytes(tensor: str, size: TensorSize) -> int:
     Raises:
         SizeSourceError: If the dtype is outside
             `DTYPE_ELEMENT_BYTES`, or the stored size is not a whole
-            number of elements of that dtype.
+            number of elements of that dtype. `TensorSize` already
+            refuses a non-positive size, so a zero element count
+            cannot reach here.
 
     Examples:
         An fp32 tensor prices at half its stored size:
@@ -202,7 +212,7 @@ def reference_bytes(tensor: str, size: TensorSize) -> int:
             f"— the table covers {sorted(DTYPE_ELEMENT_BYTES)}"
         ) from None
     count, remainder = divmod(size.bytes, element)
-    if remainder or count == 0:
+    if remainder:
         raise SizeSourceError(
             f'tensor "{tensor}": {size.bytes} bytes is not a whole number of '
             f'"{size.dtype}" elements of {element} bytes'
@@ -323,4 +333,65 @@ def uncovered_groups(
     seen = set(covered)
     return tuple(
         (name, size) for name, size in sorted(discovered.items()) if name not in seen
+    )
+
+
+def held_assignments(
+    discovered_bytes: Mapping[str, int] | None,
+    sensitivity_map: SensitivityMap,
+    runtime: str | None,
+    price: Callable[[int, int], int],
+    stack_price: Callable[[int, int], int],
+) -> tuple[Assignment, ...]:
+    """Assign every discovered group the map does not measure.
+
+    ADR-0029 decision 3. Each such group holds at reference precision:
+    no measurement ranks a downgrade for it, so it is a constant in
+    the budget and never a move. The recipe still names it, because
+    `pack` runs the quantizer at the recipe's floor and would
+    otherwise quantize the group the plan just reserved reference
+    bytes for.
+
+    Args:
+        discovered_bytes: Bytes at reference precision per group the
+            checkpoint holds, or None for no size source.
+        sensitivity_map: The map, whose groups are the covered set.
+        runtime: Target runtime name, or None.
+        price: Dense size predictor ``(bytes_fp16, bits) -> bytes``.
+        stack_price: The same, through the ADR-0028 stack table.
+
+    Returns:
+        One assignment per uncovered group, in name order. Empty when
+        no size source was given, or the map covers every group.
+
+    Raises:
+        RuntimeCapabilityError: If a group is uncovered and the target
+            runtime cannot serve reference precision. The recipe would
+            record an assignment `recipe_json` refuses to read back.
+    """
+    uncovered = uncovered_groups(
+        discovered_bytes or {}, [g.name for g in sensitivity_map.groups]
+    )
+    if uncovered and runtime is not None:
+        # `servable_precisions` words its refusal around the scanned
+        # set, and reference precision was never scanned.
+        capability = RUNTIME_CAPABILITIES.get(runtime, frozenset())
+        if REFERENCE_BITS not in capability:
+            raise RuntimeCapabilityError(
+                f'runtime "{runtime}" cannot serve reference precision '
+                f"{REFERENCE_BITS}, so it cannot hold the {len(uncovered)} "
+                f"groups the map does not measure (ADR-0029). It serves "
+                f"{sorted(capability, reverse=True)}. Plan without a size "
+                f"source, or scan those groups"
+            )
+    return tuple(
+        Assignment(
+            group=name,
+            bits=REFERENCE_BITS,
+            bytes=(stack_price if is_expert_stack(name) else price)(
+                bytes_fp16, REFERENCE_BITS
+            ),
+            damage=0.0,
+        )
+        for name, bytes_fp16 in uncovered
     )

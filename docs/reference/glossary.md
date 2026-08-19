@@ -336,11 +336,15 @@ change.
 **Uncovered group**
 :   A discovered group the sensitivity map does not measure. It
     prices at reference precision, and the recipe assigns it the
-    **passthrough precision** — `pack` quantizes at the recipe's
-    floor, so an unnamed group would reach the artifact below the
-    bytes the plan reserved. It carries no damage curve, so the
-    solver never downgrades it. Not "missing group" or "unscanned
-    group".
+    **passthrough precision**. `pack` quantizes at the recipe's floor,
+    so an unnamed group would reach the artifact below the bytes the
+    plan reserved. It carries no damage curve, so the
+    solver never downgrades it. Distinct from an **uncovered
+    tensor**, which the importance matrix missed, and from a
+    **floored layer**, which no override in the recipe reaches. The
+    three name gaps between different pairs: the map and the model,
+    the matrix and the model, the recipe and the model. Always the
+    two-word compound. Not "missing group" or "unscanned group".
 
 **Naming root**
 :   The first segment of a checkpoint's parameter names —

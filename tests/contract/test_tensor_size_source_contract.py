@@ -18,7 +18,11 @@ import pytest
 
 from tests.fakes import MemoryTensorSizeSource
 from vramfit.adapters.outbound.safetensors_sizes import SafetensorsSizes
-from vramfit.domain.sizes import SizeSourceError, TensorSize
+from vramfit.domain.sizes import (
+    SizeSourceError,
+    TensorSize,
+    discovered_group_bytes,
+)
 from vramfit.ports.outbound import TensorSizeSource
 
 pytestmark = pytest.mark.contract
@@ -142,9 +146,12 @@ class TestRealReaderReads:
 
         assert set(sizes) == {DENSE, EXPERT}
 
-    def test_bytes_come_from_the_data_range_not_the_shape(self, tmp_path) -> None:
-        # An unknown dtype still reports a size, so the domain refuses
-        # it rather than the checkpoint reading as a smaller one.
+    def test_a_non_float_tensor_reaches_the_domain_rather_than_skipping(
+        self, tmp_path
+    ) -> None:
+        # The torch meter skips a non-floating parameter because it
+        # cannot perturb one. This source keeps it, so the domain
+        # refuses the dtype instead of the budget losing the bytes.
         write_shard(
             tmp_path / "model.safetensors",
             {DENSE: {"dtype": "I8", "shape": [4, 8], "data_offsets": [0, 32]}},
@@ -153,6 +160,8 @@ class TestRealReaderReads:
         sizes = SafetensorsSizes(tmp_path).tensor_sizes()
 
         assert sizes[DENSE] == TensorSize(dtype="I8", bytes=32)
+        with pytest.raises(SizeSourceError, match="no reference size"):
+            discovered_group_bytes(sizes, "layer")
 
 
 class TestRealReaderRefusals:
@@ -227,6 +236,26 @@ class TestRealReaderRefusals:
         )
 
         with pytest.raises(SizeSourceError, match="spans no bytes"):
+            SafetensorsSizes(tmp_path).tensor_sizes()
+
+    def test_an_over_declared_header_length_refuses(self, tmp_path) -> None:
+        # A u64 spans further than any file. `read` would try to
+        # allocate it and raise OverflowError, which no caller catches.
+        blob = b'{"a": {"dtype": "BF16"}}'
+        (tmp_path / "model.safetensors").write_bytes(struct.pack("<Q", 2**63) + blob)
+
+        with pytest.raises(SizeSourceError, match="header declares"):
+            SafetensorsSizes(tmp_path).tensor_sizes()
+
+    def test_a_shape_the_data_range_contradicts_refuses(self, tmp_path) -> None:
+        # The understating direction: a 2688x1856 bf16 tensor claiming
+        # two bytes would price the group at nothing.
+        write_shard(
+            tmp_path / "model.safetensors",
+            {DENSE: {"dtype": "BF16", "shape": [4, 8], "data_offsets": [0, 2]}},
+        )
+
+        with pytest.raises(SizeSourceError, match="needs 64"):
             SafetensorsSizes(tmp_path).tensor_sizes()
 
     def test_an_entry_that_is_not_an_object_refuses(self, tmp_path) -> None:
