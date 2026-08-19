@@ -437,8 +437,14 @@ class TensorSizeSource(Protocol):
 
         Raises:
             SizeSourceError: If the checkpoint holds no shards, or a
-                shard cannot be read.
-            OSError: If a file cannot be read.
+                shard's contents refuse — a malformed header, an
+                entry the reader cannot price, or one tensor name
+                defined twice. Every refusal about what a file
+                *says* arrives as this type.
+            OSError: If a file cannot be opened, stat'd, or read.
+                Every failure about reaching a file at all stays an
+                `OSError`, so a caller can tell a missing checkpoint
+                from a corrupt one.
         """
         ...
 

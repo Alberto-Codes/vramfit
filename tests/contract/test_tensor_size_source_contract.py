@@ -258,6 +258,17 @@ class TestRealReaderRefusals:
         with pytest.raises(SizeSourceError, match="needs 64"):
             SafetensorsSizes(tmp_path).tensor_sizes()
 
+    def test_a_header_that_is_not_an_object_refuses(self, tmp_path) -> None:
+        # A top-level array carries no `pop`, and the metadata strip
+        # would raise TypeError past every caller's catch.
+        blob = json.dumps([1, 2, 3]).encode("utf-8")
+        (tmp_path / "model.safetensors").write_bytes(
+            struct.pack("<Q", len(blob)) + blob
+        )
+
+        with pytest.raises(SizeSourceError, match="header is a JSON list"):
+            SafetensorsSizes(tmp_path).tensor_sizes()
+
     def test_an_entry_that_is_not_an_object_refuses(self, tmp_path) -> None:
         blob = json.dumps({DENSE: "nonsense"}).encode("utf-8")
         (tmp_path / "model.safetensors").write_bytes(

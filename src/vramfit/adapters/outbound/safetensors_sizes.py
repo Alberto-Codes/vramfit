@@ -98,8 +98,8 @@ def read_safetensors_header(path: Path) -> dict[str, dict]:
     Raises:
         ValueError: If the file is too short, the header declares more
             bytes than the file holds, the header is not valid UTF-8
-            or valid JSON, or the header defines the same key twice
-            (#262).
+            or valid JSON, the header is not a JSON object, or the
+            header defines the same key twice (#262).
         OSError: If the file cannot be read or stat'd.
 
     Examples:
@@ -138,6 +138,17 @@ def read_safetensors_header(path: Path) -> dict[str, dict]:
             raise ValueError(f"{path}: header is not valid JSON: {exc}") from exc
         except UnicodeDecodeError as exc:
             raise ValueError(f"{path}: header is not valid UTF-8: {exc}") from exc
+    # A top-level array or number parses cleanly and carries no
+    # `pop`, so the next line would raise `TypeError` past every
+    # caller's catch.
+    if not isinstance(header, dict):
+        # The reader's whole refusal contract is `ValueError`, and
+        # both callers catch exactly that. A `TypeError` here would
+        # escape them, which is the defect this guard closes.
+        raise ValueError(  # noqa: TRY004 - the reader refuses through ValueError by contract
+            f"{path}: header is a JSON {type(header).__name__}, and a "
+            f"safetensors header is an object"
+        )
     header.pop("__metadata__", None)
     return header
 
