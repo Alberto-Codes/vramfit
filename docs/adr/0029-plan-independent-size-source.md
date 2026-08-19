@@ -1,7 +1,7 @@
 # ADR-0029: Plan reads tensor sizes from a source independent of the map
 
-- **Status:** Proposed
-- **Date:** 2026-08-19
+- **Status:** Accepted
+- **Date:** 2026-08-19 (accepted 2026-08-19)
 - **Amends:** [ADR-0007](0007-recipe-solver-strategy.md). The solver
   prices every discovered group, not only the groups its input map
   carries.

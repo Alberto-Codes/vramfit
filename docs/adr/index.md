@@ -65,7 +65,7 @@ ADR that supersedes the old one.
 | [0026](0026-moe-expert-pricing.md) | Expert pricing trusts any nonzero imatrix count | Accepted, except decision 2 (demoted 2026-08-14) |
 | [0027](0027-instrument-frame-matching.md) | Damage numbers compare only within one instrument | Accepted |
 | [0028](0028-expert-stack-type-table.md) | Expert stacks map through their own GGUF type table | Accepted |
-| [0029](0029-plan-independent-size-source.md) | Plan reads tensor sizes from a source independent of the map | Proposed |
+| [0029](0029-plan-independent-size-source.md) | Plan reads tensor sizes from a source independent of the map | Accepted |
 
 ## Template
 
