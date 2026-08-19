@@ -118,6 +118,12 @@
     amendment below. No pattern this backend builds reaches any of
     the three today.
 
+    **This clause gained its first exception on 2026-08-18, in the
+    #308 amendment below.** The read refuses a base GGUF that
+    declares itself one shard of a split file, and the quantizer
+    packs a first shard correctly. Read that amendment with this
+    clause.
+
     The read needs gguf-py, so every pack carrying at least one
     override requires it. A recipe yielding no override skipped the
     read until 2026-08-17. The #306 amendment below widened that:
@@ -258,6 +264,49 @@
 
     The refusal reports halt stage `quantize`, matching #303. #275
     still owns whether a zero-exit refusal earns its own stage.
+- **Amendment (2026-08-18, issue #308):** the #303 read gains a
+  pre-check on the file it opens. The read refuses a base GGUF that
+  declares `split.count` above 1. The message names the shard, the
+  shard count, and `llama-gguf-split --merge`. The read opens one
+  file, so a shard supplies a fraction of the model's tensor names.
+
+    **This is the superset clause's first recorded exception.** The
+    #303 amendment above states that the check "never refuses a pack
+    the tool would honour", and this refusal does. `llama_model_loader`
+    reads `split.count`, derives the sibling paths from `split.no`,
+    and loads the chain (`src/llama-model-loader.cpp:582-610` at
+    `3653e6d6d`, `:581-609` at `e9fa0781f`).
+    `llama_model_quantize_impl` builds that loader over an empty
+    `splits` vector (`src/llama-quant.cpp:895`). So the quantizer
+    packs a first shard correctly.
+
+    **The exception is bounded to the first shard.** The loader
+    refuses every later shard itself, at "model must be loaded with
+    the first split" (`:592` and `:591`). For shards 2 to N both
+    tools refuse and this one names the cause. So the accepted set
+    narrows at one input.
+
+    **Why the superset bias cannot hold here.** The bias protects a
+    correct recipe from a check that models upstream's match rules
+    imperfectly. This case is not a match-rule gap. The file supplies
+    the wrong name set, so no comparison against it is sound. Passing
+    the shard through moves the same refusal to the #303 clause,
+    which then names the recipe rather than the file. It also makes
+    the #307 report wrong rather than incomplete: `floored_layers`
+    reads these names, so every absent shard's layers would report as
+    floored. That inverts the #307 amendment's stated direction,
+    where the report under-reports and never over-reports.
+
+    **What this amendment does not settle.** Whether the read should
+    follow the shard chain instead stays open, and #351 carries it.
+    #351 also carries whether this module may refuse a pack the tool
+    honours at all, which is the clause above. A session reading the
+    superset clause for #305 or #320 should read this exception with
+    it.
+
+    The refusal reports halt stage `quantize`, matching #303 and
+    #306. #275 still owns whether a zero-exit refusal earns its own
+    stage.
 ## Context
 
 ADR-0010 routes sub-4-bit serving through llama.cpp and leaves one

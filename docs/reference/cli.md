@@ -380,6 +380,16 @@ Every pack holds the recipe's overrides against the base GGUF's
 tensor names before the quantizer runs. An override no tensor matches
 refuses the pack (#303).
 
+That read opens one file. The pack step refuses a base GGUF that
+declares itself one shard of a split file, before the override check
+runs. The message
+names the shard, the shard count, and `llama-gguf-split --merge`. A
+shard carries part of the model, so holding a whole recipe against it
+reports a correct recipe as wrong (#308). `llama-quantize` follows
+the chain from a first shard, so vramfit accepts less than the tool
+at that one input. Every later shard the tool refuses itself. Issue
+#351 carries whether the read should follow the chain too.
+
 The same read holds the two dedicated flags against the exact tensors
 they bind. `--token-embedding-type` reaches `token_embd.weight` or
 `per_layer_token_embd.weight`, and `--output-tensor-type` reaches
