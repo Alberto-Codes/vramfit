@@ -122,7 +122,8 @@
     #308 amendment below.** The read refuses a base GGUF that
     declares itself one shard of a split file, and the quantizer
     packs a first shard correctly. Read that amendment with this
-    clause.
+    clause. The maintainer has not ratified the exception, and #353
+    carries whether it stands.
 
     The read needs gguf-py, so every pack carrying at least one
     override requires it. A recipe yielding no override skipped the
@@ -303,6 +304,15 @@
     honours at all, which is the clause above. A session reading the
     superset clause for #305 or #320 should read this exception with
     it.
+
+    **Correction (2026-08-18, issue #353):** the paragraph above
+    reads that "#351 also carries whether this module may refuse a
+    pack the tool honours at all". It does not. #351 carries the
+    narrower question, whether the read should follow the shard
+    chain. The wider question stays open. That question is about the
+    clause above, and #353 carries it. #353 asks the maintainer to
+    ratify this exception or reverse it. #354 carries two inputs that
+    reach a shard without this refusal firing.
 
     The refusal reports halt stage `quantize`, matching #303 and
     #306. #275 still owns whether a zero-exit refusal earns its own
