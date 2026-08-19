@@ -43,7 +43,7 @@ ADR that supersedes the old one.
 | [0004](0004-vllm-first-runtime.md) | vLLM as the first target runtime | Accepted, amended by 0010 + 2026-07-29 |
 | [0005](0005-heavy-deps-as-extras.md) | Heavy ML dependencies stay out of the base install | Accepted, amended by 0011 |
 | [0006](0006-sensitivity-metric.md) | Sensitivity metric for the scan step | Accepted |
-| [0007](0007-recipe-solver-strategy.md) | Solver strategy for recipe selection | Accepted |
+| [0007](0007-recipe-solver-strategy.md) | Solver strategy for recipe selection | Accepted, amended by 0029 |
 | [0008](0008-hexagonal-architecture.md) | Hexagonal architecture, enforced by import-linter | Accepted |
 | [0009](0009-testing-strategy.md) | Testing strategy — pyramid, verified fakes, properties | Accepted |
 | [0010](0010-sub-4-bit-serving-path.md) | The sub-4-bit serving path runs through GGUF | Accepted, amended 2026-07-29, noted 2026-08-09 |
@@ -65,6 +65,7 @@ ADR that supersedes the old one.
 | [0026](0026-moe-expert-pricing.md) | Expert pricing trusts any nonzero imatrix count | Accepted, except decision 2 (demoted 2026-08-14) |
 | [0027](0027-instrument-frame-matching.md) | Damage numbers compare only within one instrument | Accepted |
 | [0028](0028-expert-stack-type-table.md) | Expert stacks map through their own GGUF type table | Accepted |
+| [0029](0029-plan-independent-size-source.md) | Plan reads tensor sizes from a source independent of the map | Accepted |
 
 ## Template
 
