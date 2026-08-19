@@ -6,6 +6,7 @@ from dataclasses import replace
 import pytest
 
 from vramfit.adapters.outbound.gguf.types import (
+    _LAYER_TENSOR,
     BASE_FTYPE_BY_BITS,
     GGML_TYPE_BY_BITS,
     PackError,
@@ -652,28 +653,28 @@ class TestGgufTensorName:
         with pytest.raises(PackError, match="no GGUF mapping"):
             gguf_tensor_name(tensor)
 
-    def test_mixer_classes_map_under_the_model_root(self) -> None:
-        # The 2026-08-20 amendment's rows reach this path too, at the
-        # `model.` root and two suffix segments — #365 carries the
-        # root and the arity.
-        tensor = "model.layers.4.mixer.q_proj.weight"
+    @pytest.mark.parametrize(
+        ("tensor", "expected"),
+        [
+            ("model.layers.4.mixer.q_proj.weight", "blk.4.attn_q.weight"),
+            ("backbone.layers.4.mixer.v_proj.weight", "blk.4.attn_v.weight"),
+        ],
+        ids=["model-root", "backbone-root"],
+    )
+    def test_mixer_classes_map_under_either_root(
+        self, tensor: str, expected: str
+    ) -> None:
+        # The 2026-08-20 amendment's rows reach this path under
+        # either scan root (#365).
+        assert gguf_tensor_name(tensor) == expected
 
-        assert gguf_tensor_name(tensor) == "blk.4.attn_q.weight"
-
-    def test_a_three_segment_row_refuses_naming_the_open_question(self) -> None:
-        # `_LAYER_TENSOR` cannot express three suffix segments, so the
-        # refusal must not list the rows it cannot reach.
+    def test_a_three_segment_row_maps_through_the_class_table(self) -> None:
+        # The widened suffix capture reaches the three-segment rows
+        # (#365), and the class table holds two of them (the
+        # 2026-08-20 amendment).
         tensor = "model.layers.4.mixer.shared_experts.up_proj.weight"
 
-        with pytest.raises(PackError) as caught:
-            gguf_tensor_name(tensor)
-
-        message = str(caught.value)
-        assert "no GGUF mapping" in message
-        assert "#365" in message
-        # The refused tensor's own name appears, and the reachable
-        # list must not repeat the row this path cannot express.
-        assert "'mixer.shared_experts.up_proj'" not in message
+        assert gguf_tensor_name(tensor) == "blk.4.ffn_up_shexp.weight"
 
     @pytest.mark.parametrize(
         ("tensor", "filter_name"),
@@ -690,8 +691,8 @@ class TestGgufTensorName:
         # exits 0, so a protection pair here would record a type the
         # artifact does not carry (the 2026-08-20 amendment). The
         # filter check runs before the class-table match, so
-        # `conv1d` — whose digit `_LAYER_TENSOR` cannot express —
-        # still names its filter rather than a missing mapping.
+        # `conv1d` — which has no class-table row — still names its
+        # filter rather than a missing mapping.
         with pytest.raises(PackError) as caught:
             gguf_tensor_name(tensor)
 
@@ -707,6 +708,36 @@ class TestGgufTensorName:
 
         with pytest.raises(PackError, match="refuses to quantize"):
             protection_overrides(recipe)
+
+    @pytest.mark.parametrize(
+        "root",
+        ["model", "backbone"],
+        ids=["model-root", "backbone-root"],
+    )
+    def test_class_table_maps_either_scan_root(self, root: str) -> None:
+        name = f"{root}.layers.4.self_attn.v_proj.weight"
+        assert gguf_tensor_name(name) == "blk.4.attn_v.weight"
+
+    def test_suffix_capture_holds_three_segments(self) -> None:
+        match = _LAYER_TENSOR.match(
+            "backbone.layers.1.mixer.shared_experts.down_proj.weight"
+        )
+        assert match is not None
+        assert match.group(2) == "mixer.shared_experts.down_proj"
+
+    @pytest.mark.parametrize(
+        "tensor",
+        [
+            "mtp.layers.0.self_attn.v_proj.weight",
+            "transformer.h.4.self_attn.v_proj.weight",
+        ],
+        ids=["mtp-root", "foreign-family"],
+    )
+    def test_root_outside_the_two_scan_roots_raises_pack_error(
+        self, tensor: str
+    ) -> None:
+        with pytest.raises(PackError, match="no GGUF mapping"):
+            gguf_tensor_name(tensor)
 
 
 class TestProtectionOverrides:

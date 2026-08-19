@@ -14,9 +14,10 @@ not divide the stack rows, and nominal 3 refuses over the empty
 through the class table to `blk.<n>.<stem>.` patterns, where an
 unquantizable class instead pins at the F16 passthrough and refuses
 any lower width (the 2026-08-20 amendment), protected tensors map
-through the same class table to
-per-tensor patterns (ADR-0022), excluded pairs map to the full GGUF
-tensor names ``--exclude-weights`` deletes by substring (ADR-0023),
+through the same class table to per-tensor patterns under either
+scan root (ADR-0022, ADR-0012 as amended 2026-08-12), excluded
+pairs map to the full GGUF tensor names ``--exclude-weights``
+deletes by substring (ADR-0023),
 and the embedding and `lm_head` groups map to the quantizer's
 dedicated embedding and output flags. The backend's own runtime
 name is the domain's `LLAMA_CPP` constant, so the table key and
@@ -196,8 +197,13 @@ GGUF_SUFFIX_BY_HF: Final[dict[str, str]] = {
     "mixer.o_proj": "attn_output",
 }
 
+# A protection target, under either root the scan produces (#177) and
+# at whatever suffix depth the class table holds. ADR-0012 decision 2,
+# as amended 2026-08-12, drops the fixed `model.` prefix. The suffix
+# carries no depth limit because `mixer.shared_experts.down_proj`
+# holds three segments. `GGUF_SUFFIX_BY_HF` still decides what maps.
 _LAYER_TENSOR: Final[re.Pattern[str]] = re.compile(
-    r"^model\.layers\.(\d+)\.([a-z_]+\.[a-z_]+)\.weight$"
+    r"^(?:model|backbone)\.layers\.(\d+)\.(.+)\.weight$"
 )
 
 
@@ -475,8 +481,8 @@ def gguf_tensor_name(tensor: str) -> str:
             0, so the pair would record a type the artifact does not
             carry (the 2026-08-20 amendment). That check runs first
             and needs no class-table row. Also if the name is not a
-            layer tensor this path can express, or its suffix has no
-            class-table entry (ADR-0022).
+            layer tensor under either scan root, or its suffix has
+            no class-table entry (ADR-0022).
 
     Examples:
         The G1 protection target:
@@ -489,9 +495,9 @@ def gguf_tensor_name(tensor: str) -> str:
         ```
     """
     # The filter check comes first, and reads the group form rather
-    # than `_LAYER_TENSOR`. `mixer.conv1d` carries a digit that
-    # regex cannot express, and its refusal must still name the
-    # upstream filter, not a missing mapping.
+    # than `_LAYER_TENSOR`. `mixer.conv1d` has no class-table row,
+    # and its refusal must still name the upstream filter, not a
+    # missing mapping.
     filter_name = unquantizable_filter(tensor.removesuffix(".weight"), LLAMA_CPP)
     if filter_name is not None:
         raise PackError(
@@ -503,20 +509,10 @@ def gguf_tensor_name(tensor: str) -> str:
         )
     match = _LAYER_TENSOR.match(tensor)
     if match is None or match.group(2) not in GGUF_SUFFIX_BY_HF:
-        # Name only the rows this path can express. `_LAYER_TENSOR`
-        # holds the `model.` root and a two-segment suffix, so the
-        # three-segment rows are out of its reach — #365 carries the
-        # root and the arity.
-        reachable = sorted(
-            suffix
-            for suffix in GGUF_SUFFIX_BY_HF
-            if _LAYER_TENSOR.match(f"model.layers.0.{suffix}.weight")
-        )
         raise PackError(
-            f'protected tensor "{tensor}" has no GGUF mapping — this path '
-            f"reaches model.-rooted layer tensors of the classes "
-            f"{reachable} (ADR-0022). #365 carries the root and the "
-            f"suffix arity"
+            f'protected tensor "{tensor}" has no GGUF mapping — the class '
+            f"table covers layer tensors {sorted(GGUF_SUFFIX_BY_HF)} under "
+            f"either scan root (ADR-0022)"
         )
     return f"blk.{match.group(1)}.{GGUF_SUFFIX_BY_HF[match.group(2)]}.weight"
 
