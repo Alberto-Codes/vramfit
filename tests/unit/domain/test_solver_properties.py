@@ -7,7 +7,11 @@ import pytest
 from hypothesis import event, given
 from hypothesis import strategies as st
 
-from tests.strategies import raw_protected_maps, raw_sensitivity_maps
+from tests.strategies import (
+    raw_maps_with_discovered_bytes,
+    raw_protected_maps,
+    raw_sensitivity_maps,
+)
 from tests.unit.conftest import make_map
 from vramfit.adapters.outbound.sensitivity_map_json import map_from_dict
 from vramfit.domain.runtime import (
@@ -322,3 +326,61 @@ class TestExpertStackPricingProperties:
         assert by_group[dense] == group_bytes(
             bytes_fp16, EFFECTIVE_BITS["llama.cpp"][bits], overhead
         )
+
+
+@pytest.mark.unit
+class TestDiscoveredGroupProperties:
+    """ADR-0029: every discovered group is priced and assigned."""
+
+    @given(pair=raw_maps_with_discovered_bytes(), overhead=overheads, data=st.data())
+    def test_every_discovered_group_reaches_the_recipe(
+        self, pair, overhead, data
+    ) -> None:
+        raw, discovered = pair
+        map_ = map_from_dict(raw)
+        held = sum(
+            group_bytes(size, 16, overhead)
+            for name, size in discovered.items()
+            if name not in {g.name for g in map_.groups}
+        )
+        floor, ceiling = bounds(raw, overhead)
+        budget = data.draw(
+            st.integers(min_value=floor + held, max_value=ceiling + held + 1000)
+        )
+
+        recipe = solve_simple(map_, budget, overhead, discovered_bytes=discovered)
+
+        event(f"uncovered groups: {len(discovered) - len(raw['groups'])}")
+        assert {a.group for a in recipe.assignments} >= set(discovered)
+        assert recipe.plan.predicted_total_bytes <= budget
+        assert recipe.plan.predicted_total_bytes == sum(
+            a.bytes for a in recipe.assignments
+        )
+
+    @given(pair=raw_maps_with_discovered_bytes(), overhead=overheads, data=st.data())
+    def test_an_uncovered_group_always_holds_at_reference(
+        self, pair, overhead, data
+    ) -> None:
+        raw, discovered = pair
+        map_ = map_from_dict(raw)
+        measured = {g.name for g in map_.groups}
+        held = sum(
+            group_bytes(size, 16, overhead)
+            for name, size in discovered.items()
+            if name not in measured
+        )
+        floor, ceiling = bounds(raw, overhead)
+        budget = data.draw(
+            st.integers(min_value=floor + held, max_value=ceiling + held + 1000)
+        )
+
+        recipe = solve_simple(map_, budget, overhead, discovered_bytes=discovered)
+
+        for assignment in recipe.assignments:
+            if assignment.group in measured:
+                continue
+            assert assignment.bits == 16
+            assert assignment.damage == 0.0
+            assert assignment.bytes == group_bytes(
+                discovered[assignment.group], 16, overhead
+            )

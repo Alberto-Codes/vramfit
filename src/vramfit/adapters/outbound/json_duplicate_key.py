@@ -12,9 +12,12 @@ outside it apply the rule directly: the run log, a Hugging Face
 ``config.json``, and a safetensors shard index (#283).
 
 `scripts/backfill_tensor_sizes.py` applies the rule directly too, at
-both of its reads: the sensitivity map it annotates, and the header
-inside each ``.safetensors`` shard (#286). The script stays outside the
-package, so this list crosses that boundary.
+the sensitivity map it annotates (#286). The script stays outside the
+package, so this list crosses that boundary. Its second read, the
+header inside each ``.safetensors`` shard, now applies the rule
+through
+`vramfit.adapters.outbound.safetensors_sizes.read_safetensors_header`,
+which the size source and the script share (ADR-0029).
 
 The hook lives here rather than in `json_common`, because those three
 readers share nothing else with the artifact readers. `json_common`

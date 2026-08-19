@@ -106,7 +106,12 @@ below remain, the sub-4-bit pricing claims do not.
   `--imatrix` names a different file — a different file breaks the
   frame the map priced. The loader accepts an absent field as null.
 - **`assignments`** — every group from the sensitivity map appears exactly
-  once, in map order. `bytes` is the predicted size at the runtime's
+  once, in map order, followed by every group the checkpoint holds and
+  the map does not measure, in name order
+  ([ADR-0029](../adr/0029-plan-independent-size-source.md)). An
+  uncovered group carries `bits` 16, the F16 passthrough, and `damage`
+  0.0 — reference precision is what damage is measured against.
+  `bytes` is the predicted size at the runtime's
   effective bits when the runtime has a table
   ([ADR-0014](../adr/0014-per-type-effective-bits.md)), at nominal bits
   otherwise — format overhead included either way. `damage` is the

@@ -7,6 +7,10 @@ its candidate set through the capability table before any solving
 starts. For a runtime with a measured serving path, a second table
 records the effective bits per weight each nominal precision spends —
 the solver predicts sizes from it instead of a scalar overhead.
+Nominal 16 is the F16 passthrough (ADR-0029 decision 4): it holds a
+group at reference precision, so a recipe can name a group the scan
+never measured. It spends exactly 16.0 bits per weight, in both
+tables, because GGUF `F16` carries no block scale.
 
 Attributes:
     LLAMA_CPP (str): The llama.cpp runtime name. Pack backends and
@@ -51,7 +55,7 @@ VLLM: Final[str] = "vllm"
 
 RUNTIME_CAPABILITIES: Final[Mapping[str, frozenset[int]]] = MappingProxyType(
     {
-        LLAMA_CPP: frozenset({8, 6, 5, 4, 3, 2}),
+        LLAMA_CPP: frozenset({16, 8, 6, 5, 4, 3, 2}),
         VLLM: frozenset({8, 4}),
     }
 )
@@ -59,12 +63,16 @@ RUNTIME_CAPABILITIES: Final[Mapping[str, frozenset[int]]] = MappingProxyType(
 # Effective bits per weight for each K-quant type the ADR-0012 mapping
 # assigns (Q8_0, Q6_K, Q5_K, Q4_K, Q3_K, Q2_K). Exact block-layout
 # constants, verified byte-for-byte against packed files (ADR-0014).
-# vLLM has no entry: no measured pack path exists yet, so vLLM plans
-# fall back to the scalar overhead.
+# The 16 row is the F16 passthrough (ADR-0029 decision 4): GGUF `F16`
+# stores two bytes per weight with no block overhead, so an
+# unquantized group spends exactly its reference bits. vLLM has no
+# entry: no measured pack path exists yet, so vLLM plans fall back to
+# the scalar overhead.
 EFFECTIVE_BITS: Final[Mapping[str, Mapping[int, float]]] = MappingProxyType(
     {
         LLAMA_CPP: MappingProxyType(
             {
+                16: 16.0,
                 8: 8.5,
                 6: 6.5625,
                 5: 5.5,
@@ -80,12 +88,15 @@ EFFECTIVE_BITS: Final[Mapping[str, Mapping[int, float]]] = MappingProxyType(
 # Q4_0, Q2_0 — ADR-0028 decision 1). Exact block-layout constants.
 # The table carries no 3-bit row: no GGUF type lands between 2.25 and
 # 4.25 bits per weight on the stack rows, and pack refuses nominal 3
-# there (ADR-0028 decision 2).
+# there (ADR-0028 decision 2). The 16 row is the F16 passthrough,
+# which costs the same on a stack row as on a dense one — `F16` has
+# no super-block to divide (ADR-0029 decision 4).
 EXPERT_STACK_EFFECTIVE_BITS: Final[Mapping[str, Mapping[int, float]]] = (
     MappingProxyType(
         {
             LLAMA_CPP: MappingProxyType(
                 {
+                    16: 16.0,
                     8: 8.5,
                     4: 4.5,
                     2: 2.25,

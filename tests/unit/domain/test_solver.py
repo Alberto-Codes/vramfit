@@ -783,3 +783,137 @@ class TestSolveWithProtections:
                 protections={"*.self_attn.v_proj.weight": 8},
                 format_overhead=0.0,
             )
+
+
+@pytest.mark.unit
+class TestUncoveredGroups:
+    """ADR-0029 decision 3: price every discovered group, assign it too."""
+
+    def test_a_group_outside_the_map_reaches_the_recipe(self) -> None:
+        map_ = load(make_map([("model.layers.0", 1600, CONVEX_CURVE)]))
+
+        recipe = solve_simple(
+            map_, 100_000, discovered_bytes={"model.layers.0": 1600, "lm_head": 800}
+        )
+
+        assert [a.group for a in recipe.assignments] == ["model.layers.0", "lm_head"]
+
+    def test_an_uncovered_group_holds_at_reference_precision(self) -> None:
+        map_ = load(make_map([("model.layers.0", 1600, CONVEX_CURVE)]))
+
+        recipe = solve_simple(
+            map_, 100_000, discovered_bytes={"model.layers.0": 1600, "lm_head": 800}
+        )
+
+        held = next(a for a in recipe.assignments if a.group == "lm_head")
+        assert held.bits == 16
+
+    def test_an_uncovered_group_carries_no_damage(self) -> None:
+        map_ = load(make_map([("model.layers.0", 1600, CONVEX_CURVE)]))
+
+        recipe = solve_simple(
+            map_, 100_000, discovered_bytes={"model.layers.0": 1600, "lm_head": 800}
+        )
+
+        held = next(a for a in recipe.assignments if a.group == "lm_head")
+        assert held.damage == 0.0
+
+    def test_uncovered_bytes_enter_the_predicted_total(self) -> None:
+        map_ = load(make_map([("model.layers.0", 1600, CONVEX_CURVE)]))
+
+        without = solve_simple(map_, 100_000)
+        with_source = solve_simple(
+            map_, 100_000, discovered_bytes={"model.layers.0": 1600, "lm_head": 1600}
+        )
+
+        held = next(a for a in with_source.assignments if a.group == "lm_head")
+        assert (
+            with_source.plan.predicted_total_bytes
+            == without.plan.predicted_total_bytes + held.bytes
+        )
+
+    def test_uncovered_bytes_force_downgrades_of_the_measured_groups(self) -> None:
+        map_ = load(
+            make_map(
+                [
+                    ("model.layers.0", 16_000, CONVEX_CURVE),
+                    ("model.layers.1", 16_000, CONVEX_CURVE),
+                ]
+            )
+        )
+
+        without = solve_simple(map_, 18_000)
+        with_source = solve_simple(
+            map_,
+            18_000,
+            discovered_bytes={
+                "model.layers.0": 16_000,
+                "model.layers.1": 16_000,
+                "model.layers.2": 8_000,
+            },
+        )
+
+        assert len(with_source.plan.trace) > len(without.plan.trace)
+
+    def test_uncovered_bytes_can_make_the_budget_infeasible(self) -> None:
+        map_ = load(make_map([("model.layers.0", 1600, CONVEX_CURVE)]))
+
+        with pytest.raises(InfeasibleBudgetError):
+            solve_simple(
+                map_, 2000, discovered_bytes={"model.layers.0": 1600, "big": 100_000}
+            )
+
+    def test_an_uncovered_group_is_never_downgraded(self) -> None:
+        map_ = load(make_map([("model.layers.0", 16_000, CONVEX_CURVE)]))
+
+        recipe = solve_simple(
+            map_,
+            12_000,
+            discovered_bytes={"model.layers.0": 16_000, "held": 4_000},
+        )
+
+        assert [step.group for step in recipe.plan.trace] == ["model.layers.0"]
+
+    def test_a_fully_covered_source_changes_nothing(self) -> None:
+        map_ = load(make_map([("model.layers.0", 1600, CONVEX_CURVE)]))
+
+        without = solve_simple(map_, 100_000)
+        with_source = solve_simple(
+            map_, 100_000, discovered_bytes={"model.layers.0": 1}
+        )
+
+        assert with_source == without
+
+    def test_no_source_leaves_the_map_defining_the_model(self) -> None:
+        map_ = load(make_map([("model.layers.0", 1600, CONVEX_CURVE)]))
+
+        recipe = solve_simple(map_, 100_000)
+
+        assert [a.group for a in recipe.assignments] == ["model.layers.0"]
+
+    def test_uncovered_groups_land_in_name_order(self) -> None:
+        map_ = load(make_map([("model.layers.0", 1600, CONVEX_CURVE)]))
+
+        recipe = solve_simple(
+            map_,
+            100_000,
+            discovered_bytes={"model.layers.0": 1600, "zeta": 8, "alpha": 8},
+        )
+
+        assert [a.group for a in recipe.assignments[1:]] == ["alpha", "zeta"]
+
+    def test_an_uncovered_expert_stack_prices_at_the_passthrough(self) -> None:
+        # `F16` has no super-block, so a stack row costs the same 16.0
+        # bits per weight as a dense one (ADR-0029 decision 4).
+        map_ = load(make_map([("model.layers.0", 1600, CONVEX_CURVE)]))
+        stack = "model.layers.1.mixer.experts.up_proj"
+
+        recipe = solve_simple(
+            map_,
+            100_000,
+            discovered_bytes={"model.layers.0": 1600, stack: 1600},
+            runtime="llama.cpp",
+        )
+
+        held = next(a for a in recipe.assignments if a.group == stack)
+        assert held.bytes == group_bytes(1600, 16.0, DEFAULT_RESIDUAL_OVERHEAD)

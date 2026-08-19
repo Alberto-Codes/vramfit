@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import struct
 
 import pytest
 from typer.testing import CliRunner
@@ -864,3 +865,143 @@ class TestPlanProtect:
 
         assert result.exit_code == 1
         assert "only unprotected" in result.output
+
+
+@pytest.mark.unit
+class TestPlanCheckpointOption:
+    """``plan --checkpoint`` reads the size source ADR-0029 rules."""
+
+    def _write_map(self, tmp_path):
+        raw = make_map([("model.layers.0", 160_000, CURVE)])
+        path = tmp_path / "sensitivity.json"
+        path.write_text(json.dumps(raw))
+        return path
+
+    def _write_checkpoint(self, tmp_path, entries):
+        model_dir = tmp_path / "checkpoint"
+        model_dir.mkdir(exist_ok=True)
+        offset = 0
+        header = {}
+        for name, span in entries.items():
+            header[name] = {
+                "dtype": "BF16",
+                "shape": [span // 2, 1],
+                "data_offsets": [offset, offset + span],
+            }
+            offset += span
+        blob = json.dumps(header).encode("utf-8")
+        (model_dir / "model.safetensors").write_bytes(
+            struct.pack("<Q", len(blob)) + blob
+        )
+        return model_dir
+
+    def _plan(self, map_path, out, *extra):
+        return runner.invoke(
+            app,
+            [
+                "plan",
+                str(map_path),
+                "--vram",
+                "2000000",
+                "--kv-headroom",
+                "50000",
+                "--out",
+                str(out),
+                *extra,
+            ],
+        )
+
+    def test_an_uncovered_group_reaches_the_recipe(self, tmp_path) -> None:
+        map_path = self._write_map(tmp_path)
+        model_dir = self._write_checkpoint(
+            tmp_path,
+            {
+                "model.layers.0.mlp.up_proj.weight": 160_000,
+                "model.layers.1.mlp.up_proj.weight": 80_000,
+            },
+        )
+        out = tmp_path / "recipe.json"
+
+        result = self._plan(map_path, out, "--checkpoint", str(model_dir))
+
+        assert result.exit_code == 0, result.output
+        recipe = load_recipe(out)
+        held = next(a for a in recipe.assignments if a.group == "model.layers.1")
+        assert held.bits == 16
+
+    def test_the_coverage_report_names_both_counts(self, tmp_path) -> None:
+        map_path = self._write_map(tmp_path)
+        model_dir = self._write_checkpoint(
+            tmp_path,
+            {
+                "model.layers.0.mlp.up_proj.weight": 160_000,
+                "model.layers.1.mlp.up_proj.weight": 80_000,
+            },
+        )
+        out = tmp_path / "recipe.json"
+
+        result = self._plan(map_path, out, "--checkpoint", str(model_dir))
+
+        assert "checkpoint holds 2 groups: 1 measured by the map" in result.stdout
+
+    def test_without_the_option_the_map_defines_the_model(self, tmp_path) -> None:
+        map_path = self._write_map(tmp_path)
+        out = tmp_path / "recipe.json"
+
+        result = self._plan(map_path, out)
+
+        assert result.exit_code == 0, result.output
+        assert "no --checkpoint" in result.stdout
+        assert len(load_recipe(out).assignments) == 1
+
+    def test_a_checkpoint_without_shards_exits_one(self, tmp_path) -> None:
+        map_path = self._write_map(tmp_path)
+        empty = tmp_path / "empty"
+        empty.mkdir()
+        out = tmp_path / "recipe.json"
+
+        result = self._plan(map_path, out, "--checkpoint", str(empty))
+
+        assert result.exit_code == 1
+        assert "no *.safetensors shards" in result.stderr
+
+    def test_a_checkpoint_under_a_foreign_root_exits_one(self, tmp_path) -> None:
+        # The explicit root table refuses rather than pricing a vision
+        # tower's tensors against a decoder group (#177, ADR-0029).
+        map_path = self._write_map(tmp_path)
+        model_dir = self._write_checkpoint(
+            tmp_path, {"vision_tower.layers.0.attn.q_proj.weight": 160_000}
+        )
+        out = tmp_path / "recipe.json"
+
+        result = self._plan(map_path, out, "--checkpoint", str(model_dir))
+
+        assert result.exit_code == 1
+        assert "root the table does not carry" in result.stderr
+
+    def test_a_map_group_the_checkpoint_lacks_warns(self, tmp_path) -> None:
+        map_path = self._write_map(tmp_path)
+        model_dir = self._write_checkpoint(
+            tmp_path, {"model.layers.9.mlp.up_proj.weight": 160_000}
+        )
+        out = tmp_path / "recipe.json"
+
+        result = self._plan(map_path, out, "--checkpoint", str(model_dir))
+
+        assert result.exit_code == 0, result.output
+        assert "the checkpoint does not carry 1 of the map's groups" in result.stderr
+
+    def test_an_unreadable_shard_exits_one(self, tmp_path) -> None:
+        map_path = self._write_map(tmp_path)
+        model_dir = tmp_path / "checkpoint"
+        model_dir.mkdir()
+        # A directory under the shard glob. Opening it raises
+        # IsADirectoryError, which is an OSError and not a refusal
+        # the source words itself.
+        (model_dir / "model.safetensors").mkdir()
+        out = tmp_path / "recipe.json"
+
+        result = self._plan(map_path, out, "--checkpoint", str(model_dir))
+
+        assert result.exit_code == 1
+        assert "error:" in result.stderr

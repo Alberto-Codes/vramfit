@@ -28,6 +28,7 @@ from vramfit.domain.evals import EvalsSidecar
 from vramfit.domain.model import Recipe, SensitivityMap
 from vramfit.domain.pack import PackResult
 from vramfit.domain.scan import GroupSpec, Measurement
+from vramfit.domain.sizes import SizeSourceError, TensorSize
 
 
 @dataclass
@@ -317,6 +318,33 @@ class MemoryImatrixCountSource:
             raise PackError("imatrix.gguf is not an imatrix GGUF: configured failure")
         self.reads += 1
         return dict(self.stack_counts)
+
+
+@dataclass
+class MemoryTensorSizeSource:
+    """In-memory `TensorSizeSource`. Sizes are configured per tensor.
+
+    Like the safetensors adapter, it drops the MTP block (ADR-0029
+    decision 2) and refuses a checkpoint it cannot read rather than
+    returning an empty mapping — an empty result would price the
+    whole model at zero bytes.
+    """
+
+    sizes: dict[str, TensorSize] = field(default_factory=dict)
+    fail: bool = False
+    reads: int = 0
+
+    def tensor_sizes(self) -> dict[str, TensorSize]:
+        if self.fail:
+            raise SizeSourceError(
+                "checkpoint: no *.safetensors shards found: configured failure"
+            )
+        self.reads += 1
+        return {
+            name: size
+            for name, size in self.sizes.items()
+            if not name.startswith("mtp.")
+        }
 
 
 @dataclass

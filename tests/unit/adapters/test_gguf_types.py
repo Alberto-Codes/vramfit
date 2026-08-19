@@ -34,6 +34,7 @@ pytestmark = pytest.mark.unit
 # bits per weight. Independent of the domain table on purpose: the
 # pairing test below fails if either side drifts.
 BITS_PER_GGML_TYPE = {
+    "f16": 16.0,
     "q8_0": 8.5,
     "q6_k": 6.5625,
     "q5_k": 5.5,
@@ -70,8 +71,10 @@ def make_recipe(*assignments: tuple[str, int]) -> Recipe:
 
 
 def test_type_table_covers_the_llama_cpp_capability_set() -> None:
-    assert set(GGML_TYPE_BY_BITS) == {8, 6, 5, 4, 3, 2}
-    assert set(BASE_FTYPE_BY_BITS) == {8, 6, 5, 4, 3, 2}
+    # 16 is the ADR-0029 F16 passthrough, which the capability table
+    # carries so a recipe can hold an unmeasured group at reference.
+    assert set(GGML_TYPE_BY_BITS) == {16, 8, 6, 5, 4, 3, 2}
+    assert set(BASE_FTYPE_BY_BITS) == {16, 8, 6, 5, 4, 3, 2}
     assert set(GGML_TYPE_BY_BITS) == RUNTIME_CAPABILITIES["llama.cpp"]
 
 
@@ -86,6 +89,7 @@ def test_gguf_types_spend_the_domains_effective_bits() -> None:
 @pytest.mark.parametrize(
     ("bits", "expected"),
     [
+        (16, "f16"),
         (8, "q8_0"),
         (6, "q6_k"),
         (5, "q5_k"),
@@ -93,15 +97,15 @@ def test_gguf_types_spend_the_domains_effective_bits() -> None:
         (3, "q3_k"),
         (2, "q2_k"),
     ],
-    ids=["8-bit", "6-bit", "5-bit", "4-bit", "3-bit", "2-bit"],
+    ids=["16-bit", "8-bit", "6-bit", "5-bit", "4-bit", "3-bit", "2-bit"],
 )
 def test_ggml_type_for_maps_the_fixed_table(bits: int, expected: str) -> None:
     assert ggml_type_for(bits) == expected
 
 
 def test_ggml_type_for_unknown_bits_raises_pack_error() -> None:
-    with pytest.raises(PackError, match="no GGUF type maps 16-bit"):
-        ggml_type_for(16)
+    with pytest.raises(PackError, match="no GGUF type maps 7-bit"):
+        ggml_type_for(7)
 
 
 def test_check_runtime_accepts_llama_cpp_and_none() -> None:
@@ -361,7 +365,7 @@ def test_expert_stack_type_for_refuses_a_precision_outside_the_table() -> None:
 
     message = str(caught.value)
     assert '"model.layers.0.mlp.experts.up_proj"' in message
-    assert "[2, 4, 8]" in message
+    assert "[2, 4, 8, 16]" in message
 
 
 def test_tensor_overrides_reject_an_expert_projection_outside_the_stack_table() -> None:

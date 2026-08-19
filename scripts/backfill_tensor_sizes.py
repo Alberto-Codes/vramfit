@@ -16,6 +16,13 @@ JSON document that defines the same key twice, under the rule #262 set
 for every vramfit reader. Both reads apply that rule: the map and each
 shard header.
 
+The shard header reader now lives in
+`vramfit.adapters.outbound.safetensors_sizes` and this script imports
+it. ADR-0022's Consequences said the reader "earns a CLI command when
+a second consumer appears", and ADR-0029's size source is that
+consumer. One reader serves both, so a header refusal cannot differ
+between them.
+
 The first refusal reads ``groups`` and no more of the envelope. A
 document carrying a readable ``groups`` and no ``vramfit_schema``,
 ``model_id``, or ``scan`` annotates here and still fails
@@ -40,7 +47,6 @@ from __future__ import annotations
 import argparse
 import json
 import math
-import struct
 import sys
 from pathlib import Path
 
@@ -48,9 +54,7 @@ from vramfit.adapters.outbound.json_duplicate_key import (
     DuplicateKeyError,
     object_from_pairs,
 )
-
-# A safetensors file opens with a little-endian u64 header length.
-HEADER_PREFIX_BYTES = 8
+from vramfit.adapters.outbound.safetensors_sizes import read_safetensors_header
 
 
 class MapRefusal(ValueError):
@@ -63,39 +67,6 @@ class MapRefusal(ValueError):
     catch `TypeError` as well, and that wider clause would relabel a
     real one from `checkpoint_tensor_bytes` as an operator mistake.
     """
-
-
-def read_safetensors_header(path: Path) -> dict[str, dict]:
-    """Parse one shard's header: tensor name to dtype/shape record.
-
-    Args:
-        path: A ``.safetensors`` file.
-
-    Returns:
-        The header mapping, metadata entry removed.
-
-    Raises:
-        ValueError: If the file is too short, the header is not valid
-            UTF-8 or valid JSON, or the header defines the same key
-            twice.
-    """
-    with path.open("rb") as handle:
-        prefix = handle.read(HEADER_PREFIX_BYTES)
-        if len(prefix) < HEADER_PREFIX_BYTES:
-            raise ValueError(f"{path}: too short for a safetensors header")
-        (header_bytes,) = struct.unpack("<Q", prefix)
-        try:
-            header = json.loads(
-                handle.read(header_bytes), object_pairs_hook=object_from_pairs
-            )
-        except DuplicateKeyError as exc:
-            raise ValueError(f"{path}: {exc.message}") from exc
-        except json.JSONDecodeError as exc:
-            raise ValueError(f"{path}: header is not valid JSON: {exc}") from exc
-        except UnicodeDecodeError as exc:
-            raise ValueError(f"{path}: header is not valid UTF-8: {exc}") from exc
-    header.pop("__metadata__", None)
-    return header
 
 
 def checkpoint_tensor_bytes(model_dir: Path) -> dict[str, int]:

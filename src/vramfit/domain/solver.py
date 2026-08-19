@@ -1,6 +1,13 @@
 """Greedy damage-per-byte solver that turns a sensitivity map into a recipe.
 
-Implements ADR-0007. Errors sit under the `VramfitError` root
+Implements ADR-0007, as amended by ADR-0029: the solver prices
+every discovered group and not only the groups its input map carries.
+A group the checkpoint holds and the map omits is uncovered. It
+prices at reference precision, and the recipe assigns it there —
+`pack` runs the quantizer at the recipe's precision floor, so a
+group the recipe leaves unnamed would reach the artifact at that
+floor rather than at the reference bytes the plan reserved. Errors
+sit under the `VramfitError` root
 (ADR-0011) and carry user-facing messages the CLI prints verbatim.
 A target runtime narrows the candidate set through the ADR-0013
 capability table before any solving starts, and an infeasible
@@ -90,6 +97,7 @@ from vramfit.domain.runtime import (
     servable_precisions,
 )
 from vramfit.domain.scan import is_expert_stack
+from vramfit.domain.sizes import REFERENCE_BITS, uncovered_groups
 
 SOLVER_NAME: Final[str] = "greedy-damage-per-byte"
 DEFAULT_FORMAT_OVERHEAD: Final[float] = 0.05
@@ -386,6 +394,7 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
     imatrix_exclusions: tuple[str, ...] = (),
     format_overhead: float | None = None,
     runtime: str | None = None,
+    discovered_bytes: Mapping[str, int] | None = None,
 ) -> Recipe:
     """Assign a precision to every group so the total fits the budget.
 
@@ -434,10 +443,18 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
             The recipe records the resolved value.
         runtime: Target runtime name, or None for no capability
             constraint.
+        discovered_bytes: Bytes at reference precision per group the
+            checkpoint holds (ADR-0029), from
+            `vramfit.domain.sizes.discovered_group_bytes`. A group
+            here that the map does not carry is uncovered: it prices
+            at reference precision and the recipe assigns it there.
+            None means the map defines the model, which is the
+            behavior ADR-0029 replaced.
 
     Returns:
-        The recipe, with assignments in sensitivity-map group order,
-        the downgrade trace in ``plan.trace``, and the map's
+        The recipe, with assignments in sensitivity-map group order
+        followed by the uncovered groups in name order, the
+        downgrade trace in ``plan.trace``, and the map's
         within-group method token and imatrix path in
         ``within_group`` and ``imatrix`` — the validation pass
         matches its frame against them (ADR-0019, ADR-0020).
@@ -550,12 +567,31 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
         chosen = stack_price if is_expert_stack(group.name) else price
         return protected_group_bytes(group, bits, floors, chosen)
 
+    # Every group the checkpoint holds and the map does not (ADR-0029
+    # decision 3). Each holds at reference precision: no measurement
+    # ranks a downgrade for it, so it is a constant in the budget and
+    # never a move. The recipe still assigns it, because `pack` runs
+    # `--pure` at the recipe's floor and would otherwise quantize the
+    # group the plan just reserved reference bytes for.
+    held = tuple(
+        Assignment(
+            group=name,
+            bits=REFERENCE_BITS,
+            bytes=price(bytes_fp16, REFERENCE_BITS),
+            damage=0.0,
+        )
+        for name, bytes_fp16 in uncovered_groups(
+            discovered_bytes or {}, [g.name for g in sensitivity_map.groups]
+        )
+    )
+    held_total = sum(a.bytes for a in held)
+
     state: dict[str, int] = {}
     for group in sensitivity_map.groups:
         state[group.name] = pinned.get(group.name, candidates[0])
 
-    total = sum(size(g, state[g.name]) for g in sensitivity_map.groups)
-    floor_total = sum(
+    total = held_total + sum(size(g, state[g.name]) for g in sensitivity_map.groups)
+    floor_total = held_total + sum(
         size(g, pinned.get(g.name, candidates[-1])) for g in sensitivity_map.groups
     )
     if floor_total > weight_budget_bytes:
@@ -609,14 +645,17 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
     # rides on is only known after solving.
     protected_pairs = resolve_protected(sensitivity_map, state, floors, excluded)
     refuse_dead_exclusions(imatrix_exclusions, protected_pairs)
-    assignments = tuple(
-        Assignment(
-            group=g.name,
-            bits=state[g.name],
-            bytes=size(g, state[g.name]),
-            damage=g.sensitivity[state[g.name]],
+    assignments = (
+        tuple(
+            Assignment(
+                group=g.name,
+                bits=state[g.name],
+                bytes=size(g, state[g.name]),
+                damage=g.sensitivity[state[g.name]],
+            )
+            for g in sensitivity_map.groups
         )
-        for g in sensitivity_map.groups
+        + held
     )
     return Recipe(
         model_id=sensitivity_map.model_id,

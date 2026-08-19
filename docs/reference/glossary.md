@@ -312,6 +312,45 @@ change.
 :   Bits per weight for a group (e.g. 8, 4, 3, 2 — protection
     floors also use 5 and 6). Not "quant level" or "bit depth".
 
+**Passthrough precision**
+:   Nominal 16, the precision that holds a group at **reference**
+    and packs it as GGUF `F16`
+    ([ADR-0029](../adr/0029-plan-independent-size-source.md)
+    decision 4). It spends exactly 16.0 effective bits, because
+    `F16` carries no block scale. A recipe assigns it to every
+    **uncovered group**. Not "no-quant" or "fp16 pin".
+
+**Tensor size source**
+:   The port that reads a checkpoint's per-tensor stored sizes for
+    the plan step (`vramfit.ports.outbound.TensorSizeSource`). The
+    safetensors adapter implements it by parsing each shard header,
+    so `plan` needs no torch. It exists so the sensitivity map stops
+    defining the model (ADR-0029).
+
+**Discovered group**
+:   A group the tensor size source finds in the checkpoint. The
+    domain names it with the same rule the scan uses, so the two
+    agree on what a group is. The solver prices every discovered
+    group.
+
+**Uncovered group**
+:   A discovered group the sensitivity map does not measure. It
+    prices at reference precision, and the recipe assigns it the
+    **passthrough precision** — `pack` quantizes at the recipe's
+    floor, so an unnamed group would reach the artifact below the
+    bytes the plan reserved. It carries no damage curve, so the
+    solver never downgrades it. Not "missing group" or "unscanned
+    group".
+
+**Naming root**
+:   The first segment of a checkpoint's parameter names —
+    `backbone.` on the 30B target, `model.` on a llama-family
+    checkpoint. Maps root at `model.`, so a domain table reconciles
+    the two before a tensor reaches a group. The table is explicit
+    and never a prefix wildcard, which once mapped a vision tower's
+    `layers.5` onto the decoder's `blk.5` (#177). Not "prefix" or
+    "namespace".
+
 **Weight budget**
 :   VRAM available for weights: card total minus KV headroom minus runtime
     overhead. What the solver packs against. Math in
