@@ -188,6 +188,26 @@ change.
 **Reference**
 :   The unquantized (bf16) model that perturbed models are compared against.
 
+**bf16**
+:   The source checkpoint's storage format, and the format the
+    **Reference** holds. Two bytes per parameter. The scan measures
+    against it, and `bytes_fp16` records a group's size in it.
+
+**f16**
+:   The **Base GGUF**'s storage format. Also two bytes per parameter,
+    and a different file from the bf16 checkpoint. Say "f16" for the
+    GGUF and "bf16" for the checkpoint. The two are not
+    interchangeable, because one is a conversion of the other.
+
+**fp16**
+:   A spelling that survives in the artifact field `bytes_fp16` and
+    names no format of its own. The field holds **bf16** bytes, at two
+    bytes per parameter. Prefer "bf16" or "reference precision" in
+    prose, and read `bytes_fp16` as "bytes at reference precision".
+    Renaming the field would bump `vramfit_schema` and break the
+    published maps, so the name stays and this entry carries the
+    meaning (#357).
+
 **Instrument**
 :   The execution half of a measurement frame, hardware and compute
     stack together: the accelerator, its streaming-multiprocessor

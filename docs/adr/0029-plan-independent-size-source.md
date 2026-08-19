@@ -7,6 +7,20 @@
   carries.
 - **Origin:** Maintainer ruling 2026-08-18 on #337, recorded in chart
   #158's Notes. #345 carries the source and the port's shape.
+- **Note (2026-08-19, issue #345):** decision 7's closing sentence
+  called the root mismatch "its third appearance". That reading is
+  wrong and the decision is unaffected. Measured the same day: both
+  maps this project holds emit `model.` group names, at
+  `sensitivity-32k-kquant-imx.json` and
+  `sensitivity-32k-q0-ref-stacks.json`, so the scan is consistent. The
+  `backbone.` names live in one hand-authored campaign script, which
+  hardcodes the string at `build_recipes.py:28`. `gguf/types.py`
+  accepts either root, so those recipes packed and no gate reported it.
+  So #301's `vramfit validate` refusal is a hand-authored artifact
+  diverging from tool output, not a tool-level naming split. **Decision
+  7 stands on the checkpoint-to-map direction alone**, where the split
+  is real: the checkpoint roots at `backbone.` and every map roots at
+  `model.`.
 
 ## Context
 
