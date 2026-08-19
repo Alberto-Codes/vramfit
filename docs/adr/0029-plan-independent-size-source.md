@@ -13,9 +13,11 @@
   maps this project holds emit `model.` group names, at
   `sensitivity-32k-kquant-imx.json` and
   `sensitivity-32k-q0-ref-stacks.json`, so the scan is consistent. The
-  `backbone.` names live in one hand-authored campaign script, which
-  hardcodes the string at `build_recipes.py:28`. `gguf/types.py`
-  accepts either root, so those recipes packed and no gate reported it.
+  `backbone.` names live in one hand-authored campaign script, outside
+  this repository, which hardcodes the string at line 28 of
+  `campaign/build_recipes.py` in #300's run root.
+  `src/vramfit/adapters/outbound/gguf/types.py` accepts either root, so
+  those recipes packed and no gate reported it.
   So #301's `vramfit validate` refusal is a hand-authored artifact
   diverging from tool output, not a tool-level naming split. **Decision
   7 stands on the checkpoint-to-map direction alone**, where the split

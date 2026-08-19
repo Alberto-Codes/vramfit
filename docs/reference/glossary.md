@@ -194,17 +194,18 @@ change.
     against it, and `bytes_fp16` records a group's size in it.
 
 **f16**
-:   The **Base GGUF**'s storage format. Also two bytes per parameter,
-    and a different file from the bf16 checkpoint. Say "f16" for the
-    GGUF and "bf16" for the checkpoint. The two are not
-    interchangeable, because one is a conversion of the other.
+:   IEEE 754 binary16, and the **Base GGUF**'s storage format. Also two
+    bytes per parameter. It is a different format from bf16, at a
+    different exponent and mantissa split, and it lives in a different
+    file. Say "f16" for the GGUF and "bf16" for the checkpoint.
 
 **fp16**
-:   A spelling that survives in the artifact field `bytes_fp16` and
-    names no format of its own. The field holds **bf16** bytes, at two
-    bytes per parameter. Prefer "bf16" or "reference precision" in
-    prose, and read `bytes_fp16` as "bytes at reference precision".
-    Renaming the field would bump `vramfit_schema` and break the
+:   Another spelling of **f16**. It survives here only in the artifact
+    field `bytes_fp16`, which despite its name holds **bf16** bytes at
+    two bytes per parameter. So the field is named for one format and
+    records another, and the two happen to agree on width. Prefer
+    "f16" for the format and "reference precision" for what the field
+    holds. Renaming the field would bump `vramfit_schema` and break the
     published maps, so the name stays and this entry carries the
     meaning (#357).
 
