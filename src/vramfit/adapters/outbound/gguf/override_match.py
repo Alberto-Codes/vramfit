@@ -105,6 +105,13 @@ a per-tensor report would name every attention and dense tensor in the
 model. A layer no pattern touches at all is the case the recipe did
 not address.
 
+One read covers one file, so the read refuses a shard of a split
+GGUF before any of the three checks runs (#308). A shard carries a fraction of
+the model's tensors, and holding a whole recipe against that fraction
+reports the recipe as wrong. That refusal is the superset bias's one
+exception, recorded in ADR-0012's 2026-08-18 amendment.
+`base_tensor_names` records what it costs.
+
 gguf-py rides the scan extra and the pack extra includes it, so the
 import defers to the first read. ``vramfit pack --help`` keeps working
 on a base install (ADR-0005).
@@ -144,6 +151,16 @@ _READER_FAILURES: Final[tuple[type[Exception], ...]] = (
     struct.error,
     OSError,
 )
+
+# The two KV keys `llama-gguf-split` writes into every shard of a
+# split GGUF. `llama_model_loader` reads `split.count` as a uint16 and
+# follows the shard chain whenever it exceeds 1. It reads `split.no`
+# to derive the sibling paths, and it refuses any shard but the first.
+# The block sits at llama.cpp `src/llama-model-loader.cpp:582-610` at
+# commit `3653e6d6d` (b10326, the pinned instrument) and at `:581-609`
+# at `e9fa0781f`.
+SPLIT_COUNT_KEY: Final[str] = "split.count"
+SPLIT_NO_KEY: Final[str] = "split.no"
 
 # The GGUF layer-stack prefix. Anchored, so a vision tower's
 # `v.blk.<n>.` does not read as a decoder layer — #236 owns that root
@@ -187,6 +204,45 @@ def _load_gguf() -> Any:
     return gguf
 
 
+def _declared_shard(reader: Any) -> tuple[int, int] | None:
+    """Read the shard position a GGUF declares about itself.
+
+    A shard states its own place in the chain. The loader reads
+    `split.count` first and treats anything at 1 or below as a whole
+    file, so this follows that gate rather than the key's presence.
+
+    A file carrying `split.count` at a type the format does not hold
+    as an integer reads here as a whole file. `llama_model_loader`
+    calls `get_key`, which throws "key %s has wrong type" on such a
+    file. So the quantizer names that defect itself and this check
+    adds nothing.
+
+    An index outside the chain reads as the first shard. A file
+    declaring `split.no` 7 of 3 shards states an impossible position,
+    and reporting it back would name a shard the chain cannot hold.
+    The count alone drives the refusal, so the position only shapes
+    the message.
+
+    Args:
+        reader: An open ``gguf.GGUFReader`` over the base GGUF.
+
+    Returns:
+        The zero-based shard index and the shard count, or `None`
+        when the file declares no chain of more than one shard.
+    """
+    count_field = reader.get_field(SPLIT_COUNT_KEY)
+    if count_field is None:
+        return None
+    count = count_field.contents()
+    if not isinstance(count, int) or count <= 1:
+        return None
+    no_field = reader.get_field(SPLIT_NO_KEY)
+    index = no_field.contents() if no_field is not None else None
+    if not isinstance(index, int) or not 0 <= index < count:
+        index = 0
+    return index, count
+
+
 def base_tensor_names(base_gguf: Path) -> tuple[str, ...]:
     """Read the base GGUF's tensor names in file order.
 
@@ -202,6 +258,32 @@ def base_tensor_names(base_gguf: Path) -> tuple[str, ...]:
     convert leaves exactly such a file, and `LlamaCppPacker.convert`
     reuses any existing base GGUF, so the next pack reads it.
 
+    **This read refuses a shard of a split GGUF (#308).** The read
+    opens one file. A shard declares a fraction of the model's tensors, so
+    every override for another shard's layers reports unmatched and
+    the pack refuses a correct recipe. The refusal above then names
+    the recipe, which is correct, and not the file, which is partial.
+    So this refusal states the shard, the shard count, the tensor
+    count the file carries, and the merge that produces a whole file.
+
+    An operator reaches this by downloading a published base rather
+    than converting one. Two of the four publishers #265 and #276
+    checked ship the #158 target's bf16 base as two shards, measured
+    2026-08-18 against the HuggingFace API: `unsloth` at
+    ``BF16/…-BF16-00001-of-00002.gguf`` and `bartowski` at
+    ``…-bf16-00001-of-00002.gguf``. `convert_hf_to_gguf.py` also
+    takes ``--split-max-size``, and `LlamaCppPacker.convert` reuses
+    any base GGUF already present.
+
+    This costs one accepted input. `llama_model_loader` follows the
+    shard chain, so a first shard packs correctly there and refuses
+    here. The gap is that shard alone. The loader refuses every later
+    shard itself, at "model must be loaded with the first split". The
+    superset bias above says the check never refuses a pack the tool
+    would honour, and this is its one exception. ADR-0012's
+    2026-08-18 amendment records it. Following the chain here is the
+    wider fix, and #351 carries it.
+
     Args:
         base_gguf: The full-precision base GGUF the quantizer reads.
 
@@ -211,8 +293,10 @@ def base_tensor_names(base_gguf: Path) -> tuple[str, ...]:
         every override rather than passing them.
 
     Raises:
-        PackError: If gguf-py is missing, or the reader cannot read
-            the file. The cause carries what the reader reported.
+        PackError: If gguf-py is missing, if the reader cannot read
+            the file, or if the file declares itself one shard of a
+            split GGUF. The reader's cause carries what the reader
+            reported.
 
     Examples:
         Read the names the overrides must match:
@@ -225,7 +309,8 @@ def base_tensor_names(base_gguf: Path) -> tuple[str, ...]:
     gguf = _load_gguf()
     try:
         reader = gguf.GGUFReader(str(base_gguf))
-        return tuple(tensor.name for tensor in reader.tensors)
+        shard = _declared_shard(reader)
+        names = tuple(tensor.name for tensor in reader.tensors)
     except _READER_FAILURES as exc:
         raise PackError(
             f"cannot read the base GGUF {base_gguf}: "
@@ -234,6 +319,18 @@ def base_tensor_names(base_gguf: Path) -> tuple[str, ...]:
             f"(ADR-0012). A partial file from an interrupted convert "
             f"reads this way — delete it and convert again"
         ) from exc
+    if shard is not None:
+        index, count = shard
+        raise PackError(
+            f"the base GGUF {base_gguf} is shard {index + 1} of {count} of a "
+            f"split file, and it carries {len(names)} of the model's tensors. "
+            f"The pack step reads one file, so every override for another "
+            f"shard's layers would report unmatched and refuse a correct "
+            f"recipe (#308). Merge the shards first: llama-gguf-split "
+            f"--merge <first-shard> <merged.gguf>. Then pass the merged "
+            f"file to --base-gguf"
+        )
+    return names
 
 
 def _compiled(override: TypeOverride) -> re.Pattern[str]:
@@ -436,7 +533,8 @@ def check_base_coverage(
 
     Raises:
         PackError: If any override matches no tensor (#303), if a
-            dedicated flag has no target tensor (#306), if gguf-py is
+            dedicated flag has no target tensor (#306), if the base
+            file is one shard of a split GGUF (#308), if gguf-py is
             missing, or if the reader cannot read the base file.
             `base_tensor_names` wraps every reader failure, so no
             `OSError` reaches the caller.
