@@ -132,6 +132,20 @@ A **base GGUF** exists only after a pack, and `plan` runs before packing.
       same mismatch disabling `vramfit validate`. This is its third
       appearance and it may deserve one shared resolution.
 
+- **Whether an uncovered group enters the pinnable set.** Decision 3
+  gives a caller no lever over the bf16 default, and `--pin` does not
+  supply one today. `_expand_pins` matches a pattern against
+  `map_.groups` (`src/vramfit/domain/solver.py:256`), so a pin reaches
+  only groups the map carries and raises `PinError` otherwise. An
+  uncovered group is therefore unpinnable, and the consequence below is
+  unavoidable rather than chosen.
+
+    Admitting the source's groups to the pinnable set would let a caller
+    write `--pin "*=8"` and recover the 35-stack mix deliberately. It
+    would also let a pin introduce a group name, which ADR-0007's "a
+    pattern matching zero groups is a hard error" was written to
+    prevent. The two readings conflict and a ruling settles them.
+
 - **Whether a map and the source may disagree, and what `plan` does when
   they do.** The map records what the scan discovered. The source reports
   what the checkout holds now. A rename or a revision moves one and not
@@ -184,3 +198,17 @@ A **base GGUF** exists only after a pack, and `plan` runs before packing.
   the validation pass cannot hold a group at reference, so the clean
   experiment of perturbing the 46 stacks and holding the rest unchanged
   has no form today. The passthrough gives it one.
+
+- **#350's frame skew stops being theoretical.** The `q0-ref` map prices
+  nominal 4 unassisted, and `pack` applies `Q4_0` assisted through
+  `quantize_row_q4_0_impl`. `quantize_q2_0` discards the matrix, so the
+  skew lands on one width only. ADR-0018 predicts an unassisted meter
+  sits at or above the packed damage for a covered tensor, so the map
+  overstates nominal-4 damage against the artifact.
+
+    No solver has read that skew yet, because every arm on this target
+    was hand-authored (#301). This ADR is what first lets the greedy rule
+    consume it, and the rule spends the cheap width against exactly that
+    ratio. #350 carries whether the meter consumes the matrix. A recipe
+    planned before that ruling reads a nominal-4 column measured in a
+    frame the pack does not apply.
