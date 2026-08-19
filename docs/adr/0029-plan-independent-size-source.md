@@ -103,34 +103,57 @@ A **base GGUF** exists only after a pack, and `plan` runs before packing.
    `Q0_REF_PRECISIONS` is `(8, 4, 2)` and no candidate holds a group at
    reference.
 
+5. **The port returns a per-tensor record carrying bytes and dtype, not
+   a bare integer.** `TensorSizeSource.tensor_sizes` returns a
+   `Mapping[str, TensorSize]` keyed by checkpoint tensor name.
+   `TensorSize` is a frozen domain dataclass holding `dtype` and
+   `bytes`.
+
+   A bare `Mapping[str, int]` would mirror
+   `ImatrixCountSource.expert_stack_counts` and would hardcode the
+   project's bf16 convention into the port.
+   `scripts/backfill_tensor_sizes.py` states that convention as
+   "element counts at 2 bytes per parameter". A checkpoint stored at
+   fp8 or at fp32 prices differently, and reference precision is
+   defined by what the checkpoint holds. Carrying the dtype lets the
+   domain derive reference bytes instead of assuming two bytes per
+   parameter. The adapter reports the header's dtype string verbatim
+   and computes no convention of its own.
+
+6. **Group aggregation lives in the domain. The adapter returns raw
+   checkpoint tensor names.** The checkpoint stores routed experts
+   individually. Layer 1's `up_proj` stack is 128 tensors,
+   `backbone.layers.1.mixer.experts.0` through `127`. The map records
+   the fused stack as one tensor at 1,277,165,568 bytes, which is
+   638,582,784 parameters, which is 128 times 2688 times 1856. So
+   something must sum 128 entries per stack group.
+
+   That summation reads model structure, and structure is already a
+   domain concept. `is_expert_stack` sits at
+   `src/vramfit/domain/scan.py:126`. ADR-0008 keeps the domain pure, and
+   an adapter that grouped tensors would become an authority on model
+   structure. The adapter therefore stays a reader of bytes.
+
+7. **A domain utility reconciles the naming roots, against an explicit
+   root table and never a prefix wildcard.** The checkpoint roots at
+   `backbone.`. The scan's discovered groups root at `model.`, measured
+   on #328. ADR-0012 decision 2, as amended 2026-08-12, carries the
+   naming families on the GGUF pack side only, so no record reconciles
+   the roots for `plan`.
+
+   The wildcard prohibition is not caution. Chart #158 records the
+   failure it prevents, from #177: the imatrix name table supports
+   `model.layers.N.` and `backbone.layers.N.` and no others, because "a
+   prefix wildcard mapped a vision tower's `layers.5` onto the decoder's
+   `blk.5` and would have priced it against the wrong columns". A size
+   source carries the same hazard. It would price a vision tower's
+   tensors against a decoder group.
+
+   One shared utility serves `plan` and `validate` together. #301
+   records the same mismatch disabling `vramfit validate`, and this ADR
+   is its third appearance.
+
 ## Open questions
-
-- **The port's shape.** Decision 1 fixes the source and not the
-  Protocol. Three sub-questions stay open, and the ADR closes when a
-  maintainer ruling settles them.
-
-    - **What the port returns.** A `Mapping[str, int]` of checkpoint
-      tensor name to bytes at reference precision, mirroring
-      `ImatrixCountSource.expert_stack_counts`. Or a richer record
-      carrying dtype, so a checkpoint that is not bf16 prices correctly.
-
-    - **Where group aggregation lives.** The checkpoint stores routed
-      experts individually. Layer 1's `up_proj` stack is 128 tensors,
-      `backbone.layers.1.mixer.experts.0` through `127`. The map records
-      the fused stack as one tensor at 1,277,165,568 bytes, which is
-      638,582,784 parameters, which is 128 times 2688 times 1856. So a
-      per-tensor lookup on the map's group name returns nothing, and
-      something must sum 128 entries per stack group. The domain is pure
-      and the adapter is not, so this placement is a hexagonal question
-      under ADR-0008.
-
-    - **How the two naming roots reconcile.** The checkpoint roots at
-      `backbone.`. The scan's discovered groups root at `model.`,
-      measured on #328. ADR-0012 decision 2, as amended 2026-08-12,
-      carries the naming families on the GGUF pack side only. No record
-      reconciles the roots on the scan or plan side. #301 records the
-      same mismatch disabling `vramfit validate`. This is its third
-      appearance and it may deserve one shared resolution.
 
 - **Whether an uncovered group enters the pinnable set.** Decision 3
   gives a caller no lever over the bf16 default, and `--pin` does not
@@ -193,6 +216,14 @@ A **base GGUF** exists only after a pack, and `plan` runs before packing.
   and an outbound adapter under ADR-0008. The lazy-import gate applies:
   a module with an optional import needs a `[[tool.ty.overrides]]` entry
   or CI type-checking fails where local gates pass.
+
+- **The root table becomes a maintained list, and a target it does not
+  name refuses.** Decision 7 bars a prefix wildcard, so a checkpoint
+  rooted at neither `model.` nor `backbone.` reaches no group. That is
+  the designed outcome. A silent wildcard match would price a vision
+  tower's tensors against a decoder group, which #177 measured and
+  #186 fixed by adding names rather than a wildcard. Each new target
+  costs one table entry.
 
 - **The F16 passthrough reaches `vramfit validate`.** #301 records that
   the validation pass cannot hold a group at reference, so the clean
