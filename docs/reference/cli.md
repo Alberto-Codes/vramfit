@@ -120,7 +120,9 @@ when the checkpoint carries only some of them.
 
     `--checkpoint` makes `plan` emit one. `pack` maps decoder-layer
     groups and routed-expert stacks, and refuses every other `stack`
-    group by name. #183 carries the class table for the rest.
+    group by name. The 2026-08-20 amendment to
+    [ADR-0012](../adr/0012-gguf-type-mapping.md) rules the class
+    table for the rest, and #368 lands it.
 
 Pin semantics: patterns are case-sensitive `fnmatch` globs matched against
 the full group name (`--pin "model.layers.0.*=8"`). A pattern that matches

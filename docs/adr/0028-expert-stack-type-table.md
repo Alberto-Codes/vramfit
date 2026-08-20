@@ -16,6 +16,12 @@
   whether a solver may buy that width, and after its own
   2026-08-14 amendment it bars 2-bit on this target. Record:
   [#229 closing comment](https://github.com/Alberto-Codes/vramfit/issues/229#issuecomment-5300460635).
+- **Amendment (2026-08-20, issue #183):** decision 1's table also
+  reaches a layer-class group whose rows refuse the 256
+  super-block. The Nemotron-H dense classes qualify at 2688. The
+  2026-08-20 amendment to [ADR-0012](0012-gguf-type-mapping.md)
+  carries the class table and the F16 pin, and #368 lands the
+  build.
 
 ## Context
 
@@ -180,7 +186,11 @@ Facts verified upstream on 2026-08-14 (#189):
   2026-07-07. The pinned checkout `e9fa078` carries it (#159).
 - The Nemotron-H tensor classes outside this mapping stay with
   #183. `ssm_in` shares the 2688-row k-quant exclusion and waits
-  there.
+  there. **Resolved 2026-08-20 (#183): decision 1's table also
+  reaches a layer-class group whose rows refuse the 256
+  super-block. The Nemotron-H classes qualify at 2688, so the
+  wait ends. The 2026-08-20 amendment to
+  [ADR-0012](0012-gguf-type-mapping.md) carries the class table.**
 - ADR-0012's open question on persisting toolchain output narrows.
   The fallback warnings now feed a gate. Whether the full output
   persists as a sidecar artifact stays open there.
