@@ -69,6 +69,12 @@
     prefix alone would still miss them, because the table keys read
     `self_attn.q_proj` and this checkpoint says `mixer.q_proj`.
 
+- **Amendment (2026-08-20, issue #183):** the paragraphs above
+  date. The class table gains the nine Nemotron-H rows under a
+  free prefix, and the refusal narrows again. The 2026-08-20
+  amendment to [ADR-0012](0012-gguf-type-mapping.md) carries the
+  ruling, and #368 lands the build.
+
 ## Context
 
 The twelfth data point (in
