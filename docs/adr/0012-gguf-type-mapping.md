@@ -317,6 +317,72 @@
     The refusal reports halt stage `quantize`, matching #303 and
     #306. #275 still owns whether a zero-exit refusal earns its own
     stage.
+- **Amendment (2026-08-20, issue #183):** decision 2's class mapping
+  extends to Nemotron-H. Three rulings, given 2026-08-20 on #183.
+
+    **The class table gains the nine Nemotron-H rows.**
+
+    | HF suffix | GGUF stem |
+    |---|---|
+    | `mixer.in_proj` | `ssm_in` |
+    | `mixer.out_proj` | `ssm_out` |
+    | `mixer.gate` | `ffn_gate_inp` |
+    | `mixer.shared_experts.up_proj` | `ffn_up_shexp` |
+    | `mixer.shared_experts.down_proj` | `ffn_down_shexp` |
+    | `mixer.q_proj` | `attn_q` |
+    | `mixer.k_proj` | `attn_k` |
+    | `mixer.v_proj` | `attn_v` |
+    | `mixer.o_proj` | `attn_output` |
+
+    The mapping keys on the tensor suffix under a free prefix,
+    which is the 2026-08-12 amendment's shape. Any single root
+    passes, and the two-root refusal stands. The suffix match
+    accepts two and three dot-separated segments, because
+    `mixer.shared_experts.down_proj` carries three. Each row is
+    confirmed against `gguf-py/gguf/tensor_mapping.py` at
+    `3653e6d6d` (b10326, the pinned instrument), tagged
+    `nemotron-h` or `nemotron-h-moe`. The nine classes weigh
+    1,489,625,088 parameters, which is 2.775 GiB at bf16 from the
+    checkpoint's shard headers. #360 emits `model.` for every group
+    (#362, gap 1). A free-prefix table maps that root and a
+    `backbone.`-rooted recipe alike, so the two records agree
+    without a canonical root.
+
+    **The embedding name set gains `model.embeddings`.** The scan
+    emits that name on this target, and the 2026-08-12 set carries
+    `model.embed_tokens` and `backbone.embeddings` only. So the
+    embedding group has never driven `--token-embedding-type` on
+    this target. It refused as an unmapped group instead. The group
+    weighs 352,321,536 parameters, which is 672.00 MiB at bf16 —
+    the largest single group outside the expert stacks.
+
+    **An unquantizable class pins at the F16 passthrough.**
+    `tensor_allows_quantization` (`src/llama-quant.cpp:289-364` at
+    the instrument) refuses tensors through name filters and a rank
+    gate, never a type table: rank below 2, `_norm.weight`,
+    `ffn_gate_inp.weight`, and `ssm_conv1d`. The quantizer drops an
+    override on such a tensor and exits 0, so a recipe naming one
+    was a silent no-op. The ruling: `plan` assigns every such group
+    the F16 passthrough (ADR-0029 decision 4), the solver prices it
+    at 16.0 bits and never lower, and pack refuses a recipe that
+    assigns a lower width. The refusal names the group and the
+    upstream filter. Predicted bytes then equal packed bytes, and
+    no emitted override applies nothing. Two classes reach the
+    recipe on this target, `mixer.gate.weight` (`ffn_gate_inp`) and
+    `mixer.conv1d.weight` (`ssm_conv1d`), at 8,822,784 parameters
+    and 16.83 MiB, which is 0.104 % of the 15.776 GiB budget.
+
+    **The filter list is a copied external contract.** Upstream
+    exports the predicate at `src/llama-ext.h:48` against an
+    internal struct, and the header sits under `src/`, not
+    `include/`. No CLI reaches it, so vramfit copies the four
+    filters. #207 carries how a test pins a copied contract. The
+    #303 superset clause is undisturbed — the pre-run override
+    check still models no upstream filter, because this list serves
+    `plan` pricing and a recipe-level refusal, never the override
+    match. #305 carries the override-count residual, and #204
+    carries the scan side.
+
 ## Context
 
 ADR-0010 routes sub-4-bit serving through llama.cpp and leaves one
