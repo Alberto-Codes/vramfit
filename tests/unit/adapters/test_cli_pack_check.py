@@ -391,6 +391,35 @@ class TestProtectedPreflight:
         assert "no GGUF type maps 7-bit" in result.output
         assert fake.packed == []
 
+    def test_protection_under_a_second_root_fails_before_any_stage(
+        self, tmp_path, monkeypatch, llama_cpp_dir
+    ) -> None:
+        # The pre-run check composes every override, so the #367
+        # cross-root refusal fires here — not after the convert
+        # stage writes a full-size base GGUF.
+        model_dir = tmp_path / "model"
+        model_dir.mkdir()
+        recipe = make_protected_recipe(str(model_dir))
+        recipe = replace(
+            recipe,
+            protected_tensors=(
+                ProtectedTensor("backbone.layers.0.self_attn.v_proj.weight", 5),
+            ),
+        )
+        recipe_path = tmp_path / "recipe.json"
+        save_recipe(recipe, recipe_path)
+        fake = MemoryRecipePacker(packed_bytes=WEIGHT_BUDGET - 100)
+        monkeypatch.setattr(cli_pack, "_build_packer", lambda *args: fake)
+
+        result = invoke_pack(recipe_path, llama_cpp_dir, tmp_path / "p.gguf")
+
+        assert result.exit_code == 1
+        assert "two layer stacks" in result.output
+        assert 'root "backbone"' in result.output
+        assert 'root "model"' in result.output
+        # Nothing ran: the failure costs milliseconds, not a convert.
+        assert fake.packed == []
+
     def test_nan_measurement_still_records_the_halt(
         self, tmp_path, monkeypatch, llama_cpp_dir, imatrix_path
     ) -> None:

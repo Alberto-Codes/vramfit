@@ -284,8 +284,9 @@ def pack(
     command re-checks the packed file's real
     bytes against the recipe's weight budget — nominal-bit
     predictions undershoot GGUF's effective bits. A protected
-    recipe's resolved pairs are checked against the type tables
-    before any stage runs, and a protected recipe
+    recipe's override composition is checked before any stage runs,
+    catching an unmappable pair and a protection under a second
+    root (#367). The check judges nothing else. A protected recipe
     packed with ``--imatrix`` must then pass the reconstruction
     check — a collapsed tensor halts with its name, and the revision
     is the user's (ADR-0022). With
@@ -315,8 +316,9 @@ def pack(
     _check_inputs(llama_cpp, out, imatrix, smoke_text, smoke_threshold)
 
     recipe = _load_recipe(recipe_path)
-    # An unmappable protection must fail here, in milliseconds — not
-    # after the convert stage writes a full-size base GGUF (ADR-0022).
+    # A protected recipe's override composition must fail here, in
+    # milliseconds — not after the convert stage writes a full-size
+    # base GGUF (ADR-0022, #367).
     _check_protected_mappable(recipe)
     _warn_imatrix_provenance(recipe, imatrix)
     model_dir = model if model is not None else Path(recipe.model_id)
