@@ -168,6 +168,14 @@ change.
     amendment, token renamed by the 2026-08-18 amendment). Not
     "imatrix mode" or "weighted scanning".
 
+    The same pair names the pack side. A tensor packs **assisted** when
+    its type reads the matrix and the matrix covers its name, and
+    **unassisted** otherwise. An artifact's **assisted share** is the
+    fraction of its bytes that packed assisted
+    ([ADR-0016](../adr/0016-imatrix-in-the-pack-path.md), 2026-08-21
+    amendment). The scan sense and the pack sense can disagree on one
+    tensor, because the two sides apply different fits.
+
 **Reconstruction error**
 :   The squared difference between a quantized tensor and its
     original, at `||q - w||² / ||w||²`, measured in weight space. It

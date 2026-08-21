@@ -215,8 +215,11 @@ the pack applied. This one replaces a frame the pack cannot apply.
   acceleration (ggml-org/llama.cpp#24448).
 - **`quantize_q2_0` accepts an importance matrix and ignores it**
   (`ggml/src/ggml-quants.c:2113-2126`, b10326). So `gguf-imx` can only ever
-  differ from `gguf-ref` at nominal 4. #278 carries the consequence for
-  the published-build comparison.
+  differ from `gguf-ref` at nominal 4. #278 carried the consequence for
+  the published-build comparison, and it closed 2026-08-21 on
+  [ADR-0016](0016-imatrix-in-the-pack-path.md)'s "the assisted shares
+  differ" amendment. That amendment also records the pack-side split at
+  `4801e3c56` for the types this record does not name.
 - Maps priced under `kquant` on this target do not compare with maps
   priced under `gguf-ref`. #163's map is the campaign's input until the
   re-scan lands.

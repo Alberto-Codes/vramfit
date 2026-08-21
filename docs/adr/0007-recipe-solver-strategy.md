@@ -48,12 +48,27 @@
     and one super-additive on a 2-bit-heavy recipe. #375 tracks the
     drift between those two carriers. ADR-0021 decision 4 still
     bars the solver from the 2-bit width on this target, so the
-    rule ships unexercised there until that bar lifts. The measured
+    rule ships unexercised there until that bar lifts. **Corrected
+    2026-08-21 by the observed consequence below: the rule keys on the
+    surviving floor and fires at nominal 4.** The measured
     recipes are hand-authored, so they test the map and the
     policy's shape, never this solver's own allocation (#301). #374
     carries the build, and the
     [#321 closing comment](https://github.com/Alberto-Codes/vramfit/issues/321#issuecomment-5372929524)
     carries the evidence.
+
+    **Observed consequence (2026-08-21, issue #377): the rule keys on
+    the surviving floor, so it fires at nominal 4.** The bound above
+    reads that the rule ships unexercised on this target. ADR-0021
+    decision 4 strips the 2-bit column by a map copy. #328's stack map
+    carries precisions 4 and 2, so the strip leaves nominal 4 as the
+    cheapest in-budget width and the rule fires there. A map carrying
+    nominal 3 would leave 3 instead, because `servable_precisions` keeps
+    it. PR #376 builds the rule at `candidates[-1]`, after the ADR-0013
+    filter. **The bar itself is untouched.** No solver code reads it,
+    and no 2-bit assignment becomes possible. Maintainer ruling
+    2026-08-21: the rule keys on the surviving floor. Record:
+    [#377](https://github.com/Alberto-Codes/vramfit/issues/377).
 
 ## Context
 
