@@ -115,8 +115,9 @@ Three measurements settle the difference. All ran 2026-08-21.
 `Q4_0` 10, and `BF16` 1. `tensor_type_fallback` rewrites `IQ2_XXS` to
 `IQ4_NL` on every row that 256 does not divide. So all 46 routed-expert
 stacks pack at `IQ4_NL` and 4.5 bits per weight. The label reaches 12 of
-417 tensors. Read by range request over the first 12 MB of the file, at
-llama.cpp commit `4801e3c56` (b10362).
+417 tensors. The header read is a range request over the first 12 MB of
+the file. The fallback rule is `src/llama-quant.cpp:374` at llama.cpp
+commit `4801e3c56` (b10362).
 
 **Both packs consume the same matrix.** The published build records
 `quantize.imatrix.file` at 185 entries and 822 chunks. #300 confirmed
