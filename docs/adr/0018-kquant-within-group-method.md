@@ -239,12 +239,14 @@ the pack applied. This one replaces a frame the pack cannot apply.
   #300's blind draws at 1.184126. #321 and #328 carry that test.
 
     **Observed consequence (2026-08-21, issue #321): the bar is
-    met.** A probe arm built from the layer ranking and the q0-ref
-    projection axis reads 1.178594 against the best blind draw's
-    1.184126, and 0.219037 mean KLD against 0.234003. Maintainer
-    ruling 2026-08-21: the bar clears, at 8.7 sigma on mean KLD —
-    the map's own metric — and a 1.5-sigma tie on the PPL ratio.
-    #321's closing comment carries the measurement.
+    met.** A probe arm reads 1.178594 against the best blind
+    draw's 1.184126. Its layer ranking comes from the `kquant-imx`
+    map and its projection axis from the q0-ref stack map. On mean
+    KLD it reads 0.219037 against 0.234003. The maintainer ruled
+    the bar met on the map's own metric, at 8.7 sigma on mean KLD,
+    with a 1.5-sigma tie on the PPL ratio. The
+    [#321 closing comment](https://github.com/Alberto-Codes/vramfit/issues/321#issuecomment-5372929524)
+    carries the measurement.
 
 ## Amendment: the token becomes `q0-ref` (2026-08-18, issue #332)
 
