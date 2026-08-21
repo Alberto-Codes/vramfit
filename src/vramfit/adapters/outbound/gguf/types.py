@@ -14,10 +14,10 @@ not divide the stack rows, and nominal 3 refuses over the empty
 through the class table to `blk.<n>.<stem>.` patterns, where an
 unquantizable class instead pins at the F16 passthrough and refuses
 any lower width (the 2026-08-20 amendment), protected tensors map
-through the same class table to per-tensor patterns under either
-scan root (ADR-0022, the second root per #365), excluded pairs
-map to the full GGUF tensor names ``--exclude-weights`` deletes
-by substring (ADR-0023),
+through the same class table to per-tensor patterns under a free
+prefix (ADR-0022, #365), excluded pairs map to the full GGUF
+tensor names ``--exclude-weights`` deletes by substring
+(ADR-0023),
 and the embedding and `lm_head` groups map to the quantizer's
 dedicated embedding and output flags. The backend's own runtime
 name is the domain's `LLAMA_CPP` constant, so the table key and
@@ -197,15 +197,14 @@ GGUF_SUFFIX_BY_HF: Final[dict[str, str]] = {
     "mixer.o_proj": "attn_output",
 }
 
-# A protection target, under either root the scan produces (#177) and
-# at whatever suffix depth the class table holds. ADR-0012 decision 2,
-# as amended 2026-08-12, drops the fixed `model.` prefix. The suffix
-# carries no depth limit, so a class-table key deeper than two
-# segments needs no pattern change. The shared-expert rows hold
-# three segments (the 2026-08-20 amendment, #183).
+# A protection target: a layer tensor under a free prefix, in the
+# family shape `_CLASS_GROUP` holds (#160). ADR-0012's 2026-08-20
+# amendment rules the free prefix — any single root passes, and
+# `_claim_root` refuses a second one. The suffix carries no depth
+# limit, so the three-segment shared-expert rows map too.
 # `GGUF_SUFFIX_BY_HF` still decides what maps.
 _LAYER_TENSOR: Final[re.Pattern[str]] = re.compile(
-    r"^(?:model|backbone)\.layers\.(\d+)\.(.+)\.weight$"
+    r"^.+\.(?:layers|h|blocks)\.(\d+)\.(.+)\.weight$"
 )
 
 
@@ -483,8 +482,8 @@ def gguf_tensor_name(tensor: str) -> str:
             0, so the pair would record a type the artifact does not
             carry (the 2026-08-20 amendment). That check runs first
             and needs no class-table row. Also if the name is not a
-            layer tensor under either scan root, or its suffix has
-            no class-table entry (ADR-0022).
+            ``.weight`` tensor under a ``.layers/.h/.blocks.`` layer
+            family, or its suffix has no class-table row (ADR-0022).
 
     Examples:
         The G1 protection target:
@@ -510,11 +509,17 @@ def gguf_tensor_name(tensor: str) -> str:
             f"2026-08-20 amendment)"
         )
     match = _LAYER_TENSOR.match(tensor)
-    if match is None or match.group(2) not in GGUF_SUFFIX_BY_HF:
+    if match is None:
         raise PackError(
-            f'protected tensor "{tensor}" has no GGUF mapping — the class '
-            f"table covers layer tensors {sorted(GGUF_SUFFIX_BY_HF)} under "
-            f"either scan root (ADR-0022)"
+            f'protected tensor "{tensor}" has no GGUF mapping — the name '
+            f"is not a .weight tensor under a .layers/.h/.blocks. layer "
+            f"family (ADR-0022)"
+        )
+    if match.group(2) not in GGUF_SUFFIX_BY_HF:
+        raise PackError(
+            f'protected tensor "{tensor}" has no GGUF mapping — the suffix '
+            f'"{match.group(2)}" has no class-table row. The table holds '
+            f"{sorted(GGUF_SUFFIX_BY_HF)} (ADR-0022)"
         )
     return f"blk.{match.group(1)}.{GGUF_SUFFIX_BY_HF[match.group(2)]}.weight"
 
@@ -638,8 +643,9 @@ def _claim_root(name: str, roots: dict[str, str], kind: str = "group") -> None:
             ``protected tensor`` (#367).
 
     Raises:
-        PackError: If ``name`` hangs from a second root. The refusal
-            names both claimants and both roots.
+        PackError: If ``name`` hangs from a second root — the pack
+            would silently drop one stack. The refusal names both
+            claimants and both roots.
     """
     match = _STACK_ROOT.match(name)
     if match is None:
@@ -651,8 +657,7 @@ def _claim_root(name: str, roots: dict[str, str], kind: str = "group") -> None:
         raise PackError(
             f'{roots[first]} under root "{first}" and {kind} "{name}" under '
             f'root "{root}" name two layer stacks — a GGUF pack numbers one '
-            f'stack "blk.<n>." and would silently misapply the overrides '
-            f"across roots (#183, #367)"
+            f'stack "blk.<n>." and would silently drop one (#183, #367)'
         )
 
 
@@ -745,8 +750,8 @@ def tensor_overrides(recipe: Recipe) -> tuple[TypeOverride, ...]:
     Every mapped group and protected tensor must hang from one
     parameter-tree root. ``blk.<n>.`` addresses a single layer
     stack, so a recipe naming two of them would map both onto it
-    and silently drop one. A protection under a second root would
-    override the tensor the other root's layer supplies (#367).
+    and silently drop one. A protected tensor claims its root with
+    the groups (#367).
 
     Args:
         recipe: The recipe to pack.

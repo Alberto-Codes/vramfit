@@ -6,7 +6,6 @@ from dataclasses import replace
 import pytest
 
 from vramfit.adapters.outbound.gguf.types import (
-    _LAYER_TENSOR,
     BASE_FTYPE_BY_BITS,
     GGML_TYPE_BY_BITS,
     PackError,
@@ -656,25 +655,51 @@ class TestGgufTensorName:
     @pytest.mark.parametrize(
         ("tensor", "expected"),
         [
+            ("model.layers.4.self_attn.v_proj.weight", "blk.4.attn_v.weight"),
+            ("backbone.layers.4.self_attn.v_proj.weight", "blk.4.attn_v.weight"),
             ("model.layers.4.mixer.q_proj.weight", "blk.4.attn_q.weight"),
             ("backbone.layers.4.mixer.v_proj.weight", "blk.4.attn_v.weight"),
+            ("mtp.layers.0.self_attn.v_proj.weight", "blk.0.attn_v.weight"),
+            ("transformer.h.4.self_attn.v_proj.weight", "blk.4.attn_v.weight"),
         ],
-        ids=["model-root", "backbone-root"],
+        ids=[
+            "model-attn",
+            "backbone-attn",
+            "model-mixer",
+            "backbone-mixer",
+            "mtp-root",
+            "h-family",
+        ],
     )
-    def test_mixer_classes_map_under_either_root(
+    def test_class_table_maps_under_a_free_prefix(
         self, tensor: str, expected: str
     ) -> None:
-        # The 2026-08-20 amendment's rows reach this path under
-        # either scan root (#365).
+        # ADR-0012's 2026-08-20 amendment rules the free prefix: any
+        # single root over a known layer family maps, and the
+        # two-root refusal is the collision guard (#365, #367).
         assert gguf_tensor_name(tensor) == expected
 
-    def test_a_three_segment_row_maps_through_the_class_table(self) -> None:
+    @pytest.mark.parametrize(
+        ("tensor", "expected"),
+        [
+            (
+                "model.layers.4.mixer.shared_experts.up_proj.weight",
+                "blk.4.ffn_up_shexp.weight",
+            ),
+            (
+                "backbone.layers.1.mixer.shared_experts.down_proj.weight",
+                "blk.1.ffn_down_shexp.weight",
+            ),
+        ],
+        ids=["up", "down"],
+    )
+    def test_a_three_segment_suffix_maps_through_the_class_table(
+        self, tensor: str, expected: str
+    ) -> None:
         # The widened suffix capture reaches the three-segment rows
         # (#365), and the class table holds two of them (the
         # 2026-08-20 amendment).
-        tensor = "model.layers.4.mixer.shared_experts.up_proj.weight"
-
-        assert gguf_tensor_name(tensor) == "blk.4.ffn_up_shexp.weight"
+        assert gguf_tensor_name(tensor) == expected
 
     @pytest.mark.parametrize(
         ("tensor", "filter_name"),
@@ -710,32 +735,18 @@ class TestGgufTensorName:
             protection_overrides(recipe)
 
     @pytest.mark.parametrize(
-        "root",
-        ["model", "backbone"],
-        ids=["model-root", "backbone-root"],
-    )
-    def test_class_table_maps_either_scan_root(self, root: str) -> None:
-        name = f"{root}.layers.4.self_attn.v_proj.weight"
-        assert gguf_tensor_name(name) == "blk.4.attn_v.weight"
-
-    def test_suffix_capture_holds_three_segments(self) -> None:
-        match = _LAYER_TENSOR.match(
-            "backbone.layers.1.mixer.shared_experts.down_proj.weight"
-        )
-        assert match is not None
-        assert match.group(2) == "mixer.shared_experts.down_proj"
-
-    @pytest.mark.parametrize(
         "tensor",
         [
-            "mtp.layers.0.self_attn.v_proj.weight",
-            "transformer.h.4.self_attn.v_proj.weight",
+            "foo.bar.4.self_attn.v_proj.weight",
+            "layers.4.self_attn.v_proj.weight",
         ],
-        ids=["mtp-root", "foreign-family"],
+        ids=["no-family", "rootless"],
     )
-    def test_root_outside_the_two_scan_roots_raises_pack_error(
+    def test_a_name_outside_the_layer_families_raises_pack_error(
         self, tensor: str
     ) -> None:
+        # The prefix is free, so only the `.layers/.h/.blocks.`
+        # family shape gates this path (#365).
         with pytest.raises(PackError, match="no GGUF mapping"):
             gguf_tensor_name(tensor)
 
@@ -858,6 +869,26 @@ class TestAllOverrides:
         assert f'root "{group_root}"' in message
         assert f'"{protection_root}.layers.4.self_attn.v_proj.weight"' in message
         assert f'"{group_root}.layers.4"' in message
+
+    def test_two_protections_under_two_roots_refuse_naming_both_roots(self) -> None:
+        # The shared claim judges every protected tensor, so two
+        # protections under different roots refuse the same way
+        # (#367).
+        recipe = make_protected_recipe(
+            (
+                ("model.layers.4.self_attn.v_proj.weight", 5),
+                ("backbone.layers.4.self_attn.k_proj.weight", 5),
+            ),
+            ("model.layers.4", 4),
+        )
+
+        with pytest.raises(PackError) as caught:
+            all_overrides(recipe)
+
+        message = str(caught.value)
+        assert "two layer stacks" in message
+        assert 'root "model"' in message
+        assert 'root "backbone"' in message
 
 
 class TestImatrixExclusionNames:

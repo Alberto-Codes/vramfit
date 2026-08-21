@@ -10,9 +10,11 @@ reproduce. The stage refuses and names the collapsed tensors, suggesting the
 ``--exclude-imatrix`` flags for the ones whose exclusion remedy is
 still unused (ADR-0023); it
 never repacks on its own, so the packed file stays recipe-driven
-(ADR-0012 decision 3). The mapping pre-flight lives here too, and
-the run-log event guards non-finite measurements the sink would
-reject (ADR-0011).
+(ADR-0012 decision 3). The mapping pre-flight lives here too — it
+composes every override for a protected recipe, so a cross-root
+protection refuses before any tool runs (#367) — and the run-log
+event guards non-finite measurements the sink would reject
+(ADR-0011).
 
 Examples:
     The pack command drives the stage like this:
@@ -43,7 +45,7 @@ from vramfit.adapters.inbound.run_log import SafeRunLog
 from vramfit.adapters.outbound.gguf.reconstruction import GgufReconstructionChecker
 from vramfit.adapters.outbound.gguf.types import (
     PackError,
-    ggml_type_for,
+    all_overrides,
     gguf_tensor_name,
 )
 from vramfit.domain.model import Recipe
@@ -52,28 +54,35 @@ from vramfit.ports.outbound import RecipePacker, ReconstructionChecker
 
 
 def _check_protected_mappable(recipe: Recipe) -> None:
-    """Reject an unpackable protection before any tool runs.
+    """Reject an unpackable protected recipe before any tool runs.
 
-    The class table and the type table judge every resolved pair
-    here, so a protection the backend cannot drive fails in
-    milliseconds — not after the convert stage writes a full-size
-    base GGUF (ADR-0022). An unconstrained plan accepts any positive
-    floor, so this is where a 7-bit floor meets the ADR-0012 table.
+    `all_overrides` composes every override here, so a protected
+    recipe the backend cannot drive fails in milliseconds — not
+    after the convert stage writes a full-size base GGUF (ADR-0022).
+    That covers a protection without a class-table row, a precision
+    outside its type table, and a protection under a second root,
+    which `_claim_root` refuses (#367). One function owns the
+    composition, so this check and the pack cannot disagree (#303).
+
+    An unprotected recipe skips the check. Its refusals keep their
+    staged halts and run-log records — the quantize-stage halt is on
+    record (#303, #275).
 
     Args:
         recipe: The recipe about to pack.
 
     Raises:
-        typer.Exit: With code 1 when a protected tensor has no GGUF
-            mapping or its precision has no type-table entry.
+        typer.Exit: With code 1 when the backend cannot map a group,
+            a protected tensor, or a precision in a protected
+            recipe.
     """
-    for pair in recipe.protected_tensors:
-        try:
-            gguf_tensor_name(pair.tensor)
-            ggml_type_for(pair.bits)
-        except PackError as exc:
-            typer.echo(f"error: {exc}", err=True)
-            raise typer.Exit(code=1) from exc
+    if not recipe.protected_tensors:
+        return
+    try:
+        all_overrides(recipe)
+    except PackError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
 
 
 def _reconstruction_stage(
