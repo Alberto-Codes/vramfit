@@ -130,11 +130,11 @@ uv run vramfit scan ./model --calibration calibration.txt \
 The method covers nominal 8, 4, and 2. It refuses nominal 3, which
 [ADR-0028](../adr/0028-expert-stack-type-table.md) refuses at pack,
 and 5 and 6 until ports exist.
-`--imatrix` does not pair with it. The `q0-imx` token is reserved
-for a real assisted path — `quantize_row_q4_0_impl` fits with
-imatrix weights — and nothing builds it yet. `quantize_q2_0` ignores
-the matrix, so an assisted q0 method could only ever differ at
-nominal 4.
+`--imatrix` does not pair with it yet. ADR-0018's 2026-08-21
+amendment rules the `q0-imx` build, in which
+`quantize_row_q4_0_impl` fits with imatrix weights. #383 carries
+the build. `quantize_q2_0` ignores the matrix, so the assisted
+method differs at nominal 4 only.
 
 A `kquant` scan now refuses such a cell. The message names the
 parameter, the type, the block size, and the row length. Nominal 8

@@ -70,6 +70,24 @@
     2026-08-21: the rule keys on the surviving floor. Record:
     [#377](https://github.com/Alberto-Codes/vramfit/issues/377).
 
+    **Observed consequence (2026-08-21, issue #350): the tie-break's
+    nominal-4 input carries a measured unassisted skew.** The pack
+    fits `Q4_0` with the imatrix and the `q0-ref` meter does not.
+    #381 measured the assistance discounting `up_proj` at a median
+    8.2 % and `down_proj` at 2.5 %, each over its own 23 stacks.
+    So an unassisted map overprices `up_proj` against `down_proj`
+    by about 6 % at nominal 4. Applied to #328's map, the two
+    constants flip this rule's projection comparison in 4 of 23 MoE
+    layers. The layers are 20, 27, 29, and 31, and three more sit
+    inside the two-constant model's 4.5 % worst-case residual. The
+    constants are reconstruction-error ratios, so the check bounds
+    the exposure and measures no damage-frame flip. ADR-0018's
+    2026-08-21 amendment rules the remedy: the `q0-imx` build. The
+    tie-break reads the `q0-ref` column, with this exposure, until
+    the assisted map lands.
+    [#350's 2026-08-21 comment](https://github.com/Alberto-Codes/vramfit/issues/350#issuecomment-5375790074)
+    carries the per-layer numbers.
+
 ## Context
 
 The plan step chooses one precision per group to minimize total predicted
