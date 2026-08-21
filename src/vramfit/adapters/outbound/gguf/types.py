@@ -627,28 +627,32 @@ def gguf_stack_prefix(group: str) -> str | None:
     return f"blk.{match.group(1)}.{suffix}."
 
 
-def _claim_root(group: str, roots: dict[str, str]) -> None:
-    """Hold every mapped group to one parameter-tree root.
+def _claim_root(name: str, roots: dict[str, str], kind: str = "group") -> None:
+    """Hold every mapped group and protected tensor to one root.
 
     Args:
-        group: Recipe group name.
-        roots: Roots claimed so far, mapped to the group that
-            claimed each. Updated in place.
+        name: Recipe group or protected tensor name.
+        roots: Roots claimed so far, mapped to the labeled claimant
+            of each. Updated in place.
+        kind: What the refusal calls ``name`` — ``group`` or
+            ``protected tensor`` (#367).
 
     Raises:
-        PackError: If ``group`` hangs from a second root.
+        PackError: If ``name`` hangs from a second root. The refusal
+            names both claimants and both roots.
     """
-    match = _STACK_ROOT.match(group)
+    match = _STACK_ROOT.match(name)
     if match is None:
         return
     root = match.group(1)
-    roots.setdefault(root, group)
+    roots.setdefault(root, f'{kind} "{name}"')
     if len(roots) > 1:
         first = next(iter(roots))
         raise PackError(
-            f'groups "{roots[first]}" and "{group}" name two layer stacks — '
-            f'a GGUF pack numbers one stack "blk.<n>." and would silently '
-            f"drop the other (#183)"
+            f'{roots[first]} under root "{first}" and {kind} "{name}" under '
+            f'root "{root}" name two layer stacks — a GGUF pack numbers one '
+            f'stack "blk.<n>." and would silently misapply the overrides '
+            f"across roots (#183, #367)"
         )
 
 
@@ -738,9 +742,11 @@ def tensor_overrides(recipe: Recipe) -> tuple[TypeOverride, ...]:
     place the protection overrides ahead of all three — a per-tensor
     pattern is the most specific (ADR-0022).
 
-    Every mapped group must hang from one parameter-tree root.
-    ``blk.<n>.`` addresses a single layer stack, so a recipe naming
-    two of them would map both onto it and silently drop one.
+    Every mapped group and protected tensor must hang from one
+    parameter-tree root. ``blk.<n>.`` addresses a single layer
+    stack, so a recipe naming two of them would map both onto it
+    and silently drop one. A protection under a second root would
+    override the tensor the other root's layer supplies (#367).
 
     Args:
         recipe: The recipe to pack.
@@ -757,8 +763,9 @@ def tensor_overrides(recipe: Recipe) -> tuple[TypeOverride, ...]:
             outside the fused-stack table, an ADR-0028-routed group
             names a precision outside that table (nominal 3 refuses
             over the empty 2.25-4.25 gap), an unquantizable class
-            takes a width below the F16 passthrough, the groups hang
-            from two roots, or a precision has no table entry.
+            takes a width below the F16 passthrough, the groups and
+            protected tensors hang from two roots, or a precision
+            has no table entry.
 
     Examples:
         The group ``model.layers.7`` at 4-bit becomes an escaped
@@ -772,6 +779,8 @@ def tensor_overrides(recipe: Recipe) -> tuple[TypeOverride, ...]:
     classes: list[TypeOverride] = []
     layers: list[TypeOverride] = []
     roots: dict[str, str] = {}
+    for pair in recipe.protected_tensors:
+        _claim_root(pair.tensor, roots, kind="protected tensor")
     for assignment in recipe.assignments:
         if assignment.group in EMBEDDING_GROUPS or assignment.group == OUTPUT_GROUP:
             continue

@@ -821,6 +821,44 @@ class TestAllOverrides:
 
         assert all_overrides(recipe) == tensor_overrides(recipe)
 
+    @pytest.mark.parametrize("root", ["model", "backbone"], ids=["model", "backbone"])
+    def test_protection_under_the_groups_root_passes(self, root: str) -> None:
+        recipe = make_protected_recipe(
+            ((f"{root}.layers.4.self_attn.v_proj.weight", 5),),
+            (f"{root}.layers.4", 4),
+        )
+
+        assert all_overrides(recipe) == (
+            TypeOverride(pattern=r"blk\.4\.attn_v\.", quant_type="q5_k"),
+            TypeOverride(pattern=r"blk\.4\.", quant_type="q4_k"),
+        )
+
+    @pytest.mark.parametrize(
+        ("protection_root", "group_root"),
+        [("model", "backbone"), ("backbone", "model")],
+        ids=["model-protection", "backbone-protection"],
+    )
+    def test_protection_under_a_second_root_refuses_naming_both_roots(
+        self, protection_root: str, group_root: str
+    ) -> None:
+        # A protection is not a group, so `_claim_root` never saw it.
+        # Both roots emitted overrides onto one `blk.<n>.` namespace,
+        # and the protection held the other root's tensor (#367).
+        recipe = make_protected_recipe(
+            ((f"{protection_root}.layers.4.self_attn.v_proj.weight", 5),),
+            (f"{group_root}.layers.4", 4),
+        )
+
+        with pytest.raises(PackError) as caught:
+            all_overrides(recipe)
+
+        message = str(caught.value)
+        assert "two layer stacks" in message
+        assert f'root "{protection_root}"' in message
+        assert f'root "{group_root}"' in message
+        assert f'"{protection_root}.layers.4.self_attn.v_proj.weight"' in message
+        assert f'"{group_root}.layers.4"' in message
+
 
 class TestImatrixExclusionNames:
     def test_marked_pair_yields_the_full_gguf_name(self) -> None:
