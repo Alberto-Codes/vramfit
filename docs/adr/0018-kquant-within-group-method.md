@@ -13,6 +13,10 @@
   amendment changes the token. The method is `q0` and the token is
   `q0-ref`. Maintainer ruling 2026-08-18. See "Amendment: the token
   becomes `q0-ref`" below.
+- **Amendment (2026-08-21, issue #350):** the reserved `q0-imx` token
+  becomes a method to build. #381 measured that assistance re-orders
+  the nominal-4 column across the 46 expert stacks. Maintainer ruling
+  2026-08-21. See "Amendment: `q0-imx` gets built" below.
 
 ## Context
 
@@ -78,8 +82,11 @@ compounds on wrong marginals.
   `llama-quantize --imatrix` fits with activation weights instead
   (`quantize_row_q2_K_impl`). A kquant cell therefore prices the
   *unassisted* format — expect it to sit at or above the packed
-  artifact's damage for imatrix-covered tensors. Whether the meter
-  should consume the imatrix itself is a follow-up decision.
+  artifact's damage for imatrix-covered tensors. ~~Whether the meter
+  should consume the imatrix itself is a follow-up decision.~~
+  **Resolved twice.** ADR-0020 built the assisted path for `kquant`,
+  as `kquant-imx`. The 2026-08-21 amendment below (#350) rules the
+  `q0` method consumes the matrix at nominal 4, as `q0-imx`.
 - ~~Coverage of {4, 8} nominal bits, required before a full kquant
   scan can feed the solver.~~ Landed with this ADR: `Q4_K` reuses
   the `make_qkx2_quants` machinery (squared error, 32-element
@@ -307,3 +314,90 @@ scans 92 cells at $4.04, and its map is the first that would.
   `gguf-ref` and `gguf-imx` as `q0-ref` and `q0-imx`.
 - The golden-fixture suite still asserts all three types bit-exact
   against libggml. The rename moves names and no arithmetic.
+
+## Amendment: `q0-imx` gets built (2026-08-21, issue #350)
+
+### Context
+
+The 2026-08-18 amendment reserved `q0-imx` and built nothing. #350
+asked whether the `q0` meter consumes the imatrix at nominal 4. The
+maintainer ruled 2026-08-21: measure before ruling. #381 ran the
+measurement box-side at $0, on the 30B target's bf16 checkpoint and
+the published matrix, at `4801e3c56` (b10362).
+
+The skew re-orders the nominal-4 column. Assisted-against-unassisted
+Spearman rho reads +0.0406 across the 46 expert stacks, below the
+SPEAR band of 0.77 to 0.98. Split-half checks resolve both level
+orderings, so the number is not sampling noise.
+
+The re-ordering decomposes into two constants. Assistance discounts
+`up_proj` at a median 8.2 % and `down_proj` at 2.5 %, at
+within-projection CV under 1.4 %. A two-constant model leaves a
+residual CV of 1.03 %. So an unassisted map overprices `up_proj`
+against `down_proj` by about 6 % at nominal 4. The ADR-0007 spread
+rule's projection tie-break reads exactly that comparison, and its
+observed consequence there carries the exposure.
+
+Upstream bounds the level. llama.cpp PR #4969 added the matrix to the
+legacy quants. Its `Q4_0` QError ratios read 0.507 to 0.877 across
+five dense models, so an unassisted fit costs 1.14 to 1.97 times the
+assisted one. The map's median 2-against-4 damage ratio of 18.4
+therefore understates the packed ratio to roughly 21 to 36.
+
+A plan-time correction was considered and refused. ADR-0006 rules a
+within-group method change is a new scan. This record names one map
+under two frames as the defect its refusals exist to remove.
+ADR-0027 decision 3 bars magnitudes from crossing frames, and #381's
+constants are reconstruction-error ratios, not damage ratios.
+
+### Decision
+
+1. **The `q0` method gains its assisted path, under the token
+   `q0-imx`.** It ports `quantize_row_q4_0_impl` from llama.cpp
+   `4801e3c56` (b10362), the campaign instrument (ADR-0027). Nominal
+   4 fits with imatrix weights. Nominal 2 and 8 take the reference
+   path, because `quantize_q2_0` and `quantize_q8_0` discard the
+   matrix. The assisted map therefore keeps the pack's frame at every
+   width. Maintainer ruling 2026-08-21.
+2. **The meter reads per-expert imatrix rows itself, keyed on the
+   loaded parameter name.** `resolve_assisted_weights` refuses a
+   fused expert stack by rule (ADR-0026), and its super-block gate
+   refuses these rows (#177). The new read accepts a fused stack and
+   applies expert `i`'s rows as `llama-quant.cpp` applies them, at
+   `imatrix + i03 * ne0` with sums over counts. #381's harness
+   proved the mechanics. The read vouches each entry against the
+   parameter's shape, on ADR-0026's pattern.
+3. **The port verifies against the C reference, on decision 4's
+   pattern.** The golden-fixture suite adds assisted `Q4_0` fixtures
+   recorded from `ggml_quantize_chunk` with `quant_weights` set. The
+   bar is bit-exact. #381 already replayed this record's `Q4_0`
+   fixtures and verified the assisted branch engages.
+4. **The 46 stacks re-scan under `q0-imx`, at precisions 4 and 2,
+   into their own map.** The run mixes no token, because
+   `scan.within_group` is map-level. Nominal-2 cells re-measure even
+   though their arithmetic matches `q0-ref`, because magnitudes do
+   not cross runs (ADR-0027 decision 3). The run follows #328's
+   shape on the H100 instrument, at about $4.
+5. **Meanwhile a `q0-ref` map's nominal-4 column prices the
+   unassisted format, and every record that reads it states the
+   gap.** The gap is the level bound and the 6 % projection skew
+   above. The `q0-ref` map stays the campaign input until the
+   `q0-imx` map lands.
+
+### Consequences
+
+- The reservation discharges into a build. Two `chart:task` tickets
+  carry it: one for the port and the row reader, one for the
+  re-scan.
+- **This amendment states its falsifier.** A `q0-imx` map earns
+  nothing until an arm built from it beats the #321 probe arm, at
+  1.178594 PPL and 0.219037 mean KLD. The 2026-08-17 amendment's
+  warning applies unchanged.
+- #194's premise moves. A `q0-imx` map prices the 46 stacks
+  assisted, so the assisted-coverage split stops being a constant of
+  the method. #350's closing comment carries the note.
+- The session flip-check behind the ADR-0007 exposure lives in
+  #350's closing comment, with its reconstruction-error caveat.
+- `Q5_0` stays unported. When its port lands, its assisted path
+  arrives with it, because `quantize_q5_0` consumes the matrix
+  (ADR-0016's #278 amendment table).
