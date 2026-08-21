@@ -238,6 +238,14 @@ the pack applied. This one replaces a frame the pack cannot apply.
   worse. A `gguf-ref` map earns nothing until an arm built from it beats
   #300's blind draws at 1.184126. #321 and #328 carry that test.
 
+    **Observed consequence (2026-08-21, issue #321): the bar is
+    met.** A probe arm built from the layer ranking and the q0-ref
+    projection axis reads 1.178594 against the best blind draw's
+    1.184126, and 0.219037 mean KLD against 0.234003. Maintainer
+    ruling 2026-08-21: the bar clears, at 8.7 sigma on mean KLD —
+    the map's own metric — and a 1.5-sigma tie on the PPL ratio.
+    #321's closing comment carries the measurement.
+
 ## Amendment: the token becomes `q0-ref` (2026-08-18, issue #332)
 
 ### Context

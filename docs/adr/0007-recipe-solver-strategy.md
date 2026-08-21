@@ -9,6 +9,41 @@
   [ADR-0014](0014-per-type-effective-bits.md) revises the size model:
   when the target runtime has an effective-bits table, the solver
   prices candidates at per-type effective bits, not nominal bits.
+- **Amendment (2026-08-21, issue #321):** the greedy solver gains a
+  placement rule for the cheapest in-budget width on expert-stack
+  groups. Maintainer ruling 2026-08-21, from the #321 exchange. Two
+  clauses.
+
+    **The allocator refuses a second cheapest-width stack in a layer
+    while a layer with none remains.** Two arms measured the clause on
+    the 30B target. They read one layer ranking and one 6-up 5-down
+    projection composition, and they differ in geometry alone. Arm 1
+    concentrates 11 cheap stacks on 6 layers and reads 1.361520 mean
+    PPL(Q)/PPL(base). The composition-matched arm spreads them over
+    11 layers and reads 1.276199, at 15.8 sigma — 22.4 sigma on mean
+    KLD, at 0.299049 against 0.360932.
+
+    **Within a layer the allocator takes the projection the
+    stack-keyed map prices cheaper at the candidate width.** The
+    q0-ref map prices `down_proj` cheaper at nominal 2 in 23 of 23
+    MoE layers (#328). At matched spread geometry, the all-`down`
+    arm reads 1.178594 and the composition-matched arm 1.276199.
+    Arm 4 spent every cheap stack on `up_proj` and reads 1.409476,
+    worse than concentrated arm 1. So each clause moves the result
+    on its own, and together they move it 13.4 % against arm 1 —
+    more than inverting the layer ordering costs, at 16.0 % (#300,
+    arm 5).
+
+    Three bounds. ADR-0021's damage model prices no interaction
+    term, and this rule exists because a measured interaction moved
+    the result — ADR-0006's open question carries the additivity
+    evidence, at six sub-additive measurements and one
+    super-additive on a 2-bit-heavy recipe. ADR-0021 decision 4
+    still bars the solver from the 2-bit width on this target, so
+    the rule ships unexercised there until that bar lifts. The
+    measurements are hand-authored recipes, so they test the map
+    and the policy's shape, never this solver's own allocation
+    (#301). #321's closing comment carries the evidence trail.
 
 ## Context
 
