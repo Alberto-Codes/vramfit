@@ -383,6 +383,15 @@
     F16-passthrough group needs no table row and emits no
     override, because the quantizer already holds a refused tensor
     at the convert dtype. Predicted bytes then equal packed bytes.
+
+    **Observed consequence (2026-08-20, the #368 drive):** the
+    equal-bytes sentence above does not hold on this target. The
+    converter writes both classes at F32, so the packed file holds
+    them at 32 bits against the prediction's 16. The gap measured
+    16.17 MiB over the priced weight tensors, inside the drive's
+    110.03 MiB margin. The pin clauses stand — only the size
+    equality was optimistic.
+
     This narrows the 2026-08-12 amendment's refusal list —
     `conv1d` and the router now pin rather than refuse. Two
     classes reach the recipe on this target:

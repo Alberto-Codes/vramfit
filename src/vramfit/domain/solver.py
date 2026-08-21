@@ -27,7 +27,11 @@ overhead fraction shrinks to a residual for what the table cannot
 see (unquantized tensors, file metadata). Without a table the
 nominal-bits prediction and the 0.05 scalar remain. A routed-expert-
 stack group prices through the expert-stack table instead (ADR-0028)
-— 2.25 bits at nominal 2, not Q2_K's 2.625. Protections
+— 2.25 bits at nominal 2, not Q2_K's 2.625 — and so does a
+layer-class group whose rows refuse the 256 super-block. A group of
+a class the runtime's quantizer refuses holds at the F16 passthrough
+whatever the map measured, and a pin on one refuses (both from the
+2026-08-20 ADR-0012 amendment). Protections
 (ADR-0022) enter through the size model only: a protected tensor
 prices at the higher of the candidate precision and its floor
 ([vramfit.domain.protection][]), so downgrading a protected group
@@ -98,10 +102,12 @@ from vramfit.domain.protection import (
 from vramfit.domain.runtime import (
     effective_bits,
     expert_stack_effective_bits,
+    rows_refuse_super_block,
     servable_precisions,
+    unquantizable_filter,
 )
 from vramfit.domain.scan import is_expert_stack
-from vramfit.domain.sizes import held_assignments
+from vramfit.domain.sizes import REFERENCE_BITS, held_assignments
 from vramfit.domain.solver_errors import (
     InfeasibleBudgetError as InfeasibleBudgetError,  # noqa: PLC0414 - re-export: the solver's errors read from this module
 )
@@ -174,6 +180,48 @@ def _expand_pins(
             raise PinError(f'pin "{pattern}={bits}" matches no group')
         for name in matched:
             pinned[name] = bits
+    return pinned
+
+
+def _hold_unquantizable(
+    sensitivity_map: SensitivityMap,
+    pinned: dict[str, int],
+    runtime: str | None,
+) -> dict[str, int]:
+    """Pin every unquantizable-class group at the F16 passthrough.
+
+    Such a group holds at the passthrough whatever the map measured.
+    The runtime's quantizer refuses its tensors through a name
+    filter, so a lower width would record a type the artifact cannot
+    carry (ADR-0012, 2026-08-20 amendment). The hold enters
+    ``pinned``, which the downgrade loop never touches.
+
+    Args:
+        sensitivity_map: Damage curves for every group.
+        pinned: Resolved user pins, updated in place.
+        runtime: Target runtime name, or None — only a runtime with
+            a filter table holds anything.
+
+    Returns:
+        The same ``pinned`` mapping, holds added.
+
+    Raises:
+        PinError: If a user pin lands on such a group. Every pinnable
+            precision sits below the passthrough, and the record says
+            never lower.
+    """
+    for group in sensitivity_map.groups:
+        filter_name = unquantizable_filter(group.name, runtime)
+        if filter_name is None:
+            continue
+        if group.name in pinned:
+            raise PinError(
+                f'group "{group.name}" holds at the F16 passthrough — '
+                f'runtime "{runtime}" refuses its tensors through the '
+                f'"{filter_name}" filter (ADR-0012, 2026-08-20 '
+                f"amendment), so a pin cannot move it"
+            )
+        pinned[group.name] = REFERENCE_BITS
     return pinned
 
 
@@ -314,7 +362,13 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
     with an effective-bits table prices every candidate at its real
     per-weight cost (ADR-0014) — Q4_K spends 4.5 bits, not 4. A
     routed-expert-stack group prices through the expert-stack table
-    instead (ADR-0028): 2.25 bits at nominal 2. Every
+    instead (ADR-0028): 2.25 bits at nominal 2. A layer-class group
+    whose rows refuse the 256 super-block prices through the same
+    table, and a group of a class the runtime's quantizer refuses
+    holds at the F16 passthrough whatever the map measured — a pin
+    on one refuses, and the hold records 0.0 damage unless the map
+    scanned reference precision (the 2026-08-20 ADR-0012 amendment).
+    Every
     group starts at the highest candidate precision (or its pin).
     While the total exceeds the budget, the solver applies the downgrade
     with the minimum ``(damage_delta / bytes_freed, group name, smallest
@@ -418,7 +472,9 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
     if runtime is not None:
         candidates = servable_precisions(candidates, runtime)
     dropped = tuple(p for p in sensitivity_map.scan.precisions if p not in candidates)
-    pinned = _expand_pins(pins, sensitivity_map, candidates)
+    pinned = _hold_unquantizable(
+        sensitivity_map, _expand_pins(pins, sensitivity_map, candidates), runtime
+    )
     floors = expand_protections(protections, sensitivity_map, runtime)
     excluded = expand_exclusions(imatrix_exclusions, floors, sensitivity_map)
 
@@ -474,10 +530,14 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
 
         Returns:
             Predicted bytes, protections included (ADR-0022). An
-            expert-stack group prices through the ADR-0028 table.
+            expert-stack group prices through the ADR-0028 table, and
+            so does a layer-class group whose rows refuse the 256
+            super-block (the 2026-08-20 amendment).
         """
-        chosen = stack_price if is_expert_stack(group.name) else price
-        return protected_group_bytes(group, bits, floors, chosen)
+        stacked = is_expert_stack(group.name) or rows_refuse_super_block(group.name)
+        return protected_group_bytes(
+            group, bits, floors, stack_price if stacked else price
+        )
 
     # Every group the checkpoint holds and the map does not (ADR-0029
     # decision 3). Each holds at reference precision: no measurement
@@ -557,7 +617,16 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
                 group=g.name,
                 bits=state[g.name],
                 bytes=size(g, state[g.name]),
-                damage=g.sensitivity[state[g.name]],
+                # A reference-held group carries no damage row for the
+                # passthrough, and reference precision is the
+                # zero-damage baseline. Every other state value is a
+                # scanned candidate, so any other missing key stays a
+                # loud KeyError.
+                damage=(
+                    g.sensitivity.get(REFERENCE_BITS, 0.0)
+                    if state[g.name] == REFERENCE_BITS
+                    else g.sensitivity[state[g.name]]
+                ),
             )
             for g in sensitivity_map.groups
         )

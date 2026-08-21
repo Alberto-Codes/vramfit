@@ -472,14 +472,16 @@ class TestRecipePackerContract:
     def test_pack_unmappable_group_raises_pack_error_naming_it(
         self, build, tmp_path
     ) -> None:
-        # The Mamba mixer projection has no GGUF class mapping. The
-        # backend refuses by name rather than guessing a tensor.
+        # A dense-MLP Nemotron-H projection has no GGUF class mapping
+        # — no scanned target carries the class (the 2026-08-20
+        # amendment maps sixteen others). The backend refuses by name
+        # rather than guessing a tensor.
         packer: RecipePacker = build(tmp_path, base_exists=True)
         recipe = replace(
             sample_pack_recipe(),
             assignments=(
                 Assignment(
-                    group="backbone.layers.0.mixer.in_proj",
+                    group="backbone.layers.0.mixer.up_proj",
                     bits=4,
                     bytes=500,
                     damage=0.01,
@@ -487,7 +489,29 @@ class TestRecipePackerContract:
             ),
         )
 
-        with pytest.raises(PackError, match=r"backbone\.layers\.0\.mixer\.in_proj"):
+        with pytest.raises(PackError, match=r"backbone\.layers\.0\.mixer\.up_proj"):
+            packer.pack(recipe)
+
+    def test_pack_unquantizable_class_below_the_passthrough_raises(
+        self, build, tmp_path
+    ) -> None:
+        # llama-quantize refuses the router's tensors through a name
+        # filter and exits 0, so a lower width would record a type
+        # the artifact cannot carry (the 2026-08-20 amendment).
+        packer: RecipePacker = build(tmp_path, base_exists=True)
+        recipe = replace(
+            sample_pack_recipe(),
+            assignments=(
+                Assignment(
+                    group="backbone.layers.0.mixer.gate",
+                    bits=8,
+                    bytes=500,
+                    damage=0.01,
+                ),
+            ),
+        )
+
+        with pytest.raises(PackError, match=r"ffn_gate_inp\.weight"):
             packer.pack(recipe)
 
     def test_pack_without_imatrix_records_none(self, build, tmp_path) -> None:

@@ -10,10 +10,13 @@ from vramfit.domain.runtime import (
     EFFECTIVE_BITS,
     EXPERT_STACK_EFFECTIVE_BITS,
     RUNTIME_CAPABILITIES,
+    UNQUANTIZABLE_CLASS_FILTERS,
     RuntimeCapabilityError,
     effective_bits,
     expert_stack_effective_bits,
+    rows_refuse_super_block,
     servable_precisions,
+    unquantizable_filter,
 )
 
 pytestmark = pytest.mark.unit
@@ -144,3 +147,74 @@ class TestExpertStackEffectiveBits:
         )
         with pytest.raises(TypeError):
             inner[3] = 3.0
+
+
+@pytest.mark.unit
+class TestSuperBlockRefusedClasses:
+    """The layer classes the ADR-0028 table reaches (2026-08-20)."""
+
+    @pytest.mark.parametrize(
+        "group",
+        [
+            "model.layers.3.mixer.in_proj",
+            "backbone.layers.3.mixer.out_proj",
+            "model.layers.1.mixer.shared_experts.down_proj",
+            "model.layers.2.mixer.q_proj",
+        ],
+    )
+    def test_a_nemotron_h_dense_class_routes_to_the_stack_table(
+        self, group: str
+    ) -> None:
+        assert rows_refuse_super_block(group)
+
+    @pytest.mark.parametrize(
+        "group",
+        [
+            "model.layers.3",
+            "model.layers.3.self_attn.q_proj",
+            "model.layers.3.mixer.gate",
+            "model.layers.3.mixer.conv1d",
+            "model.embeddings",
+        ],
+    )
+    def test_other_groups_keep_their_own_table(self, group: str) -> None:
+        assert not rows_refuse_super_block(group)
+
+
+@pytest.mark.unit
+class TestUnquantizableClassFilters:
+    """The copied llama-quantize filter contract (2026-08-20)."""
+
+    def test_the_router_names_its_upstream_filter(self) -> None:
+        group = "model.layers.3.mixer.gate"
+        assert unquantizable_filter(group, "llama.cpp") == "ffn_gate_inp.weight"
+
+    def test_the_conv1d_names_its_upstream_filter(self) -> None:
+        group = "backbone.layers.9.mixer.conv1d"
+        assert unquantizable_filter(group, "llama.cpp") == "ssm_conv1d"
+
+    @pytest.mark.parametrize(
+        ("group", "runtime"),
+        [
+            ("model.layers.3.mixer.gate", None),
+            ("model.layers.3.mixer.gate", "vllm"),
+            ("model.layers.3.mixer.in_proj", "llama.cpp"),
+            ("model.layers.3", "llama.cpp"),
+            ("mixer.gate", "llama.cpp"),
+        ],
+        ids=["no-runtime", "no-table", "quantizable", "layer", "no-layer-prefix"],
+    )
+    def test_everything_else_carries_no_filter(
+        self, group: str, runtime: str | None
+    ) -> None:
+        assert unquantizable_filter(group, runtime) is None
+
+    def test_the_filter_tables_are_read_only(self) -> None:
+        outer = cast("MutableMapping[str, object]", UNQUANTIZABLE_CLASS_FILTERS)
+        with pytest.raises(TypeError):
+            outer["new"] = {}
+        inner = cast(
+            "MutableMapping[str, str]", UNQUANTIZABLE_CLASS_FILTERS["llama.cpp"]
+        )
+        with pytest.raises(TypeError):
+            inner["mixer.norm"] = "x"

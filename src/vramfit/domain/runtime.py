@@ -26,7 +26,20 @@ Attributes:
         Effective bits per weight for a routed-expert-stack group,
         per nominal precision, per runtime. Expert stacks map
         through their own type table (ADR-0028), so their per-weight
-        costs differ from the dense table's.
+        costs differ from the dense table's. The same table reaches
+        a layer-class group whose rows refuse the 256 super-block
+        (the 2026-08-20 amendment) — `SUPER_BLOCK_REFUSED_CLASSES`
+        names those classes.
+    SUPER_BLOCK_REFUSED_CLASSES (frozenset[str]): Layer-class group
+        suffixes whose tensor rows refuse the k-quant 256
+        super-block. Each maps and prices through the ADR-0028
+        table.
+    UNQUANTIZABLE_CLASS_FILTERS (Mapping[str, Mapping[str, str]]):
+        Per runtime, the layer-class suffixes whose tensors the
+        runtime's quantizer refuses, each mapped to the name of the
+        upstream filter that refuses it. A group of such a class
+        packs at the F16 passthrough and never lower (ADR-0012,
+        2026-08-20 amendment).
 
 Examples:
     Filter a scanned candidate set for vLLM:
@@ -44,6 +57,7 @@ See Also:
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from types import MappingProxyType
 from typing import Final
@@ -105,6 +119,116 @@ EXPERT_STACK_EFFECTIVE_BITS: Final[Mapping[str, Mapping[int, float]]] = (
         }
     )
 )
+
+
+# The Nemotron-H dense classes, by group suffix. Their tensor rows are
+# 2688 wide, which no 256-element k-quant super-block divides, so each
+# maps and prices through the ADR-0028 table (ADR-0012 and ADR-0028,
+# 2026-08-20 amendments). `mixer.gate` and `mixer.conv1d` stay out:
+# they pin at the F16 passthrough below and take no table row.
+SUPER_BLOCK_REFUSED_CLASSES: Final[frozenset[str]] = frozenset(
+    {
+        "mixer.in_proj",
+        "mixer.out_proj",
+        "mixer.shared_experts.up_proj",
+        "mixer.shared_experts.down_proj",
+        "mixer.q_proj",
+        "mixer.k_proj",
+        "mixer.v_proj",
+        "mixer.o_proj",
+    }
+)
+
+# The layer-class suffixes llama-quantize refuses to quantize, each
+# mapped to the upstream filter that refuses it. The filter list in
+# `tensor_allows_quantization` (llama.cpp src/llama-quant.cpp:289-367
+# at the pinned instrument, commit 3653e6d6d) is a copied external
+# contract: no CLI reaches the predicate, so vramfit copies the
+# filters its targets reach (ADR-0012, 2026-08-20 amendment; #305
+# carries the residual, #207 how a test pins a copy). The contract's
+# rank gate lives in the size source and the meter instead, and the
+# `_norm.weight` filter reaches no group — every norm is rank 1.
+UNQUANTIZABLE_CLASS_FILTERS: Final[Mapping[str, Mapping[str, str]]] = MappingProxyType(
+    {
+        LLAMA_CPP: MappingProxyType(
+            {
+                "mixer.gate": "ffn_gate_inp.weight",
+                "mixer.conv1d": "ssm_conv1d",
+            }
+        ),
+    }
+)
+
+# A layer-class group: a decoder-layer prefix under any naming family,
+# then the class suffix. The capture is what the two class tables key
+# on.
+_CLASS_SUFFIX: Final[re.Pattern[str]] = re.compile(
+    r"^.+\.(?:layers|h|blocks)\.\d+\.(.+)$"
+)
+
+
+def rows_refuse_super_block(group: str) -> bool:
+    """Report whether a group's rows refuse the k-quant super-block.
+
+    Such a layer-class group maps and prices through the ADR-0028
+    table, exactly like a routed-expert stack (ADR-0028, 2026-08-20
+    amendment). The class list is `SUPER_BLOCK_REFUSED_CLASSES`.
+
+    Args:
+        group: Group name, as `vramfit.domain.scan.group_key`
+            produces it.
+
+    Returns:
+        True when the group's class suffix is in the list.
+
+    Examples:
+        ```python
+        from vramfit.domain.runtime import rows_refuse_super_block
+
+        assert rows_refuse_super_block("model.layers.3.mixer.in_proj")
+        assert not rows_refuse_super_block("model.layers.3")
+        ```
+    """
+    match = _CLASS_SUFFIX.match(group)
+    return match is not None and match.group(1) in SUPER_BLOCK_REFUSED_CLASSES
+
+
+def unquantizable_filter(group: str, runtime: str | None) -> str | None:
+    """Name the upstream filter that refuses this group's tensors.
+
+    A group of an unquantizable class holds at the F16 passthrough:
+    the quantizer drops an override on such a tensor and exits 0, so
+    any lower width would record a type the artifact cannot carry
+    (ADR-0012, 2026-08-20 amendment).
+
+    Args:
+        group: Group name, as `vramfit.domain.scan.group_key`
+            produces it.
+        runtime: Target runtime name, or None for an unconstrained
+            plan.
+
+    Returns:
+        The upstream filter's name, or None when the runtime carries
+        no filter table or no filter refuses the class.
+
+    Examples:
+        ```python
+        from vramfit.domain.runtime import unquantizable_filter
+
+        group = "model.layers.3.mixer.gate"
+        assert unquantizable_filter(group, "llama.cpp") == "ffn_gate_inp.weight"
+        assert unquantizable_filter(group, None) is None
+        ```
+    """
+    if runtime is None:
+        return None
+    table = UNQUANTIZABLE_CLASS_FILTERS.get(runtime)
+    if table is None:
+        return None
+    match = _CLASS_SUFFIX.match(group)
+    if match is None:
+        return None
+    return table.get(match.group(1))
 
 
 class RuntimeCapabilityError(VramfitError, ValueError):

@@ -116,13 +116,13 @@ precision, when the map leaves any group uncovered. It refuses a
 checkpoint carrying none of the map's groups. It warns and continues
 when the checkpoint carries only some of them.
 
-!!! warning "A whole-model `stack`-keyed recipe does not pack yet"
-
-    `--checkpoint` makes `plan` emit one. `pack` maps decoder-layer
-    groups and routed-expert stacks, and refuses every other `stack`
-    group by name. The 2026-08-20 amendment to
-    [ADR-0012](../adr/0012-gguf-type-mapping.md) rules the class
-    table for the rest, and #368 lands it.
+`pack` maps decoder-layer groups, routed-expert stacks, and the
+layer classes in the
+[ADR-0012](../adr/0012-gguf-type-mapping.md) class table, as amended
+2026-08-20. It refuses every other `stack` group by name. A group of
+an unquantizable class — the router's `mixer.gate`, the Mamba
+`mixer.conv1d` — packs at the F16 passthrough, and `pack` refuses a
+recipe that assigns it a lower width.
 
 Pin semantics: patterns are case-sensitive `fnmatch` globs matched against
 the full group name (`--pin "model.layers.0.*=8"`). A pattern that matches

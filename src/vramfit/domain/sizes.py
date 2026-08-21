@@ -62,7 +62,9 @@ Examples:
 decision 3 requires. It lives here rather than in the solver, because
 it states what the size source implies and not how the budget is
 spent. The solver adds its bytes to the total and never ranks a
-downgrade for one.
+downgrade for one. An uncovered expert stack prices through the
+ADR-0028 table, and so does a layer-class group whose rows refuse
+the 256 super-block (the 2026-08-20 amendment).
 
 See Also:
     - [vramfit.ports.outbound][]: `TensorSizeSource`, the port that
@@ -79,7 +81,11 @@ from typing import Final, Literal
 
 from vramfit.domain.errors import VramfitError
 from vramfit.domain.model import Assignment, SensitivityMap
-from vramfit.domain.runtime import RUNTIME_CAPABILITIES, RuntimeCapabilityError
+from vramfit.domain.runtime import (
+    RUNTIME_CAPABILITIES,
+    RuntimeCapabilityError,
+    rows_refuse_super_block,
+)
 from vramfit.domain.scan import group_key, is_expert_stack, matches_a_layer
 
 REFERENCE_BITS: Final[int] = 16
@@ -358,7 +364,10 @@ def held_assignments(
         sensitivity_map: The map, whose groups are the covered set.
         runtime: Target runtime name, or None.
         price: Dense size predictor ``(bytes_fp16, bits) -> bytes``.
-        stack_price: The same, through the ADR-0028 stack table.
+        stack_price: The same, through the ADR-0028 stack table. It
+            prices the expert stacks and every layer-class group
+            whose rows refuse the 256 super-block (the 2026-08-20
+            amendment).
 
     Returns:
         One assignment per uncovered group, in name order. Empty when
@@ -388,9 +397,16 @@ def held_assignments(
         Assignment(
             group=name,
             bits=REFERENCE_BITS,
-            bytes=(stack_price if is_expert_stack(name) else price)(
-                bytes_fp16, REFERENCE_BITS
-            ),
+            # A layer-class group whose rows refuse the 256
+            # super-block prices with the expert stacks, through the
+            # ADR-0028 table (the 2026-08-20 amendment). The two
+            # tables agree at reference precision, so the routing
+            # keeps the sources consistent rather than the bytes.
+            bytes=(
+                stack_price
+                if is_expert_stack(name) or rows_refuse_super_block(name)
+                else price
+            )(bytes_fp16, REFERENCE_BITS),
             damage=0.0,
         )
         for name, bytes_fp16 in uncovered

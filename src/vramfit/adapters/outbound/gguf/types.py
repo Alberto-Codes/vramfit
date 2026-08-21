@@ -10,8 +10,11 @@ across the three naming families the scan produces, routed-expert
 stack groups map to their fused `blk.<n>.ffn_<proj>_exps.` tensor
 (#159, #161) through their own type table — k-quant super-blocks do
 not divide the stack rows, and nominal 3 refuses over the empty
-2.25-4.25 bits-per-weight gap (ADR-0028) — protected tensors map
-through the fixed HF-to-GGUF class table to
+2.25-4.25 bits-per-weight gap (ADR-0028) — layer-class groups map
+through the class table to `blk.<n>.<stem>.` patterns, where an
+unquantizable class instead pins at the F16 passthrough and refuses
+any lower width (the 2026-08-20 amendment), protected tensors map
+through the same class table to
 per-tensor patterns (ADR-0022), excluded pairs map to the full GGUF
 tensor names ``--exclude-weights`` deletes by substring (ADR-0023),
 and the embedding and `lm_head` groups map to the quantizer's
@@ -57,7 +60,12 @@ from typing import Final
 from vramfit.domain.errors import VramfitError
 from vramfit.domain.model import Recipe
 from vramfit.domain.pack import TypeOverride
-from vramfit.domain.runtime import LLAMA_CPP
+from vramfit.domain.runtime import (
+    LLAMA_CPP,
+    rows_refuse_super_block,
+    unquantizable_filter,
+)
+from vramfit.domain.sizes import REFERENCE_BITS
 
 # The 16 row is the F16 passthrough (ADR-0029 decision 4). A recipe
 # holds an unmeasured group at reference precision, and `f16` is what
@@ -78,7 +86,9 @@ GGML_TYPE_BY_BITS: Final[dict[int, str]] = {
 # entry here has a block size that divides both row widths. Effective
 # bits per weight: f16 at 16.00, q8_0 at 8.50, q4_0 at 4.50, q2_0 at
 # 2.25. The f16 row is the ADR-0029 passthrough, and it has no block
-# to divide.
+# to divide. The table also reaches a layer-class group whose rows
+# refuse the super-block — the Nemotron-H classes qualify at 2688
+# (the 2026-08-20 amendment).
 EXPERT_STACK_TYPE_BY_BITS: Final[dict[int, str]] = {
     16: "f16",
     8: "q8_0",
@@ -105,11 +115,12 @@ GGUF_RUNTIME: Final[str] = LLAMA_CPP
 
 # The embedding group names the scan produces, across naming
 # families. llama-family checkpoints say `model.embed_tokens`.
-# Nemotron-H says `backbone.embeddings`. Both drive the one
-# `--token-embedding-type` flag, so the backend needs the names, not
-# a pattern.
+# Nemotron-H says `backbone.embeddings`, and ADR-0029's size source
+# reconciles that root to `model.embeddings` (the 2026-08-20
+# amendment). All three drive the one `--token-embedding-type` flag,
+# so the backend needs the names, not a pattern.
 EMBEDDING_GROUPS: Final[frozenset[str]] = frozenset(
-    {"model.embed_tokens", "backbone.embeddings"}
+    {"model.embed_tokens", "backbone.embeddings", "model.embeddings"}
 )
 
 OUTPUT_GROUP: Final[str] = "lm_head"
@@ -123,11 +134,21 @@ _LAYER_GROUP: Final[re.Pattern[str]] = re.compile(r"^.+\.(?:layers|h|blocks)\.(\
 
 # A routed-expert stack group: a layer prefix, then `.experts.` with
 # the expert index already collapsed by `group_key`, then the
-# projection (#161). The dot before `experts` matters — it refuses
-# `shared_experts`, which GGUF names `ffn_up_shexp` and this table
-# does not carry (#183).
+# projection (#161). The dot before `experts` matters — it keeps
+# `shared_experts` out of the fused-stack table. A shared expert is
+# its own GGUF tensor, `ffn_up_shexp`, and maps as a layer class
+# below (the 2026-08-20 amendment).
 _EXPERT_STACK: Final[re.Pattern[str]] = re.compile(
     r"^.+\.(?:layers|h|blocks)\.(\d+)\.(?:.*\.)?experts\.([A-Za-z0-9_]+)$"
+)
+
+# A layer-class group: a layer prefix, then the class suffix the
+# class table keys on. The suffix carries two or three dot-separated
+# segments — `mixer.shared_experts.down_proj` carries three (the
+# 2026-08-20 amendment). Expert stacks match too, so `tensor_overrides`
+# tries the stack shape first.
+_CLASS_GROUP: Final[re.Pattern[str]] = re.compile(
+    r"^.+\.(?:layers|h|blocks)\.(\d+)\.(.+)$"
 )
 
 # The parameter-tree root a layer or expert-stack group hangs from.
@@ -149,8 +170,13 @@ GGUF_EXPERT_STACK_BY_HF: Final[dict[str, str]] = {
     "gate_proj": "ffn_gate_exps",
 }
 
-# The fixed class table (ADR-0022): HF tensor suffix to GGUF tensor
-# suffix, for the seven quantized projections of a llama-family layer.
+# The fixed class table (ADR-0022, extended by the 2026-08-20
+# ADR-0012 amendment): HF tensor suffix to GGUF tensor stem. The
+# first seven rows are the quantized projections of a llama-family
+# layer. The nine Nemotron-H rows follow, verified against
+# `gguf-py/gguf/tensor_mapping.py` at the pinned instrument. The
+# `mixer.gate` row exists for the name mapping alone — the class pins
+# at the F16 passthrough through `UNQUANTIZABLE_CLASS_FILTERS`.
 GGUF_SUFFIX_BY_HF: Final[dict[str, str]] = {
     "self_attn.q_proj": "attn_q",
     "self_attn.k_proj": "attn_k",
@@ -159,6 +185,15 @@ GGUF_SUFFIX_BY_HF: Final[dict[str, str]] = {
     "mlp.gate_proj": "ffn_gate",
     "mlp.up_proj": "ffn_up",
     "mlp.down_proj": "ffn_down",
+    "mixer.in_proj": "ssm_in",
+    "mixer.out_proj": "ssm_out",
+    "mixer.gate": "ffn_gate_inp",
+    "mixer.shared_experts.up_proj": "ffn_up_shexp",
+    "mixer.shared_experts.down_proj": "ffn_down_shexp",
+    "mixer.q_proj": "attn_q",
+    "mixer.k_proj": "attn_k",
+    "mixer.v_proj": "attn_v",
+    "mixer.o_proj": "attn_output",
 }
 
 _LAYER_TENSOR: Final[re.Pattern[str]] = re.compile(
@@ -240,12 +275,17 @@ def ggml_type_for(bits: int) -> str:
         ) from None
 
 
-def expert_stack_type_for(bits: int, group: str) -> str:
-    """Map one expert-stack precision to its ADR-0028 tensor type.
+def expert_stack_type_for(bits: int, group: str, kind: str = "expert stack") -> str:
+    """Map one ADR-0028-routed precision to its tensor type.
+
+    Routed-expert stacks map here, and so does a layer-class group
+    whose rows refuse the 256 super-block (the 2026-08-20 amendment).
 
     Args:
         bits: Nominal precision from a recipe assignment.
-        group: The expert-stack group, named in every refusal.
+        group: The group, named in every refusal.
+        kind: What the refusal calls the group — ``expert stack`` or
+            ``layer-class group``.
 
     Returns:
         The GGUF tensor-type name, e.g. ``q2_0``.
@@ -264,7 +304,7 @@ def expert_stack_type_for(bits: int, group: str) -> str:
     """
     if bits == 3:  # noqa: PLR2004 - the ADR-0028 decision 2 refusal is about exactly nominal 3
         raise PackError(
-            f'expert stack "{group}" cannot pack at nominal 3 — no GGUF type '
+            f'{kind} "{group}" cannot pack at nominal 3 — no GGUF type '
             f"lands between 2.25 and 4.25 bits per weight on the stack rows "
             f"(ADR-0028). The neighboring table entries are 2 -> q2_0 "
             f"(2.25 bits/weight) and 4 -> q4_0 (4.50 bits/weight)"
@@ -273,7 +313,7 @@ def expert_stack_type_for(bits: int, group: str) -> str:
         return EXPERT_STACK_TYPE_BY_BITS[bits]
     except KeyError:
         raise PackError(
-            f'expert stack "{group}" has no type for {bits}-bit — the '
+            f'{kind} "{group}" has no type for {bits}-bit — the '
             f"ADR-0028 table covers {sorted(EXPERT_STACK_TYPE_BY_BITS)}"
         ) from None
 
@@ -430,8 +470,13 @@ def gguf_tensor_name(tensor: str) -> str:
         The GGUF tensor name, e.g. ``blk.4.attn_v.weight``.
 
     Raises:
-        PackError: If the name is not a layer tensor, or its suffix
-            has no class-table entry (ADR-0022).
+        PackError: If the tensor's class is unquantizable — the
+            quantizer drops any override on such a tensor and exits
+            0, so the pair would record a type the artifact does not
+            carry (the 2026-08-20 amendment). That check runs first
+            and needs no class-table row. Also if the name is not a
+            layer tensor this path can express, or its suffix has no
+            class-table entry (ADR-0022).
 
     Examples:
         The G1 protection target:
@@ -443,11 +488,35 @@ def gguf_tensor_name(tensor: str) -> str:
         )
         ```
     """
+    # The filter check comes first, and reads the group form rather
+    # than `_LAYER_TENSOR`. `mixer.conv1d` carries a digit that
+    # regex cannot express, and its refusal must still name the
+    # upstream filter, not a missing mapping.
+    filter_name = unquantizable_filter(tensor.removesuffix(".weight"), LLAMA_CPP)
+    if filter_name is not None:
+        raise PackError(
+            f'protected tensor "{tensor}" maps to a tensor llama-quantize '
+            f'refuses to quantize, through the "{filter_name}" filter in '
+            f"tensor_allows_quantization — the class packs at the F16 "
+            f"passthrough and takes no per-tensor override (ADR-0012, "
+            f"2026-08-20 amendment)"
+        )
     match = _LAYER_TENSOR.match(tensor)
     if match is None or match.group(2) not in GGUF_SUFFIX_BY_HF:
+        # Name only the rows this path can express. `_LAYER_TENSOR`
+        # holds the `model.` root and a two-segment suffix, so the
+        # three-segment rows are out of its reach — #365 carries the
+        # root and the arity.
+        reachable = sorted(
+            suffix
+            for suffix in GGUF_SUFFIX_BY_HF
+            if _LAYER_TENSOR.match(f"model.layers.0.{suffix}.weight")
+        )
         raise PackError(
-            f'protected tensor "{tensor}" has no GGUF mapping — the class '
-            f"table covers layer tensors {sorted(GGUF_SUFFIX_BY_HF)} (ADR-0022)"
+            f'protected tensor "{tensor}" has no GGUF mapping — this path '
+            f"reaches model.-rooted layer tensors of the classes "
+            f"{reachable} (ADR-0022). #365 carries the root and the "
+            f"suffix arity"
         )
     return f"blk.{match.group(1)}.{GGUF_SUFFIX_BY_HF[match.group(2)]}.weight"
 
@@ -585,23 +654,91 @@ def _claim_root(group: str, roots: dict[str, str]) -> None:
         )
 
 
+def _class_override(group: str, bits: int) -> tuple[TypeOverride, ...] | None:
+    r"""Map one layer-class group to its override, or hold it at F16.
+
+    The class table keys on the tensor suffix under a free prefix,
+    at two or three dot-separated segments (the 2026-08-20
+    amendment). A class whose rows refuse the 256 super-block routes
+    through the ADR-0028 table, and the rest keep the ADR-0012
+    k-quant table. An unquantizable class emits no override — the
+    quantizer refuses its tensors and holds them at the convert
+    dtype, so the F16 passthrough is what packing already does.
+
+    Args:
+        group: Recipe group name, e.g.
+            ``model.layers.3.mixer.in_proj``.
+        bits: Nominal precision from the group's assignment.
+
+    Returns:
+        A one-override tuple for a mapped class, an empty tuple for
+        an unquantizable class held at the passthrough, or None when
+        the group is not a class-table group.
+
+    Raises:
+        PackError: If an unquantizable class takes a width below the
+            F16 passthrough — the refusal names the group and the
+            upstream filter. Also if the precision has no entry in
+            the class's type table.
+
+    Examples:
+        The Nemotron-H Mamba input projection at the passthrough:
+
+        ```python
+        assert _class_override("model.layers.3.mixer.in_proj", 16) == (
+            TypeOverride(r"blk\.3\.ssm_in\.", "f16"),
+        )
+        ```
+    """
+    match = _CLASS_GROUP.match(group)
+    if match is None:
+        return None
+    filter_name = unquantizable_filter(group, LLAMA_CPP)
+    if filter_name is not None:
+        if bits != REFERENCE_BITS:
+            raise PackError(
+                f'group "{group}" maps to a tensor llama-quantize refuses to '
+                f'quantize, through the "{filter_name}" filter in '
+                f"tensor_allows_quantization — the class packs at the F16 "
+                f"passthrough and never at {bits}-bit (ADR-0012, 2026-08-20 "
+                f"amendment)"
+            )
+        return ()
+    stem = GGUF_SUFFIX_BY_HF.get(match.group(2))
+    if stem is None:
+        return None
+    quant = (
+        expert_stack_type_for(bits, group, kind="layer-class group")
+        if rows_refuse_super_block(group)
+        else ggml_type_for(bits)
+    )
+    return (TypeOverride(re.escape(f"blk.{match.group(1)}.{stem}."), quant),)
+
+
 def tensor_overrides(recipe: Recipe) -> tuple[TypeOverride, ...]:
     r"""Translate recipe groups into quantizer tensor-type overrides.
 
-    Two group shapes map. A layer group under any of the three
+    Three group shapes map. A layer group under any of the three
     naming families — ``model.layers.<n>``, ``backbone.layers.<n>``
     — becomes the escaped pattern ``blk\.<n>\.``. A routed-expert
     stack group becomes the escaped pattern for its fused tensor,
-    e.g. ``blk\.<n>\.ffn_up_exps\.`` (#159, #161). Escaping matters
-    — an unescaped ``blk.1.`` would also match ``blk.11.``. The
-    embedding and ``lm_head`` groups map to dedicated flags and are
-    skipped here.
+    e.g. ``blk\.<n>\.ffn_up_exps\.`` (#159, #161). A layer-class
+    group becomes the escaped pattern for its class-table stem, e.g.
+    ``blk\.<n>\.ssm_in\.`` (the 2026-08-20 amendment). Escaping
+    matters — an unescaped ``blk.1.`` would also match ``blk.11.``.
+    The embedding and ``lm_head`` groups map to dedicated flags and
+    are skipped here.
 
-    Expert-stack overrides come first, ahead of the layer overrides.
-    The quantizer applies the first matching pattern, and
+    A layer-class group of an unquantizable class emits no override.
+    The quantizer refuses its tensors and holds them at the convert
+    dtype, so the F16 passthrough is what packing already does. A
+    lower width on such a group refuses, naming the upstream filter.
+
+    Expert-stack and class overrides come first, ahead of the layer
+    overrides. The quantizer applies the first matching pattern, and
     ``blk\.1\.`` also matches ``blk.1.ffn_up_exps.weight``. Callers
-    place the protection overrides ahead of both — a per-tensor
-    pattern is the most specific of the three (ADR-0022).
+    place the protection overrides ahead of all three — a per-tensor
+    pattern is the most specific (ADR-0022).
 
     Every mapped group must hang from one parameter-tree root.
     ``blk.<n>.`` addresses a single layer stack, so a recipe naming
@@ -611,17 +748,19 @@ def tensor_overrides(recipe: Recipe) -> tuple[TypeOverride, ...]:
         recipe: The recipe to pack.
 
     Returns:
-        Expert-stack overrides in recipe order, then layer overrides
-        in recipe order.
+        Expert-stack overrides in recipe order, then layer-class
+        overrides in recipe order, then layer overrides in recipe
+        order.
 
     Raises:
         PackError: If a group is not a layer group, a routed-expert
-            stack, the embedding, or the output head. Also if a
-            routed-expert stack names a projection outside the
-            fused-stack table or a precision outside the ADR-0028
-            stack table (nominal 3 refuses over the empty 2.25-4.25
-            gap), if the groups hang from two roots, or if a
-            precision has no table entry.
+            stack, a layer-class group, the embedding, or the output
+            head. Also if a routed-expert stack names a projection
+            outside the fused-stack table, an ADR-0028-routed group
+            names a precision outside that table (nominal 3 refuses
+            over the empty 2.25-4.25 gap), an unquantizable class
+            takes a width below the F16 passthrough, the groups hang
+            from two roots, or a precision has no table entry.
 
     Examples:
         The group ``model.layers.7`` at 4-bit becomes an escaped
@@ -632,6 +771,7 @@ def tensor_overrides(recipe: Recipe) -> tuple[TypeOverride, ...]:
         ```
     """
     stacks: list[TypeOverride] = []
+    classes: list[TypeOverride] = []
     layers: list[TypeOverride] = []
     roots: dict[str, str] = {}
     for assignment in recipe.assignments:
@@ -643,16 +783,21 @@ def tensor_overrides(recipe: Recipe) -> tuple[TypeOverride, ...]:
             bits = expert_stack_type_for(assignment.bits, assignment.group)
             stacks.append(TypeOverride(re.escape(prefix), bits))
             continue
+        mapped = _class_override(assignment.group, assignment.bits)
+        if mapped is not None:
+            classes.extend(mapped)
+            continue
         match = _LAYER_GROUP.match(assignment.group)
         if match is None:
             raise PackError(
                 f'group "{assignment.group}" has no GGUF tensor mapping — the '
-                "backend maps layer groups, routed-expert stacks, the "
-                "embedding, and the output head (ADR-0012, ADR-0022)"
+                "backend maps layer groups, routed-expert stacks, layer-class "
+                "groups, the embedding, and the output head (ADR-0012, "
+                "ADR-0022)"
             )
         bits = ggml_type_for(assignment.bits)
         layers.append(TypeOverride(rf"blk\.{match.group(1)}\.", bits))
-    return tuple(stacks) + tuple(layers)
+    return tuple(stacks) + tuple(classes) + tuple(layers)
 
 
 def all_overrides(recipe: Recipe) -> tuple[TypeOverride, ...]:

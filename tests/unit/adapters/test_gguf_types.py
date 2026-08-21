@@ -231,14 +231,15 @@ def test_tensor_overrides_reject_tensor_level_groups() -> None:
 def test_tensor_overrides_name_the_group_they_cannot_map() -> None:
     # The refusal is the backend's only guard against mispacking a
     # group it does not understand, so the message must name the
-    # group and what it does map (#180).
-    recipe = make_recipe(("backbone.layers.0.mixer.in_proj", 4))
+    # group and what it does map (#180). The dense-MLP `mixer.up_proj`
+    # has no class-table row — no scanned target carries it.
+    recipe = make_recipe(("backbone.layers.0.mixer.up_proj", 4))
 
     with pytest.raises(PackError) as caught:
         tensor_overrides(recipe)
 
     message = str(caught.value)
-    assert '"backbone.layers.0.mixer.in_proj"' in message
+    assert '"backbone.layers.0.mixer.up_proj"' in message
     assert "layer groups, routed-expert stacks" in message
 
 
@@ -383,8 +384,8 @@ def test_tensor_overrides_reject_an_expert_projection_outside_the_stack_table() 
 
 @pytest.mark.parametrize(
     "group",
-    ["model.embed_tokens", "backbone.embeddings"],
-    ids=["llama", "nemotron"],
+    ["model.embed_tokens", "backbone.embeddings", "model.embeddings"],
+    ids=["llama", "nemotron", "nemotron-reconciled"],
 )
 def test_token_embedding_type_maps_every_embedding_naming_family(group: str) -> None:
     # `--token-embedding-type` binds one tensor whatever the
@@ -433,13 +434,156 @@ def test_tensor_overrides_accept_one_root_across_layers_and_stacks() -> None:
     assert len(tensor_overrides(recipe)) == 3
 
 
-def test_tensor_overrides_reject_a_shared_expert_stack() -> None:
-    # A shared expert is a separate GGUF tensor, `ffn_up_shexp`.
-    # Folding it into the routed stack would pack the wrong weights
-    # at the wrong precision (#183).
+def test_tensor_overrides_map_a_shared_expert_as_its_own_class() -> None:
+    # A shared expert is a separate GGUF tensor, `ffn_up_shexp` —
+    # never part of the fused routed stack. The class table maps it
+    # under a free prefix at three suffix segments, through the
+    # ADR-0028 type table (the 2026-08-20 amendment).
     recipe = make_recipe(("backbone.layers.1.mixer.shared_experts.up_proj", 4))
 
-    with pytest.raises(PackError, match="no GGUF tensor mapping"):
+    assert tensor_overrides(recipe) == (
+        TypeOverride(r"blk\.1\.ffn_up_shexp\.", "q4_0"),
+    )
+
+
+@pytest.mark.parametrize(
+    ("group", "bits", "pattern", "quant_type"),
+    [
+        ("model.layers.3.mixer.in_proj", 16, r"blk\.3\.ssm_in\.", "f16"),
+        ("backbone.layers.3.mixer.in_proj", 4, r"blk\.3\.ssm_in\.", "q4_0"),
+        ("model.layers.7.mixer.out_proj", 2, r"blk\.7\.ssm_out\.", "q2_0"),
+        ("model.layers.2.mixer.q_proj", 8, r"blk\.2\.attn_q\.", "q8_0"),
+        (
+            "backbone.layers.1.mixer.shared_experts.down_proj",
+            4,
+            r"blk\.1\.ffn_down_shexp\.",
+            "q4_0",
+        ),
+    ],
+    ids=["ssm-in-f16", "ssm-in-free-prefix", "ssm-out", "attn-q", "shexp-down"],
+)
+def test_tensor_overrides_map_a_layer_class_through_the_adr_0028_table(
+    group: str, bits: int, pattern: str, quant_type: str
+) -> None:
+    # The nine Nemotron-H rows map under a free prefix, and their
+    # rows refuse the 256 super-block, so the ADR-0028 table supplies
+    # the type (the 2026-08-20 amendment).
+    recipe = make_recipe((group, bits))
+
+    assert tensor_overrides(recipe) == (TypeOverride(pattern, quant_type),)
+
+
+def test_tensor_overrides_route_a_llama_class_through_the_kquant_table() -> None:
+    # A llama-family class row keeps decision 1's table: its rows
+    # divide the 256 super-block, so k-quants reach them.
+    recipe = make_recipe(("model.layers.2.self_attn.q_proj", 4))
+
+    assert tensor_overrides(recipe) == (TypeOverride(r"blk\.2\.attn_q\.", "q4_k"),)
+
+
+def test_tensor_overrides_refuse_nominal_3_on_a_layer_class_naming_the_gap() -> None:
+    recipe = make_recipe(("model.layers.3.mixer.in_proj", 3))
+
+    with pytest.raises(PackError) as caught:
+        tensor_overrides(recipe)
+
+    message = str(caught.value)
+    assert 'layer-class group "model.layers.3.mixer.in_proj"' in message
+    assert "between 2.25 and 4.25" in message
+
+
+@pytest.mark.parametrize("bits", [6, 5])
+def test_tensor_overrides_refuse_5_and_6_bit_on_an_adr_0028_routed_class(
+    bits: int,
+) -> None:
+    # The ADR-0028 table carries no 5- or 6-bit row (#232). The class
+    # rows at 2688 would take Q5_0's block of 32, so the gap is the
+    # table's, not the rows' — the refusal names the table.
+    recipe = make_recipe(("model.layers.3.mixer.in_proj", bits))
+
+    with pytest.raises(PackError, match="ADR-0028 table covers"):
+        tensor_overrides(recipe)
+
+
+def test_tensor_overrides_escape_the_class_pattern_so_layer_1_never_matches_11() -> (
+    None
+):
+    recipe = make_recipe(("model.layers.1.mixer.in_proj", 16))
+
+    (override,) = tensor_overrides(recipe)
+
+    assert re.search(override.pattern, "blk.1.ssm_in.weight")
+    assert not re.search(override.pattern, "blk.11.ssm_in.weight")
+
+
+@pytest.mark.parametrize(
+    "group",
+    ["model.layers.4.mixer.gate", "model.layers.4.mixer.conv1d"],
+    ids=["router", "conv1d"],
+)
+def test_tensor_overrides_hold_an_unquantizable_class_without_an_override(
+    group: str,
+) -> None:
+    # llama-quantize refuses these tensors and holds them at the
+    # convert dtype, so the F16 passthrough needs no override (the
+    # 2026-08-20 amendment).
+    recipe = make_recipe((group, 16), ("model.layers.0", 4))
+
+    assert tensor_overrides(recipe) == (TypeOverride(r"blk\.0\.", "q4_k"),)
+
+
+@pytest.mark.parametrize(
+    ("group", "filter_name"),
+    [
+        ("model.layers.4.mixer.gate", "ffn_gate_inp.weight"),
+        ("backbone.layers.9.mixer.conv1d", "ssm_conv1d"),
+    ],
+    ids=["router", "conv1d"],
+)
+def test_tensor_overrides_refuse_a_width_below_the_passthrough_naming_the_filter(
+    group: str, filter_name: str
+) -> None:
+    # The quantizer drops an override on a refused tensor and exits
+    # 0, so a lower width would record a type the artifact cannot
+    # carry (the 2026-08-20 amendment).
+    recipe = make_recipe((group, 8))
+
+    with pytest.raises(PackError) as caught:
+        tensor_overrides(recipe)
+
+    message = str(caught.value)
+    assert f'"{group}"' in message
+    assert filter_name in message
+    assert "F16 passthrough" in message
+
+
+def test_tensor_overrides_put_classes_between_stacks_and_layers() -> None:
+    # The quantizer applies the first matching pattern. `blk\.0\.`
+    # also matches every class tensor of layer 0, so the class
+    # pattern must come first.
+    recipe = make_recipe(
+        ("model.layers.0", 4),
+        ("model.layers.0.mixer.in_proj", 16),
+        ("model.layers.0.mixer.experts.up_proj", 2),
+    )
+
+    assert tensor_overrides(recipe) == (
+        TypeOverride(r"blk\.0\.ffn_up_exps\.", "q2_0"),
+        TypeOverride(r"blk\.0\.ssm_in\.", "f16"),
+        TypeOverride(r"blk\.0\.", "q4_k"),
+    )
+
+
+def test_tensor_overrides_reject_a_class_group_under_a_second_root() -> None:
+    # A layer-class group claims its root like any other mapped
+    # group, so the two-root refusal stands (the 2026-08-20
+    # amendment).
+    recipe = make_recipe(
+        ("model.layers.0.mixer.in_proj", 16),
+        ("mtp.layers.0", 4),
+    )
+
+    with pytest.raises(PackError, match="two layer stacks"):
         tensor_overrides(recipe)
 
 
@@ -507,6 +651,62 @@ class TestGgufTensorName:
     def test_unmappable_tensor_raises_pack_error(self, tensor: str) -> None:
         with pytest.raises(PackError, match="no GGUF mapping"):
             gguf_tensor_name(tensor)
+
+    def test_mixer_classes_map_under_the_model_root(self) -> None:
+        # The 2026-08-20 amendment's rows reach this path too, at the
+        # `model.` root and two suffix segments — #365 carries the
+        # root and the arity.
+        tensor = "model.layers.4.mixer.q_proj.weight"
+
+        assert gguf_tensor_name(tensor) == "blk.4.attn_q.weight"
+
+    def test_a_three_segment_row_refuses_naming_the_open_question(self) -> None:
+        # `_LAYER_TENSOR` cannot express three suffix segments, so the
+        # refusal must not list the rows it cannot reach.
+        tensor = "model.layers.4.mixer.shared_experts.up_proj.weight"
+
+        with pytest.raises(PackError) as caught:
+            gguf_tensor_name(tensor)
+
+        message = str(caught.value)
+        assert "no GGUF mapping" in message
+        assert "#365" in message
+        # The refused tensor's own name appears, and the reachable
+        # list must not repeat the row this path cannot express.
+        assert "'mixer.shared_experts.up_proj'" not in message
+
+    @pytest.mark.parametrize(
+        ("tensor", "filter_name"),
+        [
+            ("model.layers.4.mixer.gate.weight", "ffn_gate_inp.weight"),
+            ("model.layers.9.mixer.conv1d.weight", "ssm_conv1d"),
+        ],
+        ids=["router", "conv1d"],
+    )
+    def test_an_unquantizable_class_refuses_naming_the_filter(
+        self, tensor: str, filter_name: str
+    ) -> None:
+        # The quantizer drops an override on a refused tensor and
+        # exits 0, so a protection pair here would record a type the
+        # artifact does not carry (the 2026-08-20 amendment). The
+        # filter check runs before the class-table match, so
+        # `conv1d` — whose digit `_LAYER_TENSOR` cannot express —
+        # still names its filter rather than a missing mapping.
+        with pytest.raises(PackError) as caught:
+            gguf_tensor_name(tensor)
+
+        message = str(caught.value)
+        assert f'"{tensor}"' in message
+        assert filter_name in message
+
+    def test_a_protection_pair_on_an_unquantizable_class_refuses(self) -> None:
+        recipe = make_protected_recipe(
+            (("model.layers.4.mixer.gate.weight", 8),),
+            ("model.layers.4", 4),
+        )
+
+        with pytest.raises(PackError, match="refuses to quantize"):
+            protection_overrides(recipe)
 
 
 class TestProtectionOverrides:
