@@ -147,24 +147,28 @@ change.
     reads 8, 4, and 2
     ([ADR-0018](../adr/0018-kquant-within-group-method.md), 2026-08-17
     amendment, token renamed by the 2026-08-18 amendment). `q0-imx` is
-    reserved for its assisted path. A method
+    its assisted path — nominal 4 fits with imatrix weights, ruled
+    built by the 2026-08-21 amendment and unbuilt until #383 lands.
+    A method
     change is a new scan — the token lives in the fingerprint and in
     the map's `scan.within_group`, and the recipe carries its map's
     token for the validation pass. Not "quantization mode" or
     "simulation method".
 
 **Assisted pricing**
-:   Measuring a kquant cell with the pack's imatrix weighting the
-    within-group fit, through the ported `_impl` quantizers
+:   Measuring a cell with the pack's imatrix weighting the
+    within-group fit, through the ported `_impl` quantizers.
+    `kquant-imx` carries it for the K-quants
     ([ADR-0020](../adr/0020-imatrix-assisted-pricing.md)).
     [ADR-0021](../adr/0021-runtime-frame-measurement.md) supersedes
     ADR-0020, and the method stays a valid scan option.
     **Unassisted** names the reference-path fit without weights.
     A tensor the imatrix does not cover always prices unassisted —
-    the same fallback `llama-quantize` applies. `q0-imx` reserves the
-    same shape for `quantize_row_q4_0_impl`. `Q2_0` has no assisted
-    path, because `quantize_q2_0` ignores the matrix
-    ([ADR-0018](../adr/0018-kquant-within-group-method.md), 2026-08-17
+    the same fallback `llama-quantize` applies. `q0-imx` takes the
+    same shape through `quantize_row_q4_0_impl`
+    ([ADR-0018](../adr/0018-kquant-within-group-method.md),
+    2026-08-21 amendment). `Q2_0` has no assisted path, because
+    `quantize_q2_0` ignores the matrix (ADR-0018, 2026-08-17
     amendment, token renamed by the 2026-08-18 amendment). Not
     "imatrix mode" or "weighted scanning".
 

@@ -259,6 +259,8 @@ A **base GGUF** exists only after a pack, and `plan` runs before packing.
     No solver has read that skew yet, because every arm on this target
     was hand-authored (#301). This ADR is what first lets the greedy rule
     consume it, and the rule spends the cheap width against exactly that
-    ratio. #350 carries whether the meter consumes the matrix. A recipe
-    planned before that ruling reads a nominal-4 column measured in a
-    frame the pack does not apply.
+    ratio. #350 resolved 2026-08-21: ADR-0018's amendment rules the
+    `q0-imx` build, and #384 carries the assisted re-scan. A recipe
+    planned before that map lands reads a nominal-4 column measured in a
+    frame the pack does not apply, and the amendment's decision 5 makes
+    it state the gap.

@@ -85,7 +85,8 @@ compounds on wrong marginals.
   artifact's damage for imatrix-covered tensors. ~~Whether the meter
   should consume the imatrix itself is a follow-up decision.~~
   **Resolved twice.** ADR-0020 built the assisted path for `kquant`,
-  as `kquant-imx`. The 2026-08-21 amendment below (#350) rules the
+  as `kquant-imx`. ADR-0021 superseded it and the method stays a
+  valid scan option. The 2026-08-21 amendment below (#350) rules the
   `q0` method consumes the matrix at nominal 4, as `q0-imx`.
 - ~~Coverage of {4, 8} nominal bits, required before a full kquant
   scan can feed the solver.~~ Landed with this ADR: `Q4_K` reuses
@@ -341,63 +342,91 @@ observed consequence there carries the exposure.
 Upstream bounds the level. llama.cpp PR #4969 added the matrix to the
 legacy quants. Its `Q4_0` QError ratios read 0.507 to 0.877 across
 five dense models, so an unassisted fit costs 1.14 to 1.97 times the
-assisted one. The map's median 2-against-4 damage ratio of 18.4
-therefore understates the packed ratio to roughly 21 to 36.
+assisted one. Read onto the map's median 2-against-4 damage ratio of
+18.4, the packed ratio lands at roughly 21 to 36. That read
+transfers a reconstruction-error ratio into the damage frame, and it
+carries ADR-0016's recorded challenge: five dense models against
+this MoE target, measured at 4 bits.
 
-A plan-time correction was considered and refused. ADR-0006 rules a
+This amendment refuses a plan-time correction. ADR-0006 rules a
 within-group method change is a new scan. This record names one map
-under two frames as the defect its refusals exist to remove.
-ADR-0027 decision 3 bars magnitudes from crossing frames, and #381's
-constants are reconstruction-error ratios, not damage ratios.
+under two frames as the defect its refusals exist to remove. #381's
+constants are reconstruction-error ratios, which are not damage and
+set no price (#319's precedent above).
 
 ### Decision
 
 1. **The `q0` method gains its assisted path, under the token
    `q0-imx`.** It ports `quantize_row_q4_0_impl` from llama.cpp
-   `4801e3c56` (b10362), the campaign instrument (ADR-0027). Nominal
-   4 fits with imatrix weights. Nominal 2 and 8 take the reference
-   path, because `quantize_q2_0` and `quantize_q8_0` discard the
-   matrix. The assisted map therefore keeps the pack's frame at every
-   width. Maintainer ruling 2026-08-21.
+   `4801e3c56` (b10362), the campaign arms' build (ADR-0016's #278
+   amendment). `ggml/src/ggml-quants.c` is byte-identical between
+   `3653e6d6d` and `4801e3c56`, so the two port checkouts do not
+   conflict. Nominal 4 fits with imatrix weights. Nominal 2 and 8
+   take the reference path, because `quantize_q2_0` and
+   `quantize_q8_0` discard the matrix. The assisted method therefore
+   keeps the pack's frame at every width it covers. Maintainer
+   ruling 2026-08-21.
 2. **The meter reads per-expert imatrix rows itself, keyed on the
-   loaded parameter name.** `resolve_assisted_weights` refuses a
-   fused expert stack by rule (ADR-0026), and its super-block gate
-   refuses these rows (#177). The new read accepts a fused stack and
-   applies expert `i`'s rows as `llama-quant.cpp` applies them, at
-   `imatrix + i03 * ne0` with sums over counts. #381's harness
+   loaded parameter name.** ADR-0026 rules the stacks "stay
+   unassisted until a non-k-quant assisted fit exists". `q0-imx` is
+   that fit, so the clause discharges here. One reader serves one
+   method family: `resolve_assisted_weights` keeps its fused-stack
+   refusal and its super-block gate (#177), unchanged, for `kquant`.
+   The new read accepts a fused stack and applies expert `i`'s rows
+   as `llama-quant.cpp` applies them. The offset is
+   `imatrix + i03 * ne0`, with sums over counts. #381's harness
    proved the mechanics. The read vouches each entry against the
-   parameter's shape, on ADR-0026's pattern.
-3. **The port verifies against the C reference, on decision 4's
-   pattern.** The golden-fixture suite adds assisted `Q4_0` fixtures
-   recorded from `ggml_quantize_chunk` with `quant_weights` set. The
-   bar is bit-exact. #381 already replayed this record's `Q4_0`
-   fixtures and verified the assisted branch engages.
+   parameter's shape, on ADR-0026's pattern. A parameter without
+   coverage takes the unassisted path — the C behavior for a NULL
+   imatrix row (ADR-0020 decision 2).
+3. **The port verifies against the C reference, on this record's
+   decision 4 pattern.** The golden-fixture suite adds assisted
+   `Q4_0` fixtures recorded from `ggml_quantize_chunk` with
+   `quant_weights` set. The bar is error parity within
+   representation ties, because the weighted fit runs
+   `make_qx_quants`' candidate-scale search and so carries the tie
+   hazard decision 4 names for `Q4_K`. #381 already replayed this
+   record's `Q4_0` fixtures and verified the assisted branch
+   engages.
 4. **The 46 stacks re-scan under `q0-imx`, at precisions 4 and 2,
    into their own map.** The run mixes no token, because
    `scan.within_group` is map-level. Nominal-2 cells re-measure even
-   though their arithmetic matches `q0-ref`, because magnitudes do
-   not cross runs (ADR-0027 decision 3). The run follows #328's
-   shape on the H100 instrument, at about $4.
+   though their arithmetic matches `q0-ref`. Damage values compare
+   only within one frame — cross-process re-measurement of identical
+   cells moved values 2.7–4.1x (glossary, Measurement frame). The
+   run follows #328's shape: 92 cells on the H100 instrument, which
+   cost $4.23 against a $4.04 estimate. #384 carries it.
 5. **Meanwhile a `q0-ref` map's nominal-4 column prices the
    unassisted format, and every record that reads it states the
    gap.** The gap is the level bound and the 6 % projection skew
    above. The `q0-ref` map stays the campaign input until the
    `q0-imx` map lands.
+6. **The `scan.imatrix` pairing extends to `q0-imx`.** The loader
+   rejects a map that claims assistance without naming its imatrix,
+   or the reverse — the rule sensitivity-map.md states for
+   `kquant-imx` today. The reference page updates when the token
+   lands. The field exists, so no schema field is added.
 
 ### Consequences
 
-- The reservation discharges into a build. Two `chart:task` tickets
-  carry it: one for the port and the row reader, one for the
-  re-scan.
+- The reservation discharges into a build. #383 carries the port
+  and the row reader. #384 carries the re-scan.
 - **This amendment states its falsifier.** A `q0-imx` map earns
-  nothing until an arm built from it beats the #321 probe arm, at
-  1.178594 PPL and 0.219037 mean KLD. The 2026-08-17 amendment's
-  warning applies unchanged.
+  nothing until an arm built from it beats the #321 probe arm on
+  mean KLD, the map's own metric, at 0.219037. The probe's PPL
+  ratio of 1.178594 reads beside it. The nearest prior runs the
+  other way: ADR-0020's 2026-08-06 note records the assisted
+  `kquant` recipe packing worse, at 9.607 PPL and 0.3437 KLD
+  against the unassisted 9.251 and 0.3056. The 2026-08-17
+  amendment's warning applies unchanged.
 - #194's premise moves. A `q0-imx` map prices the 46 stacks
   assisted, so the assisted-coverage split stops being a constant of
-  the method. #350's closing comment carries the note.
+  the method.
+  [#194's 2026-08-21 comment](https://github.com/Alberto-Codes/vramfit/issues/194#issuecomment-5375813865)
+  carries the note.
 - The session flip-check behind the ADR-0007 exposure lives in
-  #350's closing comment, with its reconstruction-error caveat.
+  [#350's 2026-08-21 comment](https://github.com/Alberto-Codes/vramfit/issues/350#issuecomment-5375790074),
+  with its reconstruction-error caveat.
 - `Q5_0` stays unported. When its port lands, its assisted path
   arrives with it, because `quantize_q5_0` consumes the matrix
   (ADR-0016's #278 amendment table).
