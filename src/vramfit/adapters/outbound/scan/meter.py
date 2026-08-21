@@ -231,7 +231,8 @@ class TorchDamageMeter:
                 `METHODS` — an unknown value must not fall back to
                 RTN and record damages under the wrong token —
                 imatrix input
-                arrives with the ``rtn`` method (RTN has no weighted
+                arrives with a method outside ``kquant`` and ``q0``
+                (RTN has no weighted
                 C counterpart), ``imatrix_weights`` and
                 ``imatrix_path`` arrive together, the imatrix file
                 is malformed or covers no parameter, a weighted name
@@ -256,7 +257,7 @@ class TorchDamageMeter:
                 "weight sources cannot both be the provenance"
             )
         if imatrix_weights is not None or imatrix_path is not None:
-            if within_group == "rtn":
+            if within_group not in ("kquant", "q0"):
                 raise ValueError(
                     "imatrix weights require the kquant or q0 within-group "
                     "method (ADR-0018, ADR-0020) — RTN has no weighted C "

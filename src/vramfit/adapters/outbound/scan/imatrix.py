@@ -36,9 +36,10 @@ The counts record routing frequency and price nothing (ADR-0026
 decisions 4 and 5). `expert_stack_count_vectors` then selects one
 group's expert-stack vectors for decision 4's map summary, all or
 nothing per group (the #201 amendment). `resolve_assisted_weights`
-refuses a fused expert stack by rule. The expert stacks stay
-unassisted until a non-k-quant assisted fit exists (ADR-0026,
-2026-08-13 amendment).
+refuses a fused expert stack by rule (ADR-0026, 2026-08-13
+amendment). Under this reader the expert stacks price unassisted.
+The q0 reader carries their assisted fit
+(ADR-0018, 2026-08-21 amendment).
 
 Examples:
     Load weights for the parameters a meter discovered:
@@ -423,8 +424,9 @@ def _zero_coverage_message(
     Four causes reach the same empty result. Naming the file alone
     sends an operator to regenerate a correct matrix, which costs
     GPU hours and fails the same way. The counts point at the cause.
-    The fused cause is a rule, not a defect: the expert stacks stay
-    unassisted until a non-k-quant assisted fit exists (ADR-0026).
+    The fused cause is a rule, not a defect: this reader prices the
+    expert stacks unassisted (ADR-0026), and the q0 reader carries
+    their assisted fit (ADR-0018, 2026-08-21 amendment).
 
     Args:
         by_gguf_name: Entries keyed by GGUF tensor name.
@@ -469,8 +471,9 @@ def resolve_assisted_weights(
     minutes. A routed expert reads its own row of the expert stack,
     so all 128 experts of a projection resolve against one entry
     (#177). A fused expert stack reports uncovered by rule
-    (ADR-0026, 2026-08-13 amendment). The expert stacks stay
-    unassisted until a non-k-quant assisted fit exists.
+    (ADR-0026, 2026-08-13 amendment). Under this reader the expert
+    stacks price unassisted. The q0 reader carries their assisted
+    fit (ADR-0018, 2026-08-21 amendment).
 
     Args:
         by_gguf_name: Entries keyed by GGUF tensor name, from

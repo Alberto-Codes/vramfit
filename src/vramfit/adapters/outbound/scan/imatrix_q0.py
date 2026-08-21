@@ -8,7 +8,7 @@ one method family (ADR-0018, 2026-08-21 amendment, decision 2):
 super-block gate, unchanged, for ``kquant``. This reader accepts a
 fused expert stack and resolves its whole entry — one weight row per
 expert, in imatrix row order, exactly as ``llama-quant.cpp`` slices
-the matrix per expert (``imatrix + i03 * ne0``, sums over counts —
+the matrix per expert (``imatrix + i03 * ne0``, sums over counts,
 the mechanics #381's harness proved).
 
 Each resolved entry vouches against the parameter's shape, on

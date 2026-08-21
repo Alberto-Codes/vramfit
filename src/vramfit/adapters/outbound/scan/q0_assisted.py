@@ -8,7 +8,7 @@ pack actually ships. The element fit weight is
 ``qw[j] * sqrt(sigma2 + x[j]^2)``, where ``qw`` is the imatrix
 column weight and ``sigma2`` is the row's mean squared value. Each
 32-element block then runs `kquant_assisted._make_qx_quants`'
-candidate-scale search at ``nmax`` 8 — the same C function the
+candidate-scale search at ``nmax`` 8, the same C function the
 assisted ``Q3_K`` port already reuses.
 
 Only nominal 4 fits with weights. ``quantize_q2_0`` and
@@ -48,11 +48,9 @@ from vramfit.adapters.outbound.scan.kquant import _CHUNK_ROWS, _fp16
 from vramfit.adapters.outbound.scan.kquant_assisted import _make_qx_quants
 from vramfit.adapters.outbound.scan.q0_ref import QK4_0, q0_ref_quantize_dequantize
 
-# The precisions with an assisted-valid route. Only 4 fits with
-# weights — 2 and 8 route to the unassisted port, matching
+# The nominal precision whose C path consumes the matrix. Every
+# other covered width routes to the unassisted port, matching
 # quantize_q2_0 and quantize_q8_0.
-ASSISTED_BITS = (4, 2, 8)
-# The nominal precision whose C path consumes the matrix.
 _WEIGHTED_BITS = 4
 
 
@@ -145,8 +143,8 @@ def q0_assisted_quantize_dequantize(
         input.
 
     Raises:
-        ValueError: If ``bits`` has no q0 port — the refusal names
-            the covered set — or `check_q0_weights` refuses the
+        ValueError: If ``bits`` has no q0 port (the refusal names
+            the covered set), or `check_q0_weights` refuses the
             weights. Every weight check runs for 2- and 8-bit too,
             before those routes discard the weights — validity must
             not depend on which branch consumes the argument.
@@ -184,6 +182,10 @@ def q0_assisted_quantize_dequantize(
     def run(rows: torch.Tensor, qw: torch.Tensor) -> torch.Tensor:
         """Fit bounded slices of whole rows against their weights.
 
+        Every slice holds whole rows, so a boundary never splits a
+        row's ``sigma2``. One shared weight row broadcasts instead
+        of gathering a slice-sized copy.
+
         Args:
             rows: Shape ``(n, row)``, float32.
             qw: Shape ``(matrices, row)`` — each matrix covers
@@ -193,15 +195,31 @@ def q0_assisted_quantize_dequantize(
             Dequantized values, shape of ``rows``.
         """
         per_matrix = rows.shape[0] // qw.shape[0]
+
+        def weight_rows(start: int, stop: int) -> torch.Tensor:
+            """Select the weight row for each row in ``[start, stop)``.
+
+            Args:
+                start: First row index of the slice.
+                stop: Past-the-end row index of the slice.
+
+            Returns:
+                Weights that broadcast against the slice — the one
+                shared row stays ``(1, row)`` rather than gathering
+                a slice-sized copy.
+            """
+            if qw.shape[0] == 1:
+                return qw
+            idx = torch.arange(start, stop, device=rows.device) // per_matrix
+            return qw[idx]
+
         chunk = max(1, (_CHUNK_ROWS * QK4_0) // row)
         if rows.shape[0] <= chunk:
-            idx = torch.arange(rows.shape[0], device=rows.device) // per_matrix
-            return _assisted_rows(rows, qw[idx])
+            return _assisted_rows(rows, weight_rows(0, rows.shape[0]))
         out = torch.empty_like(rows)
         for start in range(0, rows.shape[0], chunk):
             stop = min(start + chunk, rows.shape[0])
-            idx = torch.arange(start, stop, device=rows.device) // per_matrix
-            out[start:stop] = _assisted_rows(rows[start:stop], qw[idx])
+            out[start:stop] = _assisted_rows(rows[start:stop], weight_rows(start, stop))
         return out
 
     try:

@@ -22,6 +22,10 @@ from vramfit.adapters.outbound.scan.imatrix_q0 import (
     check_q0_imatrix_weights,
     resolve_q0_assisted_weights,
 )
+from vramfit.adapters.outbound.scan.within_group import (
+    check_method_weights,
+    resolve_method_weights,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -161,6 +165,40 @@ class TestUncoveredFallbacks:
         assert "1 names have no GGUF mapping" in message
         assert "1 mapped to a tensor the file does not hold" in message
         assert "1 have rows that do not divide" in message
+
+
+class TestMethodFamilyDispatch:
+    """The meter resolves and gates through one reader per family.
+
+    The dispatch is the whole of the amendment's decision 2 wiring —
+    a regression to the kquant reader would report the 46 stacks
+    uncovered and abort a paid run at zero coverage.
+    """
+
+    def test_q0_resolves_a_fused_stack_the_kquant_family_refuses(self) -> None:
+        entry = _entry(matrices=4, columns=64)
+        entries = {"blk.3.ffn_up_exps.weight": entry}
+
+        covered, uncovered = resolve_method_weights("q0", entries, {STACK: (4, 8, 64)})
+
+        assert uncovered == ()
+        assert torch.equal(covered[STACK], entry.column_weights)
+
+    def test_kquant_routes_to_the_refusing_reader(self) -> None:
+        entry = _entry(matrices=4, columns=256)
+        entries = {"blk.3.ffn_up_exps.weight": entry}
+
+        with pytest.raises(ValueError, match="fused expert stacks"):
+            resolve_method_weights("kquant", entries, {STACK: (4, 8, 256)})
+
+    def test_the_gate_dispatches_by_family_too(self) -> None:
+        weights = {STACK: torch.rand(4, 64)}
+        shapes = {STACK: (4, 8, 64)}
+
+        check_method_weights("q0", weights, shapes)
+
+        with pytest.raises(ValueError, match="1-D"):
+            check_method_weights("kquant", weights, shapes)
 
 
 class TestCheckQ0ImatrixWeights:

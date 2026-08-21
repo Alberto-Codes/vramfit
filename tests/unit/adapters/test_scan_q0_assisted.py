@@ -22,10 +22,8 @@ import pytest
 torch = pytest.importorskip("torch", reason="scan extra not installed")
 np = pytest.importorskip("numpy", reason="scan extra not installed")
 
-from vramfit.adapters.outbound.scan.q0_assisted import (
-    ASSISTED_BITS,
-    q0_assisted_quantize_dequantize,
-)
+import vramfit.adapters.outbound.scan.q0_assisted as q0_assisted_module
+from vramfit.adapters.outbound.scan.q0_assisted import q0_assisted_quantize_dequantize
 from vramfit.adapters.outbound.scan.q0_ref import q0_ref_quantize_dequantize
 
 pytestmark = pytest.mark.unit
@@ -111,9 +109,6 @@ class TestRouting:
 
         assert torch.equal(assisted, q0_ref_quantize_dequantize(w, 8))
 
-    def test_assisted_bits_names_the_covered_set(self) -> None:
-        assert sorted(ASSISTED_BITS) == [2, 4, 8]
-
     def test_3bit_refuses_with_the_q0_message(self) -> None:
         with pytest.raises(ValueError, match="q0 covers bits"):
             q0_assisted_quantize_dequantize(torch.randn(2, 64), 3, torch.rand(64))
@@ -133,6 +128,40 @@ class TestFusedExpertStacks:
             [q0_assisted_quantize_dequantize(stack[i], 4, qw[i]) for i in range(3)]
         )
         assert torch.equal(fused, per_expert)
+
+    @pytest.mark.parametrize("chunk_rows", [1, 2, 3, 5])
+    def test_chunked_rows_match_the_single_shot_fit(
+        self, monkeypatch, chunk_rows: int
+    ) -> None:
+        # The #384 re-scan takes the chunked branch: up_proj holds
+        # 237,568 rows against the default budget. A chunk that
+        # misindexes the weight rows would fit expert i against
+        # expert i-k's columns in a paid run, so the loop must
+        # reproduce the single-shot fit bit-exactly.
+        torch.manual_seed(7)
+        stack = torch.randn(3, 7, 64)
+        qw = torch.rand(3, 64) + 0.05
+        single = q0_assisted_quantize_dequantize(stack, 4, qw)
+
+        # chunk = max(1, (_CHUNK_ROWS * 32) // row) with row 64.
+        monkeypatch.setattr(q0_assisted_module, "_CHUNK_ROWS", chunk_rows * 2)
+        chunked = q0_assisted_quantize_dequantize(stack, 4, qw)
+
+        assert torch.equal(chunked, single)
+
+    @pytest.mark.parametrize("chunk_rows", [1, 3])
+    def test_chunked_1d_weights_match_the_single_shot_fit(
+        self, monkeypatch, chunk_rows: int
+    ) -> None:
+        torch.manual_seed(8)
+        w = torch.randn(9, 64)
+        qw = torch.rand(64) + 0.05
+        single = q0_assisted_quantize_dequantize(w, 4, qw)
+
+        monkeypatch.setattr(q0_assisted_module, "_CHUNK_ROWS", chunk_rows * 2)
+        chunked = q0_assisted_quantize_dequantize(w, 4, qw)
+
+        assert torch.equal(chunked, single)
 
     def test_distinct_weight_rows_change_the_fit(self) -> None:
         torch.manual_seed(2)
