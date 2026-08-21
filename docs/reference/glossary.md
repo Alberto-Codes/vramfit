@@ -147,8 +147,9 @@ change.
     reads 8, 4, and 2
     ([ADR-0018](../adr/0018-kquant-within-group-method.md), 2026-08-17
     amendment, token renamed by the 2026-08-18 amendment). `q0-imx` is
-    its assisted path — nominal 4 fits with imatrix weights, ruled
-    built by the 2026-08-21 amendment and unbuilt until #383 lands.
+    its assisted path: nominal 4 fits with imatrix weights. The
+    2026-08-21 amendment rules the build, and the token stays unbuilt
+    until #383 lands.
     A method
     change is a new scan — the token lives in the fingerprint and in
     the map's `scan.within_group`, and the recipe carries its map's
