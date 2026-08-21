@@ -96,8 +96,11 @@ truly-covered, so this report is a subset of truly-floored. It
 under-reports, and under-reporting is the silence #307 exists to
 break. Of the three upstream filters, only `tensor_allows_quantization`
 can hide a layer here, and it needs a pattern whose every match is a
-tensor the quantizer skips. `GGUF_SUFFIX_BY_HF` carries no such class,
-so #305's residual bounds this too.
+tensor the quantizer skips. The group path emits no such pattern — an
+unquantizable class pins at the F16 passthrough with no override (the
+2026-08-20 amendment). A protection pair on `mixer.gate` could still
+build one through the class table's `ffn_gate_inp` row, and #305's
+residual carries that case.
 
 The unit is the layer index and not the tensor. A recipe of
 expert-stack groups reaches one tensor class per layer on purpose, so

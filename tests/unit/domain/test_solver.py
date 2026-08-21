@@ -977,3 +977,75 @@ class TestUncoveredGroups:
         message = str(caught.value)
         assert "1 groups the map does not measure" in message
         assert caught.value.held_count == 1
+
+
+@pytest.mark.unit
+class TestUnquantizableClasses:
+    """The F16 hold for classes llama-quantize refuses (2026-08-20)."""
+
+    def test_a_measured_unquantizable_group_holds_at_the_passthrough(self) -> None:
+        # The hold wins over the measurement: llama-quantize refuses
+        # the tensor, so any lower width would record a type the
+        # artifact cannot carry (ADR-0012, 2026-08-20 amendment).
+        map_ = load(
+            make_map(
+                [
+                    ("model.layers.0.mixer.gate", 1600, CONVEX_CURVE),
+                    ("model.layers.0", 8000, CONVEX_CURVE),
+                ]
+            )
+        )
+
+        # The budget forces downgrades. Only the plain layer group may
+        # supply them.
+        recipe = solve_simple(map_, 4000, runtime="llama.cpp")
+
+        gate = next(
+            a for a in recipe.assignments if a.group == "model.layers.0.mixer.gate"
+        )
+        assert gate.bits == 16
+        assert gate.damage == 0.0
+        assert all(step.group != gate.group for step in recipe.plan.trace)
+
+    def test_the_hold_needs_a_runtime_with_a_filter_table(self) -> None:
+        # The filter list is llama.cpp's. An unconstrained plan keeps
+        # the measured candidates.
+        map_ = load(make_map([("model.layers.0.mixer.gate", 1600, CONVEX_CURVE)]))
+
+        recipe = solve_simple(map_, 100_000)
+
+        assert recipe.assignments[0].bits == 8
+
+    def test_a_pin_on_an_unquantizable_group_refuses_naming_the_filter(self) -> None:
+        map_ = load(make_map([("model.layers.0.mixer.gate", 1600, CONVEX_CURVE)]))
+
+        with pytest.raises(PinError) as caught:
+            solve_simple(
+                map_,
+                100_000,
+                pins={"model.layers.0.mixer.gate": 8},
+                runtime="llama.cpp",
+            )
+
+        message = str(caught.value)
+        assert '"model.layers.0.mixer.gate"' in message
+        assert "ffn_gate_inp.weight" in message
+
+    def test_a_measured_super_block_refused_class_prices_through_the_stack_table(
+        self,
+    ) -> None:
+        # A Nemotron-H dense class routes through the ADR-0028 table
+        # (the 2026-08-20 amendment): nominal 2 spends q2_0's 2.25
+        # bits per weight, not q2_k's 2.625.
+        map_ = load(
+            make_map(
+                [("model.layers.0.mixer.in_proj", 160_000, {8: 0.001, 2: 1.0})],
+                precisions=(8, 2),
+            )
+        )
+
+        recipe = solve_simple(map_, 30_000, runtime="llama.cpp")
+
+        assignment = recipe.assignments[0]
+        assert assignment.bits == 2
+        assert assignment.bytes == group_bytes(160_000, 2.25, DEFAULT_RESIDUAL_OVERHEAD)
