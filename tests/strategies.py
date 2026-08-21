@@ -87,8 +87,8 @@ def raw_moe_maps(draw: st.DrawFn) -> dict[str, Any]:
     carries an `up_proj` and a `down_proj` stack. Sizes are equal
     within a layer about half the time — equal sizes are where the
     projection tie-break and the plain ratio order can disagree.
-    Zero to two dense layer groups ride along to pin that the rule
-    never touches them.
+    Zero to two dense groups ride along inside the same layers, so
+    the draws cover mixed layers — the real MoE topology.
     """
     precisions = draw(precision_sets())
     damage = st.one_of(
@@ -116,7 +116,7 @@ def raw_moe_maps(draw: st.DrawFn) -> dict[str, Any]:
             )
     for i in range(draw(st.integers(min_value=0, max_value=2))):
         curve = {bits: draw(damage) for bits in precisions}
-        groups.append((f"model.layers.{i}", draw(sizes), curve))
+        groups.append((f"model.layers.{i}.self_attn", draw(sizes), curve))
     return make_map(groups, precisions=precisions)
 
 

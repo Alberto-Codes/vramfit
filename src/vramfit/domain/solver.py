@@ -21,7 +21,7 @@ The algorithm: start every group at the highest candidate precision
 damage-per-byte-freed ratio until the total fits the weight budget. The
 ordered downgrade log is recorded in the recipe as its explanation
 trace, and the final downgrade is refined when a milder step also fits.
-On expert-stack groups, a downgrade to the cheapest candidate width
+On expert-stack groups, a downgrade to the cheapest in-budget width
 also passes the spread placement rule with its projection tie-break
 ([vramfit.domain.placement][], the 2026-08-21 ADR-0007 amendment) —
 the rule narrows the candidates and the selection key stays unchanged.
@@ -244,7 +244,7 @@ def _best_move(
     they never help and would divide by zero in the ratio. Downgrading
     a group with protected tensors frees fewer bytes (ADR-0022), so
     its ratio worsens and the ranking shifts accordingly. A move that
-    takes an expert-stack group to the cheapest candidate width also
+    takes an expert-stack group to the cheapest in-budget width also
     passes the spread placement rule
     ([vramfit.domain.placement][], the 2026-08-21 ADR-0007
     amendment) — the rule narrows the candidates and the key stays
@@ -391,7 +391,7 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
     step)`` key, considering all lower candidate precisions of every
     unpinned group. Moves that free no bytes (possible on tiny groups
     where sizes round to the same value) are never considered. A move
-    that takes an expert-stack group to the cheapest candidate width
+    that takes an expert-stack group to the cheapest in-budget width
     also passes the spread placement rule with its projection
     tie-break ([vramfit.domain.placement][], the 2026-08-21 ADR-0007
     amendment) — dense groups keep the plain damage-per-byte order.

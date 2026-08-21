@@ -12,6 +12,7 @@ from tests.unit.conftest import make_map
 from vramfit.adapters.outbound.sensitivity_map_json import map_from_dict
 from vramfit.domain.model import SensitivityMap
 from vramfit.domain.placement import refused_cheapest_stack_moves
+from vramfit.domain.runtime import EFFECTIVE_BITS, EXPERT_STACK_EFFECTIVE_BITS
 from vramfit.domain.scan import is_expert_stack, layer_prefix
 from vramfit.domain.solver import group_bytes, solve
 
@@ -318,6 +319,105 @@ class TestSpreadPlacementExamples:
 
         bits = {a.group: a.bits for a in recipe.assignments}
         assert bits == {UP0: 2, DOWN0: 4, UP1: 8, DOWN1: 8}
+
+    def test_dense_group_in_a_mixed_layer_stays_unconstrained(self) -> None:
+        # The real MoE topology: dense attention and expert stacks
+        # under one layer prefix. Layer 0 already holds a cheapest
+        # stack and layer 1 has none, yet layer 0's dense group still
+        # takes the cheapest width — the rule reads stacks alone.
+        dense = "model.layers.0.self_attn"
+        raw = make_map(
+            [
+                (UP0, 1600, self.curve(0.1)),
+                (DOWN0, 1600, self.curve(100.0)),
+                (UP1, 1600, self.curve(50.0)),
+                (DOWN1, 1600, self.curve(60.0)),
+                (dense, 1600, self.curve(0.2)),
+            ],
+            precisions=(8, 2),
+        )
+
+        recipe = solve_simple(map_from_dict(raw), budget=2800, overhead=0.0)
+
+        bits = {a.group: a.bits for a in recipe.assignments}
+        assert bits == {UP0: 2, DOWN0: 8, UP1: 8, DOWN1: 8, dense: 2}
+        assert [s.group for s in recipe.plan.trace] == [UP0, dense]
+
+    def test_spread_holds_under_a_runtime_stack_table(self) -> None:
+        # The acceptance target prices stacks through the ADR-0028
+        # effective-bits table. The rule must read the same sizes the
+        # downgrade loop prices with, table included.
+        table = {
+            **EFFECTIVE_BITS["llama.cpp"],
+            **EXPERT_STACK_EFFECTIVE_BITS["llama.cpp"],
+        }
+        high = group_bytes(1600, table[8], 0.0)
+        low = group_bytes(1600, table[2], 0.0)
+        raw = make_map(
+            [
+                (UP0, 1600, self.curve(0.1)),
+                (DOWN0, 1600, self.curve(0.2)),
+                (UP1, 1600, self.curve(5.0)),
+                (DOWN1, 1600, self.curve(6.0)),
+            ],
+            precisions=(8, 2),
+        )
+
+        recipe = solve_simple(
+            map_from_dict(raw),
+            budget=2 * high + 2 * low,
+            overhead=0.0,
+            runtime="llama.cpp",
+        )
+
+        bits = {a.group: a.bits for a in recipe.assignments}
+        assert bits == {UP0: 2, DOWN0: 8, UP1: 2, DOWN1: 8}
+
+    def test_refinement_may_lift_the_only_cheapest_placement(self) -> None:
+        # The refine pass (ADR-0007) replaces an overshooting final
+        # step with a milder one of the same group. It never creates
+        # a cheapest-width placement, but it can lift the one the
+        # loop granted — the trace properties therefore read the
+        # trace, not the final state.
+        raw = make_map(
+            [(UP0, 1600, {8: 0.0, 4: 0.5, 2: 0.6})],
+            precisions=(8, 4, 2),
+        )
+
+        recipe = solve_simple(map_from_dict(raw), budget=500, overhead=0.0)
+
+        bits = {a.group: a.bits for a in recipe.assignments}
+        assert bits == {UP0: 4}
+        assert len(recipe.plan.trace) == 1
+        assert recipe.plan.trace[-1].to_bits == 4
+
+    def test_fully_floored_stack_never_starves_a_layer(self) -> None:
+        # An ADR-0022 floor at the current width zeroes a stack's
+        # freed bytes — the second path to an immovable stack beside
+        # ceil rounding. Layer 1's stack is floored at 8, so layer 0
+        # takes both its cheapest-width stacks without a dead end.
+        raw = make_map(
+            [
+                (UP0, 1600, self.curve(0.1)),
+                (DOWN0, 1600, self.curve(0.2)),
+                (UP1, 1600, self.curve(5.0)),
+            ],
+            precisions=(8, 2),
+        )
+        for entry in raw["groups"]:
+            if entry["name"] == UP1:
+                entry["tensors"] = [f"{UP1}.t0", f"{UP1}.t1"]
+                entry["tensor_bytes"] = {f"{UP1}.t0": 800, f"{UP1}.t1": 800}
+
+        recipe = solve_simple(
+            map_from_dict(raw),
+            budget=1200,
+            overhead=0.0,
+            protections={f"{UP1}.t*": 8},
+        )
+
+        bits = {a.group: a.bits for a in recipe.assignments}
+        assert bits == {UP0: 2, DOWN0: 2, UP1: 8}
 
 
 @pytest.mark.unit

@@ -102,7 +102,8 @@ def group_key(name: str, group_by: Literal["layer", "tensor", "stack"]) -> str:
 
     Returns:
         The group this parameter belongs to. ``layer`` returns the
-        decoder-layer prefix, and falls back to the bare tensor name
+        decoder-layer prefix (`layer_prefix` owns the rule), and
+        falls back to the bare tensor name
         when the parameter sits outside any layer. ``tensor`` returns
         the tensor name. ``stack`` returns the tensor name with a
         routed-expert index removed, which fuses one projection's
@@ -122,8 +123,7 @@ def group_key(name: str, group_by: Literal["layer", "tensor", "stack"]) -> str:
         return name.removesuffix(".weight")
     if group_by == "stack":
         return _EXPERT_INDEX.sub(".experts.", name).removesuffix(".weight")
-    match = _LAYER_PREFIX.match(name)
-    return match.group(1) if match else name.removesuffix(".weight")
+    return layer_prefix(name) or name.removesuffix(".weight")
 
 
 def is_expert_stack(group: str) -> bool:
@@ -191,7 +191,8 @@ def matches_a_layer(name: str) -> bool:
         name: Parameter name.
 
     Returns:
-        True when the name carries a decoder-layer prefix.
+        True when the name carries a decoder-layer prefix
+        (`layer_prefix` owns the rule).
 
     Examples:
         ```python
@@ -201,7 +202,7 @@ def matches_a_layer(name: str) -> bool:
         assert not matches_a_layer("model.embed_tokens.weight")
         ```
     """
-    return _LAYER_PREFIX.match(name) is not None
+    return layer_prefix(name) is not None
 
 
 @dataclass(frozen=True, slots=True)
