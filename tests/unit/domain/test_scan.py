@@ -11,6 +11,7 @@ from vramfit.domain.scan import (
     assemble_map,
     group_key,
     is_expert_stack,
+    layer_prefix,
     matches_a_layer,
     plan_measurements,
     scan_fingerprint,
@@ -342,6 +343,22 @@ class TestGroupKey:
     def test_matches_a_layer_separates_layer_weights_from_edges(self) -> None:
         assert matches_a_layer("model.layers.0.mlp.up_proj.weight")
         assert not matches_a_layer("model.embed_tokens.weight")
+
+    @pytest.mark.parametrize(
+        ("name", "expected"),
+        [
+            ("model.layers.0.mlp.experts.up_proj", "model.layers.0"),
+            ("backbone.layers.3.mixer.experts.down_proj", "backbone.layers.3"),
+            ("transformer.h.3.attn.c_attn", "transformer.h.3"),
+            ("lm_head", None),
+            ("model.embed_tokens", None),
+        ],
+        ids=["stack", "nemotron-stack", "gpt2-style", "head", "embedding"],
+    )
+    def test_layer_prefix_derives_the_decoder_layer_or_none(
+        self, name, expected
+    ) -> None:
+        assert layer_prefix(name) == expected
 
 
 class TestSummarizeImatrixCounts:

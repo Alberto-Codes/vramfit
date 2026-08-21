@@ -6,6 +6,9 @@ under each granularity (`group_key`, the `layer`/`tensor`/`stack`
 naming rule that the torch meter applies but does not own), which
 group names are routed-expert stacks (`is_expert_stack`, the
 predicate the solver prices through — ADR-0028),
+which decoder layer a group name carries (`layer_prefix`, the
+relation the spread placement rule reads — the 2026-08-21 ADR-0007
+amendment),
 which discovered groups a caller's selection keeps
 (`select_groups`, the subset rule that keeps a narrowed run out of
 the fingerprint),
@@ -99,7 +102,8 @@ def group_key(name: str, group_by: Literal["layer", "tensor", "stack"]) -> str:
 
     Returns:
         The group this parameter belongs to. ``layer`` returns the
-        decoder-layer prefix, and falls back to the bare tensor name
+        decoder-layer prefix (`layer_prefix` owns the rule), and
+        falls back to the bare tensor name
         when the parameter sits outside any layer. ``tensor`` returns
         the tensor name. ``stack`` returns the tensor name with a
         routed-expert index removed, which fuses one projection's
@@ -119,8 +123,7 @@ def group_key(name: str, group_by: Literal["layer", "tensor", "stack"]) -> str:
         return name.removesuffix(".weight")
     if group_by == "stack":
         return _EXPERT_INDEX.sub(".experts.", name).removesuffix(".weight")
-    match = _LAYER_PREFIX.match(name)
-    return match.group(1) if match else name.removesuffix(".weight")
+    return layer_prefix(name) or name.removesuffix(".weight")
 
 
 def is_expert_stack(group: str) -> bool:
@@ -150,6 +153,33 @@ def is_expert_stack(group: str) -> bool:
     return _EXPERT_STACK_GROUP.match(group) is not None
 
 
+def layer_prefix(name: str) -> str | None:
+    """Derive the decoder-layer prefix a name carries.
+
+    The spread placement rule ([vramfit.domain.placement][]) reads
+    the (layer, projection) relation off the expert-stack group name
+    — the ADR-0007 amendment derives it and adds no schema field.
+
+    Args:
+        name: Parameter or group name.
+
+    Returns:
+        The decoder-layer prefix, or None when the name sits outside
+        any layer.
+
+    Examples:
+        ```python
+        from vramfit.domain.scan import layer_prefix
+
+        stack = "backbone.layers.3.mixer.experts.down_proj"
+        assert layer_prefix(stack) == "backbone.layers.3"
+        assert layer_prefix("lm_head") is None
+        ```
+    """
+    match = _LAYER_PREFIX.match(name)
+    return match.group(1) if match else None
+
+
 def matches_a_layer(name: str) -> bool:
     """Report whether a parameter sits inside a decoder layer.
 
@@ -161,7 +191,8 @@ def matches_a_layer(name: str) -> bool:
         name: Parameter name.
 
     Returns:
-        True when the name carries a decoder-layer prefix.
+        True when the name carries a decoder-layer prefix
+        (`layer_prefix` owns the rule).
 
     Examples:
         ```python
@@ -171,7 +202,7 @@ def matches_a_layer(name: str) -> bool:
         assert not matches_a_layer("model.embed_tokens.weight")
         ```
     """
-    return _LAYER_PREFIX.match(name) is not None
+    return layer_prefix(name) is not None
 
 
 @dataclass(frozen=True, slots=True)

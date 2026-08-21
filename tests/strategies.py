@@ -79,6 +79,48 @@ def raw_sensitivity_maps(draw: st.DrawFn) -> dict[str, Any]:
 
 
 @st.composite
+def raw_moe_maps(draw: st.DrawFn) -> dict[str, Any]:
+    """Draw a map of MoE layers, two projection stacks each.
+
+    The spread placement rule (ADR-0007, 2026-08-21 amendment) reads
+    the layer relation off the stack group names, so every layer
+    carries an `up_proj` and a `down_proj` stack. Sizes are equal
+    within a layer about half the time — equal sizes are where the
+    projection tie-break and the plain ratio order can disagree.
+    Zero to two dense groups ride along inside the same layers, so
+    the draws cover mixed layers — the real MoE topology.
+    """
+    precisions = draw(precision_sets())
+    damage = st.one_of(
+        st.sampled_from([0.0, 0.1, 1.0]),
+        st.floats(
+            min_value=0.0, max_value=100.0, allow_nan=False, allow_infinity=False
+        ),
+    )
+    sizes = st.one_of(
+        st.sampled_from([160, 1600, 100_000]),
+        st.integers(min_value=1, max_value=10_000_000),
+    )
+    n_layers = draw(st.integers(min_value=1, max_value=4))
+    groups = []
+    for i in range(n_layers):
+        up_bytes = draw(sizes)
+        down_bytes = up_bytes if draw(st.booleans()) else draw(sizes)
+        for projection, bytes_fp16 in (
+            ("up_proj", up_bytes),
+            ("down_proj", down_bytes),
+        ):
+            curve = {bits: draw(damage) for bits in precisions}
+            groups.append(
+                (f"model.layers.{i}.mlp.experts.{projection}", bytes_fp16, curve)
+            )
+    for i in range(draw(st.integers(min_value=0, max_value=min(2, n_layers)))):
+        curve = {bits: draw(damage) for bits in precisions}
+        groups.append((f"model.layers.{i}.self_attn", draw(sizes), curve))
+    return make_map(groups, precisions=precisions)
+
+
+@st.composite
 def raw_maps_with_discovered_bytes(
     draw: st.DrawFn,
 ) -> tuple[dict[str, Any], dict[str, int]]:

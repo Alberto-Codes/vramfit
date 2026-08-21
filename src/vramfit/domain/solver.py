@@ -21,6 +21,10 @@ The algorithm: start every group at the highest candidate precision
 damage-per-byte-freed ratio until the total fits the weight budget. The
 ordered downgrade log is recorded in the recipe as its explanation
 trace, and the final downgrade is refined when a milder step also fits.
+On expert-stack groups, a downgrade to the cheapest in-budget width
+also passes the spread placement rule with its projection tie-break
+([vramfit.domain.placement][], the 2026-08-21 ADR-0007 amendment) —
+the rule narrows the candidates and the selection key stays unchanged.
 Size predictions follow ADR-0014: a runtime with an effective-bits
 table prices each precision at its real per-weight cost, and the
 overhead fraction shrinks to a residual for what the table cannot
@@ -92,6 +96,7 @@ from vramfit.domain.model import (
     SensitivityMap,
     TraceStep,
 )
+from vramfit.domain.placement import refused_cheapest_stack_moves
 from vramfit.domain.protection import (
     expand_exclusions,
     expand_protections,
@@ -238,7 +243,12 @@ def _best_move(
     Moves that free no bytes (ceil rounding on tiny groups) are skipped —
     they never help and would divide by zero in the ratio. Downgrading
     a group with protected tensors frees fewer bytes (ADR-0022), so
-    its ratio worsens and the ranking shifts accordingly.
+    its ratio worsens and the ranking shifts accordingly. A move that
+    takes an expert-stack group to the cheapest in-budget width also
+    passes the spread placement rule
+    ([vramfit.domain.placement][], the 2026-08-21 ADR-0007
+    amendment) — the rule narrows the candidates and the key stays
+    unchanged.
 
     Args:
         sensitivity_map: Damage curves for every group.
@@ -251,6 +261,10 @@ def _best_move(
         ``(group, target_bits, bytes_freed, damage_delta)`` for the best
         move, or None when no downgrade can free bytes.
     """
+    cheapest = candidates[-1]
+    refused = refused_cheapest_stack_moves(
+        sensitivity_map.groups, pinned, state, cheapest, size
+    )
     best_key: tuple[float, str, int] | None = None
     best: tuple[str, int, int, float] | None = None
     for group in sensitivity_map.groups:
@@ -260,6 +274,8 @@ def _best_move(
         current_bytes = size(group, current)
         for target in candidates:
             if target >= current:
+                continue
+            if target == cheapest and group.name in refused:
                 continue
             bytes_freed = current_bytes - size(group, target)
             if bytes_freed <= 0:
@@ -374,9 +390,14 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
     with the minimum ``(damage_delta / bytes_freed, group name, smallest
     step)`` key, considering all lower candidate precisions of every
     unpinned group. Moves that free no bytes (possible on tiny groups
-    where sizes round to the same value) are never considered. The
-    selection is a total order, so the result is deterministic and
-    independent of group input order. After the loop, the final downgrade
+    where sizes round to the same value) are never considered. A move
+    that takes an expert-stack group to the cheapest in-budget width
+    also passes the spread placement rule with its projection
+    tie-break ([vramfit.domain.placement][], the 2026-08-21 ADR-0007
+    amendment) — dense groups keep the plain damage-per-byte order.
+    The selection is a total order and the rule is a deterministic
+    function of the allocation state, so the result is deterministic
+    and independent of group input order. After the loop, the final downgrade
     is refined: if a milder step of the same group also fits with less
     damage, it replaces the overshooting one.
 

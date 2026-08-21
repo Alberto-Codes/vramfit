@@ -406,6 +406,17 @@ change.
 :   The algorithm that assigns precisions under the weight budget. Strategy
     tracked in [ADR-0007](../adr/0007-recipe-solver-strategy.md).
 
+**Spread placement rule** (short: **placement rule**)
+:   The solver's constraint on downgrades that take an expert stack
+    to the cheapest in-budget width — the 2026-08-21 amendment in
+    [ADR-0007](../adr/0007-recipe-solver-strategy.md). Clause 1: no
+    layer takes a second cheapest-width stack while a layer that can
+    still take one has none. Clause 2: within a layer, the projection
+    the map prices cheaper at that width goes first. The rule narrows
+    the candidates and the selection key is unchanged. Dense groups
+    keep the plain damage-per-byte order. Lives in
+    `vramfit.domain.placement`.
+
 **Target runtime**
 :   The serving stack a recipe is planned for, recorded in the recipe's
     `runtime` field (`--runtime`, default `llama.cpp`). Not "backend"
