@@ -675,18 +675,29 @@ class TestGgufTensorName:
         # list must not repeat the row this path cannot express.
         assert "'mixer.shared_experts.up_proj'" not in message
 
-    def test_an_unquantizable_class_refuses_naming_the_filter(self) -> None:
+    @pytest.mark.parametrize(
+        ("tensor", "filter_name"),
+        [
+            ("model.layers.4.mixer.gate.weight", "ffn_gate_inp.weight"),
+            ("model.layers.9.mixer.conv1d.weight", "ssm_conv1d"),
+        ],
+        ids=["router", "conv1d"],
+    )
+    def test_an_unquantizable_class_refuses_naming_the_filter(
+        self, tensor: str, filter_name: str
+    ) -> None:
         # The quantizer drops an override on a refused tensor and
         # exits 0, so a protection pair here would record a type the
-        # artifact does not carry (the 2026-08-20 amendment).
-        tensor = "model.layers.4.mixer.gate.weight"
-
+        # artifact does not carry (the 2026-08-20 amendment). The
+        # filter check runs before the class-table match, so
+        # `conv1d` — whose digit `_LAYER_TENSOR` cannot express —
+        # still names its filter rather than a missing mapping.
         with pytest.raises(PackError) as caught:
             gguf_tensor_name(tensor)
 
         message = str(caught.value)
-        assert '"model.layers.4.mixer.gate.weight"' in message
-        assert "ffn_gate_inp.weight" in message
+        assert f'"{tensor}"' in message
+        assert filter_name in message
 
     def test_a_protection_pair_on_an_unquantizable_class_refuses(self) -> None:
         recipe = make_protected_recipe(
