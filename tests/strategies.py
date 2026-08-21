@@ -114,7 +114,7 @@ def raw_moe_maps(draw: st.DrawFn) -> dict[str, Any]:
             groups.append(
                 (f"model.layers.{i}.mlp.experts.{projection}", bytes_fp16, curve)
             )
-    for i in range(draw(st.integers(min_value=0, max_value=2))):
+    for i in range(draw(st.integers(min_value=0, max_value=min(2, n_layers)))):
         curve = {bits: draw(damage) for bits in precisions}
         groups.append((f"model.layers.{i}.self_attn", draw(sizes), curve))
     return make_map(groups, precisions=precisions)
