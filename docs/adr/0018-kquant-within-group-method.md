@@ -241,7 +241,7 @@ the pack applied. This one replaces a frame the pack cannot apply.
     **Observed consequence (2026-08-21, issue #321): the bar is
     met.** A probe arm reads 1.178594 against the best blind
     draw's 1.184126. Its layer ranking comes from the `kquant-imx`
-    map and its projection axis from the q0-ref stack map. On mean
+    map and its projection axis from the `q0-ref` stack map. On mean
     KLD it reads 0.219037 against 0.234003. The maintainer ruled
     the bar met on the map's own metric, at 8.7 sigma on mean KLD,
     with a 1.5-sigma tie on the PPL ratio. The

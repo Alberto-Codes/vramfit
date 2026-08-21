@@ -27,7 +27,7 @@
     **Within the layers the first clause admits, the allocator
     breaks ties toward the projection the stack-keyed map prices
     cheaper at the candidate width.** The first clause precedes
-    this one. The q0-ref map prices `down_proj` cheaper at nominal
+    this one. The `q0-ref` map prices `down_proj` cheaper at nominal
     2 in 23 of 23 MoE layers (#328's re-scan). At the same 11-layer
     geometry, the all-`down` probe reads 1.178594 against the
     composition-matched arm's 1.276199. Arm 4 spends every cheap
