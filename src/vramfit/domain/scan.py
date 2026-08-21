@@ -6,6 +6,9 @@ under each granularity (`group_key`, the `layer`/`tensor`/`stack`
 naming rule that the torch meter applies but does not own), which
 group names are routed-expert stacks (`is_expert_stack`, the
 predicate the solver prices through — ADR-0028),
+which decoder layer a group name carries (`layer_prefix`, the
+relation the spread placement rule reads — the 2026-08-21 ADR-0007
+amendment),
 which discovered groups a caller's selection keeps
 (`select_groups`, the subset rule that keeps a narrowed run out of
 the fingerprint),
@@ -148,6 +151,33 @@ def is_expert_stack(group: str) -> bool:
         ```
     """
     return _EXPERT_STACK_GROUP.match(group) is not None
+
+
+def layer_prefix(name: str) -> str | None:
+    """Derive the decoder-layer prefix a name carries.
+
+    The spread placement rule ([vramfit.domain.placement][]) reads
+    the (layer, projection) relation off the expert-stack group name
+    — the ADR-0007 amendment derives it and adds no schema field.
+
+    Args:
+        name: Parameter or group name.
+
+    Returns:
+        The decoder-layer prefix, or None when the name sits outside
+        any layer.
+
+    Examples:
+        ```python
+        from vramfit.domain.scan import layer_prefix
+
+        stack = "backbone.layers.3.mixer.experts.down_proj"
+        assert layer_prefix(stack) == "backbone.layers.3"
+        assert layer_prefix("lm_head") is None
+        ```
+    """
+    match = _LAYER_PREFIX.match(name)
+    return match.group(1) if match else None
 
 
 def matches_a_layer(name: str) -> bool:
