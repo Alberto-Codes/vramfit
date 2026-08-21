@@ -55,6 +55,18 @@
     [#321 closing comment](https://github.com/Alberto-Codes/vramfit/issues/321#issuecomment-5372929524)
     carries the evidence.
 
+    **Observed consequence (2026-08-21, issue #377): the rule keys on
+    the surviving floor, so it fires at nominal 4.** The bound above
+    reads that the rule ships unexercised on this target. ADR-0021
+    decision 4 strips the 2-bit column by a map copy. The cheapest
+    in-budget width on such a map is nominal 4, and the rule fires
+    there. PR #376 builds the rule at `candidates[-1]`, after the
+    ADR-0013 filter, and both review agents confirmed the firing.
+    **The bar itself is untouched.** No solver code reads it, and no
+    2-bit assignment becomes possible. Maintainer ruling 2026-08-21:
+    the rule keys on the surviving floor. Record:
+    [#377](https://github.com/Alberto-Codes/vramfit/issues/377).
+
 ## Context
 
 The plan step chooses one precision per group to minimize total predicted
