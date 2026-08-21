@@ -492,6 +492,19 @@ def test_tensor_overrides_refuse_nominal_3_on_a_layer_class_naming_the_gap() -> 
     assert "between 2.25 and 4.25" in message
 
 
+@pytest.mark.parametrize("bits", [6, 5])
+def test_tensor_overrides_refuse_5_and_6_bit_on_an_adr_0028_routed_class(
+    bits: int,
+) -> None:
+    # The ADR-0028 table carries no 5- or 6-bit row (#232). The class
+    # rows at 2688 would take Q5_0's block of 32, so the gap is the
+    # table's, not the rows' — the refusal names the table.
+    recipe = make_recipe(("model.layers.3.mixer.in_proj", bits))
+
+    with pytest.raises(PackError, match="ADR-0028 table covers"):
+        tensor_overrides(recipe)
+
+
 def test_tensor_overrides_escape_the_class_pattern_so_layer_1_never_matches_11() -> (
     None
 ):
@@ -638,6 +651,51 @@ class TestGgufTensorName:
     def test_unmappable_tensor_raises_pack_error(self, tensor: str) -> None:
         with pytest.raises(PackError, match="no GGUF mapping"):
             gguf_tensor_name(tensor)
+
+    def test_mixer_classes_map_under_the_model_root(self) -> None:
+        # The 2026-08-20 amendment's rows reach this path too, at the
+        # `model.` root and two suffix segments — #365 carries the
+        # root and the arity.
+        tensor = "model.layers.4.mixer.q_proj.weight"
+
+        assert gguf_tensor_name(tensor) == "blk.4.attn_q.weight"
+
+    def test_a_three_segment_row_refuses_naming_the_open_question(self) -> None:
+        # `_LAYER_TENSOR` cannot express three suffix segments, so the
+        # refusal must not list the rows it cannot reach.
+        tensor = "model.layers.4.mixer.shared_experts.up_proj.weight"
+
+        with pytest.raises(PackError) as caught:
+            gguf_tensor_name(tensor)
+
+        message = str(caught.value)
+        assert "no GGUF mapping" in message
+        assert "#365" in message
+        # The refused tensor's own name appears, and the reachable
+        # list must not repeat the row this path cannot express.
+        assert "'mixer.shared_experts.up_proj'" not in message
+
+    def test_an_unquantizable_class_refuses_naming_the_filter(self) -> None:
+        # The quantizer drops an override on a refused tensor and
+        # exits 0, so a protection pair here would record a type the
+        # artifact does not carry (the 2026-08-20 amendment).
+        tensor = "model.layers.4.mixer.gate.weight"
+
+        with pytest.raises(PackError) as caught:
+            gguf_tensor_name(tensor)
+
+        message = str(caught.value)
+        assert '"model.layers.4.mixer.gate.weight"' in message
+        assert "ffn_gate_inp.weight" in message
+
+    def test_a_protection_pair_on_an_unquantizable_class_refuses(self) -> None:
+        recipe = make_protected_recipe(
+            (("model.layers.4.mixer.gate.weight", 8),),
+            ("model.layers.4", 4),
+        )
+
+        with pytest.raises(PackError, match="refuses to quantize"):
+            protection_overrides(recipe)
 
 
 class TestProtectionOverrides:

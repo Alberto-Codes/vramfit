@@ -1016,6 +1016,25 @@ class TestUnquantizableClasses:
 
         assert recipe.assignments[0].bits == 8
 
+    def test_a_glob_pin_sweeping_a_held_group_refuses_too(self) -> None:
+        # Current policy: any pin overlap refuses, loudly. Whether a
+        # wildcard that merely sweeps the group should skip it instead
+        # is an open question raised on #368's build — this pins the
+        # loud behavior until a record answers.
+        map_ = load(
+            make_map(
+                [
+                    ("model.layers.0.mixer.gate", 1600, CONVEX_CURVE),
+                    ("model.layers.0.mixer.in_proj", 1600, CONVEX_CURVE),
+                ]
+            )
+        )
+
+        with pytest.raises(PinError, match="F16 passthrough"):
+            solve_simple(
+                map_, 100_000, pins={"model.layers.0.*": 8}, runtime="llama.cpp"
+            )
+
     def test_a_pin_on_an_unquantizable_group_refuses_naming_the_filter(self) -> None:
         map_ = load(make_map([("model.layers.0.mixer.gate", 1600, CONVEX_CURVE)]))
 

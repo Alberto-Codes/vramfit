@@ -470,8 +470,12 @@ def gguf_tensor_name(tensor: str) -> str:
         The GGUF tensor name, e.g. ``blk.4.attn_v.weight``.
 
     Raises:
-        PackError: If the name is not a layer tensor, or its suffix
-            has no class-table entry (ADR-0022).
+        PackError: If the name is not a layer tensor this path can
+            express, or its suffix has no class-table entry
+            (ADR-0022). Also if the tensor's class is unquantizable —
+            the quantizer drops any override on such a tensor and
+            exits 0, so the pair would record a type the artifact
+            does not carry (the 2026-08-20 amendment).
 
     Examples:
         The G1 protection target:
@@ -485,9 +489,29 @@ def gguf_tensor_name(tensor: str) -> str:
     """
     match = _LAYER_TENSOR.match(tensor)
     if match is None or match.group(2) not in GGUF_SUFFIX_BY_HF:
+        # Name only the rows this path can express. `_LAYER_TENSOR`
+        # holds the `model.` root and a two-segment suffix, so the
+        # three-segment rows are out of its reach — #365 carries the
+        # root and the arity.
+        reachable = sorted(
+            suffix
+            for suffix in GGUF_SUFFIX_BY_HF
+            if _LAYER_TENSOR.match(f"model.layers.0.{suffix}.weight")
+        )
         raise PackError(
-            f'protected tensor "{tensor}" has no GGUF mapping — the class '
-            f"table covers layer tensors {sorted(GGUF_SUFFIX_BY_HF)} (ADR-0022)"
+            f'protected tensor "{tensor}" has no GGUF mapping — this path '
+            f"reaches model.-rooted layer tensors of the classes "
+            f"{reachable} (ADR-0022). #365 carries the root and the "
+            f"suffix arity"
+        )
+    filter_name = unquantizable_filter(tensor.removesuffix(".weight"), LLAMA_CPP)
+    if filter_name is not None:
+        raise PackError(
+            f'protected tensor "{tensor}" maps to a tensor llama-quantize '
+            f'refuses to quantize, through the "{filter_name}" filter in '
+            f"tensor_allows_quantization — the class packs at the F16 "
+            f"passthrough and takes no per-tensor override (ADR-0012, "
+            f"2026-08-20 amendment)"
         )
     return f"blk.{match.group(1)}.{GGUF_SUFFIX_BY_HF[match.group(2)]}.weight"
 

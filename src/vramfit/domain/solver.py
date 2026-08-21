@@ -366,7 +366,9 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
     whose rows refuse the 256 super-block prices through the same
     table, and a group of a class the runtime's quantizer refuses
     holds at the F16 passthrough whatever the map measured — a pin
-    on one refuses (the 2026-08-20 ADR-0012 amendment). Every
+    on one refuses, and the hold records 0.0 damage unless the map
+    scanned reference precision (the 2026-08-20 ADR-0012 amendment).
+    Every
     group starts at the highest candidate precision (or its pin).
     While the total exceeds the budget, the solver applies the downgrade
     with the minimum ``(damage_delta / bytes_freed, group name, smallest
@@ -618,8 +620,13 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
                 # A reference-held group carries no damage row for the
                 # passthrough, and reference precision is the
                 # zero-damage baseline. Every other state value is a
-                # scanned candidate and reads its measured damage.
-                damage=g.sensitivity.get(state[g.name], 0.0),
+                # scanned candidate, so any other missing key stays a
+                # loud KeyError.
+                damage=(
+                    g.sensitivity.get(REFERENCE_BITS, 0.0)
+                    if state[g.name] == REFERENCE_BITS
+                    else g.sensitivity[state[g.name]]
+                ),
             )
             for g in sensitivity_map.groups
         )
