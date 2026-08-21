@@ -438,6 +438,38 @@ class TestTorchDamageMeter:
         assert assisted_damage != unassisted_damage
         assert assisted_damage >= 0.0
 
+    def test_q0_assisted_meter_differs_at_4_bits_and_matches_at_2(
+        self, aligned_model_dir, tmp_path
+    ) -> None:
+        # q0-imx (ADR-0018, 2026-08-21 amendment): nominal 4 fits
+        # with the weights, and nominal 2 keeps the reference
+        # arithmetic because quantize_q2_0 discards the matrix.
+        from vramfit.adapters.outbound.scan.meter import TorchDamageMeter
+
+        calibration = tmp_path / "calib.txt"
+        calibration.write_text(CALIBRATION_TEXT)
+
+        def build(weights) -> TorchDamageMeter:
+            return TorchDamageMeter(
+                str(aligned_model_dir),
+                calibration,
+                max_tokens=128,
+                device="cpu",
+                within_group="q0",
+                imatrix_weights=weights,
+            )
+
+        plain = build(None)
+        group = next(spec.name for spec in plain.groups() if "layers" in spec.name)
+        name = plain._groups[group][0]
+        rows = int(plain._param(name).shape[-1])
+        spiked = torch.ones(rows)
+        spiked[::3] = 100.0
+        assisted = build({name: spiked})
+
+        assert assisted.measure(group, 4) != plain.measure(group, 4)
+        assert assisted.measure(group, 2) == plain.measure(group, 2)
+
     def test_imatrix_weights_with_rtn_are_refused_before_the_model_loads(
         self, tmp_path
     ) -> None:
@@ -446,7 +478,7 @@ class TestTorchDamageMeter:
         calibration = tmp_path / "calib.txt"
         calibration.write_text(CALIBRATION_TEXT)
 
-        with pytest.raises(ValueError, match="kquant within-group method"):
+        with pytest.raises(ValueError, match="kquant or q0 within-group method"):
             TorchDamageMeter(
                 "/nonexistent-model",
                 calibration,
@@ -687,7 +719,7 @@ class TestTorchDamageMeter:
         calibration = tmp_path / "calib.txt"
         calibration.write_text(CALIBRATION_TEXT)
 
-        with pytest.raises(ValueError, match="kquant within-group method"):
+        with pytest.raises(ValueError, match="kquant or q0 within-group method"):
             TorchDamageMeter(
                 "/nonexistent-model",
                 calibration,

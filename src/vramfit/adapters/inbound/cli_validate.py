@@ -12,6 +12,9 @@ marginal scanning. The frame resolves from the recipe's recorded
 method token, a contradicting flag is refused (ADR-0019), and an
 ``--imatrix`` that differs from the recipe's recorded file draws a
 warning — a different file contaminates the comparison (ADR-0020).
+Both assisted tokens resolve this way: ``kquant-imx`` measures
+through ``kquant`` and ``q0-imx`` through ``q0``, each with the
+imatrix.
 The comparison logic is pure and lives in
 [vramfit.domain.validation][]. Every failure halts with a clean
 ``error:`` line. Failures after the run log opens also emit a
@@ -51,9 +54,11 @@ from vramfit.adapters.outbound.recipe_json import load_recipe
 from vramfit.adapters.outbound.run_log_jsonl import JsonlRunLogFile
 from vramfit.domain.model import Recipe
 from vramfit.domain.scan import (
+    ASSISTED_METHODS,
     KQUANT_IMX_METHOD,
     KQUANT_METHOD,
     KQUANT_PRECISIONS,
+    Q0_IMX_METHOD,
     Q0_REF_METHOD,
     Q0_REF_PRECISIONS,
     SCAN_METHOD,
@@ -61,13 +66,15 @@ from vramfit.domain.scan import (
 from vramfit.domain.validation import validation_result
 from vramfit.ports.outbound import DamageMeter
 
-# Method token -> the meter method that measures it. The assisted
-# token measures through kquant with the imatrix (ADR-0020).
+# Method token -> the meter method that measures it. An assisted
+# token measures through its method with the imatrix (ADR-0018,
+# ADR-0020).
 _TOKEN_TO_METHOD: dict[str, Literal["rtn", "kquant", "q0"]] = {
     SCAN_METHOD: "rtn",
     KQUANT_METHOD: "kquant",
     KQUANT_IMX_METHOD: "kquant",
     Q0_REF_METHOD: "q0",
+    Q0_IMX_METHOD: "q0",
 }
 # Each method's ported precision coverage (ADR-0018). RTN covers
 # every precision, so it is absent.
@@ -104,8 +111,8 @@ def _resolve_within_group(
     Raises:
         typer.BadParameter: If the method is unknown, ``kquant`` or
             ``q0`` meets assignments outside its port coverage
-            (ADR-0018), ``--imatrix`` arrives without the kquant
-            method or is not a file, the recipe records a token this
+            (ADR-0018), ``--imatrix`` arrives with the rtn method
+            or is not a file, the recipe records a token this
             version does not know, or the resolved frame contradicts
             the recipe's recorded method (ADR-0019).
     """
@@ -142,7 +149,7 @@ def _resolve_within_group(
     if method == "rtn":
         token = SCAN_METHOD
     elif method == "q0":
-        token = Q0_REF_METHOD
+        token = Q0_REF_METHOD if imatrix is None else Q0_IMX_METHOD
     else:
         token = KQUANT_METHOD if imatrix is None else KQUANT_IMX_METHOD
     return method, token
@@ -168,7 +175,8 @@ def _check_provenance(
     Raises:
         typer.BadParameter: If an explicit method flag contradicts
             the record, ``--imatrix`` meets a recipe priced on an
-            unassisted map, or the recipe records an assisted map
+            unassisted map, or the recipe records an assisted map —
+            ``kquant-imx`` or ``q0-imx`` —
             and no imatrix was given (ADR-0019, ADR-0020).
     """
     if recorded is None:
@@ -184,13 +192,13 @@ def _check_provenance(
             f'"{recorded}" map — the pass must match the map\'s method '
             "(ADR-0019)"
         )
-    if imatrix is not None and recorded != KQUANT_IMX_METHOD:
+    if imatrix is not None and recorded not in ASSISTED_METHODS:
         raise typer.BadParameter(
             f'--imatrix: the recipe was priced on a "{recorded}" map, not '
             "an assisted one — the pass must match the map's method "
             "(ADR-0019)"
         )
-    if recorded == KQUANT_IMX_METHOD and imatrix is None:
+    if recorded in ASSISTED_METHODS and imatrix is None:
         raise typer.BadParameter(
             "--imatrix: the recipe was priced on an assisted map — pass "
             "the map's imatrix file (ADR-0020)"

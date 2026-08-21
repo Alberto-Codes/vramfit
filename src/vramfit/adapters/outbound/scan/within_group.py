@@ -1,9 +1,11 @@
 """Within-group method dispatch (ADR-0018, ADR-0020).
 
-One place decides which quantizer perturbs a cell. The meter holds
+One place decides which quantizer perturbs a cell, and which imatrix
+reader family serves a method. The meter holds
 the choice as a method name and this module turns it into a round
-trip. Keeping the dispatch here means a new method touches one
-function rather than the meter's measurement loop.
+trip, a weight resolution, and a construction-time weight gate.
+Keeping the dispatch here means a new method touches one
+module rather than the meter's measurement loop.
 
 The methods:
 
@@ -13,7 +15,9 @@ The methods:
   an imatrix wherever the parameter carries column weights
   (ADR-0020).
 - ``q0`` — the ported block quantizers ``Q2_0``, ``Q4_0``, and
-  ``Q8_0``, which reach the rows no K-quant tiles.
+  ``Q8_0``, which reach the rows no K-quant tiles. With imatrix
+  weights, nominal 4 fits through the assisted ``Q4_0`` port
+  (ADR-0018, 2026-08-21 amendment).
 
 Examples:
     Perturb one tensor under the q0 method:
@@ -29,14 +33,25 @@ See Also:
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from typing import Literal
 
 import torch
 
+from vramfit.adapters.outbound.scan.imatrix import (
+    ImatrixEntry,
+    check_imatrix_weights,
+    resolve_assisted_weights,
+)
+from vramfit.adapters.outbound.scan.imatrix_q0 import (
+    check_q0_imatrix_weights,
+    resolve_q0_assisted_weights,
+)
 from vramfit.adapters.outbound.scan.kquant import kquant_quantize_dequantize
 from vramfit.adapters.outbound.scan.kquant_assisted import (
     kquant_assisted_quantize_dequantize,
 )
+from vramfit.adapters.outbound.scan.q0_assisted import q0_assisted_quantize_dequantize
 from vramfit.adapters.outbound.scan.q0_ref import q0_ref_quantize_dequantize
 from vramfit.adapters.outbound.scan.quantize import rtn_quantize_dequantize
 
@@ -45,6 +60,69 @@ WithinGroupMethod = Literal["rtn", "kquant", "q0"]
 # must refuse rather than fall back — a silent RTN fallback would
 # record every damage under the wrong token.
 METHODS: tuple[WithinGroupMethod, ...] = ("rtn", "kquant", "q0")
+
+
+def resolve_method_weights(
+    method: WithinGroupMethod,
+    by_gguf_name: Mapping[str, ImatrixEntry],
+    shapes: Mapping[str, Sequence[int]],
+) -> tuple[dict[str, torch.Tensor], tuple[str, ...]]:
+    """Resolve imatrix weights through the method's reader family.
+
+    One reader serves one method family (ADR-0018, 2026-08-21
+    amendment, decision 2): the ``q0`` reader accepts fused expert
+    stacks, and the ``kquant`` reader keeps its fused-stack refusal
+    and its super-block gate, unchanged.
+
+    Args:
+        method: The within-group method name.
+        by_gguf_name: Entries keyed by GGUF tensor name, from
+            ``load_imatrix``.
+        shapes: Parameter shapes keyed by the names the loaded
+            model reports.
+
+    Returns:
+        ``(covered, uncovered)`` — weights keyed by parameter name,
+        and the names the imatrix does not cover, in input order.
+
+    Raises:
+        ValueError: If the family's resolver refuses — a shape or
+            matrix-count mismatch, two parameters claiming one row,
+            or zero coverage.
+    """
+    if method == "q0":
+        return resolve_q0_assisted_weights(by_gguf_name, shapes)
+    return resolve_assisted_weights(
+        by_gguf_name, {name: int(shape[-1]) for name, shape in shapes.items()}
+    )
+
+
+def check_method_weights(
+    method: WithinGroupMethod,
+    weights: Mapping[str, torch.Tensor],
+    shapes: Mapping[str, Sequence[int]],
+) -> None:
+    """Gate imatrix weights through the method's reader family.
+
+    The meter runs this at construction over any weight source —
+    resolved from a file or passed directly.
+
+    Args:
+        method: The within-group method name.
+        weights: Weights keyed by HF parameter name.
+        shapes: Parameter shapes keyed by discovered parameter name.
+
+    Raises:
+        ValueError: If the family's gate refuses — an unknown name,
+            a layout or length mismatch, rows the family's blocks
+            cannot align, or a negative or non-finite weight.
+    """
+    if method == "q0":
+        check_q0_imatrix_weights(weights, shapes)
+    else:
+        check_imatrix_weights(
+            weights, {name: int(shape[-1]) for name, shape in shapes.items()}
+        )
 
 
 def perturb(
@@ -63,9 +141,11 @@ def perturb(
         name: The parameter's dotted name, for the refusal message.
         method: The within-group method name.
         block_size: Scale-block width for the ``rtn`` method.
-        column_weights: Imatrix column weights for this parameter,
-            or None to price unassisted (ADR-0020). Only ``kquant``
-            reads them.
+        column_weights: Imatrix weights for this parameter, or None
+            to price unassisted (ADR-0020). ``kquant`` reads a 1-D
+            column vector. ``q0`` also reads a 2-D per-expert
+            tensor on a fused expert stack (ADR-0018, 2026-08-21
+            amendment). ``rtn`` never reads them.
 
     Returns:
         The dequantized tensor, same shape, dtype, and device.
@@ -79,6 +159,8 @@ def perturb(
     """
     try:
         if method == "q0":
+            if column_weights is not None:
+                return q0_assisted_quantize_dequantize(param, bits, column_weights)
             return q0_ref_quantize_dequantize(param, bits)
         if method == "kquant":
             if column_weights is not None:

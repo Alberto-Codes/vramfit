@@ -125,9 +125,12 @@ below remain, the sub-4-bit pricing claims do not.
   `rtn-block32` (round-to-nearest, the v1 default), `kquant-ref`
   (the ported llama.cpp reference quantizers), `kquant-imx`
   (the same port with assisted pricing,
-  [ADR-0020](../adr/0020-imatrix-assisted-pricing.md)), or
+  [ADR-0020](../adr/0020-imatrix-assisted-pricing.md)),
   `q0-ref` (the ported block quantizers `Q2_0`, `Q4_0`, and
-  `Q8_0`, which reach the rows no K-quant tiles). The writer
+  `Q8_0`, which reach the rows no K-quant tiles), or `q0-imx`
+  (the same port with the imatrix weighting the nominal-4 fit,
+  [ADR-0018](../adr/0018-kquant-within-group-method.md)'s
+  2026-08-21 amendment). The writer
   always records it. The loader accepts an absent field as
   `rtn-block32` — every map written before the field existed
   measured with that method. Damage values are only comparable
@@ -135,7 +138,8 @@ below remain, the sub-4-bit pricing claims do not.
 - **`scan.imatrix`** — the path of the imatrix that assisted the
   scan, or null for an unassisted scan
   ([ADR-0020](../adr/0020-imatrix-assisted-pricing.md)). The field
-  pairs with the `kquant-imx` token: the loader rejects a map that
+  pairs with the assisted tokens, `kquant-imx` and `q0-imx`: the
+  loader rejects a map that
   claims assistance without naming its imatrix, or the reverse. An
   assisted map is only comparable to a pack that consumed the same
   imatrix file. The loader accepts an absent field as null.

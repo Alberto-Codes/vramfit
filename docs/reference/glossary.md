@@ -147,9 +147,10 @@ change.
     reads 8, 4, and 2
     ([ADR-0018](../adr/0018-kquant-within-group-method.md), 2026-08-17
     amendment, token renamed by the 2026-08-18 amendment). `q0-imx` is
-    its assisted path: nominal 4 fits with imatrix weights. The
-    2026-08-21 amendment rules the build, and the token stays unbuilt
-    until #383 lands.
+    its assisted path: nominal 4 fits with imatrix weights through
+    the ported `quantize_row_q4_0_impl`, and nominal 2 and 8 keep
+    the reference arithmetic. The 2026-08-21 amendment rules the
+    build.
     A method
     change is a new scan — the token lives in the fingerprint and in
     the map's `scan.within_group`, and the recipe carries its map's
@@ -165,8 +166,9 @@ change.
     ADR-0020, and the method stays a valid scan option.
     **Unassisted** names the reference-path fit without weights.
     A tensor the imatrix does not cover always prices unassisted —
-    the same fallback `llama-quantize` applies. `q0-imx` takes the
-    same shape through `quantize_row_q4_0_impl`
+    the same fallback `llama-quantize` applies. `q0-imx` carries
+    the same shape through `quantize_row_q4_0_impl`, and its reader
+    accepts fused expert stacks — one imatrix row per expert
     ([ADR-0018](../adr/0018-kquant-within-group-method.md),
     2026-08-21 amendment). `Q2_0` has no assisted path, because
     `quantize_q2_0` ignores the matrix (ADR-0018, 2026-08-17

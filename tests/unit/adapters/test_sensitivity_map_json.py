@@ -107,6 +107,35 @@ class TestSensitivityMap:
         with pytest.raises(ArtifactError, match="kquant-imx"):
             map_from_dict(raw)
 
+    def test_assisted_q0_map_round_trips_the_imatrix(self) -> None:
+        # The q0-imx token pairs with scan.imatrix exactly like
+        # kquant-imx (ADR-0018, 2026-08-21 amendment, decision 6).
+        raw = make_map([("g0", 1000, {4: 0.2, 2: 0.3})], precisions=(4, 2))
+        raw["scan"]["within_group"] = "q0-imx"
+        raw["scan"]["imatrix"] = "/runs/model.imatrix.gguf"
+
+        map_ = map_from_dict(raw)
+        again = map_from_dict(map_to_dict(map_))
+
+        assert map_.scan.within_group == "q0-imx"
+        assert map_.scan.imatrix == "/runs/model.imatrix.gguf"
+        assert again == map_
+
+    def test_q0_imx_token_without_imatrix_rejected(self) -> None:
+        raw = make_map([("g0", 1000, {4: 0.2, 2: 0.3})], precisions=(4, 2))
+        raw["scan"]["within_group"] = "q0-imx"
+
+        with pytest.raises(ArtifactError, match="imatrix"):
+            map_from_dict(raw)
+
+    def test_imatrix_on_a_q0_ref_map_rejected(self) -> None:
+        raw = make_map([("g0", 1000, {4: 0.2, 2: 0.3})], precisions=(4, 2))
+        raw["scan"]["within_group"] = "q0-ref"
+        raw["scan"]["imatrix"] = "/runs/model.imatrix.gguf"
+
+        with pytest.raises(ArtifactError, match="q0-imx"):
+            map_from_dict(raw)
+
     def test_empty_imatrix_rejected(self) -> None:
         raw = make_map([("g0", 1000, {3: 0.2, 2: 0.3})], precisions=(3, 2))
         raw["scan"]["within_group"] = "kquant-imx"

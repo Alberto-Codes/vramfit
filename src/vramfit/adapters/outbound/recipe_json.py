@@ -10,7 +10,8 @@ sensitivity-map adapter. Two fields are additive rather than
 strict: ``within_group`` (ADR-0019) and ``imatrix`` (ADR-0020)
 default to None when absent, because recipes written before the
 fields existed do not record which map priced them. A present
-``imatrix`` must pair with the assisted method token — the loader
+``imatrix`` must pair with an assisted method token, ``kquant-imx``
+or ``q0-imx`` — the loader
 rejects a recipe whose provenance contradicts itself. A field the
 reader does not know warns and loads (#261, ADR-0013's 2026-08-16
 amendment). A save then drops it, and the warning says so.
@@ -62,7 +63,7 @@ from vramfit.domain.model import (
     TraceStep,
 )
 from vramfit.domain.runtime import RUNTIME_CAPABILITIES
-from vramfit.domain.scan import KQUANT_IMX_METHOD
+from vramfit.domain.scan import ASSISTED_METHODS
 
 # The recipe schema version. Bumped to 2 when recipes gained the
 # required (nullable) ``runtime`` field (ADR-0013), to 3 when
@@ -135,7 +136,8 @@ def recipe_from_dict(data: object) -> Recipe:
     ``within_group`` and ``imatrix`` load as None when absent or
     null — recipes written before the fields existed do not record
     their map's method (ADR-0019) or imatrix (ADR-0020). A present
-    ``imatrix`` must pair with the assisted method token.
+    ``imatrix`` must pair with an assisted method token,
+    ``kquant-imx`` or ``q0-imx``.
     ``protected_tensors`` and ``plan.protections`` are required.
     Resolved pairs need a protection record, and a known runtime
     must serve every protected precision (ADR-0022). A record with
@@ -179,15 +181,15 @@ def recipe_from_dict(data: object) -> Recipe:
         _get_str(root, "imatrix", "$") if root.get("imatrix") is not None else None
     )
     _require(
-        not (within_group == KQUANT_IMX_METHOD and imatrix is None),
+        not (within_group in ASSISTED_METHODS and imatrix is None),
         "$.imatrix",
-        f'within_group "{KQUANT_IMX_METHOD}" requires the imatrix field (ADR-0020)',
+        f'within_group "{within_group}" requires the imatrix field (ADR-0020)',
     )
     _require(
-        not (imatrix is not None and within_group != KQUANT_IMX_METHOD),
+        not (imatrix is not None and within_group not in ASSISTED_METHODS),
         "$.imatrix",
-        f'imatrix provenance requires within_group "{KQUANT_IMX_METHOD}", '
-        f'got "{within_group}" (ADR-0020)',
+        "imatrix provenance requires an assisted within_group "
+        f'({", ".join(ASSISTED_METHODS)}), got "{within_group}" (ADR-0020)',
     )
     _require("plan" in root, "$", 'missing required field "plan"')
     plan = _parse_plan_meta(_get_dict(root["plan"], "$.plan"))
