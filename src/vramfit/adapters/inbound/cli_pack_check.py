@@ -54,15 +54,18 @@ from vramfit.ports.outbound import RecipePacker, ReconstructionChecker
 
 
 def _check_protected_mappable(recipe: Recipe) -> None:
-    """Reject an unpackable protected recipe before any tool runs.
+    """Reject a protected recipe's bad override composition early.
 
-    `all_overrides` composes every override here, so a protected
-    recipe the backend cannot drive fails in milliseconds — not
-    after the convert stage writes a full-size base GGUF (ADR-0022).
-    That covers a protection without a class-table row, a precision
-    outside its type table, and a protection under a second root,
-    which `_claim_root` refuses (#367). One function owns the
-    composition, so this check and the pack cannot disagree (#303).
+    `all_overrides` composes the override list here, so a
+    composition the backend cannot drive fails in milliseconds —
+    not after the convert stage writes a full-size base GGUF
+    (ADR-0022). That covers a protection without a class-table row,
+    an override precision outside its type table, and a protection
+    under a second root, which `_claim_root` refuses (#367). The
+    check judges override composition only — the packer computes
+    the base type and the embedding and output flag types later.
+    One function owns the composition, so this check and the pack
+    cannot disagree (#303).
 
     An unprotected recipe skips the check. Its refusals keep their
     staged halts and run-log records — the quantize-stage halt is on
@@ -72,9 +75,8 @@ def _check_protected_mappable(recipe: Recipe) -> None:
         recipe: The recipe about to pack.
 
     Raises:
-        typer.Exit: With code 1 when the backend cannot map a group,
-            a protected tensor, or a precision in a protected
-            recipe.
+        typer.Exit: With code 1 when a protected recipe's override
+            composition refuses.
     """
     if not recipe.protected_tensors:
         return

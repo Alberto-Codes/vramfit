@@ -643,9 +643,9 @@ def _claim_root(name: str, roots: dict[str, str], kind: str = "group") -> None:
             ``protected tensor`` (#367).
 
     Raises:
-        PackError: If ``name`` hangs from a second root — the pack
-            would silently drop one stack. The refusal names both
-            claimants and both roots.
+        PackError: If ``name`` hangs from a second root — the first
+            matching override would land on the other root's tensor.
+            The refusal names both claimants and both roots.
     """
     match = _STACK_ROOT.match(name)
     if match is None:
@@ -657,7 +657,8 @@ def _claim_root(name: str, roots: dict[str, str], kind: str = "group") -> None:
         raise PackError(
             f'{roots[first]} under root "{first}" and {kind} "{name}" under '
             f'root "{root}" name two layer stacks — a GGUF pack numbers one '
-            f'stack "blk.<n>." and would silently drop one (#183, #367)'
+            f'stack "blk.<n>." and the first matching override would land '
+            f"on the other root's tensor (#183, #367)"
         )
 
 
@@ -749,9 +750,9 @@ def tensor_overrides(recipe: Recipe) -> tuple[TypeOverride, ...]:
 
     Every mapped group and protected tensor must hang from one
     parameter-tree root. ``blk.<n>.`` addresses a single layer
-    stack, so a recipe naming two of them would map both onto it
-    and silently drop one. A protected tensor claims its root with
-    the groups (#367).
+    stack, so a recipe naming two of them maps both onto it. The
+    first matching override would land on the other root's tensor.
+    A protected tensor claims its root with the groups (#367).
 
     Args:
         recipe: The recipe to pack.
