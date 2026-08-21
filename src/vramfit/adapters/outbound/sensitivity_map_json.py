@@ -18,8 +18,9 @@ because every map written before the field existed was unassisted.
 A group's ``imatrix_counts`` summary (ADR-0026 decision 4) is
 additive the same way: absent means the group records no summary.
 The top-level ``derived`` note (#136) is additive too: absent means
-the map is a scan artifact. A present ``imatrix`` must pair with the
-assisted method token — the loader rejects a map whose provenance
+the map is a scan artifact. A present ``imatrix`` must pair with
+an assisted method token, ``kquant-imx`` or ``q0-imx`` — the
+loader rejects a map whose provenance
 contradicts itself. A field the reader does not know warns and loads
 (#261, ADR-0013's 2026-08-16 amendment). A save then drops it, and
 the warning says so.
@@ -69,7 +70,7 @@ from vramfit.domain.model import (
     ScanMeta,
     SensitivityMap,
 )
-from vramfit.domain.scan import KQUANT_IMX_METHOD, SCAN_METHOD
+from vramfit.domain.scan import ASSISTED_METHODS, SCAN_METHOD
 
 # The sensitivity-map schema version. Versions advance per artifact
 # (ADR-0013) — the recipe sits at 6 while the map sits at 3.
@@ -326,7 +327,8 @@ def _parse_scan_meta(obj: dict[str, Any]) -> ScanMeta:
             a present
             ``within_group`` is not a non-empty string (absent
             defaults to ``rtn-block32``, ADR-0018), or ``imatrix``
-            does not pair with the assisted method token — assisted
+            does not pair with an assisted method token,
+            ``kquant-imx`` or ``q0-imx`` — assisted
             damages without their imatrix provenance are not
             comparable to anything (ADR-0020, absent defaults to
             None). A field the section does not carry reports and
@@ -371,15 +373,15 @@ def _parse_scan_meta(obj: dict[str, Any]) -> ScanMeta:
     # ScanMeta's own invariant, re-stated here for JSON-path errors.
     imatrix = _get_str(obj, "imatrix", path) if obj.get("imatrix") is not None else None
     _require(
-        not (within_group == KQUANT_IMX_METHOD and imatrix is None),
+        not (within_group in ASSISTED_METHODS and imatrix is None),
         f"{path}.imatrix",
-        f'within_group "{KQUANT_IMX_METHOD}" requires the imatrix field (ADR-0020)',
+        f'within_group "{within_group}" requires the imatrix field (ADR-0020)',
     )
     _require(
-        not (imatrix is not None and within_group != KQUANT_IMX_METHOD),
+        not (imatrix is not None and within_group not in ASSISTED_METHODS),
         f"{path}.imatrix",
-        f'imatrix provenance requires within_group "{KQUANT_IMX_METHOD}", '
-        f'got "{within_group}" (ADR-0020)',
+        "imatrix provenance requires an assisted within_group "
+        f'({", ".join(ASSISTED_METHODS)}), got "{within_group}" (ADR-0020)',
     )
     return ScanMeta(
         metric=_get_str(obj, "metric", path),

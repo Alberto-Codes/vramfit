@@ -4,14 +4,15 @@ The scan loop lives here because the inbound adapter is the
 composition root: it validates every option up front (sizes parse
 with the project grammar, ``--within-group kquant`` and ``q0``
 must each pair with precisions their port covers, ADR-0018, and
-``--imatrix`` pairs only with the kquant method, ADR-0020), builds
+``--imatrix`` pairs with the kquant or q0 method, ADR-0018 and
+ADR-0020), builds
 the
 torch-backed
 meter (lazily, so the base install never imports torch), drives the
 `DamageMeter` and `ScanCheckpointStore` ports cell by cell, and hands
 the finished measurements to the pure assembly logic in
 [vramfit.domain.scan][]. An assisted scan records the
-``kquant-imx`` token and the resolved imatrix path in the map, the
+``kquant-imx`` or ``q0-imx`` token and the resolved imatrix path in the map, the
 fingerprint, and the run log — relative spellings must not split
 or mix checkpoint identities.
 ``--groups`` restricts a run to named groups, so a caller that wants
@@ -65,6 +66,7 @@ from vramfit.domain.scan import (
     KQUANT_IMX_METHOD,
     KQUANT_METHOD,
     KQUANT_PRECISIONS,
+    Q0_IMX_METHOD,
     Q0_REF_METHOD,
     Q0_REF_PRECISIONS,
     SCAN_METHOD,
@@ -268,14 +270,14 @@ def _parse_within_group(
     Returns:
         The validated method name and its fingerprint token — the
         token is the vocabulary run logs and maps share (ADR-0018).
-        An imatrix turns the kquant token into the assisted one
-        (ADR-0020).
+        An imatrix turns the kquant or q0 token into its assisted
+        one (ADR-0018, ADR-0020).
 
     Raises:
         typer.BadParameter: If the method is unknown, ``kquant`` or
             ``q0`` is combined with precisions outside its port
-            coverage (ADR-0018), ``--imatrix`` arrives without the
-            kquant method, or the imatrix file does not exist — each
+            coverage (ADR-0018), ``--imatrix`` arrives with the rtn
+            method, or the imatrix file does not exist — each
             rejected before the model load burns an hour.
     """
     if text not in ("rtn", "kquant", "q0"):
@@ -295,7 +297,7 @@ def _parse_within_group(
     if text == "rtn":
         return text, SCAN_METHOD
     if text == "q0":
-        return text, Q0_REF_METHOD
+        return text, Q0_REF_METHOD if imatrix is None else Q0_IMX_METHOD
     return text, KQUANT_METHOD if imatrix is None else KQUANT_IMX_METHOD
 
 
@@ -353,9 +355,9 @@ def scan(
     imatrix: Annotated[
         Path | None,
         typer.Option(
-            help="GGUF imatrix for assisted K-quant pricing "
-            "(ADR-0020). Requires --within-group kquant. Use the "
-            "file the pack step will consume."
+            help="GGUF imatrix for assisted pricing (ADR-0018, "
+            "ADR-0020). Requires --within-group kquant or q0. Use "
+            "the file the pack step will consume."
         ),
     ] = None,
     runlog: Annotated[
@@ -389,12 +391,14 @@ def scan(
     now refuses such a cell instead of pricing a frame the pack
     cannot apply.
     ``--imatrix`` adds the pack's importance matrix to the kquant
-    fit (assisted pricing, ADR-0020) — the map then records the
+    or q0 fit (assisted pricing, ADR-0018, ADR-0020) — under q0
+    only nominal 4 fits with weights, because the C discards the
+    matrix at 2 and 8 — the map then records the
     resolved imatrix path beside the method, and the run log
     records how many parameters the imatrix covers. The map, the
     fingerprint, and the run log all record the method as its token
-    (``rtn-block32``, ``kquant-ref``, ``kquant-imx``, or
-    ``q0-ref``).
+    (``rtn-block32``, ``kquant-ref``, ``kquant-imx``, ``q0-ref``,
+    or ``q0-imx``).
     ``--group-by`` sets the map key. ``stack`` keys on the unit a
     pack addresses (#161): it collapses a mixture-of-experts layer's
     routed experts into one group per projection, and keeps every
@@ -417,8 +421,7 @@ def scan(
             ``--gpu-memory`` is given without ``--device auto``,
             ``--within-group kquant`` or ``q0`` is combined with
             precisions its port does not cover, ``--imatrix`` is
-            given without
-            ``--within-group kquant`` or is not a file, or the
+            given with ``--within-group rtn`` or is not a file, or the
             ``--out`` or ``--runlog`` directory does not exist.
         typer.Exit: With code 1 when the scan extra is missing, the
             model or calibration cannot load, a ``--groups`` name

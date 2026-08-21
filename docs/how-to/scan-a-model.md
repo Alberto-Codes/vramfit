@@ -130,11 +130,14 @@ uv run vramfit scan ./model --calibration calibration.txt \
 The method covers nominal 8, 4, and 2. It refuses nominal 3, which
 [ADR-0028](../adr/0028-expert-stack-type-table.md) refuses at pack,
 and 5 and 6 until ports exist.
-`--imatrix` does not pair with it yet. ADR-0018's 2026-08-21
-amendment rules the `q0-imx` build, in which
-`quantize_row_q4_0_impl` fits with imatrix weights. #383 carries
-the build. `quantize_q2_0` ignores the matrix, so the assisted
-method differs at nominal 4 only.
+`--imatrix` pairs with it (ADR-0018's 2026-08-21 amendment). The
+map then records the `q0-imx` token. Nominal 4 fits with imatrix
+weights through the ported `quantize_row_q4_0_impl`. Nominal 2 and
+8 keep the reference arithmetic, because `quantize_q2_0` and
+`quantize_q8_0` ignore the matrix. On a fused expert stack the
+meter reads one imatrix row per expert, as `llama-quantize` applies
+them. A parameter the imatrix does not cover prices unassisted, and
+the coverage echo reports the split.
 
 A `kquant` scan now refuses such a cell. The message names the
 parameter, the type, the block size, and the row length. Nominal 8

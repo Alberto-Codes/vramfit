@@ -115,6 +115,35 @@ class TestRecipe:
         with pytest.raises(ArtifactError, match="kquant-imx"):
             recipe_from_dict(raw)
 
+    def test_q0_assisted_provenance_round_trips(self) -> None:
+        # The q0-imx token pairs with the imatrix field exactly like
+        # kquant-imx (ADR-0018, 2026-08-21 amendment, decision 6).
+        raw = make_recipe_dict()
+        raw["within_group"] = "q0-imx"
+        raw["imatrix"] = "/runs/model.imatrix.gguf"
+
+        recipe = recipe_from_dict(raw)
+        again = recipe_from_dict(recipe_to_dict(recipe))
+
+        assert recipe.within_group == "q0-imx"
+        assert recipe.imatrix == "/runs/model.imatrix.gguf"
+        assert again == recipe
+
+    def test_q0_imx_token_without_imatrix_rejected(self) -> None:
+        raw = make_recipe_dict()
+        raw["within_group"] = "q0-imx"
+
+        with pytest.raises(ArtifactError, match="imatrix"):
+            recipe_from_dict(raw)
+
+    def test_imatrix_on_a_q0_ref_recipe_rejected(self) -> None:
+        raw = make_recipe_dict()
+        raw["within_group"] = "q0-ref"
+        raw["imatrix"] = "/runs/model.imatrix.gguf"
+
+        with pytest.raises(ArtifactError, match="q0-imx"):
+            recipe_from_dict(raw)
+
     def test_empty_within_group_rejected(self) -> None:
         raw = make_recipe_dict()
         raw["within_group"] = ""

@@ -12,9 +12,9 @@ count summary (ADR-0026 decision 4), and a non-empty derived note
 within-group method tokens live here — `SCAN_METHOD` beside the
 `ScanMeta` field it is the default for (ADR-0018), the kquant
 tokens beside the `imatrix` invariant they anchor (ADR-0020), and
-`Q0_REF_METHOD` for the block quantizers (ADR-0018, 2026-08-17
-amendment, token renamed by the 2026-08-18
-amendment).
+the q0 tokens for the block quantizers (ADR-0018, its 2026-08-17
+amendment, the 2026-08-18 rename, and the 2026-08-21 `q0-imx`
+build).
 Serialization and the JSON schema envelope (including the
 ``vramfit_schema`` version field) live in
 [vramfit.adapters.outbound.sensitivity_map_json][] and
@@ -76,9 +76,17 @@ KQUANT_IMX_METHOD = "kquant-imx"
 # The q0 block-quantizer method (ADR-0018, 2026-08-17 amendment,
 # token renamed 2026-08-18):
 # Q2_0, Q4_0, and Q8_0 ported from llama.cpp b10326. It prices the
-# rows no K-quant reaches. `q0-imx` stays reserved — its assisted
-# path is unbuilt.
+# rows no K-quant reaches.
 Q0_REF_METHOD = "q0-ref"
+# The imatrix-assisted q0 method (ADR-0018, 2026-08-21 amendment):
+# the same port, with nominal 4 fitting through the weighted Q4_0
+# path. Nominal 2 and 8 keep the reference arithmetic — the C
+# discards the matrix there.
+Q0_IMX_METHOD = "q0-imx"
+# The tokens that claim assistance. Each pairs with the `imatrix`
+# field — a map or recipe cannot claim assistance without naming its
+# imatrix, or the reverse (ADR-0020).
+ASSISTED_METHODS = (KQUANT_IMX_METHOD, Q0_IMX_METHOD)
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,7 +114,7 @@ class ScanMeta:
             the rows no K-quant reaches.
         imatrix (str | None): Path of the imatrix that assisted the
             scan (ADR-0020), or None for an unassisted scan. Pairs
-            with the `KQUANT_IMX_METHOD` token — a map cannot claim
+            with the `ASSISTED_METHODS` tokens — a map cannot claim
             assistance without naming its imatrix, or the reverse.
 
     Examples:
@@ -142,10 +150,10 @@ class ScanMeta:
             ValueError: If ``calibration_tokens`` is not positive,
                 ``within_group`` is empty, ``precisions`` is empty,
                 non-positive, or not strictly descending, or
-                ``imatrix`` does not pair with the assisted method
-                token — assisted damages without their imatrix
-                provenance are not comparable to anything
-                (ADR-0020).
+                ``imatrix`` does not pair with an assisted method
+                token (`ASSISTED_METHODS`) — assisted damages
+                without their imatrix provenance are not comparable
+                to anything (ADR-0020).
         """
         if self.calibration_tokens <= 0:
             raise ValueError("calibration_tokens must be positive")
@@ -153,15 +161,16 @@ class ScanMeta:
             raise ValueError("within_group must not be empty")
         if self.imatrix is not None and not self.imatrix:
             raise ValueError("imatrix must not be empty — use None when unassisted")
-        if self.within_group == KQUANT_IMX_METHOD and self.imatrix is None:
+        if self.within_group in ASSISTED_METHODS and self.imatrix is None:
             raise ValueError(
-                f'within_group "{KQUANT_IMX_METHOD}" requires the imatrix '
+                f'within_group "{self.within_group}" requires the imatrix '
                 "field (ADR-0020)"
             )
-        if self.imatrix is not None and self.within_group != KQUANT_IMX_METHOD:
+        if self.imatrix is not None and self.within_group not in ASSISTED_METHODS:
             raise ValueError(
-                f'imatrix provenance requires within_group "{KQUANT_IMX_METHOD}", '
-                f'got "{self.within_group}" (ADR-0020)'
+                "imatrix provenance requires an assisted within_group "
+                f"({', '.join(ASSISTED_METHODS)}), got "
+                f'"{self.within_group}" (ADR-0020)'
             )
         if not self.precisions:
             raise ValueError("precisions must not be empty")
@@ -579,7 +588,7 @@ class Recipe:
         imatrix (str | None): The imatrix path of the map that
             priced the recipe (ADR-0020), or None for an unassisted
             or unknown-provenance map. Pairs with the
-            `KQUANT_IMX_METHOD` token, like `ScanMeta.imatrix` — a
+            `ASSISTED_METHODS` tokens, like `ScanMeta.imatrix` — a
             wrong imatrix file in the validation pass contaminates
             the additivity gap silently.
         protected_tensors (tuple[ProtectedTensor, ...]): Resolved
@@ -610,8 +619,9 @@ class Recipe:
             ValueError: If ``assignments`` is empty, two assignments
                 name the same group, ``within_group`` or ``imatrix``
                 is an empty string — unknown provenance is None,
-                never "" — ``imatrix`` does not pair with the
-                assisted method token (ADR-0020), two protected
+                never "" — ``imatrix`` does not pair with an
+                assisted method token (`ASSISTED_METHODS`,
+                ADR-0020), two protected
                 tensors share a name, resolved pairs exist without a
                 protection record (ADR-0022), or the exclusion
                 record and the resolved ``exclude_imatrix`` marks
@@ -626,15 +636,16 @@ class Recipe:
             raise ValueError("within_group must not be empty — use None for unknown")
         if self.imatrix is not None and not self.imatrix:
             raise ValueError("imatrix must not be empty — use None for unknown")
-        if self.within_group == KQUANT_IMX_METHOD and self.imatrix is None:
+        if self.within_group in ASSISTED_METHODS and self.imatrix is None:
             raise ValueError(
-                f'within_group "{KQUANT_IMX_METHOD}" requires the imatrix '
+                f'within_group "{self.within_group}" requires the imatrix '
                 "field (ADR-0020)"
             )
-        if self.imatrix is not None and self.within_group != KQUANT_IMX_METHOD:
+        if self.imatrix is not None and self.within_group not in ASSISTED_METHODS:
             raise ValueError(
-                f'imatrix provenance requires within_group "{KQUANT_IMX_METHOD}", '
-                f'got "{self.within_group}" (ADR-0020)'
+                "imatrix provenance requires an assisted within_group "
+                f"({', '.join(ASSISTED_METHODS)}), got "
+                f'"{self.within_group}" (ADR-0020)'
             )
         if not self.assignments:
             raise ValueError("assignments must not be empty")

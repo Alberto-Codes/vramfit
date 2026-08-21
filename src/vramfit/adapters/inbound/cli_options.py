@@ -3,9 +3,8 @@
 The two commands build the same meter, so their overlapping options
 follow one rule each: the ``--gpu-memory`` cap parses with the
 project size grammar and requires ``--device auto``, and
-``--imatrix`` pairs only with the kquant within-group method
-(ADR-0020) — RTN has no weighted C counterpart, and the ``q0``
-method's ``q0-imx`` token is reserved but unbuilt (ADR-0018).
+``--imatrix`` pairs with the kquant or q0 within-group method
+(ADR-0018, ADR-0020) — RTN has no weighted C counterpart.
 Both reject before any model load burns an hour. The
 imatrix coverage echo lives here too — the scan and the validation
 pass report the split identically.
@@ -42,20 +41,18 @@ def check_imatrix(imatrix: Path | None, method: str) -> None:
         method: The resolved within-group method name.
 
     Raises:
-        typer.BadParameter: If the imatrix arrives without the
-            kquant method (ADR-0020), or the file does not exist.
-            The ``q0`` method refuses it too. Its ``q0-imx``
-            token is reserved for a real assisted path —
-            ``quantize_row_q4_0_impl`` fits with imatrix weights —
-            and nothing builds it yet (ADR-0018).
+        typer.BadParameter: If the imatrix arrives with the ``rtn``
+            method (ADR-0018, ADR-0020), or the file does not
+            exist. ``kquant`` fits its covered tensors with the
+            weights, and ``q0`` fits nominal 4 through
+            ``quantize_row_q4_0_impl``.
     """
     if imatrix is None:
         return
-    if method != "kquant":
+    if method not in ("kquant", "q0"):
         raise typer.BadParameter(
-            "--imatrix requires --within-group kquant (ADR-0020) — "
-            "RTN has no weighted C counterpart, and q0-imx is "
-            "reserved but unbuilt (ADR-0018)"
+            "--imatrix requires --within-group kquant or q0 "
+            "(ADR-0018, ADR-0020) — RTN has no weighted C counterpart"
         )
     if not imatrix.is_file():
         raise typer.BadParameter(f"--imatrix: {imatrix} is not a file")

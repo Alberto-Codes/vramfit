@@ -222,16 +222,17 @@ def test_q0_scan_records_the_method_in_the_map(tmp_path, monkeypatch) -> None:
     assert captured["within_group"] == "q0"
 
 
-def test_imatrix_with_q0_exits_with_usage_error(tmp_path, monkeypatch) -> None:
-    # q0-imx is reserved and unbuilt: quantize_q2_0 accepts an
-    # importance matrix and ignores it (ADR-0018).
-    install_meter(
-        monkeypatch, MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES), tokens=64)
+def test_assisted_q0_scan_records_the_q0_imx_token(tmp_path, monkeypatch) -> None:
+    # The q0-imx build (ADR-0018, 2026-08-21 amendment): an imatrix
+    # turns the q0 token into its assisted one.
+    damages = {(spec.name, bits): 0.1 for spec in SPECS for bits in (4, 2)}
+    captured = install_meter(
+        monkeypatch, MemoryDamageMeter(specs=SPECS, damages=damages, tokens=64)
     )
     imatrix = tmp_path / "imatrix.gguf"
     imatrix.write_bytes(b"GGUF")
 
-    result, _ = invoke_scan(
+    result, out = invoke_scan(
         tmp_path,
         "--precisions",
         "4,2",
@@ -241,8 +242,12 @@ def test_imatrix_with_q0_exits_with_usage_error(tmp_path, monkeypatch) -> None:
         str(imatrix),
     )
 
-    assert result.exit_code == 2
-    assert "--imatrix requires --within-group kquant" in result.output
+    assert result.exit_code == 0, result.output
+    map_ = load_sensitivity_map(out)
+    assert map_.scan.within_group == "q0-imx"
+    assert map_.scan.imatrix == str(imatrix)
+    assert captured["within_group"] == "q0"
+    assert captured["imatrix"] == imatrix
 
 
 def test_kquant_scan_records_the_method_in_the_map(tmp_path, monkeypatch) -> None:
@@ -263,7 +268,7 @@ def test_kquant_scan_records_the_method_in_the_map(tmp_path, monkeypatch) -> Non
     assert captured["within_group"] == "kquant"
 
 
-def test_imatrix_without_kquant_exits_with_usage_error(tmp_path, monkeypatch) -> None:
+def test_imatrix_with_rtn_exits_with_usage_error(tmp_path, monkeypatch) -> None:
     install_meter(
         monkeypatch, MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES), tokens=64)
     )
@@ -273,7 +278,7 @@ def test_imatrix_without_kquant_exits_with_usage_error(tmp_path, monkeypatch) ->
     result, _ = invoke_scan(tmp_path, "--imatrix", str(imatrix))
 
     assert result.exit_code == 2
-    assert "--imatrix requires --within-group kquant" in result.output
+    assert "--imatrix requires --within-group kquant or q0" in result.output
 
 
 def test_missing_imatrix_file_exits_before_loading_the_model(

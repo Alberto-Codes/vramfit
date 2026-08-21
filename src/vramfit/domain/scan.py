@@ -19,7 +19,8 @@ riding through from `GroupSpec`
 (ADR-0022, ADR-0026 decision 4) — the pooled count reduction
 (`summarize_imatrix_counts`), the within-group method tokens and each
 method's precision coverage set (`rtn-block32`, `kquant-ref`,
-`kquant-imx`, and `q0-ref` since the 2026-08-18 amendment —
+`kquant-imx`, `q0-ref` since the 2026-08-18 amendment, and
+`q0-imx` since the 2026-08-21 amendment —
 ADR-0006, ADR-0018, ADR-0020, with
 every token re-exported from [vramfit.domain.model][], where
 `ScanMeta` anchors them), and
@@ -54,10 +55,16 @@ from types import MappingProxyType
 from typing import Literal
 
 from vramfit.domain.model import (
+    ASSISTED_METHODS as ASSISTED_METHODS,  # noqa: PLC0414 - re-export: method tokens read from this module
+)
+from vramfit.domain.model import (
     KQUANT_IMX_METHOD as KQUANT_IMX_METHOD,  # noqa: PLC0414 - re-export: method tokens read from this module
 )
 from vramfit.domain.model import (
     KQUANT_METHOD as KQUANT_METHOD,  # noqa: PLC0414 - re-export: method tokens read from this module
+)
+from vramfit.domain.model import (
+    Q0_IMX_METHOD as Q0_IMX_METHOD,  # noqa: PLC0414 - re-export: method tokens read from this module
 )
 from vramfit.domain.model import (
     Q0_REF_METHOD as Q0_REF_METHOD,  # noqa: PLC0414 - re-export: method tokens read from this module

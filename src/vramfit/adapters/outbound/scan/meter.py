@@ -45,10 +45,15 @@ Examples:
     ```
 
 The within-group method is selected at construction (ADR-0018):
-round-to-nearest by default, or the K-quant-faithful port. The
-kquant method can price covered tensors with imatrix column weights
+round-to-nearest by default, the K-quant-faithful port, or the q0
+block-quantizer port. The
+kquant and q0 methods can price covered tensors with imatrix
+weights
 (assisted pricing, ADR-0020) — passed directly, or resolved from a
-GGUF imatrix file that loads before the model. Construction refuses
+GGUF imatrix file that loads before the model. Each method family
+has its own reader: the q0 reader accepts fused expert stacks and
+resolves one weight row per expert (ADR-0018, 2026-08-21
+amendment). Construction refuses
 weights the
 model cannot consume — wrong names, wrong lengths, misaligned rows,
 non-finite values — before the scan spends an hour, and reports the
@@ -84,9 +89,7 @@ from vramfit.adapters.outbound.scan.discovery import (
     max_memory_map,
 )
 from vramfit.adapters.outbound.scan.imatrix import (
-    check_imatrix_weights,
     load_imatrix,
-    resolve_assisted_weights,
     resolve_imatrix_counts,
 )
 from vramfit.adapters.outbound.scan.kl import mean_damage, reference_pass
@@ -101,7 +104,9 @@ from vramfit.adapters.outbound.scan.slices import check_slice_cell
 from vramfit.adapters.outbound.scan.within_group import (
     METHODS,
     WithinGroupMethod,
+    check_method_weights,
     perturb,
+    resolve_method_weights,
 )
 from vramfit.domain.model import ImatrixCountSummary
 from vramfit.domain.scan import GroupSpec
@@ -198,13 +203,16 @@ class TorchDamageMeter:
                 round-trips through the ported block quantizers —
                 ``Q2_0``, ``Q4_0``, and ``Q8_0`` — which reach the
                 rows no K-quant can tile.
-            imatrix_weights: Imatrix column weights per parameter
-                name for assisted pricing (ADR-0020). Requires the
-                ``kquant`` method and must not be empty — an empty
-                mapping would price every cell unassisted under the
-                assisted label. A parameter absent from a non-empty
-                mapping prices unassisted — the ``llama-quantize``
-                fallback for a NULL imatrix row.
+            imatrix_weights: Imatrix weights per parameter name for
+                assisted pricing (ADR-0020) — 1-D column weights,
+                plus 2-D per-expert weights on fused expert stacks
+                under ``q0`` (ADR-0018, 2026-08-21 amendment).
+                Requires the ``kquant`` or ``q0`` method and must
+                not be empty — an empty mapping would price every
+                cell unassisted under the assisted label. A
+                parameter absent from a non-empty mapping prices
+                unassisted — the ``llama-quantize`` fallback for a
+                NULL imatrix row.
             imatrix_path: GGUF imatrix file to resolve column
                 weights from instead of ``imatrix_weights`` — the
                 two exclude each other. The file loads before the
@@ -223,7 +231,8 @@ class TorchDamageMeter:
                 `METHODS` — an unknown value must not fall back to
                 RTN and record damages under the wrong token —
                 imatrix input
-                arrives with the ``rtn`` method (RTN has no weighted
+                arrives with a method outside ``kquant`` and ``q0``
+                (RTN has no weighted
                 C counterpart), ``imatrix_weights`` and
                 ``imatrix_path`` arrive together, the imatrix file
                 is malformed or covers no parameter, a weighted name
@@ -248,11 +257,11 @@ class TorchDamageMeter:
                 "weight sources cannot both be the provenance"
             )
         if imatrix_weights is not None or imatrix_path is not None:
-            if within_group != "kquant":
+            if within_group not in ("kquant", "q0"):
                 raise ValueError(
-                    "imatrix weights require the kquant within-group method "
-                    "(ADR-0020) — RTN has no weighted C counterpart, and "
-                    "q0-imx is reserved but unbuilt (ADR-0018)"
+                    "imatrix weights require the kquant or q0 within-group "
+                    "method (ADR-0018, ADR-0020) — RTN has no weighted C "
+                    "counterpart"
                 )
             if imatrix_weights is not None and not imatrix_weights:
                 raise ValueError(
@@ -293,8 +302,8 @@ class TorchDamageMeter:
             for members in self._groups.values()
             if any(name in self._offloaded for name in members)
         )
-        rows_by_param = {
-            name: int(self._param(name).shape[-1])
+        shapes_by_param = {
+            name: tuple(self._param(name).shape)
             for members in self._groups.values()
             for name in members
         }
@@ -306,17 +315,17 @@ class TorchDamageMeter:
         # still refuses, the #202 vouching rule.
         self._imatrix_count_summaries: dict[str, ImatrixCountSummary] = {}
         if pending_imatrix is not None:
-            shapes_by_param = {
-                name: tuple(self._param(name).shape) for name in rows_by_param
-            }
             resolved_counts, _ = resolve_imatrix_counts(
                 pending_imatrix, shapes_by_param
             )
             self._imatrix_count_summaries = group_count_summaries(
                 resolved_counts, self._groups
             )
-            self._imatrix_weights, _ = resolve_assisted_weights(
-                pending_imatrix, rows_by_param
+            # One reader per method family (ADR-0018, 2026-08-21
+            # amendment, decision 2): the q0 reader accepts a fused
+            # expert stack, the kquant reader keeps its refusal.
+            self._imatrix_weights, _ = resolve_method_weights(
+                within_group, pending_imatrix, shapes_by_param
             )
         # None when unassisted — distinct from zero coverage, which
         # the resolvers refuse (ADR-0020).
@@ -325,13 +334,13 @@ class TorchDamageMeter:
         if self._imatrix_weights:
             self.imatrix_covered_count = len(self._imatrix_weights)
             self.imatrix_uncovered = tuple(
-                name for name in rows_by_param if name not in self._imatrix_weights
+                name for name in shapes_by_param if name not in self._imatrix_weights
             )
         self._shards: ShardReader | None = None
         self._reference: list[torch.Tensor] | None = None
         self._poisoned = False
         self._poisoned_reason = ""
-        check_imatrix_weights(self._imatrix_weights, rows_by_param)
+        check_method_weights(within_group, self._imatrix_weights, shapes_by_param)
 
     def groups(self) -> tuple[GroupSpec, ...]:
         """Discover the model's layer groups.
@@ -542,10 +551,12 @@ class TorchDamageMeter:
 
         The perturbation runs through the configured within-group
         method (ADR-0018), keyed by parameter name so assisted
-        pricing can select each tensor's column weights (ADR-0020).
+        pricing can select each tensor's imatrix weights (ADR-0020).
         A target carrying an expert range perturbs only that dim-0
         slice, and only the slice is saved and restored (ADR-0026,
-        the #200 amendment). The restore runs in a finally clause, so
+        the #200 amendment). 2-D per-expert weights slice to the
+        same range, so each expert fits against its own imatrix row.
+        The restore runs in a finally clause, so
         every exit either restores the weights or poisons the meter.
 
         Args:
@@ -589,7 +600,9 @@ class TorchDamageMeter:
                             if stage_on_cpu
                             else saved.clone()
                         )
-                    view.copy_(self._quantize_dequantize(view, bits, name))
+                    view.copy_(
+                        self._quantize_dequantize(view, bits, name, expert_range)
+                    )
             damage = mean_damage(self._model, self._batches, reference)
         finally:
             self._restore(
@@ -598,16 +611,24 @@ class TorchDamageMeter:
         return damage
 
     def _quantize_dequantize(
-        self, param: torch.Tensor, bits: int, name: str
+        self,
+        param: torch.Tensor,
+        bits: int,
+        name: str,
+        expert_range: tuple[int, int] | None = None,
     ) -> torch.Tensor:
         """Round-trip one tensor through the configured within-group method.
 
         Args:
-            param: The tensor to perturb.
+            param: The tensor to perturb — a whole parameter, or the
+                dim-0 slice a slice cell targets.
             bits: Candidate precision.
             name: The parameter's dotted name — selects its imatrix
-                column weights when assisted pricing is on
-                (ADR-0020).
+                weights when assisted pricing is on (ADR-0020).
+            expert_range: The slice cell's dim-0 expert range, or
+                None for a whole tensor. 2-D per-expert weights
+                slice to the same range, so each expert still fits
+                against its own imatrix row.
 
         Returns:
             The dequantized tensor, same shape, dtype, and device.
@@ -619,14 +640,10 @@ class TorchDamageMeter:
                 does not divide the tensor's row length. The message
                 names the parameter.
         """
-        return perturb(
-            param,
-            bits,
-            name,
-            self._within_group,
-            self._block_size,
-            self._imatrix_weights.get(name),
-        )
+        weights = self._imatrix_weights.get(name)
+        if weights is not None and weights.dim() == 2 and expert_range is not None:  # noqa: PLR2004 - the per-expert layout
+            weights = weights[expert_range[0] : expert_range[1]]
+        return perturb(param, bits, name, self._within_group, self._block_size, weights)
 
     def _param(self, name: str) -> torch.Tensor:
         """Look up a parameter tensor by its dotted name.

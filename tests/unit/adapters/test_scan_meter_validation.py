@@ -21,6 +21,7 @@ torch = pytest.importorskip("torch", reason="scan extra not installed")
 pytest.importorskip("transformers", reason="scan extra not installed")
 
 from vramfit.adapters.outbound.scan.meter import TorchDamageMeter
+from vramfit.adapters.outbound.scan.q0_assisted import q0_assisted_quantize_dequantize
 from vramfit.adapters.outbound.scan.within_group import WithinGroupMethod
 
 pytestmark = pytest.mark.unit
@@ -78,6 +79,32 @@ class TestWithinGroupDispatch:
         result = self._meter("q0")._quantize_dequantize(param, 2, UP)
 
         assert result.shape == param.shape
+
+    def test_a_slice_cell_slices_2d_weights_to_its_expert_range(self) -> None:
+        # A q0-imx slice cell perturbs experts [a, b) of a fused
+        # stack — the per-expert weight rows must slice to the same
+        # range, or expert i would fit against expert i-a's columns.
+        torch.manual_seed(5)
+        meter = self._meter("q0")
+        stack = torch.randn(4, 2, 64)
+        weights = torch.rand(4, 64) + 0.05
+        meter._imatrix_weights = {UP: weights}
+
+        sliced = meter._quantize_dequantize(stack[1:3], 4, UP, (1, 3))
+
+        expected = q0_assisted_quantize_dequantize(stack[1:3], 4, weights[1:3])
+        assert torch.equal(sliced, expected)
+
+    def test_a_whole_tensor_cell_keeps_the_full_weight_rows(self) -> None:
+        torch.manual_seed(6)
+        meter = self._meter("q0")
+        stack = torch.randn(4, 2, 64)
+        weights = torch.rand(4, 64) + 0.05
+        meter._imatrix_weights = {UP: weights}
+
+        whole = meter._quantize_dequantize(stack, 4, UP)
+
+        assert torch.equal(whole, q0_assisted_quantize_dequantize(stack, 4, weights))
 
     def test_kquant_refusal_names_the_parameter(self) -> None:
         param = torch.randn(2, 2688)

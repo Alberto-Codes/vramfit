@@ -431,6 +431,52 @@ class TestValidateCommand:
         assert started["imatrix"] == str(imatrix.resolve())
         assert started["recipe_within_group"] == "kquant-imx"
 
+    def test_q0_assisted_recipe_with_imatrix_builds_a_q0_meter(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        # A recipe priced on a q0-imx map validates through the q0
+        # method with the imatrix (ADR-0018, 2026-08-21 amendment).
+        class ImatrixAwareFake(MemoryDamageMeter):
+            imatrix_covered_count = 2
+            imatrix_uncovered: tuple[str, ...] = ()
+
+        builds = install_meter(
+            monkeypatch, ImatrixAwareFake(specs=SPECS, damages=dict(DAMAGES))
+        )
+        imatrix = tmp_path / "im.gguf"
+        imatrix.write_bytes(b"GGUF")
+        recipe_path = tmp_path / "recipe.json"
+        save_recipe(
+            make_recipe(DEFAULT_RECIPE, within_group="q0-imx", imatrix=str(imatrix)),
+            recipe_path,
+        )
+
+        result = invoke_validate(tmp_path, recipe_path, "--imatrix", str(imatrix))
+
+        assert result.exit_code == 0, result.output
+        assert builds[0]["within_group"] == "q0"
+        assert builds[0]["imatrix"] == imatrix.resolve()
+        events = events_of(recipe_path.with_name("recipe.validation.runlog.jsonl"))
+        assert events[0]["within_group"] == "q0-imx"
+
+    def test_q0_assisted_recipe_without_imatrix_is_a_usage_error(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        install_meter(
+            monkeypatch, MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES))
+        )
+        recipe_path = tmp_path / "recipe.json"
+        save_recipe(
+            make_recipe(DEFAULT_RECIPE, within_group="q0-imx", imatrix="/runs/im.gguf"),
+            recipe_path,
+        )
+
+        result = invoke_validate(tmp_path, recipe_path)
+
+        assert result.exit_code == 2
+        assert "--imatrix" in result.output
+        assert "assisted" in result.output
+
     def test_wrong_imatrix_file_warns_about_the_recorded_one(
         self, tmp_path, monkeypatch
     ) -> None:
