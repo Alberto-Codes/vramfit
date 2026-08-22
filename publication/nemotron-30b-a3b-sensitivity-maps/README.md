@@ -49,8 +49,9 @@ precision, and `tensor_bytes`, the per-tensor size split. The
 [sensitivity map format](https://github.com/Alberto-Codes/vramfit/blob/main/docs/reference/sensitivity-map.md)
 page specifies every field. The path fields record the measuring
 machines' absolute paths. The `scan.calibration` basename matches
-the file here, and the model repo publishes the `scan.imatrix`
-matrix as `imatrix.gguf`.
+the file here. The `scan.imatrix` matrix is bartowski's, published
+in
+[bartowski/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF](https://huggingface.co/bartowski/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF).
 
 The maps hold the expert stacks only. Dense groups never enter
 them: the published recipe pins every quantizable dense class at
@@ -70,8 +71,9 @@ block, no super-block), ported against the C reference and
 bit-exact for the unassisted types. `q0-ref` fits unassisted.
 `q0-imx` weights the nominal-4 fit with the pack's importance
 matrix. The 2-bit quantizer ignores the matrix, so the two methods
-differ at nominal 4 only. The model repo publishes the importance
-matrix the `q0-imx` map and the pack consumed.
+differ at nominal 4 only. bartowski publishes the importance
+matrix the `q0-imx` map and the pack consumed, and the model card
+pins its SHA-256.
 
 The two maps play different roles in the publication:
 

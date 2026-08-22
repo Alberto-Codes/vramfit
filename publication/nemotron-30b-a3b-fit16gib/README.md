@@ -21,9 +21,11 @@ Open before upload (the #404 dry run resolves each):
   below is the intended name under the #401 grammar.
 - The evals sidecar needs its tier-1 and tier-2 blocks
   (make-sidecars.py re-run, #400 lane facts).
-- The imatrix ships in the model repo (#404 confirmed the #79
-  split). Open: attribution wording for republishing bartowski's
-  matrix.
+- The imatrix stays in bartowski's repo, linked at a pinned
+  revision with its SHA-256 (maintainer ruling 2026-08-22,
+  https://github.com/Alberto-Codes/vramfit/issues/404#issuecomment-5382725059,
+  superseding the imatrix item of the step-1 split confirmation).
+  The upload ledger records the hash and the 55,314,688 B size.
 - The packed file's SHA-256 below is #400's verified value. The
   remaining files' sha256s and the upload ledger land at the dry
   run (#82 precedent).
@@ -450,16 +452,18 @@ tier 3 certifies (four leads and a tie on task benchmarks).
 
 ## Reproduce it
 
-The repository ships the recipe, the importance matrix, the evals
-sidecar, and the run log beside the weights. Two commands
-reproduce the pack from the base checkpoint:
+The repository ships the recipe, the evals sidecar, and the run
+log beside the weights. The importance matrix is bartowski's and
+stays in bartowski's repository — the paragraph below the commands
+says where. Two commands reproduce the pack from the base
+checkpoint:
 
 ```
 python convert_hf_to_gguf.py <checkpoint dir> \
   --outfile nemotron-30b-a3b-f16.gguf --outtype f16 --no-mtp
 uv run vramfit pack recipe.json --llama-cpp <llama.cpp checkout> \
   --model <checkpoint dir> --base-gguf nemotron-30b-a3b-f16.gguf \
-  --imatrix imatrix.gguf \
+  --imatrix NVIDIA-Nemotron-3.5-Lightning-30B-A3B-imatrix.gguf \
   --out NVIDIA-Nemotron-3.5-Lightning-30B-A3B-fit16gib.gguf
 ```
 
@@ -479,9 +483,16 @@ recorded settings, and solves any other budget with your own
 [NVIDIA-Nemotron-3.5-Lightning-30B-A3B-sensitivity-maps](https://huggingface.co/datasets/Alberto-Codes/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-sensitivity-maps),
 file `sensitivity-32k-q0-imx-stacks.json`.
 
-The importance matrix both this pack and the comparator consumed is
-bartowski's, published in
+The importance matrix both this pack and the comparator consumed
+is bartowski's, published in
 [bartowski/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF](https://huggingface.co/bartowski/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF).
+This repository does not carry a copy. Download
+[`NVIDIA-Nemotron-3.5-Lightning-30B-A3B-imatrix.gguf` at the pinned revision](https://huggingface.co/bartowski/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF/resolve/f0eec2267ae843d9eb21ea3926ab0046da0a8628/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-imatrix.gguf)
+and keep that filename — the pack stores the imatrix path in the
+GGUF metadata, so the name you pass moves the packed bytes.
+SHA-256
+`fbd36e4fa9be8324062a041ba5cb6247e9f68594168596257a85deb86438aac5`,
+55,314,688 B.
 
 ## Damage disclosure
 
