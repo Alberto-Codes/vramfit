@@ -2005,8 +2005,9 @@ at four server slots, compute 97.41 MiB. `llama-server` answered a
 build cannot take this test, because its 17.544 GiB of weights exceed
 the card before the first buffer allocates. Per issue #164's standing
 rule no tokens-per-second figure from a capped 4090 publishes, ever —
-the figure reads 2 to 3 times optimistic against real smaller
-silicon.
+the figure would read 1.4 to 3.5 times higher than real 16 GiB
+silicon delivers, on the #257 bandwidth spread the #279 ticket
+records.
 
 **The campaign also mapped the interior of the range the eighteenth
 entry could only bracket.** Nine mixed arms carry measured KLD on the
@@ -2139,8 +2140,10 @@ The card links it.
 > [checks comment](https://github.com/Alberto-Codes/vramfit/issues/401#issuecomment-5382545492)
 > there. Publication #1's record above is historical and stays as
 > shipped. This section carries the reusable convention. #401
-> rules identity only — publication #2's artifact set is not
-> settled by this record.
+> rules identity only. The maintainer confirmed publication #2's
+> artifact set separately on 2026-08-22: the #79 split carries
+> over unchanged
+> ([#404 confirmation](https://github.com/Alberto-Codes/vramfit/issues/404#issuecomment-5382579749)).
 
 A vramfit publication names its repository
 `<family-stem>-fit<N>gib-GGUF` and its canonical weight file the

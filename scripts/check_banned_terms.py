@@ -37,6 +37,9 @@ ALLOWLIST: dict[str, str] = {
         "Ledger of the frozen run-root archive (#134). It records the "
         "envelope keys those files carry on disk, and the run root's path."
     ),
+    "publication/nemotron-30b-a3b-fit16gib/card-ledger.md": (
+        "Publication #2's ledger records paths under the same frozen run root (#134)."
+    ),
     "scripts/check_banned_terms.py": "This gate defines the term.",
     "src/vramfit/adapters/outbound/json_common.py": (
         "The envelope-key guard (#154 tier 2). The guard names the key it "
