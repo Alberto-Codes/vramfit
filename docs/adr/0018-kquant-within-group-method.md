@@ -258,8 +258,8 @@ the pack applied. This one replaces a frame the pack cannot apply.
     with a 1.5-sigma tie on the PPL ratio. The
     [#321 closing comment](https://github.com/Alberto-Codes/vramfit/issues/321#issuecomment-5372929524)
     carries the measurement. The #387 falsifier arm later beat
-    this probe arm on both metrics, and it is the best arm
-    measured on this target. The `q0-imx` amendment's observed
+    this probe arm on both metrics. The falsifier arm is the best
+    arm measured on this target. The `q0-imx` amendment's observed
     consequence below carries the result and its attribution
     bound.
 
@@ -433,7 +433,7 @@ set no price (#319's precedent above).
     eval statistic reproduced bit-identically against #321's log.
     The maintainer ruled the bar met 2026-08-22, with the bound
     recorded beside it. The clause reads on an arm built from the
-    `q0-imx` map, and this arm is. The bound: the `q0-ref` map
+    `q0-imx` map, and this arm is one. The bound: the `q0-ref` map
     derives the identical arm. The two maps' delta orderings agree
     through rank 17, and the nominal-2 column is bit-identical, 46
     of 46. So the win credits the stack-keyed ranking under

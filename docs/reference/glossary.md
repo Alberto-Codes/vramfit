@@ -102,8 +102,8 @@ change.
 
 **Probe arm**
 :   A packed arm built to answer one allocation question, named by
-    its ticket. The #321 probe arm spends every cheap stack on
-    `down_proj` over the spread geometry. Distinct from the
+    its ticket. The #321 probe arm places all 11 cheapest-width
+    stacks on `down_proj`, one per layer. Distinct from the
     per-expert probe, which is a scan-frame measurement.
 
 **Frequency band** (short: **band**)
