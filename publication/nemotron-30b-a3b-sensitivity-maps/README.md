@@ -35,19 +35,22 @@ The packed model solved from the `q0-imx` map below ships as
 
 ## The map format
 
-Each map is one JSON file, `vramfit_schema` 3 — the stack-keyed
-form. The `scan` block records the measurement frame: metric,
-calibration file, token count, candidate precisions, grouping,
-within-group method, and imatrix path. The `groups` list records
-the model's 46 routed-expert stacks. An expert stack is the 128
-routed experts of one projection in one layer, stored as a single
-tensor — the unit a GGUF pack assigns a precision to. Each group
-carries its member tensors, its bytes at reference precision, its
-damage per precision, and `tensor_bytes`, the per-tensor size
-split. The `q0-imx` map also carries `imatrix_counts`. The
+Each map is one JSON file, `vramfit_schema` 3, in the form that
+carries `group_by: stack`. The `scan` block records the
+measurement frame: metric, calibration file, token count,
+candidate precisions, grouping, within-group method, and imatrix
+path. The `groups` list records the model's 46 routed-expert
+stacks. An expert stack is the 128 routed experts of one
+projection in one layer, stored as a single tensor — the unit a
+GGUF pack assigns a precision to. Each group carries its member
+tensors, its bytes at reference precision, its damage per
+precision, and `tensor_bytes`, the per-tensor size split. The
+`q0-imx` map also carries `imatrix_counts`. The
 [sensitivity map format](https://github.com/Alberto-Codes/vramfit/blob/main/docs/reference/sensitivity-map.md)
 page specifies every field. The path fields record the measuring
-machines' absolute paths. The basenames match the files here.
+machines' absolute paths. The `scan.calibration` basename matches
+the file here, and the model repo publishes the `scan.imatrix`
+matrix as `imatrix.gguf`.
 
 The maps hold the expert stacks only. Dense groups never enter
 them: the published recipe pins every quantizable dense class at
@@ -61,14 +64,14 @@ them: the published recipe pins every quantizable dense class at
 | `sensitivity-32k-q0-ref-stacks.json` | 32,768 | `q0-ref` | no | 2026-08-18 | 92 |
 
 Each scan covers the 46 expert stacks at candidate precisions
-{4, 2} — 92 cells. The `q0` method round-trips each cell through
-llama.cpp's `_0`-family quantizers — one fp16 scale per block, no
-super-block — ported bit-exact against the C reference. `q0-ref`
-fits unassisted. `q0-imx` weights the nominal-4 fit with the
-pack's importance matrix. The 2-bit quantizer ignores the matrix,
-so the two methods differ at nominal 4 only. The model repo
-publishes the importance matrix both the maps and the pack
-consumed.
+{4, 2}, which is 92 cells. The `q0` method round-trips each cell
+through llama.cpp's `_0`-family quantizers (one fp16 scale per
+block, no super-block), ported against the C reference and
+bit-exact for the unassisted types. `q0-ref` fits unassisted.
+`q0-imx` weights the nominal-4 fit with the pack's importance
+matrix. The 2-bit quantizer ignores the matrix, so the two methods
+differ at nominal 4 only. The model repo publishes the importance
+matrix the `q0-imx` map and the pack consumed.
 
 The two maps play different roles in the publication:
 
@@ -76,10 +79,11 @@ The two maps play different roles in the publication:
   `recipe.json` in the model repo records the full solve: the
   budget bytes, the nine pins, the format overhead, and the
   11-step trace.
-- **The `q0-ref` map is the attribution bound.** It ranks the
-  stacks the same way and derives the identical placement, so the
-  published win credits the damage ranking under the placement
-  rule, not the importance matrix.
+- **The `q0-ref` map is the attribution bound.** Its damage
+  ordering agrees through every rank the solve reads, and it
+  derives the identical placement. So the published win credits
+  the damage ranking under the placement rule, not the importance
+  matrix.
 
 ## Do not compare damage across files
 
@@ -100,10 +104,13 @@ uv run vramfit plan sensitivity-32k-q0-imx-stacks.json \
   --checkpoint <checkpoint dir> --vram 16GiB
 ```
 
-`--checkpoint` prices the dense groups the map does not hold. The
-published recipe adds nine dense pins at 8-bit and a 0.002 format
-overhead — the model card's reproduce section states the full
-command.
+`--checkpoint` prices the dense groups the map does not hold. An
+unstated `--kv-headroom` defaults to 4GiB, so this example solves
+a smaller weight budget than the publication. The published solve
+passed the ruled 15.776 GiB weight budget as `--vram` with
+`--kv-headroom 0`, nine dense pins at 8-bit, and a 0.002 format
+overhead. `recipe.json` in the model repo records every resolved
+value.
 
 ## Run logs
 

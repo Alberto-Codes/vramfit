@@ -190,10 +190,10 @@ times this one. Allocation decides, and the map-ranked placement
 wins.
 
 One attribution bound travels with that result. A second
-sensitivity map, measured without the importance matrix, ranks the
-stacks the same way and yields the identical placement. The win
-credits the damage ranking under the placement rule, not the
-importance matrix.
+sensitivity map, measured without the importance matrix, agrees
+with this ordering through every rank the solve reads and yields
+the identical placement. The win credits the damage ranking under
+the placement rule, not the importance matrix.
 
 Damage records in the recipe are partial by design: the 46 expert
 stacks carry measured marginals, and a pinned or passthrough group
