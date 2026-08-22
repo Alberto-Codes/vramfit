@@ -1,6 +1,6 @@
 [project]
 name = "vramfit"
-version = "0.2.0"
+version = "0.3.0"
 description = "Selective per-layer quantization to fit large open models on a single GPU"
 readme = "README.md"
 license = { file = "LICENSE" }

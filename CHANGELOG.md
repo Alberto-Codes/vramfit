@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.3.0](https://github.com/Alberto-Codes/vramfit/compare/v0.2.0...v0.3.0) (2026-08-22)
+
+
+### Features
+
+* **domain:** build the spread placement rule ([#376](https://github.com/Alberto-Codes/vramfit/issues/376)) ([903aa5c](https://github.com/Alberto-Codes/vramfit/commit/903aa5c392ad9864bde379da16055958f49d91ea))
+* **domain:** widen the pin surface to runtime widths and discovered groups ([#397](https://github.com/Alberto-Codes/vramfit/issues/397)) ([8d21570](https://github.com/Alberto-Codes/vramfit/commit/8d21570ff81e7658348341b65a5cedda7f0f1f9c))
+* **pack:** map the Nemotron-H classes and pin unquantizable ones at F16 ([#370](https://github.com/Alberto-Codes/vramfit/issues/370)) ([f3a07ac](https://github.com/Alberto-Codes/vramfit/commit/f3a07ac25fd2736050b29e5229e305416a9878bb))
+* **plan:** read tensor sizes from the checkpoint, not the map ([5bfc8b5](https://github.com/Alberto-Codes/vramfit/commit/5bfc8b5cbdf61d8af55bc38d3218ea298f1194ee)), closes [#358](https://github.com/Alberto-Codes/vramfit/issues/358)
+* **scan:** add the gguf-ref within-group method and the kquant refusal ([#330](https://github.com/Alberto-Codes/vramfit/issues/330)) ([b619733](https://github.com/Alberto-Codes/vramfit/commit/b61973394c5cf4b5bfb61c559e284c6c73a4a161)), closes [#327](https://github.com/Alberto-Codes/vramfit/issues/327)
+* **scan:** build the q0-imx assisted meter ([#385](https://github.com/Alberto-Codes/vramfit/issues/385)) ([74ac9d6](https://github.com/Alberto-Codes/vramfit/commit/74ac9d6bcdda24583caf14a3a021ecc2fc5fb6a6))
+* **scan:** restrict a run to a subset of groups ([#336](https://github.com/Alberto-Codes/vramfit/issues/336)) ([60651a8](https://github.com/Alberto-Codes/vramfit/commit/60651a8bcea41f2a06ac4727ec5f7d7d63780494)), closes [#282](https://github.com/Alberto-Codes/vramfit/issues/282)
+
+
+### Bug Fixes
+
+* **adapters:** bound a model config integer to what the format carries ([#347](https://github.com/Alberto-Codes/vramfit/issues/347)) ([7c273f0](https://github.com/Alberto-Codes/vramfit/commit/7c273f021b97c72316fbe270efd57c72e926faa5)), closes [#314](https://github.com/Alberto-Codes/vramfit/issues/314) [#287](https://github.com/Alberto-Codes/vramfit/issues/287) [#348](https://github.com/Alberto-Codes/vramfit/issues/348)
+* **adapters:** bound an artifact integer to what the format can carry ([#313](https://github.com/Alberto-Codes/vramfit/issues/313)) ([eee53a2](https://github.com/Alberto-Codes/vramfit/commit/eee53a20c6077fe8a663d363e5afdfedfa7d8803))
+* **adapters:** map a protection under a free prefix ([#366](https://github.com/Alberto-Codes/vramfit/issues/366)) ([1b4d480](https://github.com/Alberto-Codes/vramfit/commit/1b4d480732ff12116aa7cf1c55e3aee2468bb78d)), closes [#365](https://github.com/Alberto-Codes/vramfit/issues/365)
+* **adapters:** refuse a base GGUF that is one shard of a split file ([#352](https://github.com/Alberto-Codes/vramfit/issues/352)) ([047f1b6](https://github.com/Alberto-Codes/vramfit/commit/047f1b6b1efa8fa8078eeb99dab02776cdc3bd0d)), closes [#308](https://github.com/Alberto-Codes/vramfit/issues/308)
+* **adapters:** refuse a dedicated flag that reaches no base-GGUF tensor ([#329](https://github.com/Alberto-Codes/vramfit/issues/329)) ([35f924a](https://github.com/Alberto-Codes/vramfit/commit/35f924a2ef9bec4f4f98aca237e5cf3bd1fa5f44))
+* **adapters:** refuse a duplicate JSON key at the load step ([#281](https://github.com/Alberto-Codes/vramfit/issues/281)) ([4aed979](https://github.com/Alberto-Codes/vramfit/commit/4aed97916ef03332b8a116534a8ce37a84f8ad0d)), closes [#262](https://github.com/Alberto-Codes/vramfit/issues/262) [#283](https://github.com/Alberto-Codes/vramfit/issues/283)
+* **adapters:** refuse a duplicate JSON key outside _load_json ([#285](https://github.com/Alberto-Codes/vramfit/issues/285)) ([c193263](https://github.com/Alberto-Codes/vramfit/commit/c193263d1021cb5d8b29dd63947f861613f98591)), closes [#283](https://github.com/Alberto-Codes/vramfit/issues/283) [#286](https://github.com/Alberto-Codes/vramfit/issues/286) [#287](https://github.com/Alberto-Codes/vramfit/issues/287)
+* **adapters:** refuse a duplicate key in the backfill script ([#296](https://github.com/Alberto-Codes/vramfit/issues/296)) ([b36c178](https://github.com/Alberto-Codes/vramfit/commit/b36c1782eab368985f96b9b7b1a487ac806ce74a)), closes [#286](https://github.com/Alberto-Codes/vramfit/issues/286)
+* **adapters:** refuse a non-map input and a repeated shard tensor ([#334](https://github.com/Alberto-Codes/vramfit/issues/334)) ([817bb77](https://github.com/Alberto-Codes/vramfit/commit/817bb77855e1c0c1018b61756b6b842dbc1a0b02))
+* **adapters:** refuse a protection under a second root ([1b4d480](https://github.com/Alberto-Codes/vramfit/commit/1b4d480732ff12116aa7cf1c55e3aee2468bb78d))
+* **adapters:** refuse an exclusion that reaches no imatrix row ([#323](https://github.com/Alberto-Codes/vramfit/issues/323)) ([5c5c872](https://github.com/Alberto-Codes/vramfit/commit/5c5c872e86989ba7806f28e19f8fbc39f46dbe38)), closes [#309](https://github.com/Alberto-Codes/vramfit/issues/309)
+* **adapters:** refuse an imatrix-miss name the reader could not decode ([#272](https://github.com/Alberto-Codes/vramfit/issues/272)) ([7e2fee8](https://github.com/Alberto-Codes/vramfit/commit/7e2fee8bfa28ac1beb3ff1757da55e27957de94d)), closes [#252](https://github.com/Alberto-Codes/vramfit/issues/252)
+* **adapters:** refuse an override that matches no base-GGUF tensor ([#304](https://github.com/Alberto-Codes/vramfit/issues/304)) ([8bb119c](https://github.com/Alberto-Codes/vramfit/commit/8bb119c7e9fa1eeeb789f4b04e68bc2b2e0a2901))
+* **adapters:** report a base-GGUF layer no override reaches ([#318](https://github.com/Alberto-Codes/vramfit/issues/318)) ([022a4f8](https://github.com/Alberto-Codes/vramfit/commit/022a4f81cfd988ad9406e410d3539c52d9df52ba))
+* **adapters:** report an artifact field the reader does not know ([#290](https://github.com/Alberto-Codes/vramfit/issues/290)) ([82eafa9](https://github.com/Alberto-Codes/vramfit/commit/82eafa98e91b1b931b64f18debb7b1757e0495f5))
+* **adapters:** report every backfill refusal instead of a traceback ([#361](https://github.com/Alberto-Codes/vramfit/issues/361)) ([1dfb804](https://github.com/Alberto-Codes/vramfit/commit/1dfb804ce18d0e26757830274846a95c34860c64))
+* **adapters:** scope the run-log final-line drop by kind ([#344](https://github.com/Alberto-Codes/vramfit/issues/344)) ([b001646](https://github.com/Alberto-Codes/vramfit/commit/b001646b194cbaabaec904ac50acba9535115ae2)), closes [#315](https://github.com/Alberto-Codes/vramfit/issues/315)
+* **config:** contain the e2e run log to a temp directory ([#343](https://github.com/Alberto-Codes/vramfit/issues/343)) ([f012124](https://github.com/Alberto-Codes/vramfit/commit/f0121249fa0c1d0604b89e57087b922de7857b27))
+
 ## [0.2.0](https://github.com/Alberto-Codes/vramfit/compare/v0.1.0...v0.2.0) (2026-08-15)
 
 
