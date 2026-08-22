@@ -174,19 +174,17 @@ A **base GGUF** exists only after a pack, and `plan` runs before packing.
 
 ## Open questions
 
-- **Whether an uncovered group enters the pinnable set.** Decision 3
+- ~~**Whether an uncovered group enters the pinnable set.** Decision 3
   gives a caller no lever over the bf16 default, and `--pin` does not
-  supply one today. `_expand_pins` matches a pattern against
-  `map_.groups` (`src/vramfit/domain/solver.py:256`), so a pin reaches
-  only groups the map carries and raises `PinError` otherwise. An
-  uncovered group is therefore unpinnable, and the consequence below is
-  unavoidable rather than chosen.
-
-    Admitting the source's groups to the pinnable set would let a caller
-    write `--pin "*=8"` and recover the 35-stack mix deliberately. It
-    would also let a pin introduce a group name, which ADR-0007's "a
-    pattern matching zero groups is a hard error" was written to
-    prevent. The two readings conflict and a ruling settles them.
+  supply one today. An uncovered group is therefore unpinnable, and
+  the consequence below is unavoidable rather than chosen.~~
+  **Ruled 2026-08-22 by ADR-0007's #301 amendment: it does.** A pin
+  reaches any checkpoint-discovered group, and a pinned uncovered
+  group prices at the pinned width. The build lives in
+  `vramfit.domain.pins`. One caveat stands: a broad pattern such as
+  `--pin "*=8"` also lands on unquantizable-class groups, which
+  refuse every pin, so the ruled MoE mix pins its dense classes by
+  name.
 
 - **Whether a map and the source may disagree, and what `plan` does when
   they do.** The map records what the scan discovered. The source reports

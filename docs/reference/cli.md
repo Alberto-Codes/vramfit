@@ -107,12 +107,13 @@ a group the recipe leaves unnamed reaches the artifact at that floor,
 and not at the reference bytes the plan reserved.
 
 An uncovered group carries no damage curve, so the solver never
-downgrades it. `--pin` does not reach it either, because a pin matches
-against the map's groups. Whether it should is ADR-0029's first open
-question.
+downgrades it. `--pin` reaches it (the 2026-08-22
+[ADR-0007](../adr/0007-recipe-solver-strategy.md) amendment): a
+pinned uncovered group prices at the pinned width instead of holding
+at reference, and it never enters the downgrade loop.
 
 The command refuses a target runtime that cannot serve reference
-precision, when the map leaves any group uncovered. It refuses a
+precision, when any uncovered group holds at reference. It refuses a
 checkpoint carrying none of the map's groups. It warns and continues
 when the checkpoint carries only some of them.
 
@@ -124,11 +125,16 @@ an unquantizable class — the router's `mixer.gate`, the Mamba
 `mixer.conv1d` — packs at the F16 passthrough, and `pack` refuses a
 recipe that assigns it a lower width.
 
-Pin semantics: patterns are case-sensitive `fnmatch` globs matched against
-the full group name (`--pin "model.layers.0.*=8"`). A pattern that matches
-no group is an error (typo detection). Later pins override earlier ones for
-overlapping groups — repeating a pattern moves it to the last position.
-Pins are recorded in the recipe in their effective order.
+Pin semantics: patterns are case-sensitive `fnmatch` globs matched
+against the full group name (`--pin "model.layers.0.*=8"`). With
+`--checkpoint` the match universe is every discovered group, and
+without it the map's groups (the 2026-08-22 ADR-0007 amendment). A
+pin may name any width the target runtime serves, beyond the map's
+candidates, and a width the map never measured records 0.0 damage. A
+pattern that matches no group is an error (typo detection). Later
+pins override earlier ones for overlapping groups — repeating a
+pattern moves it to the last position. Pins are recorded in the
+recipe in their effective order.
 
 Protection semantics
 ([ADR-0022](../adr/0022-within-layer-protections.md)): patterns are
