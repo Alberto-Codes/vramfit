@@ -2133,6 +2133,88 @@ sensitivity map lives only in the linked dataset repo — it describes
 the base model, not this pack, and the dataset copy is canonical.
 The card links it.
 
+### The identity grammar from publication #2
+
+> **Decided 2026-08-22 (#401),** on the
+> [checks comment](https://github.com/Alberto-Codes/vramfit/issues/401#issuecomment-5382545492)
+> there. Publication #1's record above is historical and stays as
+> shipped. This section carries the reusable convention. #401
+> rules identity only — publication #2's artifact set is not
+> settled by this record.
+
+A vramfit publication names its repository
+`<family-stem>-fit<N>gib-GGUF` and its canonical weight file the
+repo id minus `-GGUF`, plus `.gguf` — the #82 rule, kept. The
+[family stem](../reference/glossary.md#publication) is the
+upstream repository name after the org namespace, with its variant
+suffix removed. The card's H1 is the repo id, as on publication
+#1. The repo publishes from the maintainer's personal account, per
+#79.
+
+**`fit<N>gib` is a ruled deployment claim, not a file size.** It
+states that the ruled serve validation ran the artifact inside an
+N GiB VRAM boundary, under the runtime and context contract the
+model card states. This sharpens #79's wording: the marker named
+the solved-for budget there, and from publication #2 it names a
+validated deployment boundary, which publication #1 also met. The
+card states what substantiates the name: the weight budget, the
+serve configuration, the context, the toolchain, and the
+concurrency bound. The card publishes no throughput figure
+(#164). The fit claim's counter, CPU offload, stays open on #279 —
+the card cites it and settles nothing there.
+
+**Variant rule.** While one artifact occupies a model-and-budget
+family, the name carries no further marker: no context suffix, no
+quality tier, no GPU model, no recipe version. If a second
+artifact enters the same family, the maintainer settles the
+minimum discriminator then.
+
+For publication #2 the grammar yields:
+
+- repo: `NVIDIA-Nemotron-3.5-Lightning-30B-A3B-fit16gib-GGUF`
+- weight: `NVIDIA-Nemotron-3.5-Lightning-30B-A3B-fit16gib.gguf`
+
+The stem begins with `NVIDIA-` because upstream's own repository
+name does. The upstream release publishes no bare-stem repo. Its
+five repositories carry variant suffixes, and the measured
+checkpoint is `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16`
+(#401 checks). The derived identity drops `BF16`, as the family's
+existing GGUF repos do. Card metadata states `base_model:
+nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16` with
+`base_model_relation: quantized` — the full checkpoint id keeps
+its suffix there. The card's provenance section states revision
+`ce38b6a`, because upstream `main` moved to `d468880` after the
+download (#401 checks).
+
+Card metadata copies the upstream license triple, as every GGUF
+repo in this family does: `license: other`, `license_name:
+openmdw-1.1`, `license_link` to the OpenMDW 1.1 page. The license
+requires a distributor to retain the license text and the origin
+notices (#401 checks). It has no naming clause, so nothing forces
+or forbids the stem, unlike Meta's §1.b on publication #1. It has
+no guardrail clause, so the #86 stance below has no counterpart
+here. The rest of the metadata block carries over from publication
+#1: `quantized_by: Alberto-Codes`, `pipeline_tag:
+text-generation`, tags `vramfit`, `gguf`, `imatrix`, no
+`library_name`.
+
+Two publication-#2 facts the card must state plainly:
+
+- **The pack carries no MTP block.** The f16 conversion ran
+  `--no-mtp`. The artifact serves no speculative decoding, while
+  the comparator's builds carry the MTP block, stored at `Q4_0` in
+  its imatrix quants (#401 checks). No sibling artifact exists, so
+  the name takes no MTP marker.
+- **The stated serve contract.** llama.cpp b10326, Vulkan, at
+  `-ngl 99` with the 357.00 MiB token embedding still host-side,
+  16k context, under the 16 GiB ballast cap, at four server slots
+  (#389, #284). The budget derives from a single-sequence overhead
+  measurement and over-reserves by 364.53 MiB, so a pack at the
+  full budget tolerates 593.52 MiB of overhead. That tolerance
+  holds to `n_seq_max` 8, and above 8 the budget needs restating
+  (#284 caveat 3, chart #158 Notes). The figure is a pass-bar
+  number, not a serving-deployment number, and the card says so.
+
 ### The guardrail-efficacy stance
 
 > **Decided 2026-08-10 (#86),** on the #71 license findings.
