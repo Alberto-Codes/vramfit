@@ -89,6 +89,20 @@ status: stable
 > gate price predicts a mixed recipe. The 2026-08-12 note above holds
 > for the 49B lane it describes, and this entry supersedes its
 > "carries none" clause.
+> Note 2026-08-22: the 30B campaign measured both of the
+> Destination's outstanding clauses. The falsifier arm **beats the
+> smallest published GGUF on both ruled damage metrics** — 1.161096
+> against 1.320914 on the PPL ratio, 0.204318 against 0.370257 on
+> mean KLD — at 1.78 GiB less packed weight, and **serves fully
+> offloaded under a 16 GiB ballast cap on the 24 GiB 4090**, a card
+> budget the published build cannot fit
+> ([the nineteenth data point](#the-nineteenth-data-point-the-recipe-beats-the-published-build-and-serves-under-the-cap)).
+> One bound travels with the headline: the `q0-ref` map derives the
+> identical arm, so the win credits the stack-keyed ranking and not
+> the imatrix assistance. The campaign's nine KLD-measured mixed
+> arms also mapped the interior of the gate's range, which closes
+> the eighteenth entry's open question. The page stays `stable`,
+> and the record again carries none.
 
 Scanning and planning happen inside vramfit's own frame: damage,
 measured per cell, on our calibration set. The moment a packed model
@@ -1901,6 +1915,130 @@ quantization ([arXiv 2601.14277](https://arxiv.org/abs/2601.14277), on
 Llama-3.1-8B-Instruct) stops at 3 bits and runs no mixed recipe at
 all. Issue #249 carries what the campaign buys next.
 
+## The nineteenth data point: the recipe beats the published build and serves under the cap
+
+This is the entry the eighteenth data point was building toward. It
+closed 2026-08-22 in two halves, and together they measure the two
+clauses of chart #158's Destination no earlier entry had measured:
+that the recipe beats the smallest published GGUF of the target on
+measured damage, and that it serves on a 16 GiB card no published
+build fits. The damage half ran on the ruled campaign instrument —
+llama.cpp b10362 on a rented H100, same-pod f16 base logits, 594
+WikiText-2 chunks
+([ADR-0027](../adr/0027-instrument-frame-matching.md)). Issue #387's
+pod measured the arm and the probe, issue #372's pod measured the
+published build, and the probe eval reproduces bit-identically across
+the two pods. The fit half ran on the reference box under a 16 GiB
+ballast cap, at $0 (issue #389).
+
+The arm is the falsifier arm of
+[ADR-0018](../adr/0018-kquant-within-group-method.md)'s `q0-imx`
+clause: 11 `down_proj` expert stacks at nominal 2 on layers 22, 24,
+27, 29, 31, 34, 43, 45, 47, 49, 51, the other 35 stacks at nominal 4,
+every dense group at nominal 8. It is hand-authored in the campaign
+form by applying
+[ADR-0007](../adr/0007-recipe-solver-strategy.md)'s placement rule to
+the `q0-imx` stack-keyed sensitivity map. No solver code buys 2-bit
+([ADR-0021](../adr/0021-runtime-frame-measurement.md) decision 4).
+One bound travels with the result wherever it is quoted: ADR-0018's
+observed consequence records that the `q0-ref` map derives the
+identical arm, so the win credits the stack-keyed ranking under the
+ruled placement policy and not the imatrix-assisted repricing.
+
+| build | bytes | GiB | bits/param | PPL | PPL / f16 | mean KLD | 99.9 % KLD | max KLD | top-1 agree |
+|---|---|---|---|---|---|---|---|---|---|
+| f16 reference | 63,181,504,640 | 58.842 | 16.007 | 6.8192 | — | — | — | — | — |
+| **falsifier arm** | 16,922,476,448 | 15.760 | 4.287 | 7.9177 | **1.161096** | **0.204318** | 5.1596 | 10.507 | 83.13 % |
+| spread-map probe (#321) | 16,922,476,448 | 15.760 | 4.287 | 8.0370 | 1.178594 | 0.219037 | 5.3804 | 10.767 | 82.73 % |
+| bartowski `IQ2_XXS` (#372) | 18,838,022,112 | 17.544 | — | 9.0075 | 1.320914 | 0.370257 | 6.5350 | 14.823 | — |
+
+The published build's bits-per-parameter cell stays empty because its
+bytes include the `blk.52` MTP block that our `--no-mtp` converts
+drop — the division would run over different weights.
+
+**The comparison binds on both metrics, and both agree.** The
+maintainer ruled (issue #380) that the Destination's published-build
+clause reads the PPL ratio and mean KLD together, from one
+instrument, and that a split refuses the scoreboard row rather than
+letting anyone choose a metric after the measurement. No split
+happened. The falsifier arm beats bartowski's `IQ2_XXS` by 15.98
+points of PPL ratio — the unit that ADR-0016's standing comparison
+uses, where the probe's margin reads 14.23 — and by 44.8 % on mean
+KLD, at
+1,915,545,664 fewer packed bytes. It is the best arm measured on this
+target, on both metrics.
+
+**The imatrix confound is stated, not bought off** (issue #278's
+ruling, recorded in
+[ADR-0016](../adr/0016-imatrix-in-the-pack-path.md)). Both sides
+consume the same bartowski importance matrix, 185 entries over 822
+chunks. The published build quantizes 91.53 % of its bytes assisted.
+The arm quantizes 74.44 % assisted, because no type takes an assisted
+fit at 2.25 bits on rows of 2688 and 1856, and `quantize_q8_0`
+discards the matrix outright. The asymmetry is a cost of the widths
+the recipe chose. It runs against the recipe, and the recipe wins
+anyway. The label on the other side deserves its own sentence:
+`IQ2_XXS` names 12 of the build's 417 tensors, because
+`tensor_type_fallback` rewrites every row 256 does not divide, which
+sends all 46 backbone expert stacks to `IQ4_NL` at 4.5 bits per
+weight. The shelf's smallest build spends 4.5-bit experts and loses
+to a recipe holding 11 stacks at 2.25.
+
+**The serve half passed its bar with 225 MiB to spare.** The bar
+(issue #164) is fit, not speed: the pack loads fully offloaded inside
+the cap at 16k context and generates. The method is the ballast cap
+issue #164 proved binds at the boundary — a real card's
+`ErrorOutOfDeviceMemory`, not a soft warning — run at issue #266's
+16 GiB precedent. `scripts/vram_ballast.py` holds a CUDA allocation
+sized from free VRAM until llama.cpp's Vulkan device query reads
+16,383 MiB free on the 24 GiB 4090. The pack was rebuilt box-side
+from the recipe alone. It landed at this machine's exact byte count
+for the shared campaign composition, 32 B of metadata away from the
+pod's, which is issue #300's measured cross-machine variance. Under
+the cap, llama.cpp b10326 reported `offloaded 53/53 layers to GPU`
+and put 15,774.00 MiB of weights on the device, with the 357.00 MiB
+token embedding host-mapped as always. Device buffers totaled
+16,157.88 MiB against 16,383 MiB visible: KV 96.00 MiB at 16,384
+cells across the six layers that hold any, recurrent state 190.47 MiB
+at four server slots, compute 97.41 MiB. `llama-server` answered a
+32-token completion request from inside that envelope. The published
+build cannot take this test, because its 17.544 GiB of weights exceed
+the card before the first buffer allocates. Per issue #164's standing
+rule no tokens-per-second figure from a capped 4090 publishes, ever —
+the figure reads 2 to 3 times optimistic against real smaller
+silicon.
+
+**The campaign also mapped the interior of the range the eighteenth
+entry could only bracket.** Nine mixed arms carry measured KLD on the
+b10362 lane, every one at the identical composition — 11 of 46 stacks
+at nominal 2, 35 at nominal 4, dense at nominal 8 — differing only in
+where the cheap width lands: falsifier 0.204318, spread-map probe
+0.219037, the three blind draws at 0.234003, 0.251240, and 0.306273,
+spread-matched 0.299049, the measured-map arm 1 at 0.360932,
+class-wise 0.402953, and the deliberately inverted arm 5 at 0.559473.
+A straight line between the gate's corners predicts 0.397 at this
+stack count, and the measured arms straddle it — from half the
+chord's height to 1.41 times it, a 2.74x span on allocation alone.
+The magnitude license for reading b10362 arms against b10326 corners
+is issue #372's finding that every re-run arm reproduced its b10326
+figure to every printed decimal. So a gate price bounds the range and
+predicts nothing inside it: allocation decides which side of the
+chord a mix lands on, and the ruled-policy arm halves it — which is
+the answer the eighteenth entry's open question was waiting on.
+
+The damage half cost about $1.25 — a fresh H100 pod for 22 minutes,
+17.7 of them working. The serve half cost nothing. Receipts sit in
+the box's run archive under `nemotron-30b-a3b/falsifier-q0-imx/`:
+eval logs, pack logs, the serve logs with device-memory samples, and
+the served completion. Three things travel with this entry:
+
+- The serve result is a ballast-cap measurement on a 4090, and the
+  published claim states that method.
+- The best blind draw also beats the published build, and a blind
+  recipe is a scoreboard row and never a published claim
+  (issue #265).
+- The `q0-ref` attribution bound above travels with the headline.
+
 ## Provenance is not evidence
 
 Hashes answer a different question and must not be confused with
@@ -2117,11 +2255,18 @@ either. Numbers without framing invite the hostile reading.
   for the candidate, RoPE for the baseline. The control ran on a
   split lane, 14 layers on the GPU and the rest on the CPU, because
   the f16 is 92.9 GiB and does not fit the 24 GiB card.
-- Whether a whole-frontier gate price predicts a mixed recipe's
+- ~~Whether a whole-frontier gate price predicts a mixed recipe's
   damage (added 2026-08-14, the eighteenth data point). The gate sets
   every expert stack to one width and measures the corners. A recipe
   that fits chart #158's budget mixes widths across stacks, and the
   corners sit 90 times apart on mean KLD. Nothing measures the shape
   of the curve between them. Issue #249 rules what the campaign
   spends next, and the answer decides whether that shape gets
-  measured directly or inferred.
+  measured directly or inferred.~~ **Measured (the nineteenth data
+  point): the shape got measured directly, and the chord predicts
+  nothing.** Nine mixed arms at 11 of 46 stacks straddle the 0.397
+  that a straight line between the corners predicts, from 0.204318 to
+  0.559473 — a 2.74x span on allocation alone. The ruled-policy arm
+  lands at roughly half the chord and the inverted arm lands 1.41
+  times above it, so a gate price bounds a mixed recipe without
+  predicting it.
