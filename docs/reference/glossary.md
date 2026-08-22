@@ -649,6 +649,29 @@ change.
 > in full from here on. Records written before this ruling keep
 > the short form, and the sidecar's `lane` field name stays.
 
+## Publication
+
+**Identity grammar**
+:   The naming rule for a published vramfit artifact:
+    `<family-stem>-fit<N>gib-GGUF` for the repository, the repo id
+    minus `-GGUF` plus `.gguf` for the weight file, the repo id as
+    the card's H1. Ruled on #401, recorded in
+    [evaluating packed models](../explanation/evaluating-packed-models.md#the-identity-grammar-from-publication-2).
+    Not "naming convention" or "repo format".
+
+**Family stem**
+:   The upstream repository name after the org namespace, with its
+    variant suffix removed. For publication #2:
+    `NVIDIA-Nemotron-3.5-Lightning-30B-A3B`, from
+    `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16`. Not "base
+    name" or "model name" (ambiguous with the checkpoint id).
+
+**Serve contract**
+:   The runtime and context configuration a model card states to
+    substantiate a `fit<N>gib` claim: toolchain, backend, offload,
+    context, cap method, and concurrency bound. The claim holds
+    inside this contract and nowhere else. Not "serving config".
+
 ## Architecture
 
 **Domain**

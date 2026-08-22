@@ -171,16 +171,17 @@ published build's 18,838,022,112 B, which is 1.78 GiB smaller
 path, #300). #400 records the run and the scores. The
 negative-result branch has no trigger, and publication #2 ships the
 model. Per #164, no tokens-per-second figure from a capped 4090
-publishes. #401 settled this target's identity on 2026-08-22, and
-#279 carries the 16 GiB fit claim's open counter, CPU offload.
+publishes. #279 carries the 16 GiB fit claim's open counter, CPU
+offload.
 
-The publication conventions are settled. #79 ruled the `vramfit`
-HF tag, the budget in the repo name, and the artifact set for
-publication #1
+The naming conventions are settled. #79 ruled the `vramfit` HF
+tag, the budget in the repo name, and publication #1's artifact
+set
 ([the Hugging Face conventions](evaluating-packed-models.md#the-hugging-face-conventions)).
 #401 ruled the reusable identity grammar from publication #2
-forward
+forward on 2026-08-22
 ([the identity grammar](evaluating-packed-models.md#the-identity-grammar-from-publication-2)).
+Publication #2's artifact set is not settled.
 
 ## What a score may never claim
 
