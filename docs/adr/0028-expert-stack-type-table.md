@@ -16,6 +16,8 @@
   whether a solver may buy that width, and after its own
   2026-08-14 amendment it bars 2-bit on this target. Record:
   [#229 closing comment](https://github.com/Alberto-Codes/vramfit/issues/229#issuecomment-5300460635).
+  **Amended 2026-08-22 (#301): the bar lifts for expert-stack
+  groups on this target — ADR-0021's 2026-08-22 amendment.**
 - **Amendment (2026-08-20, issue #183):** decision 1's table also
   reaches a layer-class group whose rows refuse the 256
   super-block. The Nemotron-H dense classes qualify at 2688. The
@@ -140,7 +142,9 @@ Facts verified upstream on 2026-08-14 (#189):
 - **Superseded 2026-08-14 (#248):** ADR-0021 decision 4 now buys a
   width against a measured bar. This table still states what nominal
   2 means on a stack. The runtime-frame price arrived and refused the
-  width on this target (#229).
+  width on this target (#229). **The #249 campaign then priced the
+  mixed use and the bar lifted for expert-stack groups, 2026-08-22
+  (#301).**
 - On this target the decision 3 scan detects nothing, because
   every table entry's block size divides the stack rows. The scan
   guards every other tensor class and every future target.
