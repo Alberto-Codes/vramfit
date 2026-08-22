@@ -31,15 +31,16 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
-      # Without the PAT the action falls back to GITHUB_TOKEN. A tag pushed by
-      # GITHUB_TOKEN does not trigger publish.yml, so the release would look
-      # green and never reach PyPI. Fail loudly at the moment it matters.
-      - name: Fail a release cut without the PAT
+      # Without the PAT the action falls back to GITHUB_TOKEN, and the draft
+      # and its tag are authored by github-actions. A maintainer's publish
+      # click still fires publish.yml, because the release event carries the
+      # publisher, not the author. The remaining cost is that the lockfile
+      # push cannot trigger CI on the release PR. Warn instead of failing.
+      - name: Warn on a release cut without the PAT
         if: steps.release.outputs.release_created == 'true' && env.HAS_PAT != 'true'
         run: |
-          echo "::error::Released ${{ steps.release.outputs.tag_name }} with GITHUB_TOKEN. \
-          The tag will not trigger publish.yml. Set RELEASE_PLEASE_TOKEN, then push the tag by hand."
-          exit 1
+          echo "::warning::Cut ${{ steps.release.outputs.tag_name }} with GITHUB_TOKEN. \
+          Set RELEASE_PLEASE_TOKEN so a maintainer account authors releases and CI runs on the release PR."
 
   update-lockfile:
     needs: release-please
