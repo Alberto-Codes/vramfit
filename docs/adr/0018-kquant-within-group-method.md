@@ -417,7 +417,7 @@ set no price (#319's precedent above).
   and the row reader. #384 carries the re-scan.
 - **This amendment states its falsifier.** A `q0-imx` map earns
   nothing until an arm built from it beats the #321 probe arm on
-  mean KLD, the map's own metric, at 0.219037. The probe's PPL
+  mean KLD, the map's own metric, at 0.219037. The probe arm's PPL
   ratio of 1.178594 reads beside it. The nearest prior runs the
   other way: ADR-0020's 2026-08-06 note records the assisted
   `kquant` recipe packing worse, at 9.607 PPL and 0.3437 KLD
