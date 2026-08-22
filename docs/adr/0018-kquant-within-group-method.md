@@ -257,7 +257,10 @@ the pack applied. This one replaces a frame the pack cannot apply.
     the bar met on the map's own metric, at 8.7 sigma on mean KLD,
     with a 1.5-sigma tie on the PPL ratio. The
     [#321 closing comment](https://github.com/Alberto-Codes/vramfit/issues/321#issuecomment-5372929524)
-    carries the measurement.
+    carries the measurement. The #387 falsifier arm later beat
+    this probe on both metrics. The 2026-08-21 amendment's
+    observed consequence below carries the result and its
+    attribution bound.
 
 ## Amendment: the token becomes `q0-ref` (2026-08-18, issue #332)
 
@@ -419,6 +422,25 @@ set no price (#319's precedent above).
   `kquant` recipe packing worse, at 9.607 PPL and 0.3437 KLD
   against the unassisted 9.251 and 0.3056. The 2026-08-17
   amendment's warning applies unchanged.
+
+    **Observed consequence (2026-08-22, issue #387): the bar is
+    met, and the win carries an attribution bound.** The falsifier
+    arm reads mean KLD 0.204318 ± 0.001160 against the probe's
+    0.219037, at 8.7 sigma. Its PPL ratio reads 1.161096 beside
+    it. The same pod re-packed and re-evaluated the probe arm, and
+    every reported statistic reproduced bit-identically. The
+    maintainer ruled the bar met 2026-08-22, with the bound
+    recorded beside it. The bound: the `q0-ref` map derives the
+    bit-identical arm. The two maps' delta orderings agree through
+    rank 17, and the nominal-2 column is bit-identical, 46 of 46.
+    So the win credits the stack-keyed ranking under ADR-0007's
+    placement rule, not the imatrix repricing. The companion
+    finding: the `kquant-imx` layer map mispriced layers 36 and 38
+    at fixed policy. The stack ranking replaces them with 27 and
+    34, worth 6.7 % of mean KLD. The
+    [#387 closing comment](https://github.com/Alberto-Codes/vramfit/issues/387#issuecomment-5377172133)
+    carries the measurement.
+
 - #194's premise moves. A `q0-imx` map prices the 46 stacks
   assisted, so the assisted-coverage split stops being a constant of
   the method.
