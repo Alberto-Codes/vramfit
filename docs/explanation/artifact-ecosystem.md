@@ -16,10 +16,10 @@ status: draft
 > Note 2026-08-22: gate 3 ruled GO a second time, for publication #2
 > — the 30B falsifier arm (chart #158). Publication #2 shipped the
 > same day, through the procedure. The identity followed the #401
-> grammar, every uploaded file matched its ledger hash, and both
-> cards published byte-verbatim. The
+> identity grammar, every uploaded file matched its ledger hash,
+> and both cards published byte-verbatim. The
 > [#404 closing comment](https://github.com/Alberto-Codes/vramfit/issues/404#issuecomment-5382801425)
-> carries the ship record, and v0.3.0 released behind it.
+> carries the ship record, and v0.3.0 released after it.
 
 ## The honest competitive picture
 
