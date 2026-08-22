@@ -6,9 +6,14 @@
       "release-type": "python",
       "package-name": "vramfit",
       "include-component-in-tag": false,
+      "bump-minor-pre-major": true,
+      "draft": true,
+      "force-tag-creation": true,
       "extra-files": [
         "src/vramfit/__init__.py"
       ],
+      "pull-request-header": "Pre-flight for a release cut. On merge, release-please cuts a **draft** GitHub release and creates its tag. Nothing reaches PyPI until a maintainer publishes the draft.\n\n- [ ] The version above is the intended one. If not, do not merge.\n- [ ] The Hugging Face publication this tag ships is live. The release follows the publication, never leads it.\n- [ ] The blog writeup is drafted, or the release notes name it as a fast follow.\n- [ ] The published claims and scoreboard numbers in README and docs still hold. They go stale silently.\n- [ ] The `update-lockfile` job refreshed `uv.lock`.\n",
+      "pull-request-footer": "After you merge this PR, finish the release by hand.\n\n1. Edit the draft release. Write what this tag ships.\n2. State the measured state the tag represents.\n3. State how to run it.\n4. Link the writeup.\n5. Pin every doc link to the tag, not `main`.\n6. Publish the draft. Publishing fires `publish.yml`, which uploads to PyPI.",
       "changelog-sections": [
         { "type": "feat", "section": "Features" },
         { "type": "fix", "section": "Bug Fixes" },

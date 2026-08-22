@@ -1,12 +1,11 @@
 name: Publish to PyPI
 
-# Triggered when release-please (or a manual tag push) creates a version tag.
-# Requires RELEASE_PLEASE_TOKEN (PAT with repo scope) in release-please.yml —
-# tags created by GITHUB_TOKEN do NOT trigger other workflows.
+# Triggered when a maintainer publishes the GitHub release. Release-please
+# cuts the release as a draft with its tag already created, so the publish
+# click is the gate. A bare tag push no longer publishes anything.
 on:
-  push:
-    tags:
-      - "v*"
+  release:
+    types: [published]
 
 # Least-privilege: read-only by default. The publish job escalates for itself.
 permissions:
