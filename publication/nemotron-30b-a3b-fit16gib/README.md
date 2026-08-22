@@ -21,10 +21,14 @@ Open before upload (the #404 dry run resolves each):
   below is the intended name under the #401 grammar.
 - The evals sidecar needs its tier-1 and tier-2 blocks
   (make-sidecars.py re-run, #400 lane facts).
-- The imatrix republish-or-link choice (bartowski's matrix, see the
-  imatrix paragraph) needs the maintainer's call.
-- File sha256s and the upload ledger land at the dry run (#82
-  precedent).
+- The imatrix ships in the model repo (#404 confirmed the #79
+  split). Open: attribution wording for republishing bartowski's
+  matrix.
+- The packed file's SHA-256 below is #400's verified value. The
+  remaining files' sha256s and the upload ledger land at the dry
+  run (#82 precedent).
+- The license text and the origin notice files must land in the
+  repo before upload. The License section already claims them.
 -->
 
 # NVIDIA-Nemotron-3.5-Lightning-30B-A3B-fit16gib-GGUF
@@ -41,12 +45,24 @@ exact file inside a 16 GiB VRAM boundary under the configuration
 stated below. This pack has no single quantization scheme, and the
 budget is the claim.
 
+Two terms the card leans on. A *sensitivity map* records that
+damage for every layer group. On this model the expensive groups
+are *expert stacks*: the 128 routed experts of one projection in
+one layer, stored as a single tensor. The 46 expert stacks hold
+93 % of the parameters, so the recipe is mostly a decision about
+them.
+
 One omission to know before you download: **this pack carries no MTP
 block.** The f16 conversion ran `--no-mtp`, so the multi-token
 prediction layers the base checkpoint ships are not in this file and
 speculative decoding (`--spec-type draft-mtp`) is unavailable. The
 published comparator below carries its MTP block at Q4_0, which is
 part of its larger file size.
+
+One requirement to know too: this pack uses the `Q2_0` tensor
+type, which llama.cpp merged on 2026-07-07. The serve test below
+ran build b10326, and that build or later loads this file. A build
+older than the merge refuses it.
 
 Every measured number below sits beside its baseline counterpart.
 The card prints the losing numbers too.
@@ -55,23 +71,25 @@ The card prints the losing numbers too.
 
 Held-out WikiText-2 test set, 594 chunks, measured against the f16
 base on one instrument (llama.cpp b10362, same-pod f16 logits).
-Lower is better for PPL and KLD. "Top-1 agree" is the share of
+Lower is better for PPL and KLD. "Same top" is the share of
 tokens where the quantized model and the f16 base agree on the top
 token — higher is better. The comparator is bartowski's `IQ2_XXS`,
 the smallest published GGUF of this model at measurement time.
 
-| Model | File size | Bits/param | PPL ↓ | PPL / f16 ↓ | Mean KLD ↓ | Top-1 agree ↑ |
+| Model | File size | Bits/param | PPL ↓ | PPL / f16 ↓ | Mean KLD ↓ | Same top ↑ |
 |---|---|---|---|---|---|---|
 | f16 reference | 58.84 GiB | 16.007 | 6.8192 | — | — | — |
 | **This pack** | **15.76 GiB** | 4.287 | **7.9177** | **1.161096** | **0.204318** | 83.13 % |
-| IQ2_XXS (bartowski) | 17.54 GiB | — | 9.0075 | 1.320914 | 0.370257 | — |
+| IQ2_XXS (bartowski) | 17.54 GiB | — | 9.0075 | 1.320914 | 0.370257 | 76.09 % |
 
-This pack beats the published build on both metrics at once — 15.98
-points of PPL ratio and 44.8 % lower mean KLD — at 1,915,545,664
-fewer packed bytes. The comparison was ruled to read both metrics
-together from one instrument before the measurement ran, so no
-metric was chosen after the fact. The published build's bits/param
-cell stays empty because its bytes include the MTP block this pack
+This pack beats the published build on both metrics at once: a
+PPL ratio 0.1598 lower (1.161096 against 1.320914) and 44.8 %
+lower mean KLD, at 1.78 GiB fewer packed bytes. The comparison was
+ruled to read both metrics together from one instrument before the
+measurement ran, so no metric was chosen after the fact.
+
+One comparator cell stays empty. Its bits/param cell has no
+honest value because its bytes include the MTP block this pack
 omits — the division would run over different weights.
 
 Two facts about the comparator, stated because they explain the gap:
@@ -80,12 +98,12 @@ Two facts about the comparator, stated because they explain the gap:
   entries over 822 chunks). The published build quantizes 91.53 % of
   its bytes assisted. This pack quantizes 74.44 % assisted, because
   no type takes an assisted fit at 2.25 bits on expert rows of 2688
-  and 1856 columns. The asymmetry runs against this pack, and it
+  and 1856 columns, and because the 8-bit quantizer discards the
+  matrix outright. The asymmetry runs against this pack, and it
   wins anyway.
 - The `IQ2_XXS` label names 12 of that build's 417 tensors.
   llama.cpp's fallback rewrites every row 256 does not divide, which
-  sends all 46 expert stacks — 93 % of the parameters — to `IQ4_NL`
-  at 4.5 bits per weight. The shelf's smallest build spends 4.5-bit
+  sends all 46 expert stacks to `IQ4_NL` at 4.5 bits per weight. The shelf's smallest build spends 4.5-bit
   experts and loses to a recipe holding 11 stacks at 2.25.
 
 ## What fit16gib means
@@ -99,12 +117,16 @@ The budget arithmetic:
 | Quantity | Bytes | GiB |
 |---|---|---|
 | VRAM ceiling | 17,179,869,184 | 16.000 |
-| Measured runtime buffers (KV + recurrent state + compute) | — | 0.224 (228.99 MiB) |
+| Runtime reserve | 240,518,169 | 0.224 |
 | Weight budget | 16,939,351,015 | 15.776 |
 | Predicted pack size | 16,929,873,667 | 15.767 |
 | Real packed file | 16,922,476,480 | 15.760 |
 
-The packed file lands 16.09 MiB under the weight budget.
+The packed file lands 16.09 MiB under the weight budget. The
+reserve rounds up the measured runtime buffers: KV cache,
+recurrent state, and compute, 228.99 MiB in total at one sequence,
+plus 0.39 MiB of rounding. The serve test below ran four server
+slots, so its buffer totals read larger.
 
 The serve test: llama.cpp b10326 (Vulkan), a hard ballast cap
 holding the device to 16,383 MiB visible on an RTX 4090, `-ngl 99`
@@ -134,9 +156,13 @@ The claim's boundaries, stated plainly:
 
 ## The recipe
 
-The solver — greedy damage-per-byte over the stack-keyed
-sensitivity map — allocated 210 groups, under nine pins that hold
-every dense class at 8-bit:
+The solver — greedy damage-per-byte over the sensitivity map —
+allocated 210 groups, under nine pins that hold every quantizable
+dense class at 8-bit. A nominal width names the solver's
+assignment, and each GGUF type spends more in practice: `Q2_0`
+stores 2.25 bits per weight, `Q4_0` stores 4.5, and `Q8_0` stores
+8.5, block scales included. The budget prices every group at
+those real bits. The allocation:
 
 - 11 `down_proj` expert stacks at nominal 2 (Q2_0, 2.25 bits per
   weight): layers 22, 24, 27, 29, 31, 34, 43, 45, 47, 49, 51.
@@ -156,15 +182,18 @@ damage-per-byte order, so the solve replays from the artifact. The
 2-bit placement follows vramfit's spread placement rule: the cheap
 width lands on the stacks the map prices cheapest, spread across
 the depth rather than clustered. The same campaign measured eight
-alternative placements of the identical width mix — blind draws,
-size-matched controls, an inverted arm — and this allocation's
-damage is the best of the nine, with the worst at 2.7 times this
-one. Allocation decides, and the map-ranked placement wins.
+alternative placements of the identical width mix — a spread-map
+probe, three blind draws, a spread-matched control, a measured-map
+arm, a class-wise arm, and a deliberately inverted arm — and this
+allocation's damage is the best of the nine, with the worst at 2.7
+times this one. Allocation decides, and the map-ranked placement
+wins.
 
-One attribution bound travels with that result: a reference-frame
-variant of the map derives the identical placement, so the win
-credits the stack-keyed damage ranking under the placement rule,
-not the imatrix-assisted repricing.
+One attribution bound travels with that result. A second
+sensitivity map, measured without the importance matrix, ranks the
+stacks the same way and yields the identical placement. The win
+credits the damage ranking under the placement rule, not the
+importance matrix.
 
 Damage records in the recipe are partial by design: the 46 expert
 stacks carry measured marginals, and a pinned or passthrough group
@@ -175,7 +204,7 @@ across scans or across models.
 <details>
 <summary>Per-group allocation (210 groups, from the recipe)</summary>
 
-| Group | Nominal bits | GGUF type | Bytes |
+| Group | Precision | GGUF type | Bytes |
 |---|---|---|---|
 | `model.layers.1.mixer.experts.up_proj` | 4 | Q4_0 | 359,921,222 |
 | `model.layers.1.mixer.experts.down_proj` | 4 | Q4_0 | 359,921,222 |
@@ -393,9 +422,9 @@ across scans or across models.
 ## Evaluation
 
 Three tiers. Tier 1 (perplexity) and tier 2 (whole-model KL
-divergence) are the table above, measured on the ADR-0027
-instrument frame: llama.cpp b10362, same-pod f16 reference logits,
-594 held-out WikiText-2 chunks. Tier 3 ran lm-evaluation-harness
+divergence) are the table above, measured on one instrument:
+llama.cpp b10362, f16 reference logits recorded on the same
+machine and build, 594 held-out WikiText-2 chunks. Tier 3 ran lm-evaluation-harness
 0.4.12 through a llama-cpp-python lane on llama.cpp b10362
 (Vulkan) — full evaluation splits, no `--limit`, zero context
 truncations, this pack and the comparator on the same lane.
@@ -421,21 +450,25 @@ tier 3 certifies (four leads and a tie on task benchmarks).
 
 ## Reproduce it
 
-The repository ships the recipe, the evals sidecar, and the run
-log beside the weights. One command reproduces the pack from the
-base checkpoint:
+The repository ships the recipe, the importance matrix, the evals
+sidecar, and the run log beside the weights. Two commands
+reproduce the pack from the base checkpoint:
 
 ```
+python convert_hf_to_gguf.py <checkpoint dir> \
+  --outfile nemotron-30b-a3b-f16.gguf --outtype f16 --no-mtp
 uv run vramfit pack recipe.json --llama-cpp <llama.cpp checkout> \
+  --model <checkpoint dir> --base-gguf nemotron-30b-a3b-f16.gguf \
   --imatrix imatrix.gguf \
   --out NVIDIA-Nemotron-3.5-Lightning-30B-A3B-fit16gib.gguf
 ```
 
-The command converts the f16 base GGUF once (`--no-mtp`), drives
-the recorded types into `llama-quantize`, and reports the margin.
-The pack reproduces this file's bytes on one machine — packed size
-varies by tens of bytes across machines because the GGUF metadata
-stores the imatrix path.
+The convert step must pass `--no-mtp`: current converters fold the
+MTP block in by default, and this pack's base is the 401-tensor
+no-MTP form. The pack step reuses that base, drives the recorded
+types into `llama-quantize`, and reports the margin. It reproduces
+this file's bytes on one machine — the provenance section states
+the cross-machine bound.
 
 The recipe is not a magic constant. It records the full solve: the
 15.776 GiB weight budget, the nine pins, the 0.002 format

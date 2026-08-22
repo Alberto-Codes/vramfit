@@ -2005,8 +2005,8 @@ at four server slots, compute 97.41 MiB. `llama-server` answered a
 build cannot take this test, because its 17.544 GiB of weights exceed
 the card before the first buffer allocates. Per issue #164's standing
 rule no tokens-per-second figure from a capped 4090 publishes, ever —
-the figure reads 2 to 3 times optimistic against real smaller
-silicon.
+the figure reads 1.4 to 3.5 times optimistic against real 16 GiB
+silicon, on the #257 bandwidth spread the #279 ticket records.
 
 **The campaign also mapped the interior of the range the eighteenth
 entry could only bracket.** Nine mixed arms carry measured KLD on the
