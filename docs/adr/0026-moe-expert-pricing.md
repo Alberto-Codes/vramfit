@@ -604,7 +604,10 @@ fit the packer does not ship. ADR-0021 recorded that failure.
   ADR-0021 decision 4 became a measured bar on the same date (#248),
   and it bars 2-bit on this target. The 10.5 GiB budget now sits
   further from the chart's destination rather than nearer. #249
-  carries what the campaign buys next.
+  carries what the campaign buys next. **Amended 2026-08-22 (#301):
+  the campaign priced the mixed use and the bar lifts for
+  expert-stack groups on this target — ADR-0021's 2026-08-22
+  amendment.**
 
 ## Consequences
 

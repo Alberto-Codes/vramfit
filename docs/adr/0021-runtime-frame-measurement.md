@@ -19,6 +19,24 @@
   than a chunk count.
   Record:
   [#229 closing comment](https://github.com/Alberto-Codes/vramfit/issues/229#issuecomment-5300460635).
+- **Amendment (2026-08-22, issue #301):** decision 4's bar lifts for
+  expert-stack groups on a target where a runtime-frame campaign
+  priced the width's mixed use. The maintainer ruled it 2026-08-22
+  in the #301 exchange. On the 30B target the campaign ran across
+  #300, #372, and #387. It measured nine mixes, each holding 11 expert
+  stacks at nominal 2, and the falsifier arm beats the smallest
+  published build on both ruled metrics
+  ([the nineteenth data point](../explanation/evaluating-packed-models.md#the-nineteenth-data-point-the-recipe-beats-the-published-build-and-serves-under-the-cap)).
+  The solver may buy nominal 2 on expert-stack groups under the
+  [ADR-0007](0007-recipe-solver-strategy.md) placement rule. Dense
+  groups keep the bar, and pins at nominal 8 hold them in the ruled
+  form. One acceptance clause guards the transfer. The first
+  solver-emitted recipe must pack byte-identical to the measured
+  falsifier arm, both packs on one machine. A divergence stops the
+  lane. The divergent recipe earns nothing until measured —
+  [ADR-0027](0027-instrument-frame-matching.md) keeps damage
+  magnitudes on one instrument. Record:
+  [#301 ruling comment](https://github.com/Alberto-Codes/vramfit/issues/301#issuecomment-5377920461).
 
 ## Context
 
@@ -78,11 +96,20 @@ arithmetic.
    which the chart's 10.5 GiB weight budget cannot reach. So `Q4_0`
    is not an alternative the bar reads here.
 
+   Amended 2026-08-22 (#301): the bar lifts for expert-stack
+   groups where a runtime-frame campaign priced the width's mixed
+   use. On this target that is nominal 2, under the ADR-0007
+   placement rule. Dense groups keep the bar, held by pins at
+   nominal 8. The header amendment carries the acceptance clause.
+
    `Q2_0` still fails. Mixed recipes also fit at or below 10.5 GiB,
    at roughly 82 % of stacks cheap and the rest higher, and the gate
-   measured none of them. No price yet shows `Q2_0` beats those
+   measured none of them. ~~No price yet shows `Q2_0` beats those
    alternatives, so the solver buys no 2-bit on this target. #249
-   carries the measurements that would settle it.
+   carries the measurements that would settle it.~~ **Superseded
+   2026-08-22 (#301) for expert-stack groups.** The #249 campaign
+   priced nine mixed recipes and the falsifier arm won (the
+   nineteenth data point). Dense groups keep the bar.
 
 - **ADR-0018's 2026-08-17 amendment (#319) adds a fourth method,
   whose token is `q0-ref` since #332. Decision 1 above still

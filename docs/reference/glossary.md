@@ -398,7 +398,12 @@ change.
 
 **Pin**
 :   A user-forced precision for a group, overriding the solver
-    (`--pin "*.layers.0=8"`). Recorded verbatim in the recipe.
+    (`--pin "*.layers.0=8"`). Recorded verbatim in the recipe. A pin
+    may name any width the target runtime serves, and it may land on
+    any checkpoint-discovered group
+    ([ADR-0007 amendment 2026-08-22](../adr/0007-recipe-solver-strategy.md)).
+    At a width the map never measured, the assignment records damage
+    0.0.
 
 **Protection**
 :   A precision floor for named tensors inside their layer groups

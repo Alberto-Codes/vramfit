@@ -46,9 +46,10 @@
     [evaluating-packed-models](../explanation/evaluating-packed-models.md)
     carry the additivity evidence: six sub-additive measurements
     and one super-additive on a 2-bit-heavy recipe. #375 tracks the
-    drift between those two carriers. ADR-0021 decision 4 still
-    bars the solver from the 2-bit width on this target, so the
-    rule ships unexercised there until that bar lifts. **Corrected
+    drift between those two carriers. ADR-0021 decision 4 barred
+    the solver from the 2-bit width on this target, so the rule
+    shipped unexercised there. **The bar lifted 2026-08-22 (#301)
+    for expert-stack groups — the amendment below.** **Corrected
     2026-08-21 by the observed consequence below: the rule keys on the
     surviving floor and fires at nominal 4.** The measured
     recipes are hand-authored, so they test the map and the
@@ -69,6 +70,9 @@
     and no 2-bit assignment becomes possible. Maintainer ruling
     2026-08-21: the rule keys on the surviving floor. Record:
     [#377](https://github.com/Alberto-Codes/vramfit/issues/377).
+    **Corrected 2026-08-22 by the #301 amendment below: the bar
+    lifts for expert-stack groups on this target, so a stack map
+    keeping its 2-bit column makes nominal 2 the surviving floor.**
 
     **Observed consequence (2026-08-21, issue #350): the tie-break's
     nominal-4 input carries a measured unassisted skew.** The pack
@@ -87,6 +91,28 @@
     the assisted map lands.
     [#350's 2026-08-21 comment](https://github.com/Alberto-Codes/vramfit/issues/350#issuecomment-5375790074)
     carries the per-layer numbers.
+
+- **Amendment (2026-08-22, issue #301):** the pin surface widens on
+  two axes. A pin may name any width the target runtime serves. A
+  pin may land on any checkpoint-discovered group
+  ([ADR-0029](0029-plan-independent-size-source.md)), not only the
+  map's groups, and a pinned uncovered group prices at the pinned
+  width instead of holding at reference. The maintainer ruled both
+  2026-08-22 in the #301 exchange. A pinned group never enters the
+  ranking, so a pin orders no groups the map did not measure. At an
+  unmeasured width the assignment records damage 0.0, the way an
+  uncovered held group does, and `predicted_damage` sums measured
+  marginals only — the #301 validation caveat stands. This gives
+  the ruled MoE mix a form: a stack-keyed map beside dense pins at
+  nominal 8. Before this amendment the campaign hand-authored every
+  mixed recipe (#300, #387). One consequence: a pin at nominal 3 on
+  an expert stack now plans, and pack refuses it (ADR-0028
+  decision 2). [ADR-0021](0021-runtime-frame-measurement.md)'s
+  2026-08-22 amendment lifts decision 4's bar for expert-stack
+  groups on the 30B target. The placement rule above can then
+  exercise at nominal 2 there, once a map keeping its 2-bit column
+  solves. Record:
+  [#301 ruling comment](https://github.com/Alberto-Codes/vramfit/issues/301#issuecomment-5377920461).
 
 ## Context
 
