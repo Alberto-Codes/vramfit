@@ -2133,6 +2133,72 @@ sensitivity map lives only in the linked dataset repo — it describes
 the base model, not this pack, and the dataset copy is canonical.
 The card links it.
 
+### The identity grammar from publication #2
+
+> **Decided 2026-08-22 (#401).** Publication #1's record above is
+> historical and stays as shipped. This section carries the
+> reusable convention.
+
+A vramfit publication names its repository
+`<family-stem>-fit<N>gib-GGUF` and its canonical weight file the
+repo id minus `-GGUF`, plus `.gguf` — the #82 rule, kept. The
+family stem is the upstream release name with its precision suffix
+removed. The card's H1 is the repo id, as on publication #1.
+
+**`fit<N>gib` is a ruled deployment claim, not a file size.** It
+states that the ruled serve validation ran the artifact inside an
+N GiB card boundary under the card's stated runtime and context
+contract. The card states what substantiates the name: the weight
+budget, the serve configuration, the context, the toolchain, and
+the concurrency bound. The card publishes no throughput figure
+(#164). The fit claim's counter, CPU offload, stays open on #279 —
+the card cites it and settles nothing there.
+
+**Variant rule.** While one artifact occupies a model-and-budget
+family, the name carries no further marker: no context suffix, no
+quality tier, no GPU model, no recipe version. A second artifact
+in the same family settles the minimum discriminator then.
+
+For publication #2 the grammar yields:
+
+- repo: `NVIDIA-Nemotron-3.5-Lightning-30B-A3B-fit16gib-GGUF`
+- weight: `NVIDIA-Nemotron-3.5-Lightning-30B-A3B-fit16gib.gguf`
+
+The upstream release publishes no bare-stem repo. Its five
+repositories suffix the precision variant, and the measured
+checkpoint is `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16`.
+The derived identity drops `BF16`, matching bartowski and unsloth,
+whose GGUF repos use the bare stem and pin the full checkpoint id
+in `base_model`. Card metadata pins the measured revision
+`ce38b6a`, because upstream `main` moved to `d468880` after the
+download — the #82 lesson, applied before upload this time.
+
+Card metadata copies the upstream license triple: `license:
+other`, `license_name: openmdw-1.1`, `license_link` to the OpenMDW
+1.1 page. OpenMDW 1.1 requires a distributor to retain the license
+text and the origin notices, and requires nothing else. It has no
+naming clause, so nothing forces or forbids the stem, unlike
+Meta's §1.b on publication #1. It has no guardrail clause, so the
+#86 stance below has no counterpart here. The rest of the metadata
+block carries over from publication #1: `base_model_relation:
+quantized`, `quantized_by: Alberto-Codes`, `pipeline_tag:
+text-generation`, tags `vramfit`, `gguf`, `imatrix`, no
+`library_name`.
+
+Two publication-#2 facts the card must state plainly:
+
+- **The pack carries no MTP layers.** The f16 conversion ran
+  `--no-mtp`. The artifact serves no speculative decoding, while
+  the comparator's builds carry their MTP layers at `Q4_0`, which
+  adds to their file size. The name takes no MTP marker under the
+  variant rule.
+- **The stated serve contract.** llama.cpp b10326, Vulkan, fully
+  offloaded, 16k context, under the 16 GiB ballast cap, with the
+  357.00 MiB token embedding host-side (#389, #284). The 15.776
+  GiB budget is a single-sequence figure and holds to `n_seq_max`
+  8. Above 8 the budget needs restating (#284 caveat 3, chart
+  #158 Notes).
+
 ### The guardrail-efficacy stance
 
 > **Decided 2026-08-10 (#86),** on the #71 license findings.
