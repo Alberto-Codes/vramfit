@@ -150,7 +150,7 @@ The claim's boundaries, stated plainly:
 - The serve test is a fit bar, not a speed bar. This card publishes
   no tokens-per-second figure: the test ran on a VRAM-capped 4090,
   and a decode figure from that method would read 1.4 to 3.5 times
-  optimistic against real 16 GiB silicon.
+  higher than real 16 GiB silicon delivers.
 - A 16 GiB owner can also run larger builds today by offloading
   part of the weights to CPU and accepting slower decode. This pack
   is the alternative that keeps every weight on the card. The
