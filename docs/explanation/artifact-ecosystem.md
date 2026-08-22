@@ -12,6 +12,10 @@ status: draft
 > ran for real. Gate 3 ruled GO on #80, and publication #1 shipped
 > through the procedure. The phases beyond publication remain
 > uncommitted, and their triggers stay tracked in issue #11.
+>
+> Note 2026-08-22: gate 3 ruled GO a second time, for publication #2
+> — the 30B falsifier arm (chart #158). Publication #2 has GO and has
+> not shipped.
 
 ## The honest competitive picture
 
@@ -149,6 +153,27 @@ Hard gates before any publication, with their current status:
    trigger, and publication #1 ships the model. The i-quant
    comparison (#90) rides the card to answer the weak-baseline
    objection.
+
+**GO ruled 2026-08-22 for publication #2**, the 30B falsifier arm on
+chart #158. Gate 3 ran a second time. Nothing smaller than the arm
+is published, so no size-matched build exists, and #393 ruled
+bartowski's `IQ2_XXS`, the smallest published GGUF of the target,
+the bar — with the tier-3 slice run before publication to gate
+go/no-go, as #80 gated publication #1. Tier 2 already ranks the arm
+ahead of that build on both ruled metrics (nineteenth data point).
+The tier-3 slice ran on #400 and certifies the rank: per ADR-0024
+decision 4, the arm leads on four of five tasks (MMLU 16.1σ,
+HellaSwag 6.7σ, GSM8K 1.3σ, Winogrande 1.04σ) and ties ARC-Challenge
+(0.4σ), on full splits with zero truncations. The arm's pack,
+rebuilt on the reference box, measures 16,922,476,480 B against the
+published build's 18,838,022,112 B, which is 1.78 GiB smaller
+(packed byte size moves across machines with the stored imatrix
+path, #300). #400 records the run and the scores. The
+negative-result branch has no trigger, and publication #2 ships the
+model. Per #164, no tokens-per-second figure from a capped 4090
+publishes. The conventions below stay #401's to settle for this
+target, and #279 carries the 16 GiB fit claim's open counter, CPU
+offload.
 
 Conventions to settle at publication time: a `vramfit` HF tag, the
 budget in the repo name (e.g. `-fit24gib`), and which artifacts sit
