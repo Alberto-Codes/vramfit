@@ -348,6 +348,7 @@ def held_assignments(
     runtime: str | None,
     price: Callable[[int, int], int],
     stack_price: Callable[[int, int], int],
+    pins: Mapping[str, int] | None = None,
 ) -> tuple[Assignment, ...]:
     """Assign every discovered group the map does not measure.
 
@@ -356,7 +357,9 @@ def held_assignments(
     the budget and never a move. The recipe still names it, because
     `pack` runs the quantizer at the recipe's floor and would
     otherwise quantize the group the plan just reserved reference
-    bytes for.
+    bytes for. A pinned uncovered group prices at the pinned width
+    instead (the 2026-08-22 ADR-0007 amendment), still a constant in
+    the budget and never a move.
 
     Args:
         discovered_bytes: Bytes at reference precision per group the
@@ -368,27 +371,36 @@ def held_assignments(
             prices the expert stacks and every layer-class group
             whose rows refuse the 256 super-block (the 2026-08-20
             amendment).
+        pins: Uncovered-group pins the solver resolved and validated
+            — name to precision. None means no uncovered group is
+            pinned. The parameter is solver-private: this function
+            checks no width itself.
 
     Returns:
         One assignment per uncovered group, in name order. Empty when
         no size source was given, or the map covers every group.
 
     Raises:
-        RuntimeCapabilityError: If a group is uncovered and the target
-            runtime cannot serve reference precision. The recipe would
-            record an assignment `recipe_json` refuses to read back.
+        RuntimeCapabilityError: If a group holds at reference
+            precision and the target runtime cannot serve it. The
+            recipe would record an assignment `recipe_json` refuses
+            to read back. A pinned group does not trigger this — the
+            solver validated its width against the runtime.
     """
+    pins = dict(pins or {})
     uncovered = uncovered_groups(
         discovered_bytes or {}, [g.name for g in sensitivity_map.groups]
     )
-    if uncovered and runtime is not None:
+    held_at_reference = [name for name, _ in uncovered if name not in pins]
+    if held_at_reference and runtime is not None:
         # `servable_precisions` words its refusal around the scanned
         # set, and reference precision was never scanned.
         capability = RUNTIME_CAPABILITIES.get(runtime, frozenset())
         if REFERENCE_BITS not in capability:
             raise RuntimeCapabilityError(
                 f'runtime "{runtime}" cannot serve reference precision '
-                f"{REFERENCE_BITS}, so it cannot hold the {len(uncovered)} "
+                f"{REFERENCE_BITS}, so it cannot hold the "
+                f"{len(held_at_reference)} "
                 f"groups the map does not measure (ADR-0029). It serves "
                 f"{sorted(capability, reverse=True)}. Plan without a size "
                 f"source, or scan those groups"
@@ -396,7 +408,7 @@ def held_assignments(
     return tuple(
         Assignment(
             group=name,
-            bits=REFERENCE_BITS,
+            bits=pins.get(name, REFERENCE_BITS),
             # A layer-class group whose rows refuse the 256
             # super-block prices with the expert stacks, through the
             # ADR-0028 table (the 2026-08-20 amendment). The two
@@ -406,7 +418,7 @@ def held_assignments(
                 stack_price
                 if is_expert_stack(name) or rows_refuse_super_block(name)
                 else price
-            )(bytes_fp16, REFERENCE_BITS),
+            )(bytes_fp16, pins.get(name, REFERENCE_BITS)),
             damage=0.0,
         )
         for name, bytes_fp16 in uncovered

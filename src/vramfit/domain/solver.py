@@ -16,6 +16,12 @@ sit under the `VramfitError` root
 A target runtime narrows the candidate set through the ADR-0013
 capability table before any solving starts, and an infeasible
 budget names the precisions that narrowing removed.
+Pins resolve through [vramfit.domain.pins][] (the 2026-08-22
+ADR-0007 amendment): a pin may name any runtime-servable width and
+land on any checkpoint-discovered group, and an unmeasured width
+records 0.0 damage. The infeasible message counts only the groups
+held at reference, because a scan recovers nothing from a pinned
+group.
 The algorithm: start every group at the highest candidate precision
 (or its pin), then repeatedly apply the downgrade with the best
 damage-per-byte-freed ratio until the total fits the weight budget. The
@@ -85,7 +91,6 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable, Mapping
-from fnmatch import fnmatchcase
 from typing import Final
 
 from vramfit.domain.model import (
@@ -96,6 +101,7 @@ from vramfit.domain.model import (
     SensitivityMap,
     TraceStep,
 )
+from vramfit.domain.pins import assignment_damage, resolve_pins
 from vramfit.domain.placement import refused_cheapest_stack_moves
 from vramfit.domain.protection import (
     expand_exclusions,
@@ -109,7 +115,6 @@ from vramfit.domain.runtime import (
     expert_stack_effective_bits,
     rows_refuse_super_block,
     servable_precisions,
-    unquantizable_filter,
 )
 from vramfit.domain.scan import is_expert_stack
 from vramfit.domain.sizes import REFERENCE_BITS, held_assignments
@@ -149,85 +154,6 @@ def group_bytes(bytes_fp16: int, bits: float, format_overhead: float) -> int:
         ```
     """
     return math.ceil(bytes_fp16 * bits / 16 * (1 + format_overhead))
-
-
-def _expand_pins(
-    pins: Mapping[str, int],
-    map_: SensitivityMap,
-    candidates: tuple[int, ...],
-) -> dict[str, int]:
-    """Resolve pin patterns to concrete per-group precisions.
-
-    Args:
-        pins: Ordered mapping of glob pattern to forced precision; later
-            patterns override earlier ones for overlapping groups.
-        map_: The sensitivity map whose groups are matched.
-        candidates: The solver's candidate precisions — the scanned
-            set, runtime-filtered when a target runtime is given.
-
-    Returns:
-        Mapping of group name to pinned precision.
-
-    Raises:
-        PinError: If a pin uses a precision outside the candidate set
-            or matches no group.
-    """
-    allowed = set(candidates)
-    pinned: dict[str, int] = {}
-    for pattern, bits in pins.items():
-        if bits not in allowed:
-            raise PinError(
-                f'pin "{pattern}={bits}": precision {bits} is not in the candidate '
-                f"set {sorted(allowed, reverse=True)}"
-            )
-        matched = [g.name for g in map_.groups if fnmatchcase(g.name, pattern)]
-        if not matched:
-            raise PinError(f'pin "{pattern}={bits}" matches no group')
-        for name in matched:
-            pinned[name] = bits
-    return pinned
-
-
-def _hold_unquantizable(
-    sensitivity_map: SensitivityMap,
-    pinned: dict[str, int],
-    runtime: str | None,
-) -> dict[str, int]:
-    """Pin every unquantizable-class group at the F16 passthrough.
-
-    Such a group holds at the passthrough whatever the map measured.
-    The runtime's quantizer refuses its tensors through a name
-    filter, so a lower width would record a type the artifact cannot
-    carry (ADR-0012, 2026-08-20 amendment). The hold enters
-    ``pinned``, which the downgrade loop never touches.
-
-    Args:
-        sensitivity_map: Damage curves for every group.
-        pinned: Resolved user pins, updated in place.
-        runtime: Target runtime name, or None — only a runtime with
-            a filter table holds anything.
-
-    Returns:
-        The same ``pinned`` mapping, holds added.
-
-    Raises:
-        PinError: If a user pin lands on such a group. Every pinnable
-            precision sits below the passthrough, and the record says
-            never lower.
-    """
-    for group in sensitivity_map.groups:
-        filter_name = unquantizable_filter(group.name, runtime)
-        if filter_name is None:
-            continue
-        if group.name in pinned:
-            raise PinError(
-                f'group "{group.name}" holds at the F16 passthrough — '
-                f'runtime "{runtime}" refuses its tensors through the '
-                f'"{filter_name}" filter (ADR-0012, 2026-08-20 '
-                f"amendment), so a pin cannot move it"
-            )
-        pinned[group.name] = REFERENCE_BITS
-    return pinned
 
 
 def _best_move(
@@ -407,8 +333,12 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
         vram_budget_bytes: Total VRAM ceiling, recorded for provenance.
         kv_headroom_bytes: Reserved KV/runtime bytes, recorded for
             provenance.
-        pins: Ordered glob-pattern pins forcing precisions; later patterns
-            override earlier ones.
+        pins: Ordered glob-pattern pins forcing precisions. Later
+            patterns override earlier ones. A pin may name any width the
+            target runtime serves, and it may land on any
+            checkpoint-discovered group (the 2026-08-22 ADR-0007
+            amendment). At a width the map never measured the
+            assignment records 0.0 damage.
         protections: Ordered fnmatch protection rules, pattern to
             floor (ADR-0022); later patterns override earlier ones
             for overlapping tensors. A protected tensor prices at
@@ -451,8 +381,9 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
             none of the scanned precisions, or cannot serve reference
             precision while ``discovered_bytes`` leaves a group
             uncovered.
-        PinError: If a pin is malformed with respect to the candidate
-            set.
+        PinError: If a pin uses a precision neither scanned nor
+            runtime-servable, matches no group, or lands on an
+            unquantizable-class group.
         ProtectionError: If a protection floor is unservable, a
             pattern matches no tensor or a single-tensor group, the
             map lacks per-tensor sizes (ADR-0022), an imatrix
@@ -493,8 +424,8 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
     if runtime is not None:
         candidates = servable_precisions(candidates, runtime)
     dropped = tuple(p for p in sensitivity_map.scan.precisions if p not in candidates)
-    pinned = _hold_unquantizable(
-        sensitivity_map, _expand_pins(pins, sensitivity_map, candidates), runtime
+    pinned, uncovered_pins, user_pinned = resolve_pins(
+        pins, sensitivity_map, candidates, runtime, discovered_bytes
     )
     floors = expand_protections(protections, sensitivity_map, runtime)
     excluded = expand_exclusions(imatrix_exclusions, floors, sensitivity_map)
@@ -567,7 +498,12 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
     # `--pure` at the recipe's floor and would otherwise quantize the
     # group the plan just reserved reference bytes for.
     held = held_assignments(
-        discovered_bytes, sensitivity_map, runtime, price, stack_price
+        discovered_bytes,
+        sensitivity_map,
+        runtime,
+        price,
+        stack_price,
+        pins=uncovered_pins,
     )
     held_total = sum(a.bytes for a in held)
 
@@ -589,6 +525,10 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
             for name, floor in floors.items()
             if floor > pinned.get(group_of[name], candidates[-1])
         )
+        # The message's held clause reads "at reference precision.
+        # Scan them to spend it", so it counts only the unpinned
+        # holds — a pinned uncovered group sits at its pin, and a
+        # scan recovers nothing there.
         raise InfeasibleBudgetError(
             gap_bytes=floor_total - weight_budget_bytes,
             minimum_bytes=floor_total,
@@ -596,8 +536,8 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
             runtime=runtime,
             dropped_precisions=dropped,
             protected_count=raised,
-            held_count=len(held),
-            held_bytes=held_total,
+            held_count=sum(1 for a in held if a.bits == REFERENCE_BITS),
+            held_bytes=sum(a.bytes for a in held if a.bits == REFERENCE_BITS),
         )
 
     trace: list[TraceStep] = []
@@ -638,16 +578,7 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
                 group=g.name,
                 bits=state[g.name],
                 bytes=size(g, state[g.name]),
-                # A reference-held group carries no damage row for the
-                # passthrough, and reference precision is the
-                # zero-damage baseline. Every other state value is a
-                # scanned candidate, so any other missing key stays a
-                # loud KeyError.
-                damage=(
-                    g.sensitivity.get(REFERENCE_BITS, 0.0)
-                    if state[g.name] == REFERENCE_BITS
-                    else g.sensitivity[state[g.name]]
-                ),
+                damage=assignment_damage(g, state[g.name], user_pinned),
             )
             for g in sensitivity_map.groups
         )

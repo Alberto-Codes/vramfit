@@ -339,7 +339,9 @@ change.
     ([ADR-0029](../adr/0029-plan-independent-size-source.md)
     decision 4). It spends exactly 16.0 effective bits, because
     `F16` carries no block scale. A recipe assigns it to every
-    **uncovered group**. Not "no-quant" or "fp16 pin".
+    **uncovered group** without a pin
+    ([ADR-0007 amendment 2026-08-22](../adr/0007-recipe-solver-strategy.md)).
+    Not "no-quant" or "fp16 pin".
 
 **Tensor size source**
 :   The port that reads a checkpoint's per-tensor stored sizes for

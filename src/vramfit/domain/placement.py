@@ -64,8 +64,10 @@ def refused_cheapest_stack_moves(
 ) -> frozenset[str]:
     """Name the stacks whose cheapest-width downgrade the rule refuses.
 
-    A stack pinned at the cheapest width counts toward its layer —
-    the clause reads the allocation state, not the move history.
+    A stack pinned at or below the cheapest width counts toward its
+    layer — the clause reads the allocation state, not the move
+    history. A width below the cheapest candidate is reachable only
+    through a pin (the 2026-08-22 ADR-0007 amendment).
 
     Args:
         groups: The map's measured groups, any granularity.
@@ -90,7 +92,7 @@ def refused_cheapest_stack_moves(
         if layer is None:  # pragma: no cover - a stack name carries a layer
             continue
         current = state[group.name]
-        if current == cheapest:
+        if current <= cheapest:
             at_cheapest[layer] = at_cheapest.get(layer, 0) + 1
         elif (
             group.name not in pinned

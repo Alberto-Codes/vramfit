@@ -105,9 +105,10 @@
   marginals only — the #301 validation caveat stands. This gives
   the ruled MoE mix a form: a stack-keyed map beside dense pins at
   nominal 8. Before this amendment the campaign hand-authored every
-  mixed recipe (#300, #387). One consequence: a pin at nominal 3 on
-  an expert stack now plans, and pack refuses it (ADR-0028
-  decision 2). [ADR-0021](0021-runtime-frame-measurement.md)'s
+  mixed recipe (#300, #387). One consequence, observed 2026-08-22 at
+  the build: a pin at nominal 3, 5, or 6 on an expert stack now
+  plans — priced through the dense table, because the ADR-0028 table
+  carries no such row — and pack refuses it. [ADR-0021](0021-runtime-frame-measurement.md)'s
   2026-08-22 amendment lifts decision 4's bar for expert-stack
   groups on the 30B target. The placement rule above can then
   exercise at nominal 2 there, once a map keeping its 2-bit column
