@@ -181,7 +181,9 @@ set
 #401 ruled the reusable identity grammar from publication #2
 forward on 2026-08-22
 ([the identity grammar](evaluating-packed-models.md#the-identity-grammar-from-publication-2)).
-Publication #2's artifact set is not settled.
+The maintainer confirmed publication #2's artifact set the same
+day: the #79 split carries over unchanged
+([#404 confirmation](https://github.com/Alberto-Codes/vramfit/issues/404#issuecomment-5382579749)).
 
 ## What a score may never claim
 

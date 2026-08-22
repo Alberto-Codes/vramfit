@@ -2139,8 +2139,10 @@ The card links it.
 > [checks comment](https://github.com/Alberto-Codes/vramfit/issues/401#issuecomment-5382545492)
 > there. Publication #1's record above is historical and stays as
 > shipped. This section carries the reusable convention. #401
-> rules identity only — publication #2's artifact set is not
-> settled by this record.
+> rules identity only. The maintainer confirmed publication #2's
+> artifact set separately on 2026-08-22: the #79 split carries
+> over unchanged
+> ([#404 confirmation](https://github.com/Alberto-Codes/vramfit/issues/404#issuecomment-5382579749)).
 
 A vramfit publication names its repository
 `<family-stem>-fit<N>gib-GGUF` and its canonical weight file the
