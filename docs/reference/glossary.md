@@ -100,6 +100,12 @@ change.
     ADR-0026 decision 2 and the recipe stays unweighted. Not
     "spot check" or "sensitivity sample".
 
+**Probe arm**
+:   A packed arm built to answer one allocation question, named by
+    its ticket. The #321 probe arm places all 11 cheapest-width
+    stacks on `down_proj`, one per layer. Distinct from the
+    per-expert probe, which is a scan-frame measurement.
+
 **Frequency band** (short: **band**)
 :   A contiguous run of one expert stack's experts, ordered by
     imatrix count. The meter measures a band as one slice cell, and
