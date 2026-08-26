@@ -13,8 +13,8 @@ dense name the target checkpoint holds must reach some row, which
 catches a missing one. #186 was a missing row, not a wrong one.
 
 The table stays deliberately narrower than `gguf`. That map carries
-287 block names under these two decoder roots at `gguf` 0.19.0, and
-the table covers 16 of them. The rest belong to families vramfit has
+287 block names under the "model" and "backbone" decoder roots at
+`gguf` 0.19.0, and the table covers 16 of them. The rest belong to families vramfit has
 never scanned. So an unmapped name is not a defect on its own, and no
 check here asserts the reverse direction over the whole map.
 
@@ -31,6 +31,9 @@ meter adapter with no port and no fake.
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 
 gguf = pytest.importorskip("gguf", reason="scan extra not installed")
@@ -41,9 +44,12 @@ from vramfit.adapters.outbound.scan.imatrix import _SUFFIX_TO_GGUF, gguf_tensor_
 pytestmark = pytest.mark.unit
 
 LAYER = 3
-# The decoder roots the adapter supports (#177). The table keys on the
-# module suffix, so each suffix is checked under both.
-ROOTS = ("model", "backbone")
+# The decoder roots the adapter supports (#177, #423). The table keys
+# on the module suffix, so each suffix is checked under every root.
+# `gguf` carries no "model.language_model" template — its converter
+# strips the nesting before it maps — so every pair under that root
+# is unbacked by construction.
+ROOTS = ("model", "backbone", "model.language_model")
 # Every module suffix the adapter's table carries, and the GGUF stem
 # it claims. Restated here rather than imported: a test that reads the
 # table under test would pass whatever the table says.
@@ -71,14 +77,17 @@ MIXER_SUFFIXES = tuple(s for s in MAPPED_SUFFIXES if s.startswith("mixer."))
 LLAMA_SUFFIXES = tuple(s for s in MAPPED_SUFFIXES if not s.startswith("mixer."))
 # The (root, suffix) pairs the adapter answers and `gguf` does not
 # carry. The adapter keys on the suffix alone, so every row answers
-# under both roots, while `gguf` carries each family's names under the
-# one root that family uses. So the adapter reaches 16 names no
-# checkpoint spells. Naming them here rather than skipping them keeps
+# under every root, while `gguf` carries each family's names under the
+# one root that family uses — and none at all under the nested
+# "model.language_model" root, which its converter flattens away. So
+# the adapter reaches 32 names no checkpoint spells, 16 of them under
+# the nested root. Naming them here rather than skipping them keeps
 # the suite honest: a pair that leaves this set fails, and a pair that
 # joins it fails too.
 UNBACKED_PAIRS = frozenset(
     [("model", suffix) for suffix in MIXER_SUFFIXES]
     + [("backbone", suffix) for suffix in LLAMA_SUFFIXES]
+    + [("model.language_model", suffix) for suffix in MAPPED_SUFFIXES]
 )
 # Names in this same family that the table omits, and the stem `gguf`
 # gives each. A dense-MLP Nemotron-H spells its MLP the first two
@@ -160,10 +169,10 @@ def test_a_mapped_suffix_matches_the_gguf_name_map(root: str, suffix: str) -> No
 
 
 def test_the_unbacked_pairs_are_exactly_the_ones_named() -> None:
-    # A skip would hide this. `gguf` confirms 16 of the 32 (root,
-    # suffix) pairs the adapter answers, and the other 16 are named in
+    # A skip would hide this. `gguf` confirms 16 of the 48 (root,
+    # suffix) pairs the adapter answers, and the other 32 are named in
     # UNBACKED_PAIRS. A release that moves a pair either way fails
-    # here rather than passing green on half the table.
+    # here rather than passing green on part of the table.
     unbacked = {
         (root, suffix)
         for root in ROOTS
@@ -172,7 +181,7 @@ def test_the_unbacked_pairs_are_exactly_the_ones_named() -> None:
     }
 
     assert unbacked == UNBACKED_PAIRS
-    assert len(unbacked) == 16
+    assert len(unbacked) == 32
 
 
 @pytest.mark.parametrize("suffix", OMITTED_FAMILY_SUFFIXES)
@@ -218,6 +227,61 @@ def test_all_one_hundred_thirty_nine_dense_parameters_reach_a_distinct_tensor() 
 
     assert len(names) == 139
     assert len(set(resolved)) == 139
+
+
+def _gemma_dense_names() -> list[str]:
+    """Every quantizable decoder parameter Gemma 4 31B nests.
+
+    Built from the committed fixture config: 60 decoder layers under
+    "model.language_model.layers.", where a "full_attention" layer
+    carries no v_proj (``attention_k_eq_v``, #421). The count must
+    land on 410, the quantizable 2-d decoder surface the #423 fast
+    gate enumerated from the GGUF header (410 tensors beside
+    ``token_embd``).
+    """
+    config = json.loads(
+        Path("tests/data/gemma-4-31b/config.json").read_text(encoding="utf-8")
+    )
+    layer_types = config["text_config"]["layer_types"]
+    names = []
+    for layer, layer_type in enumerate(layer_types):
+        for suffix in LLAMA_SUFFIXES:
+            if suffix == "self_attn.v_proj" and layer_type == "full_attention":
+                continue
+            names.append(f"model.language_model.layers.{layer}.{suffix}.weight")
+    return names
+
+
+def test_every_gemma_dense_parameter_resolves_distinctly() -> None:
+    # The completeness half for the nested root (#423). Before the
+    # root landed, all 410 reported uncovered and a kquant-imx scan
+    # priced every cell unassisted.
+    names = _gemma_dense_names()
+
+    resolved = [gguf_tensor_name(name) for name in names]
+
+    assert len(names) == 410
+    assert None not in resolved
+    assert len(set(resolved)) == 410
+
+
+def test_the_nested_embedding_resolves_to_token_embd() -> None:
+    # Gemma 4 ties its head to the embedding, so the loaded model
+    # reports one name for both. The direct table answers it under
+    # the nested root the same way it answers the flat one.
+    name = gguf_tensor_name("model.language_model.embed_tokens.weight")
+
+    assert name == "token_embd.weight"
+
+
+def test_a_vision_tower_layer_stays_unmapped() -> None:
+    # The closed alternation exists so a tower's "layers.5" never
+    # prices against the decoder's "blk.5" columns. The name is the
+    # loaded model's own spelling — the tower wraps each projection
+    # in a "linear" module.
+    name = "model.vision_tower.encoder.layers.5.self_attn.q_proj.linear.weight"
+
+    assert gguf_tensor_name(name) is None
 
 
 @pytest.mark.parametrize("suffix", MIXER_SUFFIXES)

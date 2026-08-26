@@ -198,7 +198,7 @@ class TestGgufTensorName:
         "param",
         [
             "model.vision_tower.vision_model.encoder.layers.0.self_attn.q_proj.weight",
-            "model.language_model.layers.0.self_attn.q_proj.weight",
+            "model.vision_tower.encoder.layers.0.self_attn.q_proj.linear.weight",
             "mtp.layers.0.self_attn.q_proj.weight",
             "model.layers.0.cross_attn.layers.2.self_attn.q_proj.weight",
         ],
@@ -207,7 +207,10 @@ class TestGgufTensorName:
         # A vision tower carries its own layers.N. Mapping one onto
         # blk.N would price it against the decoder's columns, which
         # is the failure this module exists to refuse. An unsupported
-        # root reports uncovered instead.
+        # root reports uncovered instead. The second name is Gemma 4
+        # 31B's tower as the loaded model spells it (#423) — the
+        # nested "model.language_model.layers." root maps since that
+        # campaign, and the tower still must not.
         assert gguf_tensor_name(param) is None
 
 
