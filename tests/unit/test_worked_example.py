@@ -2,9 +2,10 @@
 
 Checks the stable numbers in ``docs/explanation/vram-budget.md``, the
 arithmetic in ADR-0010, and the #423 KV figures against committed real
-configs (``tests/data/nemotron-super-49b-v1_5``,
-``tests/data/gemma-4-31b``). If these fail, either the budget math
-regressed or a docs page lies.
+configs (``tests/data/nemotron-super-49b-v1_5``, and
+``tests/data/gemma-4-31b`` — the ``google/gemma-4-31B`` file, fetched
+verbatim 2026-08-26). If these fail, either the budget math regressed
+or a docs page lies.
 
 Runs in the hermetic unit tier: the configs are committed in-repo, so no
 external resource is involved.
@@ -13,6 +14,7 @@ external resource is involved.
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -21,6 +23,7 @@ from typer.testing import CliRunner
 from vramfit.adapters.inbound.cli import app
 from vramfit.adapters.outbound.hf_config import shape_from_config_json
 from vramfit.domain.budget import (
+    ModelShape,
     kv_cache_bytes,
     kv_growth_bytes_per_token,
     kv_window_pool_bytes,
@@ -102,6 +105,20 @@ def test_gemma_31b_kv_figures_match_the_recorded_arithmetic() -> None:
     assert kv_cache_bytes(shape, context=262_144) / 2**30 == pytest.approx(
         10.78, abs=0.01
     )
+
+
+def test_gemma_31b_all_global_pricing_matches_the_documented_comparison() -> None:
+    # docs/explanation/vram-budget.md: the same 60 layers priced fully
+    # global charge ~0.82 MiB per token against the mixed stack's
+    # 40 KiB.
+    shape = shape_from_config_json(GEMMA_31B_CONFIG)
+
+    all_global = ModelShape(
+        kv_layers=tuple(replace(layer, window=None) for layer in shape.kv_layers)
+    )
+    per_token = kv_growth_bytes_per_token(all_global, "fp16")
+    assert per_token == 860_160
+    assert per_token / 2**20 == pytest.approx(0.82, abs=0.01)
 
 
 def test_nemotron_config_pins_the_documented_parameter_arithmetic() -> None:

@@ -1,14 +1,14 @@
 """Typer CLI: the inbound (driving) adapter and composition root.
 
 Exposes the ``vramfit`` console script. ``version``, ``budget``,
-``plan``, ``scan``, ``pack``, and ``validate`` are implemented —
-``budget`` reports KV growth per token plus the window pool on a
-mixed sliding/global stack (#421) — the
+``plan``, ``scan``, ``pack``, and ``validate`` are implemented — the
 scan, pack, and validate command bodies live in
 [vramfit.adapters.inbound.cli_scan][],
 [vramfit.adapters.inbound.cli_pack][], and
 [vramfit.adapters.inbound.cli_validate][] to keep this module under
-the size cap. The CLI wires outbound adapters to the pure domain, typing
+the size cap. ``budget`` reports KV growth per token, plus the
+window pool on a mixed sliding/global stack (#421).
+The CLI wires outbound adapters to the pure domain, typing
 them against the ports so the seams stay explicit. Every IO boundary —
 artifact and config reads, checkpoint and artifact writes, and model
 loading — converts failures to a clean ``error:`` line and a nonzero

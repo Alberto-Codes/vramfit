@@ -404,6 +404,20 @@ change.
     KV at all (`vramfit.domain.budget.KVLayer`, #421). A shape is a
     tuple of KV layers. Not "layer config" or "cache entry".
 
+**Global layer**
+:   An attention layer whose KV cache grows with the full context —
+    a `layer_types` entry of `full_attention`, or any layer of a
+    uniform stack. Global layers set the **KV growth** term. Not
+    "full layer" or "dense layer".
+
+**Sliding layer**
+:   An attention layer that attends inside a fixed window — a
+    `layer_types` entry of `sliding_attention`. Its cache stops at
+    `min(context, window)` tokens, and the saturated layers form the
+    **window pool**. Config keys name its geometry "local"
+    (`head_dim` beside `global_head_dim`). Not "local layer" or
+    "windowed layer".
+
 **KV growth**
 :   Bytes each context token adds across the global layers
     (`kv_growth_bytes_per_token`). Sliding layers stop at their

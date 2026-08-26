@@ -79,7 +79,7 @@ sliding (window 1024, 16 KV heads × width 256, K+V pair) and 10 global
 - total: **5.78 GiB at 128k context**, **10.78 GiB at 256k**.
 
 Past ~1k tokens the card pays 40 KiB per extra token instead of the
-~1.6 MiB a fully global stack of the same widths would charge. That is the
+~0.82 MiB the same 60 layers would charge priced fully global. That is the
 arithmetic behind #423's capacity claim: every GiB of KV headroom buys
 ~26.2k tokens once the windows saturate.
 

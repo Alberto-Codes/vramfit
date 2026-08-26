@@ -26,13 +26,12 @@ for `plan` is the sum of the KV-cache and runtime-overhead lines. The attention 
 exactly one source: `--model-config` (a Hugging Face `config.json`) or
 the manual triple. The reader handles DeciLM NAS configs with
 skipped-attention blocks and composite configs that nest the decoder
-under `text_config`. It prices declared per-layer KV geometry (#421):
-a `layer_types` sliding/global pattern with its window, split
-local/global head widths and KV-head counts, K=V storage
-(`attention_k_eq_v`), and shared-KV layers that allocate no cache. An
-active window without `layer_types`, an unknown layer type, or a
-llama-geometry key beside `block_configs` refuses rather than
-guessing.
+under `text_config`. It prices declared per-layer KV geometry (#421).
+That covers a `layer_types` sliding/global pattern with its window,
+split local/global head geometry, K=V storage (`attention_k_eq_v`),
+and shared-KV layers that allocate no cache. An active window without
+`layer_types`, an unknown layer type, or a llama-geometry key beside
+`block_configs` refuses rather than guessing.
 
 ```
 vramfit budget

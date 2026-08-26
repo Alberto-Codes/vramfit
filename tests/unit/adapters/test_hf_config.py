@@ -563,6 +563,40 @@ class TestModelShapeFromConfig:
         with pytest.raises(ValueError, match="leaves no layer that stores KV"):
             shape_from_config_json(path)
 
+    def test_shared_tail_without_a_same_type_donor_raises(self, tmp_path) -> None:
+        # A shared layer reuses the last fresh layer of its own type.
+        # A tail that covers every global layer leaves no donor, and
+        # pricing it would zero the growth term with no report.
+        config = self._text_config()
+        config["text_config"]["layer_types"] = ["sliding_attention"] * 2 + [
+            "full_attention"
+        ] * 2
+        config["text_config"]["sliding_window"] = 512
+        config["text_config"]["num_kv_shared_layers"] = 2
+        path = tmp_path / "config.json"
+        path.write_text(json.dumps(config))
+
+        with pytest.raises(
+            ValueError, match="leaves a shared layer with no earlier layer"
+        ):
+            shape_from_config_json(path)
+
+    def test_use_sliding_window_null_prices_the_window(self, tmp_path) -> None:
+        # A null switch means unset, and unset leaves a declared
+        # window active — only the boolean false disables it (#426).
+        config = self._text_config()
+        config["text_config"]["layer_types"] = ["sliding_attention"] * 3 + [
+            "full_attention"
+        ]
+        config["text_config"]["sliding_window"] = 512
+        config["text_config"]["use_sliding_window"] = None
+        path = tmp_path / "config.json"
+        path.write_text(json.dumps(config))
+
+        shape = shape_from_config_json(path)
+
+        assert [layer.window for layer in shape.kv_layers] == [512, 512, 512, None]
+
     def test_text_config_negative_shared_kv_layers_raises(self, tmp_path) -> None:
         config = self._text_config()
         config["text_config"]["num_kv_shared_layers"] = -1
@@ -606,23 +640,43 @@ class TestModelShapeFromConfig:
         ):
             shape_from_config_json(path)
 
-    def test_global_kv_heads_apply_only_under_k_eq_v(self, tmp_path) -> None:
+    def test_global_kv_heads_apply_under_k_eq_v(self, tmp_path) -> None:
         # The transformers Gemma 4 loader gates the global KV-head
-        # override on `attention_k_eq_v` and otherwise ignores the
-        # declared count. The reader prices what the runtime loads.
+        # override on `attention_k_eq_v`. The reader prices what the
+        # runtime loads.
+        config = self._text_config()
+        config["text_config"]["num_global_key_value_heads"] = 4
+        config["text_config"]["attention_k_eq_v"] = True
+        path = tmp_path / "config.json"
+        path.write_text(json.dumps(config))
+
+        shape = shape_from_config_json(path)
+
+        assert _kv_heads(shape) == (4, 4, 4, 4)
+
+    def test_ungated_global_kv_heads_mismatch_raises(self, tmp_path) -> None:
+        # The transformers loader discards the override when
+        # `attention_k_eq_v` is off. This reader never silently
+        # discards a declared geometry value, so it refuses.
         config = self._text_config()
         config["text_config"]["num_global_key_value_heads"] = 4
         path = tmp_path / "config.json"
         path.write_text(json.dumps(config))
 
-        ungated = shape_from_config_json(path)
+        with pytest.raises(ValueError, match="its attention_k_eq_v setting disables"):
+            shape_from_config_json(path)
 
-        config["text_config"]["attention_k_eq_v"] = True
+    def test_ungated_global_kv_heads_matching_the_base_parses(self, tmp_path) -> None:
+        # An ungated override equal to the base count changes nothing,
+        # so there is no declared value to discard.
+        config = self._text_config()
+        config["text_config"]["num_global_key_value_heads"] = 2
+        path = tmp_path / "config.json"
         path.write_text(json.dumps(config))
-        gated = shape_from_config_json(path)
 
-        assert _kv_heads(ungated) == (2, 2, 2, 2)
-        assert _kv_heads(gated) == (4, 4, 4, 4)
+        shape = shape_from_config_json(path)
+
+        assert _kv_heads(shape) == (2, 2, 2, 2)
 
     def test_text_config_null_global_kv_heads_parses(self, tmp_path) -> None:
         # The official E2B config carries the key as null. Null spells
@@ -844,6 +898,17 @@ class TestModelShapeFromConfig:
         # is not the runtime window.
         config = self._text_config()
         config["text_config"]["use_bidirectional_attention"] = "all"
+        path = tmp_path / "config.json"
+        path.write_text(json.dumps(config))
+
+        with pytest.raises(ValueError, match="declares bidirectional attention"):
+            shape_from_config_json(path)
+
+    def test_unknown_bidirectional_value_raises(self, tmp_path) -> None:
+        # Only null and "vision" are known to leave the stored window
+        # untouched. An unknown value could rescale it like "all".
+        config = self._text_config()
+        config["text_config"]["use_bidirectional_attention"] = True
         path = tmp_path / "config.json"
         path.write_text(json.dumps(config))
 

@@ -161,6 +161,8 @@ class KVLayer:
         window (int | None): Sliding-window size in tokens. ``None``
             means global attention: the cache grows with context. An
             integer caps the cache at ``min(context, window)`` tokens.
+            The config adapter admits only positive windows, and the
+            domain does not re-check that bound.
         kv_tensors (int): KV tensors stored per token: 2 for an
             independent K and V pair, 1 when the layer stores one
             tensor for both (``attention_k_eq_v``).

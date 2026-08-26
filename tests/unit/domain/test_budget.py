@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
@@ -183,6 +185,13 @@ class TestKvMath:
         assert kv_window_pool_bytes(shape) == 0
         assert kv_cache_bytes(shape, context=4096) == 0
 
+    def test_mixed_stack_below_the_window_sums_partial_terms(self) -> None:
+        # At half the window, the sliding layers hold 512 tokens each
+        # while the global layers hold the same 512-token context.
+        cache = kv_cache_bytes(GEMMA_31B_SHAPE, context=512)
+
+        assert cache == 40_960 * 512 + 50 * 16 * 256 * 2 * 2 * 512
+
     def test_mixed_stack_sequences_multiply_pool_and_growth(self) -> None:
         one = kv_cache_bytes(GEMMA_31B_SHAPE, context=8192)
 
@@ -233,25 +242,35 @@ class TestKvMathProperties:
             kv_growth_bytes_per_token(shape) * context + kv_window_pool_bytes(shape)
         )
 
-    @given(shape=kv_shapes(), context=st.integers(min_value=1, max_value=1 << 20))
+    @given(
+        shape=kv_shapes(),
+        context=st.integers(min_value=1, max_value=1 << 20),
+        data=st.data(),
+    )
     def test_marking_a_layer_shared_never_raises_the_cache(
-        self, shape: ModelShape, context: int
+        self, shape: ModelShape, context: int, data: st.DataObject
     ) -> None:
-        all_shared = ModelShape(
+        index = data.draw(st.integers(min_value=0, max_value=len(shape.kv_layers) - 1))
+        flipped = ModelShape(
             kv_layers=tuple(
-                KVLayer(
-                    kv_heads=layer.kv_heads,
-                    head_dim=layer.head_dim,
-                    window=layer.window,
-                    kv_tensors=layer.kv_tensors,
-                    shares_kv=True,
-                )
-                for layer in shape.kv_layers
+                replace(layer, shares_kv=True) if i == index else layer
+                for i, layer in enumerate(shape.kv_layers)
             )
         )
 
+        assert kv_cache_bytes(flipped, context=context) <= kv_cache_bytes(
+            shape, context=context
+        )
+
+    @given(shape=kv_shapes(), context=st.integers(min_value=1, max_value=1 << 20))
+    def test_all_shared_stack_prices_at_zero(
+        self, shape: ModelShape, context: int
+    ) -> None:
+        all_shared = ModelShape(
+            kv_layers=tuple(replace(layer, shares_kv=True) for layer in shape.kv_layers)
+        )
+
         assert kv_cache_bytes(all_shared, context=context) == 0
-        assert kv_cache_bytes(shape, context=context) >= 0
 
 
 @pytest.mark.unit
