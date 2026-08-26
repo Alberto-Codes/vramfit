@@ -1,12 +1,16 @@
 """Hugging Face ``config.json`` adapter: model file → `ModelShape`.
 
-Handles two config families: DeciLM-style NAS configs (the north-star
+Handles three config families: DeciLM-style NAS configs (the north-star
 target) with per-block ``block_configs`` where attention can be deleted
 (``no_op``) or replaced with a linear layer (``replace_with_linear``) —
-both are excluded from KV accounting — and standard llama-style configs
-with uniform layers. Invalid
+both are excluded from KV accounting — standard llama-style configs
+with uniform layers, and composite configs that nest the decoder under
+``text_config`` (Gemma 4, #420). Invalid
 geometry (non-divisible GQA group sizes, non-divisible head dimensions)
-is rejected rather than silently truncated.
+is rejected rather than silently truncated. A nested decoder that
+declares geometry `ModelShape` cannot represent — per-layer attention
+types, K=V storage, shared-KV layers, split local/global widths —
+refuses explicitly until #421 lands a representation.
 
 The model publisher owns this file. vramfit reads it and never writes
 it, and it still refuses a file that defines one key twice (#283). The
@@ -66,6 +70,11 @@ def shape_from_config_json(path: Path) -> ModelShape:
     last value, and a repeated ``num_hidden_layers`` would then give a
     wrong `ModelShape` and a wrong weight budget, with no report.
 
+    Dispatch order: a ``text_config`` container first (#420), then a
+    DeciLM ``block_configs`` file, then a top-level llama-style config.
+    A file that mixes the container with top-level decoder fields is
+    ambiguous and refuses.
+
     Args:
         path: Path to the model's ``config.json``.
 
@@ -75,8 +84,11 @@ def shape_from_config_json(path: Path) -> ModelShape:
     Raises:
         ValueError: If the file is not UTF-8, is not valid JSON, defines
             the same key twice, declares an integer outside the signed
-            64-bit range, required fields are missing, or the attention
-            geometry is inconsistent. Every message names ``path``.
+            64-bit range, required fields are missing, the attention
+            geometry is inconsistent, the decoder container is
+            ambiguous, or a nested decoder declares geometry
+            `ModelShape` cannot represent yet. Every message names
+            ``path``.
 
     Examples:
         Standard llama-style configs parse to uniform layers:
@@ -105,6 +117,8 @@ def shape_from_config_json(path: Path) -> ModelShape:
         raise ValueError(f"{path}: cannot parse JSON: {exc}") from exc
     if not isinstance(config, dict):
         raise ValueError(f"{path}: expected a JSON object")
+    if "text_config" in config:
+        return _from_text_config(config, path)
     if "block_configs" in config:
         return _from_decilm_config(config, path)
     return _from_llama_config(config, path)
@@ -213,12 +227,114 @@ def _from_decilm_config(config: dict[str, Any], path: Path) -> ModelShape:
     return ModelShape(kv_heads_per_layer=tuple(kv_heads_per_layer), head_dim=head_dim)
 
 
-def _from_llama_config(config: dict[str, Any], path: Path) -> ModelShape:
+def _from_text_config(config: dict[str, Any], path: Path) -> ModelShape:
+    """Select the nested decoder config inside a composite model file.
+
+    Composite configs (Gemma 4) wrap the decoder geometry in a
+    ``text_config`` object beside ``vision_config`` and friends. This
+    selects that object and hands it to the llama-style parser. It
+    never guesses: an ambiguous container refuses, and so does nested
+    geometry `ModelShape` cannot represent yet (#421).
+
+    Args:
+        config: Parsed ``config.json`` containing ``text_config``.
+        path: Source path, for error messages.
+
+    Returns:
+        The parsed uniform shape of the nested decoder.
+
+    Raises:
+        ValueError: If ``text_config`` is not an object, the top level
+            also declares decoder geometry (``block_configs`` or
+            ``num_hidden_layers``), the nested decoder declares
+            unrepresentable geometry, or its fields are missing or
+            inconsistent.
+    """
+    decoder = config["text_config"]
+    if not isinstance(decoder, dict):
+        raise ValueError(f'{path}: "text_config" must be a JSON object')
+    for key in ("block_configs", "num_hidden_layers"):
+        if key in config:
+            raise ValueError(
+                f'{path}: "text_config" and top-level "{key}" are both '
+                "present, so the decoder config is ambiguous"
+            )
+    _refuse_unrepresentable_geometry(decoder, path)
+    return _from_llama_config(decoder, path, prefix="text_config")
+
+
+def _refuse_unrepresentable_geometry(decoder: dict[str, Any], path: Path) -> None:
+    """Refuse nested decoder geometry `ModelShape` cannot represent.
+
+    `ModelShape` carries one head width and assumes every layer stores
+    an independent K and V pair over the full context. Gemma 4 breaks
+    each assumption. Flattening such a decoder to `ModelShape.uniform`
+    would price a wrong KV cache with no report, so each marker refuses
+    until #421 lands a representation. None of these messages render a
+    publisher-controlled value (#363).
+
+    Args:
+        decoder: The nested decoder config object.
+        path: Source path, for error messages.
+
+    Raises:
+        ValueError: If ``layer_types`` is malformed or declares a layer
+            other than ``full_attention``, ``attention_k_eq_v`` is not
+            a boolean or is true, ``num_kv_shared_layers`` is not a
+            non-negative integer or is above zero, or a split
+            local/global geometry key is present.
+    """
+    layer_types = decoder.get("layer_types")
+    if layer_types is not None:
+        if not isinstance(layer_types, list) or not all(
+            isinstance(t, str) for t in layer_types
+        ):
+            raise ValueError(
+                f"{path}: text_config.layer_types must be a list of strings"
+            )
+        if any(t != "full_attention" for t in layer_types):
+            raise ValueError(
+                f"{path}: text_config.layer_types declares layers other than "
+                "full_attention, which ModelShape cannot represent yet"
+            )
+    k_eq_v = decoder.get("attention_k_eq_v")
+    if k_eq_v is not None and not isinstance(k_eq_v, bool):
+        raise ValueError(f"{path}: text_config.attention_k_eq_v must be a boolean")
+    if k_eq_v:
+        raise ValueError(
+            f"{path}: text_config.attention_k_eq_v is true, "
+            "which ModelShape cannot represent yet"
+        )
+    shared = decoder.get("num_kv_shared_layers")
+    if shared is not None:
+        if isinstance(shared, bool) or not isinstance(shared, int) or shared < 0:
+            raise ValueError(
+                f"{path}: text_config.num_kv_shared_layers "
+                "must be a non-negative integer"
+            )
+        if shared > 0:
+            raise ValueError(
+                f"{path}: text_config declares shared-KV layers, "
+                "which ModelShape cannot represent yet"
+            )
+    for key in ("global_head_dim", "num_global_key_value_heads"):
+        if key in decoder:
+            raise ValueError(
+                f"{path}: text_config.{key} declares split local/global "
+                "geometry, which ModelShape cannot represent yet"
+            )
+
+
+def _from_llama_config(
+    config: dict[str, Any], path: Path, prefix: str = ""
+) -> ModelShape:
     """Parse a standard llama-style config with uniform layers.
 
     Args:
-        config: Parsed ``config.json``.
+        config: Parsed ``config.json``, or a nested decoder object.
         path: Source path, for error messages.
+        prefix: JSON path of ``config`` inside the file, empty at the
+            top level. Refusals name each field through it.
 
     Returns:
         The parsed uniform shape.
@@ -226,23 +342,42 @@ def _from_llama_config(config: dict[str, Any], path: Path) -> ModelShape:
     Raises:
         ValueError: If required fields are missing or inconsistent.
     """
-    layers = _config_int(config, "num_hidden_layers", path)
-    kv_heads = _config_int(config, "num_key_value_heads", path)
-    heads = _config_int(config, "num_attention_heads", path)
+    layers = _config_int(config, "num_hidden_layers", path, prefix)
+    kv_heads = _config_int(config, "num_key_value_heads", path, prefix)
+    heads = _config_int(config, "num_attention_heads", path, prefix)
     return ModelShape.uniform(
         attn_layers=layers,
         kv_heads=kv_heads,
-        head_dim=_head_dim(config, heads, path),
+        head_dim=_head_dim(config, heads, path, prefix),
     )
 
 
-def _config_int(config: dict[str, Any], key: str, path: Path) -> int:
+def _label(key: str, prefix: str) -> str:
+    """Name a field in a refusal message.
+
+    A top-level key renders quoted. A nested key renders as a bare
+    path expression, matching the ``block_configs[i]`` messages.
+
+    Args:
+        key: Field name.
+        prefix: JSON path of the containing object, empty at the top
+            level.
+
+    Returns:
+        The label for the field's messages.
+    """
+    return f"{prefix}.{key}" if prefix else f'"{key}"'
+
+
+def _config_int(config: dict[str, Any], key: str, path: Path, prefix: str = "") -> int:
     """Read a required positive integer from a model config.
 
     Args:
-        config: Parsed ``config.json``.
+        config: Parsed ``config.json``, or a nested decoder object.
         key: Field to read.
         path: Source path, for error messages.
+        prefix: JSON path of ``config`` inside the file, empty at the
+            top level.
 
     Returns:
         The integer value.
@@ -253,8 +388,8 @@ def _config_int(config: dict[str, Any], key: str, path: Path) -> int:
     """
     value = config.get(key)
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-        raise ValueError(f'{path}: "{key}" must be a positive integer')
-    return _bounded(value, f'"{key}"', path)
+        raise ValueError(f"{path}: {_label(key, prefix)} must be a positive integer")
+    return _bounded(value, _label(key, prefix), path)
 
 
 def _bounded(value: int, label: str, path: Path) -> int:
@@ -296,13 +431,17 @@ def _bounded(value: int, label: str, path: Path) -> int:
     return value
 
 
-def _head_dim(config: dict[str, Any], num_heads: int, path: Path) -> int:
+def _head_dim(
+    config: dict[str, Any], num_heads: int, path: Path, prefix: str = ""
+) -> int:
     """Derive the attention head dimension from a model config.
 
     Args:
-        config: Parsed ``config.json``.
+        config: Parsed ``config.json``, or a nested decoder object.
         num_heads: The model's attention head count.
         path: Source path, for error messages.
+        prefix: JSON path of ``config`` inside the file, empty at the
+            top level.
 
     Returns:
         ``head_dim`` if present and valid, otherwise
@@ -318,12 +457,14 @@ def _head_dim(config: dict[str, Any], num_heads: int, path: Path) -> int:
     head_dim = config.get("head_dim")
     if head_dim is not None:
         if isinstance(head_dim, bool) or not isinstance(head_dim, int) or head_dim <= 0:
-            raise ValueError(f'{path}: "head_dim" must be a positive integer')
-        return _bounded(head_dim, '"head_dim"', path)
-    hidden = _config_int(config, "hidden_size", path)
+            raise ValueError(
+                f"{path}: {_label('head_dim', prefix)} must be a positive integer"
+            )
+        return _bounded(head_dim, _label("head_dim", prefix), path)
+    hidden = _config_int(config, "hidden_size", path, prefix)
     if hidden % num_heads != 0:
         raise ValueError(
-            f'{path}: "hidden_size" {hidden} is not divisible by '
-            f'"num_attention_heads" {num_heads}'
+            f"{path}: {_label('hidden_size', prefix)} {hidden} is not divisible "
+            f"by {_label('num_attention_heads', prefix)} {num_heads}"
         )
     return hidden // num_heads

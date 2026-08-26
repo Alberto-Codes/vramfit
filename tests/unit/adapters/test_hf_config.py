@@ -326,6 +326,166 @@ class TestModelShapeFromConfig:
         with pytest.raises(ValueError, match=r"n_heads_in_group exceeds \d+"):
             shape_from_config_json(path)
 
+    def _text_config(self) -> dict:
+        # The container shape of the official Gemma 4 family (#420):
+        # decoder geometry nested under `text_config`, no decoder
+        # fields at the top level. The defaults here are the supported
+        # subset; each unrepresentable marker gets its own test.
+        return {
+            "architectures": ["Gemma4ForConditionalGeneration"],
+            "vision_config": {"model_type": "siglip_vision_model"},
+            "text_config": {
+                "model_type": "gemma4_text",
+                "num_hidden_layers": 4,
+                "num_key_value_heads": 2,
+                "num_attention_heads": 8,
+                "hidden_size": 1024,
+                "layer_types": ["full_attention"] * 4,
+                "attention_k_eq_v": False,
+                "num_kv_shared_layers": 0,
+            },
+        }
+
+    def test_text_config_with_uniform_full_attention_parses(self, tmp_path) -> None:
+        path = tmp_path / "config.json"
+        path.write_text(json.dumps(self._text_config()))
+
+        shape = shape_from_config_json(path)
+
+        assert shape.kv_heads_per_layer == (2, 2, 2, 2)
+        assert shape.head_dim == 128
+
+    def test_text_config_not_an_object_raises(self, tmp_path) -> None:
+        config = self._text_config()
+        config["text_config"] = "gemma4_text"
+        path = tmp_path / "config.json"
+        path.write_text(json.dumps(config))
+
+        with pytest.raises(ValueError, match='"text_config" must be a JSON object'):
+            shape_from_config_json(path)
+
+    def test_text_config_beside_top_level_layer_count_raises(self, tmp_path) -> None:
+        config = self._text_config()
+        config["num_hidden_layers"] = 4
+        path = tmp_path / "config.json"
+        path.write_text(json.dumps(config))
+
+        with pytest.raises(ValueError, match="decoder config is ambiguous"):
+            shape_from_config_json(path)
+
+    def test_text_config_beside_block_configs_raises(self, tmp_path) -> None:
+        config = self._text_config()
+        config["block_configs"] = self._decilm_config()["block_configs"]
+        path = tmp_path / "config.json"
+        path.write_text(json.dumps(config))
+
+        with pytest.raises(ValueError, match="decoder config is ambiguous"):
+            shape_from_config_json(path)
+
+    def test_text_config_mixed_layer_types_raises(self, tmp_path) -> None:
+        # The Gemma 4 31B pattern: 50 sliding layers, 10 global, 5:1.
+        # Flattening to uniform would price a wrong KV cache (#421).
+        config = self._text_config()
+        config["text_config"]["num_hidden_layers"] = 60
+        config["text_config"]["layer_types"] = (
+            ["sliding_attention"] * 5 + ["full_attention"]
+        ) * 10
+
+        path = tmp_path / "config.json"
+        path.write_text(json.dumps(config))
+
+        with pytest.raises(ValueError, match="cannot represent yet"):
+            shape_from_config_json(path)
+
+    def test_text_config_all_sliding_layer_types_raises(self, tmp_path) -> None:
+        # Uniform but window-capped: still not representable, KV does
+        # not scale with the full context.
+        config = self._text_config()
+        config["text_config"]["layer_types"] = ["sliding_attention"] * 4
+        path = tmp_path / "config.json"
+        path.write_text(json.dumps(config))
+
+        with pytest.raises(ValueError, match="cannot represent yet"):
+            shape_from_config_json(path)
+
+    def test_text_config_non_list_layer_types_raises(self, tmp_path) -> None:
+        config = self._text_config()
+        config["text_config"]["layer_types"] = "full_attention"
+        path = tmp_path / "config.json"
+        path.write_text(json.dumps(config))
+
+        with pytest.raises(ValueError, match="must be a list of strings"):
+            shape_from_config_json(path)
+
+    def test_text_config_k_eq_v_true_raises(self, tmp_path) -> None:
+        # Gemma 4 12B/26B-A4B/31B store one tensor per token on global
+        # layers. `kv_cache_bytes` prices an independent K and V pair.
+        config = self._text_config()
+        config["text_config"]["attention_k_eq_v"] = True
+        path = tmp_path / "config.json"
+        path.write_text(json.dumps(config))
+
+        with pytest.raises(ValueError, match="attention_k_eq_v"):
+            shape_from_config_json(path)
+
+    def test_text_config_non_bool_k_eq_v_raises(self, tmp_path) -> None:
+        config = self._text_config()
+        config["text_config"]["attention_k_eq_v"] = "false"
+        path = tmp_path / "config.json"
+        path.write_text(json.dumps(config))
+
+        with pytest.raises(ValueError, match="attention_k_eq_v must be a boolean"):
+            shape_from_config_json(path)
+
+    def test_text_config_shared_kv_layers_raises(self, tmp_path) -> None:
+        # E2B declares 20 shared-KV layers; those own no fresh cache.
+        config = self._text_config()
+        config["text_config"]["num_kv_shared_layers"] = 20
+        path = tmp_path / "config.json"
+        path.write_text(json.dumps(config))
+
+        with pytest.raises(ValueError, match="shared-KV layers"):
+            shape_from_config_json(path)
+
+    def test_text_config_negative_shared_kv_layers_raises(self, tmp_path) -> None:
+        config = self._text_config()
+        config["text_config"]["num_kv_shared_layers"] = -1
+        path = tmp_path / "config.json"
+        path.write_text(json.dumps(config))
+
+        with pytest.raises(ValueError, match="must be a non-negative integer"):
+            shape_from_config_json(path)
+
+    def test_text_config_global_head_dim_raises(self, tmp_path) -> None:
+        config = self._text_config()
+        config["text_config"]["global_head_dim"] = 512
+        path = tmp_path / "config.json"
+        path.write_text(json.dumps(config))
+
+        with pytest.raises(ValueError, match="split local/global"):
+            shape_from_config_json(path)
+
+    def test_text_config_global_kv_heads_raises(self, tmp_path) -> None:
+        config = self._text_config()
+        config["text_config"]["num_global_key_value_heads"] = 4
+        path = tmp_path / "config.json"
+        path.write_text(json.dumps(config))
+
+        with pytest.raises(ValueError, match="split local/global"):
+            shape_from_config_json(path)
+
+    def test_text_config_missing_field_names_the_nested_key(self, tmp_path) -> None:
+        config = self._text_config()
+        del config["text_config"]["num_key_value_heads"]
+        path = tmp_path / "config.json"
+        path.write_text(json.dumps(config))
+
+        with pytest.raises(
+            ValueError,
+            match=r"config\.json: text_config\.num_key_value_heads",
+        ):
+            shape_from_config_json(path)
+
     def test_integer_literal_past_the_digit_limit_names_the_file(
         self, tmp_path
     ) -> None:
