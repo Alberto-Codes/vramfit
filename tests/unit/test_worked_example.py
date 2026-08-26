@@ -186,5 +186,5 @@ def test_budget_gemma_31b_128k_reports_growth_and_window_pool() -> None:
     assert result.exit_code == 0, result.output
     assert "attention layers      60" in result.output
     assert "KV grows 40960 bytes/token" in result.output
-    assert "+ 800.00 MiB window pool" in result.output
+    assert "+ 800.00 MiB window pool per sequence" in result.output
     assert "- KV cache            5.78 GiB" in result.output

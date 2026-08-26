@@ -198,8 +198,9 @@ def budget(
     ``--attn-layers --kv-heads --head-dim``. The ``--overhead`` default
     derives from ``vramfit.domain.budget.DEFAULT_RUNTIME_OVERHEAD_BYTES``.
     The first output line reports KV growth per context token, plus
-    the saturated window pool when the shape has sliding layers
-    (#421). The KV-cache line sums both terms at ``--context``.
+    the saturated per-sequence window pool when the shape has sliding
+    layers (#421). The KV-cache line sums both terms at ``--context``
+    and ``--sequences``.
 
     Raises:
         typer.BadParameter: If both or neither shape source is given, a
@@ -249,7 +250,7 @@ def budget(
     pool = kv_window_pool_bytes(shape, kv_dtype)
     detail = f"KV grows {per_token} bytes/token, {kv_dtype}"
     if pool:
-        detail += f", + {format_size(pool)} window pool"
+        detail += f", + {format_size(pool)} window pool per sequence"
     typer.echo(f"attention layers      {len(shape.kv_layers)}  ({detail})")
     typer.echo(f"VRAM total            {format_size(ledger.vram_total_bytes)}")
     typer.echo(

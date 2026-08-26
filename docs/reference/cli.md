@@ -60,8 +60,9 @@ VRAM total            24.00 GiB
 
 On a mixed sliding/global stack the first line adds the saturated
 window pool, e.g. `(KV grows 40960 bytes/token, fp16, + 800.00 MiB
-window pool)`. The KV-cache line already sums both terms at the given
-context.
+window pool per sequence)`. Each concurrent sequence pays its own
+pool. The KV-cache line sums both terms at the given context and
+`--sequences`.
 
 ## `vramfit plan`
 
