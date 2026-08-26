@@ -396,7 +396,12 @@ change.
 
 **KV headroom**
 :   VRAM reserved for the KV cache (and growth) at the planned context
-    length and concurrency. CLI flag `--kv-headroom`.
+    length and concurrency. The term carries two ledger readings.
+    `plan --kv-headroom` takes one bundled reservation: KV cache plus
+    the runtime reserve, recorded as `kv_headroom_bytes`. The
+    capacity readout derives the KV-only remainder from a packed
+    recipe: card total minus the recipe's weight bytes minus runtime
+    overhead (#422).
 
 **KV layer**
 :   One attention layer's KV-cache geometry: KV-head count, head
@@ -435,6 +440,28 @@ change.
 :   KV tensors a layer stores per cached token: 2 for an independent
     K and V pair, 1 when the model reuses one tensor for both
     (`attention_k_eq_v`, field `kv_tensors`). Not "KV factor".
+
+**Capacity readout**
+:   The budget ledger run in reverse
+    (`vramfit.domain.capacity`, `vramfit capacity`, #422). It reads
+    the KV headroom a packed recipe leaves as the largest context,
+    the sequence count at a fixed context, and an image capacity.
+    The solvers search `kv_cache_bytes` itself, so the reading is
+    exact on a mixed sliding/global stack. A reading is `unbounded`
+    when the KV cache stops growing inside the headroom. Not
+    "inverse budget" or "capacity report".
+
+**Image token cost**
+:   Decoder tokens one image consumes in the serving stack. The
+    caller supplies it (`--tokens-per-image`) — vramfit rules no
+    vision policy. #236 owns the multimodal VRAM ledger, and #419
+    owns vision-quality claims. Not "image cost" or "vision
+    tokens".
+
+**Image capacity**
+:   Whole images a token capacity carries at the image token cost
+    (`image_capacity`). The image-equivalent reading of the
+    capacity readout. Not "image budget".
 
 **Pin**
 :   A user-forced precision for a group, overriding the solver

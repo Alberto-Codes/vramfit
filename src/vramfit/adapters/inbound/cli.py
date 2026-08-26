@@ -1,13 +1,15 @@
 """Typer CLI: the inbound (driving) adapter and composition root.
 
 Exposes the ``vramfit`` console script. ``version``, ``budget``,
-``plan``, ``scan``, ``pack``, and ``validate`` are implemented — the
-scan, pack, and validate command bodies live in
-[vramfit.adapters.inbound.cli_scan][],
-[vramfit.adapters.inbound.cli_pack][], and
-[vramfit.adapters.inbound.cli_validate][] to keep this module under
+``plan``, ``scan``, ``pack``, ``validate``, and ``capacity`` are
+implemented — the scan, pack, validate, and capacity command bodies
+live in [vramfit.adapters.inbound.cli_scan][],
+[vramfit.adapters.inbound.cli_pack][],
+[vramfit.adapters.inbound.cli_validate][], and
+[vramfit.adapters.inbound.cli_capacity][] to keep this module under
 the size cap. ``budget`` reports KV growth per token, plus the
-window pool on a mixed sliding/global stack (#421).
+window pool on a mixed sliding/global stack (#421). ``capacity``
+runs the same ledger in reverse from a packed recipe (#422).
 The CLI wires outbound adapters to the pure domain, typing
 them against the ports so the seams stay explicit. Every IO boundary —
 artifact and config reads, checkpoint and artifact writes, and model
@@ -56,10 +58,15 @@ from typing import Annotated
 import typer
 
 from vramfit import __version__
-from vramfit.adapters.inbound import cli_pack, cli_scan, cli_validate
+from vramfit.adapters.inbound import cli_capacity, cli_pack, cli_scan, cli_validate
 from vramfit.adapters.inbound.cli_plan_sizes import discovered_bytes
 from vramfit.adapters.inbound.cli_protection_warnings import warn_protection_gaps
-from vramfit.adapters.outbound.hf_config import HfConfigFile
+from vramfit.adapters.inbound.cli_shape import (
+    check_kv_dtype,
+    kv_detail,
+    parse_size_option,
+    resolve_shape,
+)
 from vramfit.adapters.outbound.json_common import (
     ArtifactError,
     set_unknown_field_reporter,
@@ -68,14 +75,9 @@ from vramfit.adapters.outbound.recipe_json import JsonRecipeFile
 from vramfit.adapters.outbound.sensitivity_map_json import JsonSensitivityMapFile
 from vramfit.domain.budget import (
     DEFAULT_RUNTIME_OVERHEAD_BYTES,
-    KV_DTYPE_BYTES,
     Budget,
-    ModelShape,
     format_size,
     kv_cache_bytes,
-    kv_growth_bytes_per_token,
-    kv_window_pool_bytes,
-    parse_size,
 )
 from vramfit.domain.errors import VramfitError
 from vramfit.domain.runtime import LLAMA_CPP, RUNTIME_CAPABILITIES
@@ -85,7 +87,6 @@ from vramfit.domain.solver import (
     solve,
 )
 from vramfit.ports.outbound import (
-    ModelShapeSource,
     RecipeSink,
     SensitivityMapSource,
 )
@@ -140,25 +141,7 @@ def version() -> None:
 app.command(name="scan")(cli_scan.scan)
 app.command(name="pack")(cli_pack.pack)
 app.command(name="validate")(cli_validate.validate)
-
-
-def _parse_size_option(value: str, option: str) -> int:
-    """Parse a size CLI option, converting errors to usage errors.
-
-    Args:
-        value: The raw option value, e.g. ``"24GiB"``.
-        option: The option name, for the error message.
-
-    Returns:
-        The size in bytes.
-
-    Raises:
-        typer.BadParameter: If the value is not a recognizable size.
-    """
-    try:
-        return parse_size(value)
-    except ValueError as exc:
-        raise typer.BadParameter(f"{option}: {exc}") from exc
+app.command(name="capacity")(cli_capacity.capacity)
 
 
 @app.command()
@@ -195,7 +178,9 @@ def budget(
 
     The attention shape comes from exactly one source: ``--model-config``
     (read through the `ModelShapeSource` port), or the manual triple
-    ``--attn-layers --kv-heads --head-dim``. The ``--overhead`` default
+    ``--attn-layers --kv-heads --head-dim`` — the shared resolution
+    lives in [vramfit.adapters.inbound.cli_shape][], which the
+    ``capacity`` command uses too. The ``--overhead`` default
     derives from ``vramfit.domain.budget.DEFAULT_RUNTIME_OVERHEAD_BYTES``.
     The first output line reports KV growth per context token, plus
     the saturated per-sequence window pool when the shape has sliding
@@ -215,42 +200,15 @@ def budget(
         $ vramfit budget --model-config config.json --vram 24GiB --kv-dtype fp8
         ```
     """
-    manual = (attn_layers, kv_heads, head_dim)
-    if model_config is not None and any(v is not None for v in manual):
-        raise typer.BadParameter(
-            "give either --model-config or the manual shape options, not both"
-        )
-    if kv_dtype not in KV_DTYPE_BYTES:
-        raise typer.BadParameter(
-            f"--kv-dtype: unknown dtype {kv_dtype!r} — "
-            f"choose from {sorted(KV_DTYPE_BYTES)}"
-        )
-    if model_config is not None:
-        shape_source: ModelShapeSource = HfConfigFile(model_config)
-        try:
-            shape = shape_source.load()
-        except (OSError, ValueError) as exc:
-            typer.echo(f"error: {exc}", err=True)
-            raise typer.Exit(code=1) from exc
-    else:
-        if attn_layers is None or kv_heads is None or head_dim is None:
-            raise typer.BadParameter(
-                "give --model-config, or all of --attn-layers, --kv-heads, --head-dim"
-            )
-        shape = ModelShape.uniform(
-            attn_layers=attn_layers, kv_heads=kv_heads, head_dim=head_dim
-        )
+    check_kv_dtype(kv_dtype)
+    shape = resolve_shape(model_config, attn_layers, kv_heads, head_dim)
 
     ledger = Budget(
-        vram_total_bytes=_parse_size_option(vram, "--vram"),
+        vram_total_bytes=parse_size_option(vram, "--vram"),
         kv_cache_bytes=kv_cache_bytes(shape, context, kv_dtype, sequences),
-        runtime_overhead_bytes=_parse_size_option(overhead, "--overhead"),
+        runtime_overhead_bytes=parse_size_option(overhead, "--overhead"),
     )
-    per_token = kv_growth_bytes_per_token(shape, kv_dtype)
-    pool = kv_window_pool_bytes(shape, kv_dtype)
-    detail = f"KV grows {per_token} bytes/token, {kv_dtype}"
-    if pool:
-        detail += f", + {format_size(pool)} window pool per sequence"
+    detail = kv_detail(shape, kv_dtype)
     typer.echo(f"attention layers      {len(shape.kv_layers)}  ({detail})")
     typer.echo(f"VRAM total            {format_size(ledger.vram_total_bytes)}")
     typer.echo(
@@ -393,9 +351,10 @@ def plan(
     Raises:
         typer.BadParameter: If a ``--pin`` or ``--protect`` is not of
             the form ``pattern=bits`` with positive bits, a size
-            option is malformed, ``--format-overhead`` is negative,
-            NaN, or infinite, or ``--runtime`` is not in the
-            capability table.
+            option is malformed (the shared size rule lives in
+            [vramfit.adapters.inbound.cli_shape][]),
+            ``--format-overhead`` is negative, NaN, or infinite, or
+            ``--runtime`` is not in the capability table.
         typer.Exit: With code 1 when the map is invalid, the recipe
             cannot be written, the solver rejects the plan, or nothing
             is left for weights.
@@ -423,8 +382,8 @@ def plan(
     protections = _parse_rules(protect, "--protect")
     exclusions = tuple(exclude_imatrix or [])
 
-    vram_bytes = _parse_size_option(vram, "--vram")
-    headroom_bytes = _parse_size_option(kv_headroom, "--kv-headroom")
+    vram_bytes = parse_size_option(vram, "--vram")
+    headroom_bytes = parse_size_option(kv_headroom, "--kv-headroom")
     weight_budget = vram_bytes - headroom_bytes
     if weight_budget <= 0:
         typer.echo("error: --kv-headroom leaves nothing for weights", err=True)
