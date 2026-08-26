@@ -398,6 +398,30 @@ change.
 :   VRAM reserved for the KV cache (and growth) at the planned context
     length and concurrency. CLI flag `--kv-headroom`.
 
+**KV layer**
+:   One attention layer's KV-cache geometry: KV-head count, head
+    width, window, storage factor, and whether the layer allocates
+    KV at all (`vramfit.domain.budget.KVLayer`, #421). A shape is a
+    tuple of KV layers. Not "layer config" or "cache entry".
+
+**KV growth**
+:   Bytes each context token adds across the global layers
+    (`kv_growth_bytes_per_token`). Sliding layers stop at their
+    window and contribute to the **window pool** instead, so growth
+    alone never prices a mixed stack. Not "bytes per token" without
+    the qualifier.
+
+**Window pool**
+:   The KV bytes the sliding layers hold once every window is
+    saturated (`kv_window_pool_bytes`). A constant per sequence:
+    800 MiB on Gemma 4 31B at fp16. Not "sliding cache" or "SWA
+    buffer".
+
+**Storage factor**
+:   KV tensors a layer stores per cached token: 2 for an independent
+    K and V pair, 1 when the model reuses one tensor for both
+    (`attention_k_eq_v`, field `kv_tensors`). Not "KV factor".
+
 **Pin**
 :   A user-forced precision for a group, overriding the solver
     (`--pin "*.layers.0=8"`). Recorded verbatim in the recipe. A pin

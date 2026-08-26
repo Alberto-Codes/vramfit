@@ -1,11 +1,12 @@
-"""Worked example: the real Nemotron config reproduces the documented budget.
+"""Worked examples: real configs reproduce the documented budgets.
 
-Checks the stable numbers in ``docs/explanation/vram-budget.md`` and the
-arithmetic in ADR-0010 against the committed north-star config
-(``tests/data/nemotron-super-49b-v1_5``). If these fail, either the
-budget math regressed or a docs page lies.
+Checks the stable numbers in ``docs/explanation/vram-budget.md``, the
+arithmetic in ADR-0010, and the #423 KV figures against committed real
+configs (``tests/data/nemotron-super-49b-v1_5``,
+``tests/data/gemma-4-31b``). If these fail, either the budget math
+regressed or a docs page lies.
 
-Runs in the hermetic unit tier: the config is committed in-repo, so no
+Runs in the hermetic unit tier: the configs are committed in-repo, so no
 external resource is involved.
 """
 
@@ -19,13 +20,18 @@ from typer.testing import CliRunner
 
 from vramfit.adapters.inbound.cli import app
 from vramfit.adapters.outbound.hf_config import shape_from_config_json
-from vramfit.domain.budget import kv_bytes_per_token
+from vramfit.domain.budget import (
+    kv_cache_bytes,
+    kv_growth_bytes_per_token,
+    kv_window_pool_bytes,
+)
 
 pytestmark = pytest.mark.unit
 
 NEMOTRON_CONFIG = (
     Path(__file__).parents[1] / "data" / "nemotron-super-49b-v1_5" / "config.json"
 )
+GEMMA_31B_CONFIG = Path(__file__).parents[1] / "data" / "gemma-4-31b" / "config.json"
 
 runner = CliRunner()
 
@@ -57,11 +63,45 @@ def nemotron_parameter_count(config: dict) -> int:
 def test_nemotron_shape_from_real_config_matches_documented_geometry() -> None:
     shape = shape_from_config_json(NEMOTRON_CONFIG)
 
-    assert len(shape.kv_heads_per_layer) == 49
-    assert set(shape.kv_heads_per_layer) == {8}
-    assert shape.head_dim == 128
-    assert kv_bytes_per_token(shape, "fp16") == 200_704
-    assert kv_bytes_per_token(shape, "fp8") == 100_352
+    assert len(shape.kv_layers) == 49
+    assert {layer.kv_heads for layer in shape.kv_layers} == {8}
+    assert {layer.head_dim for layer in shape.kv_layers} == {128}
+    assert kv_growth_bytes_per_token(shape, "fp16") == 200_704
+    assert kv_growth_bytes_per_token(shape, "fp8") == 100_352
+    assert kv_window_pool_bytes(shape) == 0
+
+
+def test_gemma_31b_shape_from_real_config_matches_recorded_geometry() -> None:
+    # The #423 figures, verified against the official config on
+    # 2026-08-25: 50 sliding layers (window 1024, 16 KV heads, width
+    # 256, K and V pair) and 10 global layers (4 KV heads, width 512,
+    # one K=V tensor).
+    shape = shape_from_config_json(GEMMA_31B_CONFIG)
+
+    sliding = [layer for layer in shape.kv_layers if layer.window is not None]
+    top = [layer for layer in shape.kv_layers if layer.window is None]
+    assert len(shape.kv_layers) == 60
+    assert len(sliding) == 50
+    assert {(s.kv_heads, s.head_dim, s.window, s.kv_tensors) for s in sliding} == {
+        (16, 256, 1024, 2)
+    }
+    assert {(g.kv_heads, g.head_dim, g.kv_tensors) for g in top} == {(4, 512, 1)}
+    assert not any(layer.shares_kv for layer in shape.kv_layers)
+
+
+def test_gemma_31b_kv_figures_match_the_recorded_arithmetic() -> None:
+    # #423: 40,960 B/token global growth, ~0.781 GiB sliding pool,
+    # ~5.78 GiB at 128k and ~10.78 GiB at 256k, fp16, one sequence.
+    shape = shape_from_config_json(GEMMA_31B_CONFIG)
+
+    assert kv_growth_bytes_per_token(shape, "fp16") == 40_960
+    assert kv_window_pool_bytes(shape, "fp16") == 838_860_800
+    assert kv_cache_bytes(shape, context=131_072) / 2**30 == pytest.approx(
+        5.78, abs=0.01
+    )
+    assert kv_cache_bytes(shape, context=262_144) / 2**30 == pytest.approx(
+        10.78, abs=0.01
+    )
 
 
 def test_nemotron_config_pins_the_documented_parameter_arithmetic() -> None:
@@ -110,3 +150,24 @@ def test_budget_nemotron_16k_reproduces_documented_numbers(
     assert "attention layers      49" in result.output
     assert kv_line in result.output
     assert f"= weight budget       {budget_line}" in result.output
+
+
+def test_budget_gemma_31b_128k_reports_growth_and_window_pool() -> None:
+    result = runner.invoke(
+        app,
+        [
+            "budget",
+            "--model-config",
+            str(GEMMA_31B_CONFIG),
+            "--vram",
+            "24GiB",
+            "--context",
+            "131072",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "attention layers      60" in result.output
+    assert "KV grows 40960 bytes/token" in result.output
+    assert "+ 800.00 MiB window pool" in result.output
+    assert "- KV cache            5.78 GiB" in result.output

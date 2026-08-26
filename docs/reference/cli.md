@@ -26,9 +26,13 @@ for `plan` is the sum of the KV-cache and runtime-overhead lines. The attention 
 exactly one source: `--model-config` (a Hugging Face `config.json`) or
 the manual triple. The reader handles DeciLM NAS configs with
 skipped-attention blocks and composite configs that nest the decoder
-under `text_config`. A config that declares windowed, shared, K=V, or
-per-layer KV geometry refuses until the shape model represents it
-(#421).
+under `text_config`. It prices declared per-layer KV geometry (#421):
+a `layer_types` sliding/global pattern with its window, split
+local/global head widths and KV-head counts, K=V storage
+(`attention_k_eq_v`), and shared-KV layers that allocate no cache. An
+active window without `layer_types`, an unknown layer type, or a
+llama-geometry key beside `block_configs` refuses rather than
+guessing.
 
 ```
 vramfit budget
@@ -48,12 +52,17 @@ shape sources.
 
 ```console
 $ vramfit budget --model-config config.json --vram 24GiB --kv-dtype fp8
-attention layers      49  (KV 100352 bytes/token, fp8)
+attention layers      49  (KV grows 100352 bytes/token, fp8)
 VRAM total            24.00 GiB
 - KV cache            1.53 GiB  (16384 tokens x 1 seq)
 - runtime overhead    2.00 GiB
 = weight budget       20.47 GiB
 ```
+
+On a mixed sliding/global stack the first line adds the saturated
+window pool, e.g. `(KV grows 40960 bytes/token, fp16, + 800.00 MiB
+window pool)`. The KV-cache line already sums both terms at the given
+context.
 
 ## `vramfit plan`
 

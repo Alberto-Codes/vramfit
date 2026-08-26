@@ -36,16 +36,52 @@ counted; on large-vocab models they are gigabytes, not a rounding error.
 
 ## KV cache
 
-Per token, across the whole stack:
+Each attention layer prices its own cache (`KVLayer`, #421). Per layer
+and sequence:
 
 ```
-kv_bytes_per_token = 2 × n_attention_layers × n_kv_heads × head_dim × bytes_per_elem
+layer_kv_bytes = kv_tensors × n_kv_heads × head_dim × bytes_per_elem × cached_tokens
+```
+
+Four mechanisms decide `cached_tokens` and `kv_tensors`:
+
+- A **global** layer caches `context` tokens — it grows with context.
+- A **sliding** layer caches `min(context, window)` tokens. Past its
+  window the allocation is a constant.
+- A **shared-KV** layer reuses an earlier layer's cache and allocates
+  nothing (`num_kv_shared_layers`).
+- `kv_tensors` is 2 for an independent K and V pair, and 1 when the
+  model stores one tensor for both (`attention_k_eq_v`).
+
+The stack's total therefore splits into two terms: **KV growth**
+(`kv_growth_bytes_per_token`, the global layers' bytes per context
+token) and the **window pool** (`kv_window_pool_bytes`, the sliding
+layers' saturated bytes per sequence). For a uniform full-attention
+stack the pool is zero and the familiar formula holds:
+
+```
+kv_growth_bytes_per_token = 2 × n_attention_layers × n_kv_heads × head_dim × bytes_per_elem
 ```
 
 (2 = keys + values.) Multiply by context length × concurrent sequences.
 Grouped-query attention (small `n_kv_heads`) is what makes long context
 affordable; FP8 KV cache halves it again. This is why the budget must be
 planned *jointly*: every GiB saved on weights is context length gained.
+
+### Worked example: Gemma 4 31B (mixed sliding/global)
+
+From the official config (verified 2026-08-25, #423): 60 layers — 50
+sliding (window 1024, 16 KV heads × width 256, K+V pair) and 10 global
+(4 KV heads × width 512, one K=V tensor). At fp16, one sequence:
+
+- KV growth: `10 × 4 × 512 × 1 × 2` = **40,960 B/token**;
+- window pool: `50 × 16 × 256 × 2 × 2 × 1024` = **800 MiB**;
+- total: **5.78 GiB at 128k context**, **10.78 GiB at 256k**.
+
+Past ~1k tokens the card pays 40 KiB per extra token instead of the
+~1.6 MiB a fully global stack of the same widths would charge. That is the
+arithmetic behind #423's capacity claim: every GiB of KV headroom buys
+~26.2k tokens once the windows saturate.
 
 ## Runtime overhead
 

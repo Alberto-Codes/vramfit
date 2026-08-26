@@ -5,6 +5,7 @@ from typing import Any
 import hypothesis.strategies as st
 
 from tests.unit.conftest import make_map
+from vramfit.domain.budget import KVLayer, ModelShape
 
 
 @st.composite
@@ -139,3 +140,27 @@ def raw_maps_with_discovered_bytes(
             st.integers(min_value=1, max_value=10_000_000)
         )
     return raw, discovered
+
+
+@st.composite
+def kv_shapes(draw: st.DrawFn) -> ModelShape:
+    """Draw a heterogeneous `ModelShape` of 1-8 KV layers.
+
+    Layers mix global and sliding attention, head widths, KV-head
+    counts, K=V storage, and shared-KV entries, so the KV arithmetic
+    properties hold across every mechanism #421 models.
+    """
+    n_layers = draw(st.integers(min_value=1, max_value=8))
+    layers = tuple(
+        KVLayer(
+            kv_heads=draw(st.integers(min_value=1, max_value=64)),
+            head_dim=draw(st.integers(min_value=1, max_value=512)),
+            window=draw(
+                st.one_of(st.none(), st.integers(min_value=1, max_value=1 << 16))
+            ),
+            kv_tensors=draw(st.sampled_from([1, 2])),
+            shares_kv=draw(st.booleans()),
+        )
+        for _ in range(n_layers)
+    )
+    return ModelShape(kv_layers=layers)
