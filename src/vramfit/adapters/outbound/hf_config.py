@@ -1,16 +1,20 @@
 """Hugging Face ``config.json`` adapter: model file → `ModelShape`.
 
-Handles three config families: DeciLM-style NAS configs (the north-star
-target) with per-block ``block_configs`` where attention can be deleted
-(``no_op``) or replaced with a linear layer (``replace_with_linear``) —
-both are excluded from KV accounting — standard llama-style configs
-with uniform layers, and composite configs that nest the decoder under
-``text_config`` (Gemma 4, #420). Invalid
+Handles three config families. DeciLM-style NAS configs (the
+north-star target) carry per-block ``block_configs`` where attention
+can be deleted (``no_op``) or replaced with a linear layer
+(``replace_with_linear``) — both are excluded from KV accounting.
+Standard llama-style configs carry uniform layers. Composite configs
+(Gemma 4, #420) nest the decoder under ``text_config``. Invalid
 geometry (non-divisible GQA group sizes, non-divisible head dimensions)
-is rejected rather than silently truncated. A nested decoder that
-declares geometry `ModelShape` cannot represent — per-layer attention
-types, K=V storage, shared-KV layers, split local/global widths —
-refuses explicitly until #421 lands a representation.
+is rejected rather than silently truncated.
+
+The uniform parse models one geometry: every layer global, storing
+full K and V at one head width. A decoder that declares more refuses
+instead of parsing as uniform, at the top level and inside
+``text_config`` alike (#420). A uniform read of a windowed stack
+prices a wrong KV cache with no report. Modeling the declared
+geometry stays #421.
 
 The model publisher owns this file. vramfit reads it and never writes
 it, and it still refuses a file that defines one key twice (#283). The
@@ -86,9 +90,8 @@ def shape_from_config_json(path: Path) -> ModelShape:
             the same key twice, declares an integer outside the signed
             64-bit range, required fields are missing, the attention
             geometry is inconsistent, the decoder container is
-            ambiguous, or a nested decoder declares geometry
-            `ModelShape` cannot represent yet. Every message names
-            ``path``.
+            ambiguous, or the decoder declares KV geometry the uniform
+            parse does not model (#420). Every message names ``path``.
 
     Examples:
         Standard llama-style configs parse to uniform layers:
@@ -231,10 +234,13 @@ def _from_text_config(config: dict[str, Any], path: Path) -> ModelShape:
     """Select the nested decoder config inside a composite model file.
 
     Composite configs (Gemma 4) wrap the decoder geometry in a
-    ``text_config`` object beside ``vision_config`` and friends. This
-    selects that object and hands it to the llama-style parser. It
-    never guesses: an ambiguous container refuses, and so does nested
-    geometry `ModelShape` cannot represent yet (#421).
+    ``text_config`` object beside ``vision_config`` and
+    ``audio_config``. This selects that object and hands it to the
+    llama-style parser, which guards the geometry it can model. An
+    ambiguous container refuses: ``num_hidden_layers`` anchors the
+    llama parse and ``block_configs`` anchors the DeciLM parse, so a
+    file that carries either beside ``text_config`` declares two
+    decoders, and this reader does not pick one.
 
     Args:
         config: Parsed ``config.json`` containing ``text_config``.
@@ -245,10 +251,9 @@ def _from_text_config(config: dict[str, Any], path: Path) -> ModelShape:
 
     Raises:
         ValueError: If ``text_config`` is not an object, the top level
-            also declares decoder geometry (``block_configs`` or
-            ``num_hidden_layers``), the nested decoder declares
-            unrepresentable geometry, or its fields are missing or
-            inconsistent.
+            also declares a decoder (``block_configs`` or
+            ``num_hidden_layers``), or the nested decoder refuses in
+            the llama-style parser.
     """
     decoder = config["text_config"]
     if not isinstance(decoder, dict):
@@ -259,69 +264,142 @@ def _from_text_config(config: dict[str, Any], path: Path) -> ModelShape:
                 f'{path}: "text_config" and top-level "{key}" are both '
                 "present, so the decoder config is ambiguous"
             )
-    _refuse_unrepresentable_geometry(decoder, path)
     return _from_llama_config(decoder, path, prefix="text_config")
 
 
-def _refuse_unrepresentable_geometry(decoder: dict[str, Any], path: Path) -> None:
-    """Refuse nested decoder geometry `ModelShape` cannot represent.
+def _refuse_unmodeled_geometry(
+    config: dict[str, Any], layers: int, path: Path, prefix: str = ""
+) -> None:
+    """Refuse a decoder whose KV geometry the uniform parse misstates.
 
-    `ModelShape` carries one head width and assumes every layer stores
-    an independent K and V pair over the full context. Gemma 4 breaks
-    each assumption. Flattening such a decoder to `ModelShape.uniform`
-    would price a wrong KV cache with no report, so each marker refuses
-    until #421 lands a representation. None of these messages render a
+    The uniform parse stores full-context K and V for every layer at
+    one head width. A Gemma-family decoder declares more, and reading
+    it as uniform prices a wrong KV cache with no report (#420).
+    Modeling the declared geometry stays #421. No message renders a
     publisher-controlled value (#363).
 
+    ``layer_types`` is admitted only when it proves uniformity: one
+    string per hidden layer, every entry ``full_attention``. A recent
+    transformers dump serializes the key for a plain uniform stack, so
+    refusing the key outright would refuse those files.
+
+    A declared window counts as active unless ``use_sliding_window``
+    is the boolean ``false`` — Qwen-family configs carry the window
+    value with the switch off, and those stacks are uniform. A null
+    ``sliding_window`` also parses, because Mistral-family configs use
+    null for no window.
+
     Args:
-        decoder: The nested decoder config object.
+        config: Parsed ``config.json``, or a nested decoder object.
+        layers: The decoder's hidden layer count, already parsed.
         path: Source path, for error messages.
+        prefix: JSON path of ``config`` inside the file, empty at the
+            top level.
 
     Raises:
-        ValueError: If ``layer_types`` is malformed or declares a layer
-            other than ``full_attention``, ``attention_k_eq_v`` is not
-            a boolean or is true, ``num_kv_shared_layers`` is not a
-            non-negative integer or is above zero, or a split
-            local/global geometry key is present.
+        ValueError: If ``layer_types`` is malformed, misses a layer,
+            or declares a layer other than ``full_attention``, an
+            active ``sliding_window`` is declared, ``attention_k_eq_v``
+            is true, ``num_kv_shared_layers`` is above zero, a split
+            local/global geometry key carries a value, or a key above
+            carries a type it cannot mean. ``bool`` subclasses ``int``,
+            so a boolean window or share count refuses as a non-integer
+            (#348).
     """
-    layer_types = decoder.get("layer_types")
+    _refuse_unmodeled_layer_pattern(config, layers, path, prefix)
+    _refuse_unmodeled_kv_storage(config, path, prefix)
+
+
+def _refuse_unmodeled_layer_pattern(
+    config: dict[str, Any], layers: int, path: Path, prefix: str
+) -> None:
+    """Refuse a per-layer attention pattern or an active window.
+
+    Args:
+        config: Parsed ``config.json``, or a nested decoder object.
+        layers: The decoder's hidden layer count, already parsed.
+        path: Source path, for error messages.
+        prefix: JSON path of ``config`` inside the file, empty at the
+            top level.
+
+    Raises:
+        ValueError: Per `_refuse_unmodeled_geometry`.
+    """
+    layer_types = config.get("layer_types")
     if layer_types is not None:
         if not isinstance(layer_types, list) or not all(
             isinstance(t, str) for t in layer_types
         ):
             raise ValueError(
-                f"{path}: text_config.layer_types must be a list of strings"
+                f"{path}: {_label('layer_types', prefix)} must be a list of strings"
+            )
+        if len(layer_types) != layers:
+            raise ValueError(
+                f"{path}: {_label('layer_types', prefix)} does not list "
+                "one type per hidden layer"
             )
         if any(t != "full_attention" for t in layer_types):
             raise ValueError(
-                f"{path}: text_config.layer_types declares layers other than "
-                "full_attention, which ModelShape cannot represent yet"
+                f"{path}: {_label('layer_types', prefix)} declares "
+                "per-layer attention this reader does not model"
             )
-    k_eq_v = decoder.get("attention_k_eq_v")
+    window = config.get("sliding_window")
+    if window is not None and (isinstance(window, bool) or not isinstance(window, int)):
+        raise ValueError(
+            f"{path}: {_label('sliding_window', prefix)} must be an integer or null"
+        )
+    if (
+        isinstance(window, int)
+        and window > 0
+        and config.get("use_sliding_window") is not False
+    ):
+        raise ValueError(
+            f"{path}: {_label('sliding_window', prefix)} declares "
+            "windowed attention this reader does not model"
+        )
+
+
+def _refuse_unmodeled_kv_storage(
+    config: dict[str, Any], path: Path, prefix: str
+) -> None:
+    """Refuse K=V storage, KV sharing, or split local/global geometry.
+
+    Args:
+        config: Parsed ``config.json``, or a nested decoder object.
+        path: Source path, for error messages.
+        prefix: JSON path of ``config`` inside the file, empty at the
+            top level.
+
+    Raises:
+        ValueError: Per `_refuse_unmodeled_geometry`.
+    """
+    k_eq_v = config.get("attention_k_eq_v")
     if k_eq_v is not None and not isinstance(k_eq_v, bool):
-        raise ValueError(f"{path}: text_config.attention_k_eq_v must be a boolean")
+        raise ValueError(
+            f"{path}: {_label('attention_k_eq_v', prefix)} must be a boolean or null"
+        )
     if k_eq_v:
         raise ValueError(
-            f"{path}: text_config.attention_k_eq_v is true, "
-            "which ModelShape cannot represent yet"
+            f"{path}: {_label('attention_k_eq_v', prefix)} declares "
+            "K=V storage this reader does not model"
         )
-    shared = decoder.get("num_kv_shared_layers")
+    shared = config.get("num_kv_shared_layers")
     if shared is not None:
         if isinstance(shared, bool) or not isinstance(shared, int) or shared < 0:
             raise ValueError(
-                f"{path}: text_config.num_kv_shared_layers "
-                "must be a non-negative integer"
+                f"{path}: {_label('num_kv_shared_layers', prefix)} "
+                "must be a non-negative integer or null"
             )
         if shared > 0:
             raise ValueError(
-                f"{path}: text_config declares shared-KV layers, "
-                "which ModelShape cannot represent yet"
+                f"{path}: {_label('num_kv_shared_layers', prefix)} declares "
+                "KV sharing this reader does not model"
             )
     for key in ("global_head_dim", "num_global_key_value_heads"):
-        if key in decoder:
+        if config.get(key) is not None:
             raise ValueError(
-                f"{path}: text_config.{key} declares split local/global "
-                "geometry, which ModelShape cannot represent yet"
+                f"{path}: {_label(key, prefix)} declares split local/global "
+                "attention this reader does not model"
             )
 
 
@@ -340,9 +418,12 @@ def _from_llama_config(
         The parsed uniform shape.
 
     Raises:
-        ValueError: If required fields are missing or inconsistent.
+        ValueError: If required fields are missing or inconsistent, or
+            the decoder declares KV geometry the uniform parse does
+            not model (`_refuse_unmodeled_geometry`).
     """
     layers = _config_int(config, "num_hidden_layers", path, prefix)
+    _refuse_unmodeled_geometry(config, layers, path, prefix)
     kv_heads = _config_int(config, "num_key_value_heads", path, prefix)
     heads = _config_int(config, "num_attention_heads", path, prefix)
     return ModelShape.uniform(

@@ -361,7 +361,9 @@ class TestModelShapeFromConfig:
         path = tmp_path / "config.json"
         path.write_text(json.dumps(config))
 
-        with pytest.raises(ValueError, match='"text_config" must be a JSON object'):
+        with pytest.raises(
+            ValueError, match=r'config\.json: "text_config" must be a JSON object'
+        ):
             shape_from_config_json(path)
 
     def test_text_config_beside_top_level_layer_count_raises(self, tmp_path) -> None:
@@ -370,7 +372,9 @@ class TestModelShapeFromConfig:
         path = tmp_path / "config.json"
         path.write_text(json.dumps(config))
 
-        with pytest.raises(ValueError, match="decoder config is ambiguous"):
+        with pytest.raises(
+            ValueError, match=r"config\.json: .*decoder config is ambiguous"
+        ):
             shape_from_config_json(path)
 
     def test_text_config_beside_block_configs_raises(self, tmp_path) -> None:
@@ -379,7 +383,9 @@ class TestModelShapeFromConfig:
         path = tmp_path / "config.json"
         path.write_text(json.dumps(config))
 
-        with pytest.raises(ValueError, match="decoder config is ambiguous"):
+        with pytest.raises(
+            ValueError, match=r"config\.json: .*decoder config is ambiguous"
+        ):
             shape_from_config_json(path)
 
     def test_text_config_mixed_layer_types_raises(self, tmp_path) -> None:
@@ -394,18 +400,41 @@ class TestModelShapeFromConfig:
         path = tmp_path / "config.json"
         path.write_text(json.dumps(config))
 
-        with pytest.raises(ValueError, match="cannot represent yet"):
+        with pytest.raises(
+            ValueError,
+            match=r"config\.json: text_config\.layer_types declares per-layer",
+        ):
             shape_from_config_json(path)
 
     def test_text_config_all_sliding_layer_types_raises(self, tmp_path) -> None:
-        # Uniform but window-capped: still not representable, KV does
-        # not scale with the full context.
+        # Uniform but window-capped: still not modeled, KV does not
+        # scale with the full context.
         config = self._text_config()
         config["text_config"]["layer_types"] = ["sliding_attention"] * 4
         path = tmp_path / "config.json"
         path.write_text(json.dumps(config))
 
-        with pytest.raises(ValueError, match="cannot represent yet"):
+        with pytest.raises(ValueError, match="does not model"):
+            shape_from_config_json(path)
+
+    def test_text_config_empty_layer_types_raises(self, tmp_path) -> None:
+        # An empty list declares nothing about the layers, so it does
+        # not prove uniformity.
+        config = self._text_config()
+        config["text_config"]["layer_types"] = []
+        path = tmp_path / "config.json"
+        path.write_text(json.dumps(config))
+
+        with pytest.raises(ValueError, match="one type per hidden layer"):
+            shape_from_config_json(path)
+
+    def test_text_config_short_layer_types_raises(self, tmp_path) -> None:
+        config = self._text_config()
+        config["text_config"]["layer_types"] = ["full_attention"]
+        path = tmp_path / "config.json"
+        path.write_text(json.dumps(config))
+
+        with pytest.raises(ValueError, match="one type per hidden layer"):
             shape_from_config_json(path)
 
     def test_text_config_non_list_layer_types_raises(self, tmp_path) -> None:
@@ -444,12 +473,23 @@ class TestModelShapeFromConfig:
         path = tmp_path / "config.json"
         path.write_text(json.dumps(config))
 
-        with pytest.raises(ValueError, match="shared-KV layers"):
+        with pytest.raises(ValueError, match="declares KV sharing"):
             shape_from_config_json(path)
 
     def test_text_config_negative_shared_kv_layers_raises(self, tmp_path) -> None:
         config = self._text_config()
         config["text_config"]["num_kv_shared_layers"] = -1
+        path = tmp_path / "config.json"
+        path.write_text(json.dumps(config))
+
+        with pytest.raises(ValueError, match="must be a non-negative integer"):
+            shape_from_config_json(path)
+
+    def test_text_config_boolean_shared_kv_layers_raises(self, tmp_path) -> None:
+        # `bool` subclasses `int`, so `true` would read as one shared
+        # layer and refuse for the wrong reason (#348).
+        config = self._text_config()
+        config["text_config"]["num_kv_shared_layers"] = True
         path = tmp_path / "config.json"
         path.write_text(json.dumps(config))
 
@@ -472,6 +512,139 @@ class TestModelShapeFromConfig:
         path.write_text(json.dumps(config))
 
         with pytest.raises(ValueError, match="split local/global"):
+            shape_from_config_json(path)
+
+    def test_text_config_null_global_kv_heads_parses(self, tmp_path) -> None:
+        # The official E2B config carries the key as null. Null spells
+        # "unset" in HF configs, so it declares no split geometry.
+        config = self._text_config()
+        config["text_config"]["num_global_key_value_heads"] = None
+        path = tmp_path / "config.json"
+        path.write_text(json.dumps(config))
+
+        shape = shape_from_config_json(path)
+
+        assert shape.kv_heads_per_layer == (2, 2, 2, 2)
+
+    def test_top_level_mixed_layer_types_raises(self, tmp_path) -> None:
+        # The guard runs in the llama parse, so a text-only release
+        # that publishes the same decoder at the top level refuses
+        # instead of flattening to a wrong KV price.
+        path = tmp_path / "config.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "num_hidden_layers": 4,
+                    "num_key_value_heads": 2,
+                    "num_attention_heads": 8,
+                    "hidden_size": 1024,
+                    "layer_types": ["sliding_attention", "full_attention"] * 2,
+                }
+            )
+        )
+
+        with pytest.raises(
+            ValueError, match=r'config\.json: "layer_types" declares per-layer'
+        ):
+            shape_from_config_json(path)
+
+    def test_top_level_all_full_layer_types_parses(self, tmp_path) -> None:
+        # A recent transformers dump serializes layer_types for a
+        # plain uniform stack. One entry per layer, all full: proven
+        # uniform, admitted.
+        path = tmp_path / "config.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "num_hidden_layers": 4,
+                    "num_key_value_heads": 2,
+                    "num_attention_heads": 8,
+                    "hidden_size": 1024,
+                    "layer_types": ["full_attention"] * 4,
+                }
+            )
+        )
+
+        shape = shape_from_config_json(path)
+
+        assert shape.kv_heads_per_layer == (2, 2, 2, 2)
+
+    def test_top_level_active_sliding_window_raises(self, tmp_path) -> None:
+        # A window can be declared without layer_types. Reading the
+        # stack as all-global overstates the KV cache with no report.
+        path = tmp_path / "config.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "num_hidden_layers": 4,
+                    "num_key_value_heads": 2,
+                    "num_attention_heads": 8,
+                    "hidden_size": 1024,
+                    "sliding_window": 4096,
+                }
+            )
+        )
+
+        with pytest.raises(ValueError, match="declares windowed attention"):
+            shape_from_config_json(path)
+
+    def test_disabled_sliding_window_parses(self, tmp_path) -> None:
+        # Qwen-family configs carry the window value with the switch
+        # off. That stack is uniform.
+        path = tmp_path / "config.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "num_hidden_layers": 4,
+                    "num_key_value_heads": 2,
+                    "num_attention_heads": 8,
+                    "hidden_size": 1024,
+                    "sliding_window": 4096,
+                    "use_sliding_window": False,
+                }
+            )
+        )
+
+        shape = shape_from_config_json(path)
+
+        assert shape.kv_heads_per_layer == (2, 2, 2, 2)
+
+    def test_null_sliding_window_parses(self, tmp_path) -> None:
+        # Mistral-family configs use null for no window.
+        path = tmp_path / "config.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "num_hidden_layers": 4,
+                    "num_key_value_heads": 2,
+                    "num_attention_heads": 8,
+                    "hidden_size": 1024,
+                    "sliding_window": None,
+                }
+            )
+        )
+
+        shape = shape_from_config_json(path)
+
+        assert shape.kv_heads_per_layer == (2, 2, 2, 2)
+
+    def test_boolean_sliding_window_raises(self, tmp_path) -> None:
+        # `bool` subclasses `int`, so `true` would read as a 1-token
+        # window (#348).
+        path = tmp_path / "config.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "num_hidden_layers": 4,
+                    "num_key_value_heads": 2,
+                    "num_attention_heads": 8,
+                    "hidden_size": 1024,
+                    "sliding_window": True,
+                }
+            )
+        )
+
+        with pytest.raises(ValueError, match="must be an integer or null"):
             shape_from_config_json(path)
 
     def test_text_config_missing_field_names_the_nested_key(self, tmp_path) -> None:
