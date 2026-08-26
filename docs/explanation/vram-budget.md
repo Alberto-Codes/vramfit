@@ -83,6 +83,34 @@ Past ~1k tokens the card pays 40 KiB per extra token instead of the
 arithmetic behind #423's capacity claim: every GiB of KV headroom buys
 ~26.2k tokens once the windows saturate.
 
+## Capacity readout: the ledger in reverse
+
+The forward ledger takes context and concurrency as inputs. But the
+recipe's payoff — the VRAM its compression frees — deserves a readout of
+its own (#422). Invert the ledger:
+
+```
+kv_headroom  = vram_total − weight_bytes(recipe) − runtime_overhead
+max_context  = the largest context whose KV cache fits kv_headroom
+max_sequences = kv_headroom ÷ kv_cache_bytes(shape, context, 1 sequence)
+```
+
+On a uniform stack the first inverse is one division by KV growth. On a
+mixed stack it is piecewise: sliding terms saturate while global terms
+grow, so `vramfit.domain.capacity` binary-searches `kv_cache_bytes`
+itself over integer contexts. The result is exact at the fit boundary —
+the returned context fits and one more token does not. An all-sliding
+stack whose saturated pool fits the headroom has no finite maximum, and
+the readout says so (`unbounded`) rather than inventing one.
+
+On Gemma 4 31B the inverse reproduces the forward figures: a recipe
+that leaves 5.78 GiB of KV headroom reads back exactly 128k tokens,
+and each further GiB buys 26,214 tokens (2³⁰ ÷ 40,960). The same
+headroom reads as concurrency at a fixed context — the serving
+interpretation #68 parks — and as an image capacity when the caller
+supplies a ruled image token cost per #236/#419. `vramfit capacity`
+prints all three from a packed recipe.
+
 ## Runtime overhead
 
 CUDA context, allocator workspace, activation scratch, fragmentation.

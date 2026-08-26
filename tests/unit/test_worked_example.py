@@ -22,12 +22,15 @@ from typer.testing import CliRunner
 
 from vramfit.adapters.inbound.cli import app
 from vramfit.adapters.outbound.hf_config import shape_from_config_json
+from vramfit.adapters.outbound.recipe_json import save_recipe
 from vramfit.domain.budget import (
     ModelShape,
     kv_cache_bytes,
     kv_growth_bytes_per_token,
     kv_window_pool_bytes,
 )
+from vramfit.domain.capacity import max_context_tokens
+from vramfit.domain.model import Assignment, PlanMeta, Recipe
 
 pytestmark = pytest.mark.unit
 
@@ -107,6 +110,19 @@ def test_gemma_31b_kv_figures_match_the_recorded_arithmetic() -> None:
     )
 
 
+def test_gemma_31b_capacity_inverse_reproduces_the_recorded_figures() -> None:
+    # #422 against the #423 figures: the inverse of `kv_cache_bytes`
+    # returns 128k exactly at its own cost, and past window
+    # saturation one GiB of headroom buys 2^30 / 40,960 = 26,214
+    # tokens (~26.2k per #423).
+    shape = shape_from_config_json(GEMMA_31B_CONFIG)
+    at_128k = kv_cache_bytes(shape, context=131_072)
+
+    assert max_context_tokens(shape, at_128k) == 131_072
+    assert max_context_tokens(shape, at_128k - 1) == 131_071
+    assert max_context_tokens(shape, at_128k + 2**30) == 131_072 + 26_214
+
+
 def test_gemma_31b_all_global_pricing_matches_the_documented_comparison() -> None:
     # docs/explanation/vram-budget.md: the same 60 layers priced fully
     # global charge ~0.82 MiB per token against the mixed stack's
@@ -135,6 +151,51 @@ def test_nemotron_config_pins_the_documented_parameter_arithmetic() -> None:
     assert params == pytest.approx(49.87e9, rel=0.001)
     assert uniform_4bit_gib == pytest.approx(23.2, abs=0.1)
     assert uniform_4bit_gib > 20.47
+
+
+def test_capacity_gemma_31b_recipe_reads_back_128k(tmp_path: Path) -> None:
+    # A recipe whose weights leave exactly the 128k KV cost as
+    # headroom on a 24 GiB card reads back 131072 tokens.
+    shape = shape_from_config_json(GEMMA_31B_CONFIG)
+    headroom = kv_cache_bytes(shape, context=131_072)
+    weights = 24 * 2**30 - 2 * 2**30 - headroom
+    recipe = Recipe(
+        model_id="google/gemma-4-31B",
+        plan=PlanMeta(
+            vram_budget_bytes=24 * 2**30,
+            kv_headroom_bytes=headroom + 2 * 2**30,
+            weight_budget_bytes=weights,
+            predicted_total_bytes=weights,
+            predicted_damage=0.0,
+            solver="greedy-damage-per-byte",
+            pins={},
+            protections={},
+            format_overhead=0.0,
+            trace=(),
+        ),
+        assignments=(Assignment(group="model.layers.0", bits=4, bytes=1, damage=0.0),),
+        runtime=None,
+        within_group=None,
+        imatrix=None,
+        protected_tensors=(),
+    )
+    recipe_path = tmp_path / "recipe.json"
+    save_recipe(recipe, recipe_path)
+
+    result = runner.invoke(
+        app,
+        [
+            "capacity",
+            str(recipe_path),
+            "--model-config",
+            str(GEMMA_31B_CONFIG),
+            "--overhead",
+            "2GiB",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "max context           131072 tokens  (1 sequence)" in result.output
 
 
 @pytest.mark.parametrize(

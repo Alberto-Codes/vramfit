@@ -163,6 +163,10 @@ convention = "google"
     "PLR0913",  # typer commands take one arg per CLI option by design
     "PLR0917",
 ]
+"src/vramfit/adapters/inbound/cli_capacity.py" = [
+    "PLR0913",  # typer commands take one arg per CLI option by design
+    "PLR0917",
+]
 "src/vramfit/adapters/inbound/cli_scan.py" = [
     "PLR0913",  # typer commands take one arg per CLI option by design
     "PLR0917",
