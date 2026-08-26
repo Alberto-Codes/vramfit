@@ -644,7 +644,46 @@ class TestModelShapeFromConfig:
             )
         )
 
-        with pytest.raises(ValueError, match="must be an integer or null"):
+        with pytest.raises(ValueError, match="non-negative integer or null"):
+            shape_from_config_json(path)
+
+    def test_negative_sliding_window_raises(self, tmp_path) -> None:
+        path = tmp_path / "config.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "num_hidden_layers": 4,
+                    "num_key_value_heads": 2,
+                    "num_attention_heads": 8,
+                    "hidden_size": 1024,
+                    "sliding_window": -1,
+                }
+            )
+        )
+
+        with pytest.raises(ValueError, match="non-negative integer or null"):
+            shape_from_config_json(path)
+
+    def test_non_bool_use_sliding_window_raises(self, tmp_path) -> None:
+        # A string "false" is not the boolean carve-out. Refusing it as
+        # a type error beats a misleading windowed-attention refusal.
+        path = tmp_path / "config.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "num_hidden_layers": 4,
+                    "num_key_value_heads": 2,
+                    "num_attention_heads": 8,
+                    "hidden_size": 1024,
+                    "sliding_window": 4096,
+                    "use_sliding_window": "false",
+                }
+            )
+        )
+
+        with pytest.raises(
+            ValueError, match='"use_sliding_window" must be a boolean or null'
+        ):
             shape_from_config_json(path)
 
     def test_text_config_missing_field_names_the_nested_key(self, tmp_path) -> None:

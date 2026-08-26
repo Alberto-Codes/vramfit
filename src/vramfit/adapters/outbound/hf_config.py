@@ -302,9 +302,10 @@ def _refuse_unmodeled_geometry(
             active ``sliding_window`` is declared, ``attention_k_eq_v``
             is true, ``num_kv_shared_layers`` is above zero, a split
             local/global geometry key carries a value, or a key above
-            carries a type it cannot mean. ``bool`` subclasses ``int``,
-            so a boolean window or share count refuses as a non-integer
-            (#348).
+            or ``use_sliding_window`` carries a type it cannot mean.
+            A negative window refuses as malformed. ``bool``
+            subclasses ``int``, so a boolean window or share count
+            refuses as a non-integer (#348).
     """
     _refuse_unmodeled_layer_pattern(config, layers, path, prefix)
     _refuse_unmodeled_kv_storage(config, path, prefix)
@@ -314,6 +315,10 @@ def _refuse_unmodeled_layer_pattern(
     config: dict[str, Any], layers: int, path: Path, prefix: str
 ) -> None:
     """Refuse a per-layer attention pattern or an active window.
+
+    ``sliding_window`` must be a non-negative integer or null, and
+    ``use_sliding_window`` a boolean or null. A malformed value
+    refuses as a type error, not as declared windowing (#425 review).
 
     Args:
         config: Parsed ``config.json``, or a nested decoder object.
@@ -344,15 +349,19 @@ def _refuse_unmodeled_layer_pattern(
                 "per-layer attention this reader does not model"
             )
     window = config.get("sliding_window")
-    if window is not None and (isinstance(window, bool) or not isinstance(window, int)):
-        raise ValueError(
-            f"{path}: {_label('sliding_window', prefix)} must be an integer or null"
-        )
-    if (
-        isinstance(window, int)
-        and window > 0
-        and config.get("use_sliding_window") is not False
+    if window is not None and (
+        isinstance(window, bool) or not isinstance(window, int) or window < 0
     ):
+        raise ValueError(
+            f"{path}: {_label('sliding_window', prefix)} must be a "
+            "non-negative integer or null"
+        )
+    switch = config.get("use_sliding_window")
+    if switch is not None and not isinstance(switch, bool):
+        raise ValueError(
+            f"{path}: {_label('use_sliding_window', prefix)} must be a boolean or null"
+        )
+    if isinstance(window, int) and window > 0 and switch is not False:
         raise ValueError(
             f"{path}: {_label('sliding_window', prefix)} declares "
             "windowed attention this reader does not model"
