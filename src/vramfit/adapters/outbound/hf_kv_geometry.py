@@ -2,11 +2,11 @@
 
 Builds the `KVLayer` tuple a llama-style decoder config declares
 (#421): a ``layer_types`` list of global and sliding layers, an active
-``sliding_window``, split local/global head widths and KV-head counts,
-K=V storage (``attention_k_eq_v``), and a shared-KV tail
-(``num_kv_shared_layers``). The module also carries the field-label
-and integer-bound helpers the whole adapter shares, and the refusal
-that keeps these keys off the DeciLM path (#426).
+``sliding_window``, split local/global head widths and KV-head counts
+(``attention_k_eq_v`` gates the KV-head override, #431), and a
+shared-KV tail (``num_kv_shared_layers``). The module also carries
+the field-label and integer-bound helpers the whole adapter shares,
+and the refusal that keeps these keys off the DeciLM path (#426).
 
 Split from [vramfit.adapters.outbound.hf_config][] to hold the
 300-code-line cap. That module owns dispatch and the container rules.
@@ -67,10 +67,11 @@ def kv_layers_from_decoder(
     ``num_global_key_value_heads`` only when ``attention_k_eq_v`` is
     true. The transformers Gemma 4 config class
     (``configuration_gemma4.py``, the ``per_layer_config`` block)
-    gates the KV-head override on that flag. K=V storage applies to
-    global layers only, matching ``use_alternative_attention`` in
-    ``modeling_gemma4.py``. The last ``num_kv_shared_layers`` layers
-    allocate no fresh KV.
+    gates the KV-head override on that flag. The flag changes no
+    layer's price: the ruled runtime allocates the K and V caches
+    even where it fills V with K, so every layer prices two KV
+    tensors (#431). The last ``num_kv_shared_layers`` layers allocate
+    no fresh KV.
 
     The same class also synthesizes defaults this reader does not
     mirror: an absent ``global_head_dim`` defaults to 512, an absent
@@ -146,7 +147,6 @@ def kv_layers_from_decoder(
             kv_heads=kv_heads if t == "sliding_attention" else global_heads,
             head_dim=head_dim if t == "sliding_attention" else global_dim,
             window=window if t == "sliding_attention" else None,
-            kv_tensors=2 if t == "sliding_attention" or not k_eq_v else 1,
             shares_kv=i >= fresh,
         )
         for i, t in enumerate(types)

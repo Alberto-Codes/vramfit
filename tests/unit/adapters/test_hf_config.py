@@ -421,7 +421,7 @@ class TestModelShapeFromConfig:
         assert {(s.kv_heads, s.head_dim, s.window, s.kv_tensors) for s in sliding} == {
             (16, 256, 1024, 2)
         }
-        assert {(g.kv_heads, g.head_dim, g.kv_tensors) for g in top} == {(4, 512, 1)}
+        assert {(g.kv_heads, g.head_dim, g.kv_tensors) for g in top} == {(4, 512, 2)}
         assert not any(layer.shares_kv for layer in shape.kv_layers)
 
     def test_text_config_all_sliding_layer_types_parses_capped(self, tmp_path) -> None:
@@ -507,12 +507,11 @@ class TestModelShapeFromConfig:
         with pytest.raises(ValueError, match="must be a list of strings"):
             shape_from_config_json(path)
 
-    def test_text_config_k_eq_v_true_stores_one_tensor_on_global_layers(
-        self, tmp_path
-    ) -> None:
-        # Gemma 4 12B/26B-A4B/31B store one tensor per token on global
-        # layers; the transformers loader keeps K and V pairs on
-        # sliding layers.
+    def test_text_config_k_eq_v_true_still_prices_kv_pairs(self, tmp_path) -> None:
+        # attention_k_eq_v gates the KV-head override only. The ruled
+        # runtime allocates the K and V caches on every layer and
+        # fills V with K on global layers, so each layer prices two
+        # KV tensors (#431).
         config = self._text_config()
         config["text_config"]["attention_k_eq_v"] = True
         config["text_config"]["layer_types"] = ["sliding_attention"] * 2 + [
@@ -524,7 +523,7 @@ class TestModelShapeFromConfig:
 
         shape = shape_from_config_json(path)
 
-        assert [layer.kv_tensors for layer in shape.kv_layers] == [2, 2, 1, 1]
+        assert [layer.kv_tensors for layer in shape.kv_layers] == [2, 2, 2, 2]
 
     def test_text_config_non_bool_k_eq_v_raises(self, tmp_path) -> None:
         config = self._text_config()

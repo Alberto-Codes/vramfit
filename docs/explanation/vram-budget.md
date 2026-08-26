@@ -46,12 +46,15 @@ layer_kv_bytes = kv_tensors × n_kv_heads × head_dim × bytes_per_elem × cache
 Four mechanisms decide `cached_tokens` and `kv_tensors`:
 
 - A **global** layer caches `context` tokens — it grows with context.
-- A **sliding** layer caches `min(context, window)` tokens. Past its
-  window the allocation is a constant.
+- A **sliding** layer caches `min(context, window + 512)` tokens. The
+  serving runtime pads each window with its `n_ubatch` batch size —
+  512 by default, `KV_WINDOW_PAD_TOKENS`, measured on #431. Past the
+  padded window the allocation is a constant.
 - A **shared-KV** layer reuses an earlier layer's cache and allocates
   nothing (`num_kv_shared_layers`).
-- `kv_tensors` is 2 for an independent K and V pair, and 1 when the
-  model stores one tensor for both (`attention_k_eq_v`).
+- `kv_tensors` is 2: the runtime allocates a K and a V cache for every
+  layer. Where the model declares `attention_k_eq_v` it fills V with K
+  but still allocates both, so the price stays 2 (#431).
 
 The stack's total therefore splits into two terms: **KV growth**
 (`kv_growth_bytes_per_token`, the global layers' bytes per context
@@ -71,17 +74,19 @@ planned *jointly*: every GiB saved on weights is context length gained.
 ### Worked example: Gemma 4 31B (mixed sliding/global)
 
 From the official config (verified 2026-08-25, #423): 60 layers — 50
-sliding (window 1024, 16 KV heads × width 256, K+V pair) and 10 global
-(4 KV heads × width 512, one K=V tensor). At fp16, one sequence:
+sliding (window 1024, 16 KV heads × width 256) and 10 global (4 KV
+heads × width 512, `attention_k_eq_v`). The runtime allocates a K and
+V pair on every layer (#431). At fp16, one sequence, measured on the
+ruled instrument:
 
-- KV growth: `10 × 4 × 512 × 1 × 2` = **40,960 B/token**;
-- window pool: `50 × 16 × 256 × 2 × 2 × 1024` = **800 MiB**;
-- total: **5.78 GiB at 128k context**, **10.78 GiB at 256k**.
+- KV growth: `10 × 4 × 512 × 2 × 2` = **81,920 B/token**;
+- window pool: `50 × 16 × 256 × 2 × 2 × (1024 + 512)` = **1,200 MiB**;
+- total: **11.17 GiB at 128k context**, **21.17 GiB at 256k**.
 
-Past ~1k tokens the card pays 40 KiB per extra token instead of the
-~0.82 MiB the same 60 layers would charge priced fully global. That is the
+Past ~1.5k tokens the card pays 80 KiB per extra token instead of the
+~0.86 MiB the same 60 layers would charge priced fully global. That is the
 arithmetic behind #423's capacity claim: every GiB of KV headroom buys
-~26.2k tokens once the windows saturate.
+~13.1k tokens once the windows saturate.
 
 ## Capacity readout: the ledger in reverse
 
@@ -105,8 +110,8 @@ stack whose saturated pool fits the headroom has no finite maximum, and
 the readout says so (`unbounded`) rather than inventing one.
 
 On Gemma 4 31B the inverse reproduces the forward figures: a recipe
-that leaves 5.78 GiB of KV headroom reads back exactly 128k tokens,
-and the first further GiB buys 26,214 tokens (2³⁰ ÷ 40,960, floored —
+that leaves 11.17 GiB of KV headroom reads back exactly 128k tokens,
+and the first further GiB buys 13,107 tokens (2³⁰ ÷ 81,920, floored —
 later GiBs occasionally buy one more as the remainders line up). The same
 headroom reads as concurrency at a fixed context — the serving
 interpretation #68 parks — and as an image capacity when the caller

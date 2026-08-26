@@ -125,7 +125,7 @@ def kv_detail(shape: ModelShape, kv_dtype: str) -> str:
         kv_dtype: The validated KV dtype.
 
     Returns:
-        A note like ``"KV grows 40960 bytes/token, fp16, + 800.00 MiB
+        A note like ``"KV grows 81920 bytes/token, fp16, + 1.17 GiB
         window pool per sequence"`` — the pool clause only when the
         shape has sliding layers (#421).
     """

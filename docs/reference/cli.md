@@ -59,7 +59,7 @@ VRAM total            24.00 GiB
 ```
 
 On a mixed sliding/global stack the first line adds the saturated
-window pool, e.g. `(KV grows 40960 bytes/token, fp16, + 800.00 MiB
+window pool, e.g. `(KV grows 81920 bytes/token, fp16, + 1.17 GiB
 window pool per sequence)`. Each concurrent sequence pays its own
 pool. The KV-cache line sums both terms at the given context and
 `--sequences`.
@@ -98,13 +98,13 @@ sources.
 ```console
 $ vramfit capacity recipe.json --model-config config.json \
     --context 32768 --tokens-per-image 256
-attention layers      60  (KV grows 40960 bytes/token, fp16, + 800.00 MiB window pool per sequence)
+attention layers      60  (KV grows 81920 bytes/token, fp16, + 1.17 GiB window pool per sequence)
 VRAM total            24.00 GiB
-- weights (recipe)    16.22 GiB
+- weights (recipe)    10.83 GiB
 - runtime overhead    2.00 GiB
-= KV headroom         5.78 GiB
+= KV headroom         11.17 GiB
 max context           131072 tokens  (1 sequence)
-max sequences         2  (at 32768 tokens)
+max sequences         3  (at 32768 tokens)
 image capacity        512 images  (256 tokens per image, 1 sequence)
 ```
 

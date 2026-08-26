@@ -8,6 +8,7 @@ from hypothesis import strategies as st
 
 from tests.strategies import kv_shapes
 from vramfit.domain.budget import (
+    KV_WINDOW_PAD_TOKENS,
     Budget,
     KVLayer,
     ModelShape,
@@ -20,12 +21,13 @@ from vramfit.domain.budget import (
 
 NEMOTRON_SHAPE = ModelShape.uniform(attn_layers=49, kv_heads=8, head_dim=128)
 
-# Gemma 4 31B (#423): 50 sliding layers at window 1024 plus 10 global
-# K=V layers, verified against the official config on 2026-08-25.
+# Gemma 4 31B (#423, corrected by #431): 50 sliding layers at window
+# 1024 plus 10 global layers. Every layer prices a K and V pair — the
+# runtime allocates both caches even under attention_k_eq_v.
 GEMMA_31B_SHAPE = ModelShape(
     kv_layers=(
         (KVLayer(kv_heads=16, head_dim=256, window=1024),) * 50
-        + (KVLayer(kv_heads=4, head_dim=512, kv_tensors=1),) * 10
+        + (KVLayer(kv_heads=4, head_dim=512),) * 10
     )
 )
 
@@ -128,33 +130,46 @@ class TestKvMath:
             kv_growth_bytes_per_token(NEMOTRON_SHAPE) * 16384
         )
 
-    def test_gemma_31b_growth_matches_recorded_figure(self) -> None:
-        # 10 global layers x 4 kv_heads x 512 head_dim x 1 tensor x 2 bytes
-        assert kv_growth_bytes_per_token(GEMMA_31B_SHAPE) == 40_960
+    def test_gemma_31b_growth_matches_measured_figure(self) -> None:
+        # 10 global layers x 4 kv_heads x 512 head_dim x 2 tensors x
+        # 2 bytes — 81,920 B/token, measured on #431.
+        assert kv_growth_bytes_per_token(GEMMA_31B_SHAPE) == 81_920
 
-    def test_gemma_31b_window_pool_matches_recorded_figure(self) -> None:
-        # 50 sliding layers x 16 kv_heads x 256 head_dim x 2 x 2 x 1024
-        assert kv_window_pool_bytes(GEMMA_31B_SHAPE) == 838_860_800
+    def test_gemma_31b_window_pool_matches_measured_figure(self) -> None:
+        # 50 sliding layers x 16 kv_heads x 256 head_dim x 2 x 2 x
+        # (1024 + 512) — 1,200.00 MiB per sequence, measured on #431.
+        assert kv_window_pool_bytes(GEMMA_31B_SHAPE) == 1_258_291_200
 
-    def test_gemma_31b_cache_at_128k_matches_recorded_figure(self) -> None:
+    def test_gemma_31b_cache_at_128k_matches_measured_figure(self) -> None:
         cache = kv_cache_bytes(GEMMA_31B_SHAPE, context=131_072)
 
-        assert cache == 40_960 * 131_072 + 838_860_800
-        assert cache / 2**30 == pytest.approx(5.78, abs=0.01)
+        assert cache == 81_920 * 131_072 + 1_258_291_200
+        assert cache / 2**30 == pytest.approx(11.17, abs=0.01)
 
-    def test_sliding_layer_stops_growing_at_its_window(self) -> None:
+    def test_sliding_layer_stops_growing_at_its_padded_window(self) -> None:
+        shape = ModelShape(kv_layers=(KVLayer(kv_heads=2, head_dim=64, window=1024),))
+        saturated = kv_cache_bytes(shape, context=1024 + KV_WINDOW_PAD_TOKENS)
+
+        assert kv_cache_bytes(shape, context=4096) == saturated
+        assert saturated == kv_window_pool_bytes(shape)
+
+    def test_sliding_layer_still_grows_between_window_and_padding(self) -> None:
+        # The runtime pads each window with `n_ubatch` cells, so the
+        # cache keeps growing past the bare window (#431).
         shape = ModelShape(kv_layers=(KVLayer(kv_heads=2, head_dim=64, window=1024),))
         at_window = kv_cache_bytes(shape, context=1024)
 
-        assert kv_cache_bytes(shape, context=4096) == at_window
-        assert at_window == kv_window_pool_bytes(shape)
+        assert kv_cache_bytes(shape, context=1025) > at_window
+        assert at_window < kv_window_pool_bytes(shape)
 
     def test_context_below_the_window_prices_only_the_context(self) -> None:
         shape = ModelShape(kv_layers=(KVLayer(kv_heads=2, head_dim=64, window=1024),))
 
         assert kv_cache_bytes(shape, context=256) == 2 * 2 * 64 * 2 * 256
 
-    def test_k_eq_v_layer_stores_one_tensor_per_token(self) -> None:
+    def test_kv_tensors_one_prices_half_a_pair(self) -> None:
+        # No adapter emits kv_tensors=1 since #431, but the field
+        # stays priced: one stored tensor costs half a K and V pair.
         pair = ModelShape(kv_layers=(KVLayer(kv_heads=4, head_dim=128),))
         single = ModelShape(
             kv_layers=(KVLayer(kv_heads=4, head_dim=128, kv_tensors=1),)
@@ -190,7 +205,7 @@ class TestKvMath:
         # while the global layers hold the same 512-token context.
         cache = kv_cache_bytes(GEMMA_31B_SHAPE, context=512)
 
-        assert cache == 40_960 * 512 + 50 * 16 * 256 * 2 * 2 * 512
+        assert cache == 81_920 * 512 + 50 * 16 * 256 * 2 * 2 * 512
 
     def test_mixed_stack_sequences_multiply_pool_and_growth(self) -> None:
         one = kv_cache_bytes(GEMMA_31B_SHAPE, context=8192)
@@ -235,7 +250,7 @@ class TestKvMathProperties:
         windows = [
             layer.window for layer in shape.kv_layers if layer.window is not None
         ]
-        saturated = max(windows, default=1)
+        saturated = max(windows, default=1) + KV_WINDOW_PAD_TOKENS
         context = max(context, saturated)
 
         assert kv_cache_bytes(shape, context=context) == (
