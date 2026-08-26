@@ -103,7 +103,8 @@ def capacity(
     A capacity line prints ``unbounded`` when the KV cache stops
     growing inside the headroom — the reading is then not
     KV-limited. The image line converts the context capacity at the
-    ``--tokens-per-image`` cost the caller rules.
+    ``--tokens-per-image`` cost the caller rules. The context and
+    image lines both read per the ``--sequences`` split and say so.
 
     Raises:
         typer.BadParameter: If both or neither shape source is
@@ -121,18 +122,16 @@ def capacity(
     """
     check_kv_dtype(kv_dtype)
     shape = resolve_shape(model_config, attn_layers, kv_heads, head_dim)
+    # Reject malformed options before any IO, as budget and plan do.
+    vram_option = None if vram is None else parse_size_option(vram, "--vram")
+    overhead_bytes = parse_size_option(overhead, "--overhead")
     try:
         recipe_ = load_recipe(recipe)
     except (OSError, ArtifactError) as exc:
         typer.echo(f"error: {recipe}: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
-    vram_bytes = (
-        recipe_.plan.vram_budget_bytes
-        if vram is None
-        else parse_size_option(vram, "--vram")
-    )
-    overhead_bytes = parse_size_option(overhead, "--overhead")
+    vram_bytes = recipe_.plan.vram_budget_bytes if vram_option is None else vram_option
     weight_bytes = recipe_.plan.predicted_total_bytes
     headroom = vram_bytes - weight_bytes - overhead_bytes
 
@@ -156,6 +155,8 @@ def capacity(
 
     if context is not None:
         count = max_sequences(shape, headroom, context, kv_dtype)
+        # None needs a shape that allocates no KV at all, which no
+        # admitted config produces — rendered defensively.
         rendered = "unbounded" if count is None else str(count)
         typer.echo(f"max sequences         {rendered}  (at {context} tokens)")
 
@@ -163,11 +164,11 @@ def capacity(
         if tokens is None:
             typer.echo(
                 f"image capacity        unbounded"
-                f"  ({tokens_per_image} tokens per image)"
+                f"  ({tokens_per_image} tokens per image, {seq_note})"
             )
         else:
             images = image_capacity(tokens, tokens_per_image)
             typer.echo(
                 f"image capacity        {images} images"
-                f"  ({tokens_per_image} tokens per image)"
+                f"  ({tokens_per_image} tokens per image, {seq_note})"
             )

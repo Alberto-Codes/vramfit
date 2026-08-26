@@ -70,7 +70,8 @@ def max_context_tokens(
         headroom and context is not KV-limited.
 
     Raises:
-        KeyError: If ``kv_dtype`` is not a known dtype.
+        KeyError: If ``kv_dtype`` is not a known dtype and any layer
+            allocates KV.
 
     Examples:
         Ten tokens of uniform-stack headroom invert exactly:
@@ -133,7 +134,8 @@ def max_sequences(
         concurrency is not KV-limited.
 
     Raises:
-        KeyError: If ``kv_dtype`` is not a known dtype.
+        KeyError: If ``kv_dtype`` is not a known dtype and any layer
+            allocates KV.
 
     Examples:
         Three sequences of 10-token cache fit a 2000-byte headroom:

@@ -7,8 +7,8 @@ status: stable
 > **Status: stable** — `version`, `budget`, `plan`, `scan`, `pack`,
 > `validate`, and `capacity` are implemented, and the flags and
 > behaviors below match the built commands (audited 2026-08-14 on
-> #149, promoted with the #228 build). `pack` covers the GGUF
-> backend only (ADR-0010).
+> #149, promoted with the #228 build; `capacity` added 2026-08-26
+> on #422). `pack` covers the GGUF backend only (ADR-0010).
 
 ## `vramfit version`
 
@@ -69,11 +69,13 @@ pool. The KV-cache line sums both terms at the given context and
 Implemented. Prints the capacity readout for a packed recipe (#422):
 the budget ledger run in reverse. The KV headroom is the card minus
 the recipe's predicted weight bytes minus `--overhead`. The command
-solves the headroom against the per-layer KV arithmetic itself, so
-the readout stays exact on a mixed sliding/global stack — sliding
-terms saturate while global terms grow. The attention shape comes
-from exactly one source, as in `budget`. `--vram` defaults to the
-VRAM budget the recipe records.
+solves the headroom against the per-layer KV arithmetic itself.
+Sliding terms saturate while global terms grow, so the readout
+stays exact on a mixed stack. The attention shape comes from
+exactly one source, as in `budget`. `--vram` defaults to the
+VRAM budget the recipe records. The weights line uses the recipe's
+predicted bytes — the packed file can exceed them (#307), and
+`vramfit pack` re-checks the real bytes.
 
 ```
 vramfit capacity RECIPE
@@ -89,8 +91,9 @@ vramfit capacity RECIPE
   --head-dim INT         Head dimension (manual shape)
 ```
 
-Exits 1 when the recipe leaves nothing for KV cache or an artifact
-cannot be read, and 2 on conflicting or missing shape sources.
+Exits 1 when the recipe leaves nothing for KV cache or the recipe
+or config cannot be read, and 2 on conflicting or missing shape
+sources.
 
 ```console
 $ vramfit capacity recipe.json --model-config config.json \
@@ -102,12 +105,15 @@ VRAM total            24.00 GiB
 = KV headroom         5.78 GiB
 max context           131072 tokens  (1 sequence)
 max sequences         2  (at 32768 tokens)
-image capacity        512 images  (256 tokens per image)
+image capacity        512 images  (256 tokens per image, 1 sequence)
 ```
 
-A capacity line prints `unbounded` when the KV cache stops growing
-inside the headroom — an all-sliding stack past its windows. The
-reading is then not KV-limited. The image line divides the context
+The context and image lines print `unbounded` when the KV cache
+stops growing inside the headroom — an all-sliding stack past its
+windows. The reading is then not KV-limited. Both lines read per
+the `--sequences` split and say so. The sequence line goes
+`unbounded` only for a shape that allocates no KV, which no
+admitted config produces. The image line divides the context
 capacity by the `--tokens-per-image` cost the caller supplies.
 vramfit rules no vision policy: #236 owns the multimodal VRAM
 ledger, and #419 owns vision-quality claims.

@@ -106,6 +106,46 @@ def test_budget_flow_prints_breakdown(tmp_path) -> None:
     assert "weight budget" in result.stdout
 
 
+def test_capacity_flow_reads_a_planned_recipe(tmp_path) -> None:
+    map_path = tmp_path / "sensitivity.json"
+    map_path.write_text(
+        json.dumps(make_map([("g0", 160_000, {8: 0.001, 4: 0.01, 3: 0.1, 2: 1.0})]))
+    )
+    out = tmp_path / "recipe.json"
+    planned = run(
+        "plan",
+        str(map_path),
+        "--vram",
+        "200000",
+        "--kv-headroom",
+        "50000",
+        "--out",
+        str(out),
+        cwd=tmp_path,
+    )
+    assert planned.returncode == 0, planned.stderr
+
+    result = run(
+        "capacity",
+        str(out),
+        "--vram",
+        "1GiB",
+        "--overhead",
+        "0",
+        "--attn-layers",
+        "2",
+        "--kv-heads",
+        "2",
+        "--head-dim",
+        "4",
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "= KV headroom" in result.stdout
+    assert "max context" in result.stdout
+
+
 def test_budget_with_an_unrepresentable_layer_count_reports_and_exits_1(
     tmp_path,
 ) -> None:

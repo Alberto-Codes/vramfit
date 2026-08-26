@@ -149,6 +149,12 @@ class TestCapacityProperties:
         if result is None:
             assert kv_growth_bytes_per_token(shape) == 0
             assert kv_window_pool_bytes(shape) * sequences <= headroom
+            # Unbounded means the cache really fits past every window.
+            windows = [
+                layer.window for layer in shape.kv_layers if layer.window is not None
+            ]
+            probe = 2 * max(windows, default=1)
+            assert kv_cache_bytes(shape, probe, "fp16", sequences) <= headroom
         else:
             assert kv_cache_bytes(shape, result, "fp16", sequences) <= headroom
             assert kv_cache_bytes(shape, result + 1, "fp16", sequences) > headroom
@@ -157,12 +163,13 @@ class TestCapacityProperties:
         shape=kv_shapes(),
         headroom=st.integers(min_value=0, max_value=1 << 40),
         extra=st.integers(min_value=0, max_value=1 << 40),
+        sequences=st.integers(min_value=1, max_value=4),
     )
     def test_more_headroom_never_reduces_max_context(
-        self, shape: ModelShape, headroom: int, extra: int
+        self, shape: ModelShape, headroom: int, extra: int, sequences: int
     ) -> None:
-        smaller = max_context_tokens(shape, headroom)
-        larger = max_context_tokens(shape, headroom + extra)
+        smaller = max_context_tokens(shape, headroom, "fp16", sequences)
+        larger = max_context_tokens(shape, headroom + extra, "fp16", sequences)
 
         # None means unbounded, which dominates every finite reading.
         if larger is not None:

@@ -69,7 +69,7 @@ def test_capacity_reports_the_ledger_and_max_context(tmp_path: Path) -> None:
             "--vram",
             "24GiB",
             "--overhead",
-            "2GiB",
+            "3GiB",
             *SHAPE_OPTIONS,
         ],
     )
@@ -78,21 +78,31 @@ def test_capacity_reports_the_ledger_and_max_context(tmp_path: Path) -> None:
     assert "attention layers      2  (KV grows 64 bytes/token, fp16)" in result.output
     assert "VRAM total            24.00 GiB" in result.output
     assert "- weights (recipe)    15.00 GiB" in result.output
-    assert "- runtime overhead    2.00 GiB" in result.output
-    assert "= KV headroom         7.00 GiB" in result.output
-    # 7 GiB over 64 bytes/token, floored.
-    assert f"max context           {7 * 2**30 // 64} tokens  (1 sequence)" in (
+    assert "- runtime overhead    3.00 GiB" in result.output
+    assert "= KV headroom         6.00 GiB" in result.output
+    # 6 GiB over 64 bytes/token, floored.
+    assert f"max context           {6 * 2**30 // 64} tokens  (1 sequence)" in (
         result.output
     )
 
 
 def test_capacity_defaults_vram_to_the_recipe_record(tmp_path: Path) -> None:
-    recipe = save_capacity_recipe(tmp_path, vram_budget_bytes=16 * 2**30)
+    recipe = save_capacity_recipe(tmp_path)
 
     result = runner.invoke(app, ["capacity", str(recipe), *SHAPE_OPTIONS])
 
+    assert result.exit_code == 0, result.output
+    assert "VRAM total            24.00 GiB" in result.output
+
+
+def test_capacity_negative_headroom_errors_after_the_ledger(tmp_path: Path) -> None:
+    recipe = save_capacity_recipe(tmp_path)
+
+    result = runner.invoke(
+        app, ["capacity", str(recipe), "--vram", "16GiB", *SHAPE_OPTIONS]
+    )
+
     assert result.exit_code == 1, result.output
-    assert "VRAM total            16.00 GiB" in result.output
     assert "= KV headroom         -1.00 GiB" in result.output
     assert "error: the recipe leaves nothing for KV cache" in result.output
 
@@ -163,7 +173,33 @@ def test_capacity_tokens_per_image_adds_the_image_line(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     images = 7 * 2**30 // 64 // 256
     assert (
-        f"image capacity        {images} images  (256 tokens per image)"
+        f"image capacity        {images} images  (256 tokens per image, 1 sequence)"
+        in result.output
+    )
+
+
+def test_capacity_image_line_reads_per_the_sequences_split(tmp_path: Path) -> None:
+    recipe = save_capacity_recipe(tmp_path)
+
+    result = runner.invoke(
+        app,
+        [
+            "capacity",
+            str(recipe),
+            "--vram",
+            "24GiB",
+            "--sequences",
+            "2",
+            "--tokens-per-image",
+            "256",
+            *SHAPE_OPTIONS,
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    images = 7 * 2**30 // 128 // 256
+    assert (
+        f"image capacity        {images} images  (256 tokens per image, 2 sequences)"
         in result.output
     )
 
@@ -205,7 +241,10 @@ def test_capacity_sliding_only_config_reports_unbounded(tmp_path: Path) -> None:
 
     assert result.exit_code == 0, result.output
     assert "max context           unbounded  (1 sequence)" in result.output
-    assert "image capacity        unbounded  (256 tokens per image)" in result.output
+    assert (
+        "image capacity        unbounded  (256 tokens per image, 1 sequence)"
+        in result.output
+    )
 
 
 def test_capacity_missing_recipe_errors(tmp_path: Path) -> None:
@@ -235,7 +274,7 @@ def test_capacity_both_shape_sources_rejected(tmp_path: Path) -> None:
         ["capacity", str(recipe), "--model-config", "config.json", *SHAPE_OPTIONS],
     )
 
-    assert result.exit_code != 0
+    assert result.exit_code == 2
     assert "not both" in result.output
 
 
@@ -244,8 +283,28 @@ def test_capacity_no_shape_source_rejected(tmp_path: Path) -> None:
 
     result = runner.invoke(app, ["capacity", str(recipe)])
 
-    assert result.exit_code != 0
+    assert result.exit_code == 2
     assert "give --model-config" in result.output
+
+
+def test_capacity_malformed_overhead_rejected_before_recipe_io(
+    tmp_path: Path,
+) -> None:
+    # A usage error reports even when the recipe is also missing, as
+    # in budget and plan.
+    result = runner.invoke(
+        app,
+        [
+            "capacity",
+            str(tmp_path / "absent.json"),
+            "--overhead",
+            "many",
+            *SHAPE_OPTIONS,
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "--overhead" in result.output
 
 
 def test_capacity_unknown_dtype_rejected(tmp_path: Path) -> None:
@@ -255,7 +314,7 @@ def test_capacity_unknown_dtype_rejected(tmp_path: Path) -> None:
         app, ["capacity", str(recipe), "--kv-dtype", "fp4", *SHAPE_OPTIONS]
     )
 
-    assert result.exit_code != 0
+    assert result.exit_code == 2
     assert "unknown dtype" in result.output
 
 
@@ -266,5 +325,5 @@ def test_capacity_malformed_vram_rejected(tmp_path: Path) -> None:
         app, ["capacity", str(recipe), "--vram", "many", *SHAPE_OPTIONS]
     )
 
-    assert result.exit_code != 0
+    assert result.exit_code == 2
     assert "--vram" in result.output
