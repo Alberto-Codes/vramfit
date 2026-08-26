@@ -59,6 +59,11 @@ class TestMaxContextTokens:
         # Below the window both layers grow: cost = 32 x context.
         assert max_context_tokens(MIXED, 32 * 5) == 5
 
+    def test_mixed_stack_inside_the_padding_prices_both_terms(self) -> None:
+        # Between the window (8) and its padded end (520) both
+        # layers still grow: cost = 32 x context (#431).
+        assert max_context_tokens(MIXED, 32 * 100) == 100
+
     def test_negative_headroom_returns_zero(self) -> None:
         assert max_context_tokens(UNIFORM, -1) == 0
 

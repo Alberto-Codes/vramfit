@@ -418,17 +418,17 @@ change.
 **Sliding layer**
 :   An attention layer that attends inside a fixed window — a
     `layer_types` entry of `sliding_attention`. Its cache stops at
-    `min(context, window + 512)` tokens — the runtime pads each
+    `min(context, window + 512)` tokens. The runtime pads each
     window with its `n_ubatch` batch size (`KV_WINDOW_PAD_TOKENS`,
-    #431) — and the saturated layers form the **window pool**.
-    Config keys name its geometry "local" (`head_dim` beside
+    #431). The saturated layers form the **window pool**. Config
+    keys name its geometry "local" (`head_dim` beside
     `global_head_dim`). Not "local layer" or "windowed layer".
 
 **KV growth**
 :   Bytes each context token adds across the global layers
     (`kv_growth_bytes_per_token`). Sliding layers stop at their
-    window and contribute to the **window pool** instead, so growth
-    alone never prices a mixed stack. Not "bytes per token" without
+    padded window and contribute to the **window pool** instead, so
+    growth alone never prices a mixed stack. Not "bytes per token" without
     the qualifier.
 
 **Window pool**
@@ -439,10 +439,10 @@ change.
 
 **Storage factor**
 :   KV tensors the runtime allocates per cached token (field
-    `kv_tensors`). It prices the runtime's allocation, not the
-    model's storage semantics: the ruled runtime allocates a K and a
-    V cache even under `attention_k_eq_v`, so every layer prices 2
-    (#431). Not "KV factor".
+    `kv_tensors`). The field prices the runtime's allocation, not
+    the model's storage semantics. The ruled runtime allocates a K
+    and a V cache even under `attention_k_eq_v`, so every layer
+    prices 2 (#431). Not "KV factor".
 
 **Capacity readout**
 :   The budget ledger run in reverse

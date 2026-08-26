@@ -178,7 +178,8 @@ class KVLayer:
         kv_tensors (int): KV tensors the runtime allocates per cached
             token: 2 for the K and V caches. The ruled runtime
             allocates both even under ``attention_k_eq_v`` and fills
-            V with K (#431).
+            V with K (#431). A value of 1 prices half the pair, and
+            no adapter emits one since #431.
         shares_kv (bool): True when the layer reuses another layer's
             cache and allocates no KV of its own
             (``num_kv_shared_layers``).

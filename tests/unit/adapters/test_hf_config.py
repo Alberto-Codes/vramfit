@@ -395,7 +395,7 @@ class TestModelShapeFromConfig:
 
     def test_text_config_mixed_layer_types_parses_per_layer(self, tmp_path) -> None:
         # The Gemma 4 31B pattern: 50 sliding layers, 10 global, 5:1,
-        # split local/global geometry, K=V storage on global layers.
+        # split local/global geometry, the k_eq_v KV-head override.
         config = self._text_config()
         config["text_config"].update(
             {

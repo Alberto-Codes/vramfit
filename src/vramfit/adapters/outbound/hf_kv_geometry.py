@@ -361,9 +361,11 @@ def refuse_decilm_geometry(config: dict[str, Any], path: Path) -> None:
     """Refuse llama-geometry keys beside ``block_configs`` (#426).
 
     The DeciLM parse prices every kept block as a global K and V
-    pair. A window, K=V storage, KV sharing, a split local/global
-    key, or a ``layer_types`` list beside ``block_configs`` would
-    silently misprice that read, so each refuses.
+    pair. A window, KV sharing, a split local/global key, or a
+    ``layer_types`` list beside ``block_configs`` would silently
+    misprice that read. ``attention_k_eq_v`` no longer changes a
+    price (#431), but it marks a geometry family this parse does
+    not model. Each key refuses.
 
     Args:
         config: Parsed ``config.json`` containing ``block_configs``.

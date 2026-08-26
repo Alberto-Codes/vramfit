@@ -43,7 +43,8 @@ and sequence:
 layer_kv_bytes = kv_tensors × n_kv_heads × head_dim × bytes_per_elem × cached_tokens
 ```
 
-Four mechanisms decide `cached_tokens` and `kv_tensors`:
+Three mechanisms decide `cached_tokens`, and one constant sets
+`kv_tensors`:
 
 - A **global** layer caches `context` tokens — it grows with context.
 - A **sliding** layer caches `min(context, window + 512)` tokens. The

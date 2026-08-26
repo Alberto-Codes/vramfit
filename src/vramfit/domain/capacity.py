@@ -8,8 +8,7 @@ at a caller-supplied image token cost.
 
 The inverse is piecewise on a mixed sliding/global stack. Sliding
 layers saturate at their padded windows while global layers keep
-growing,
-so no single bytes-per-token scalar can invert the cost. The context
+growing, so no single bytes-per-token scalar can invert the cost. The context
 solver binary-searches `kv_cache_bytes` itself over integers, so the
 result is exact at the fit boundary: the returned context fits and
 one more token does not.
