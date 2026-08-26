@@ -1,17 +1,33 @@
 from __future__ import annotations
 
-import pytest
+from dataclasses import replace
 
+import pytest
+from hypothesis import given
+from hypothesis import strategies as st
+
+from tests.strategies import kv_shapes
 from vramfit.domain.budget import (
     Budget,
+    KVLayer,
     ModelShape,
     format_size,
-    kv_bytes_per_token,
     kv_cache_bytes,
+    kv_growth_bytes_per_token,
+    kv_window_pool_bytes,
     parse_size,
 )
 
 NEMOTRON_SHAPE = ModelShape.uniform(attn_layers=49, kv_heads=8, head_dim=128)
+
+# Gemma 4 31B (#423): 50 sliding layers at window 1024 plus 10 global
+# K=V layers, verified against the official config on 2026-08-25.
+GEMMA_31B_SHAPE = ModelShape(
+    kv_layers=(
+        (KVLayer(kv_heads=16, head_dim=256, window=1024),) * 50
+        + (KVLayer(kv_heads=4, head_dim=512, kv_tensors=1),) * 10
+    )
+)
 
 
 @pytest.mark.unit
@@ -77,18 +93,18 @@ class TestFormatSize:
 
 @pytest.mark.unit
 class TestKvMath:
-    def test_bytes_per_token_nemotron_shape_matches_hand_calc(self) -> None:
+    def test_growth_per_token_nemotron_shape_matches_hand_calc(self) -> None:
         # 2 (K+V) x 49 layers x 8 kv_heads x 128 head_dim x 2 bytes
-        assert kv_bytes_per_token(NEMOTRON_SHAPE) == 200_704
+        assert kv_growth_bytes_per_token(NEMOTRON_SHAPE) == 200_704
 
-    def test_bytes_per_token_fp8_is_half_of_fp16(self) -> None:
-        fp16 = kv_bytes_per_token(NEMOTRON_SHAPE, "fp16")
+    def test_growth_per_token_fp8_is_half_of_fp16(self) -> None:
+        fp16 = kv_growth_bytes_per_token(NEMOTRON_SHAPE, "fp16")
 
-        assert kv_bytes_per_token(NEMOTRON_SHAPE, "fp8") == fp16 // 2
+        assert kv_growth_bytes_per_token(NEMOTRON_SHAPE, "fp8") == fp16 // 2
 
     def test_unknown_dtype_raises_key_error(self) -> None:
         with pytest.raises(KeyError):
-            kv_bytes_per_token(NEMOTRON_SHAPE, "int4")
+            kv_growth_bytes_per_token(NEMOTRON_SHAPE, "int4")
 
     def test_cache_scales_linearly_with_context_and_sequences(self) -> None:
         base = kv_cache_bytes(NEMOTRON_SHAPE, context=1024)
@@ -96,10 +112,165 @@ class TestKvMath:
         assert kv_cache_bytes(NEMOTRON_SHAPE, context=2048) == 2 * base
         assert kv_cache_bytes(NEMOTRON_SHAPE, context=1024, sequences=3) == 3 * base
 
-    def test_heterogeneous_shape_sums_per_layer_heads(self) -> None:
-        shape = ModelShape(kv_heads_per_layer=(8, 4), head_dim=128)
+    def test_heterogeneous_heads_and_widths_sum_per_layer(self) -> None:
+        shape = ModelShape(
+            kv_layers=(
+                KVLayer(kv_heads=8, head_dim=128),
+                KVLayer(kv_heads=4, head_dim=64),
+            )
+        )
 
-        assert kv_bytes_per_token(shape) == 2 * 128 * (8 + 4) * 2
+        assert kv_growth_bytes_per_token(shape) == 2 * (8 * 128 + 4 * 64) * 2
+
+    def test_uniform_pool_is_zero_and_matches_growth_times_context(self) -> None:
+        assert kv_window_pool_bytes(NEMOTRON_SHAPE) == 0
+        assert kv_cache_bytes(NEMOTRON_SHAPE, context=16384) == (
+            kv_growth_bytes_per_token(NEMOTRON_SHAPE) * 16384
+        )
+
+    def test_gemma_31b_growth_matches_recorded_figure(self) -> None:
+        # 10 global layers x 4 kv_heads x 512 head_dim x 1 tensor x 2 bytes
+        assert kv_growth_bytes_per_token(GEMMA_31B_SHAPE) == 40_960
+
+    def test_gemma_31b_window_pool_matches_recorded_figure(self) -> None:
+        # 50 sliding layers x 16 kv_heads x 256 head_dim x 2 x 2 x 1024
+        assert kv_window_pool_bytes(GEMMA_31B_SHAPE) == 838_860_800
+
+    def test_gemma_31b_cache_at_128k_matches_recorded_figure(self) -> None:
+        cache = kv_cache_bytes(GEMMA_31B_SHAPE, context=131_072)
+
+        assert cache == 40_960 * 131_072 + 838_860_800
+        assert cache / 2**30 == pytest.approx(5.78, abs=0.01)
+
+    def test_sliding_layer_stops_growing_at_its_window(self) -> None:
+        shape = ModelShape(kv_layers=(KVLayer(kv_heads=2, head_dim=64, window=1024),))
+        at_window = kv_cache_bytes(shape, context=1024)
+
+        assert kv_cache_bytes(shape, context=4096) == at_window
+        assert at_window == kv_window_pool_bytes(shape)
+
+    def test_context_below_the_window_prices_only_the_context(self) -> None:
+        shape = ModelShape(kv_layers=(KVLayer(kv_heads=2, head_dim=64, window=1024),))
+
+        assert kv_cache_bytes(shape, context=256) == 2 * 2 * 64 * 2 * 256
+
+    def test_k_eq_v_layer_stores_one_tensor_per_token(self) -> None:
+        pair = ModelShape(kv_layers=(KVLayer(kv_heads=4, head_dim=128),))
+        single = ModelShape(
+            kv_layers=(KVLayer(kv_heads=4, head_dim=128, kv_tensors=1),)
+        )
+
+        assert kv_cache_bytes(single, context=1024) == (
+            kv_cache_bytes(pair, context=1024) // 2
+        )
+
+    def test_shared_layer_allocates_nothing(self) -> None:
+        fresh = KVLayer(kv_heads=4, head_dim=128)
+        shape = ModelShape(
+            kv_layers=(fresh, KVLayer(kv_heads=4, head_dim=128, shares_kv=True))
+        )
+
+        assert kv_cache_bytes(shape, context=1024) == kv_cache_bytes(
+            ModelShape(kv_layers=(fresh,)), context=1024
+        )
+        assert kv_growth_bytes_per_token(shape) == kv_growth_bytes_per_token(
+            ModelShape(kv_layers=(fresh,))
+        )
+
+    def test_shared_sliding_layer_adds_no_window_pool(self) -> None:
+        shape = ModelShape(
+            kv_layers=(KVLayer(kv_heads=2, head_dim=64, window=512, shares_kv=True),)
+        )
+
+        assert kv_window_pool_bytes(shape) == 0
+        assert kv_cache_bytes(shape, context=4096) == 0
+
+    def test_mixed_stack_below_the_window_sums_partial_terms(self) -> None:
+        # At half the window, the sliding layers hold 512 tokens each
+        # while the global layers hold the same 512-token context.
+        cache = kv_cache_bytes(GEMMA_31B_SHAPE, context=512)
+
+        assert cache == 40_960 * 512 + 50 * 16 * 256 * 2 * 2 * 512
+
+    def test_mixed_stack_sequences_multiply_pool_and_growth(self) -> None:
+        one = kv_cache_bytes(GEMMA_31B_SHAPE, context=8192)
+
+        assert kv_cache_bytes(GEMMA_31B_SHAPE, context=8192, sequences=4) == 4 * one
+
+
+@pytest.mark.unit
+class TestKvMathProperties:
+    @given(
+        shape=kv_shapes(),
+        contexts=st.tuples(
+            st.integers(min_value=1, max_value=1 << 20),
+            st.integers(min_value=1, max_value=1 << 20),
+        ),
+    )
+    def test_cache_is_monotone_in_context(
+        self, shape: ModelShape, contexts: tuple[int, int]
+    ) -> None:
+        lo, hi = sorted(contexts)
+
+        assert kv_cache_bytes(shape, context=lo) <= kv_cache_bytes(shape, context=hi)
+
+    @given(
+        shape=kv_shapes(),
+        context=st.integers(min_value=1, max_value=1 << 20),
+        sequences=st.integers(min_value=1, max_value=64),
+    )
+    def test_cache_is_linear_in_sequences(
+        self, shape: ModelShape, context: int, sequences: int
+    ) -> None:
+        one = kv_cache_bytes(shape, context=context)
+
+        assert kv_cache_bytes(shape, context=context, sequences=sequences) == (
+            sequences * one
+        )
+
+    @given(shape=kv_shapes(), context=st.integers(min_value=1, max_value=1 << 20))
+    def test_saturated_cache_is_growth_times_context_plus_pool(
+        self, shape: ModelShape, context: int
+    ) -> None:
+        windows = [
+            layer.window for layer in shape.kv_layers if layer.window is not None
+        ]
+        saturated = max(windows, default=1)
+        context = max(context, saturated)
+
+        assert kv_cache_bytes(shape, context=context) == (
+            kv_growth_bytes_per_token(shape) * context + kv_window_pool_bytes(shape)
+        )
+
+    @given(
+        shape=kv_shapes(),
+        context=st.integers(min_value=1, max_value=1 << 20),
+        data=st.data(),
+    )
+    def test_marking_a_layer_shared_never_raises_the_cache(
+        self, shape: ModelShape, context: int, data: st.DataObject
+    ) -> None:
+        index = data.draw(st.integers(min_value=0, max_value=len(shape.kv_layers) - 1))
+        flipped = ModelShape(
+            kv_layers=tuple(
+                replace(layer, shares_kv=True) if i == index else layer
+                for i, layer in enumerate(shape.kv_layers)
+            )
+        )
+
+        assert kv_cache_bytes(flipped, context=context) <= kv_cache_bytes(
+            shape, context=context
+        )
+
+    @given(shape=kv_shapes(), context=st.integers(min_value=1, max_value=1 << 20))
+    def test_all_shared_stack_prices_at_zero(
+        self, shape: ModelShape, context: int
+    ) -> None:
+        all_shared = ModelShape(
+            kv_layers=tuple(replace(layer, shares_kv=True) for layer in shape.kv_layers)
+        )
+
+        assert kv_cache_bytes(all_shared, context=context) == 0
 
 
 @pytest.mark.unit

@@ -9,12 +9,17 @@ Standard llama-style configs carry uniform layers. Composite configs
 geometry (non-divisible GQA group sizes, non-divisible head dimensions)
 is rejected rather than silently truncated.
 
-The uniform parse models one geometry: every layer global, storing
-full K and V at one head width. A decoder that declares more refuses
-instead of parsing as uniform, at the top level and inside
-``text_config`` alike (#420). A uniform read of a windowed stack
-prices a wrong KV cache with no report. Modeling the declared
-geometry stays #421.
+The llama-style parse models declared heterogeneous KV geometry
+(#421): a ``layer_types`` list of global and sliding layers, an
+active ``sliding_window``, split local/global head widths and
+KV-head counts, K=V storage (``attention_k_eq_v``), and a shared-KV
+tail (``num_kv_shared_layers``). The geometry readers live in
+[vramfit.adapters.outbound.hf_kv_geometry][], which also carries the
+shared field-label and integer-bound helpers. The parse prices only
+what the file declares. A decoder that declares geometry past that
+set refuses instead of parsing as uniform, at the top level and
+inside ``text_config`` alike (#420). A uniform read of a windowed
+stack prices a wrong KV cache with no report.
 
 The model publisher owns this file. vramfit reads it and never writes
 it, and it still refuses a file that defines one key twice (#283). The
@@ -50,20 +55,19 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Final
+from typing import Any
 
+from vramfit.adapters.outbound.hf_kv_geometry import (
+    bounded_int,
+    field_label,
+    kv_layers_from_decoder,
+    refuse_decilm_geometry,
+)
 from vramfit.adapters.outbound.json_duplicate_key import (
     DuplicateKeyError,
     object_from_pairs,
 )
-from vramfit.domain.budget import ModelShape
-
-# The largest integer this reader admits. ADR-0008's 2026-08-16
-# amendment gives the reader the format bound. The signed 64-bit range
-# is that bound, and the four artifact readers already apply it (#260).
-# Without it a declared count reaches `ModelShape` and raises
-# `OverflowError` past the error root (#314).
-_INT_MAX: Final[int] = 2**63 - 1
+from vramfit.domain.budget import KVLayer, ModelShape
 
 
 def shape_from_config_json(path: Path) -> ModelShape:
@@ -90,15 +94,16 @@ def shape_from_config_json(path: Path) -> ModelShape:
             the same key twice, declares an integer outside the signed
             64-bit range, required fields are missing, the attention
             geometry is inconsistent, the decoder container is
-            ambiguous, or the decoder declares KV geometry the uniform
-            parse does not model (#420). Every message names ``path``.
+            ambiguous, or the decoder declares KV geometry this
+            reader does not model (#420, #421). Every message names
+            ``path``.
 
     Examples:
         Standard llama-style configs parse to uniform layers:
 
         ```python
         shape = shape_from_config_json(Path("config.json"))
-        print(len(shape.kv_heads_per_layer))
+        print(len(shape.kv_layers))
         ```
     """
     try:
@@ -174,11 +179,16 @@ def _from_decilm_config(config: dict[str, Any], path: Path) -> ModelShape:
         ValueError: If required fields are missing, ``block_configs`` is
             not a list, no block has real attention, a skip flag is not
             a boolean, an integer exceeds the largest signed 64-bit
-            integer, or a block's ``n_heads_in_group`` is not a positive
-            divisor of ``num_attention_heads``. A boolean
-            ``n_heads_in_group`` refuses as a non-integer, and the bound
-            runs before the divisor message renders the value.
+            integer, a block's ``n_heads_in_group`` is not a positive
+            divisor of ``num_attention_heads``, or a llama-geometry
+            key beside ``block_configs`` declares a window, K=V
+            storage, KV sharing, a split local/global key, or a
+            ``layer_types`` list (`refuse_decilm_geometry`, #426). A
+            boolean ``n_heads_in_group`` refuses as a non-integer, and
+            the bound runs before the divisor message renders the
+            value.
     """
+    refuse_decilm_geometry(config, path)
     heads = _config_int(config, "num_attention_heads", path)
     head_dim = _head_dim(config, heads, path)
     blocks = config["block_configs"]
@@ -216,7 +226,7 @@ def _from_decilm_config(config: dict[str, Any], path: Path) -> ModelShape:
         # That message prints `group_size`. `json.loads` admits 4300
         # digits and refuses at 4301, so a 4000-digit literal reaches
         # the message and fills a terminal.
-        group_size = _bounded(
+        group_size = bounded_int(
             group_size, f"block_configs[{i}].attention.n_heads_in_group", path
         )
         if heads % group_size != 0:
@@ -227,7 +237,12 @@ def _from_decilm_config(config: dict[str, Any], path: Path) -> ModelShape:
         kv_heads_per_layer.append(heads // group_size)
     if not kv_heads_per_layer:
         raise ValueError(f"{path}: no block has real attention")
-    return ModelShape(kv_heads_per_layer=tuple(kv_heads_per_layer), head_dim=head_dim)
+    return ModelShape(
+        kv_layers=tuple(
+            KVLayer(kv_heads=kv_heads, head_dim=head_dim)
+            for kv_heads in kv_heads_per_layer
+        )
+    )
 
 
 def _from_text_config(config: dict[str, Any], path: Path) -> ModelShape:
@@ -252,8 +267,11 @@ def _from_text_config(config: dict[str, Any], path: Path) -> ModelShape:
     Raises:
         ValueError: If ``text_config`` is not an object, the top level
             also declares a decoder (``block_configs`` or
-            ``num_hidden_layers``), or the nested decoder refuses in
-            the llama-style parser.
+            ``num_hidden_layers``), the nested decoder carries
+            ``block_configs`` (a NAS decoder inside a composite file,
+            which the llama-style parser would flatten to a wrong KV
+            price, #426), or the nested decoder refuses in the
+            llama-style parser.
     """
     decoder = config["text_config"]
     if not isinstance(decoder, dict):
@@ -264,158 +282,18 @@ def _from_text_config(config: dict[str, Any], path: Path) -> ModelShape:
                 f'{path}: "text_config" and top-level "{key}" are both '
                 "present, so the decoder config is ambiguous"
             )
+    if "block_configs" in decoder:
+        raise ValueError(
+            f"{path}: text_config.block_configs declares a NAS decoder "
+            "this reader does not model"
+        )
     return _from_llama_config(decoder, path, prefix="text_config")
-
-
-def _refuse_unmodeled_geometry(
-    config: dict[str, Any], layers: int, path: Path, prefix: str = ""
-) -> None:
-    """Refuse a decoder whose KV geometry the uniform parse misstates.
-
-    The uniform parse stores full-context K and V for every layer at
-    one head width. A Gemma-family decoder declares more, and reading
-    it as uniform prices a wrong KV cache with no report (#420).
-    Modeling the declared geometry stays #421. No message renders a
-    publisher-controlled value (#363).
-
-    ``layer_types`` is admitted only when it proves uniformity: one
-    string per hidden layer, every entry ``full_attention``. A recent
-    transformers dump serializes the key for a plain uniform stack, so
-    refusing the key outright would refuse those files.
-
-    A declared window counts as active unless ``use_sliding_window``
-    is the boolean ``false`` — Qwen-family configs carry the window
-    value with the switch off, and those stacks are uniform. A null
-    ``sliding_window`` also parses, because Mistral-family configs use
-    null for no window.
-
-    Args:
-        config: Parsed ``config.json``, or a nested decoder object.
-        layers: The decoder's hidden layer count, already parsed.
-        path: Source path, for error messages.
-        prefix: JSON path of ``config`` inside the file, empty at the
-            top level.
-
-    Raises:
-        ValueError: If ``layer_types`` is malformed, misses a layer,
-            or declares a layer other than ``full_attention``, an
-            active ``sliding_window`` is declared, ``attention_k_eq_v``
-            is true, ``num_kv_shared_layers`` is above zero, a split
-            local/global geometry key carries a value, or a key above
-            or ``use_sliding_window`` carries a type it cannot mean.
-            A negative window refuses as malformed. ``bool``
-            subclasses ``int``, so a boolean window or share count
-            refuses as a non-integer (#348).
-    """
-    _refuse_unmodeled_layer_pattern(config, layers, path, prefix)
-    _refuse_unmodeled_kv_storage(config, path, prefix)
-
-
-def _refuse_unmodeled_layer_pattern(
-    config: dict[str, Any], layers: int, path: Path, prefix: str
-) -> None:
-    """Refuse a per-layer attention pattern or an active window.
-
-    ``sliding_window`` must be a non-negative integer or null, and
-    ``use_sliding_window`` a boolean or null. A malformed value
-    refuses as a type error, not as declared windowing (#425 review).
-
-    Args:
-        config: Parsed ``config.json``, or a nested decoder object.
-        layers: The decoder's hidden layer count, already parsed.
-        path: Source path, for error messages.
-        prefix: JSON path of ``config`` inside the file, empty at the
-            top level.
-
-    Raises:
-        ValueError: Per `_refuse_unmodeled_geometry`.
-    """
-    layer_types = config.get("layer_types")
-    if layer_types is not None:
-        if not isinstance(layer_types, list) or not all(
-            isinstance(t, str) for t in layer_types
-        ):
-            raise ValueError(
-                f"{path}: {_label('layer_types', prefix)} must be a list of strings"
-            )
-        if len(layer_types) != layers:
-            raise ValueError(
-                f"{path}: {_label('layer_types', prefix)} does not list "
-                "one type per hidden layer"
-            )
-        if any(t != "full_attention" for t in layer_types):
-            raise ValueError(
-                f"{path}: {_label('layer_types', prefix)} declares "
-                "per-layer attention this reader does not model"
-            )
-    window = config.get("sliding_window")
-    if window is not None and (
-        isinstance(window, bool) or not isinstance(window, int) or window < 0
-    ):
-        raise ValueError(
-            f"{path}: {_label('sliding_window', prefix)} must be a "
-            "non-negative integer or null"
-        )
-    switch = config.get("use_sliding_window")
-    if switch is not None and not isinstance(switch, bool):
-        raise ValueError(
-            f"{path}: {_label('use_sliding_window', prefix)} must be a boolean or null"
-        )
-    if isinstance(window, int) and window > 0 and switch is not False:
-        raise ValueError(
-            f"{path}: {_label('sliding_window', prefix)} declares "
-            "windowed attention this reader does not model"
-        )
-
-
-def _refuse_unmodeled_kv_storage(
-    config: dict[str, Any], path: Path, prefix: str
-) -> None:
-    """Refuse K=V storage, KV sharing, or split local/global geometry.
-
-    Args:
-        config: Parsed ``config.json``, or a nested decoder object.
-        path: Source path, for error messages.
-        prefix: JSON path of ``config`` inside the file, empty at the
-            top level.
-
-    Raises:
-        ValueError: Per `_refuse_unmodeled_geometry`.
-    """
-    k_eq_v = config.get("attention_k_eq_v")
-    if k_eq_v is not None and not isinstance(k_eq_v, bool):
-        raise ValueError(
-            f"{path}: {_label('attention_k_eq_v', prefix)} must be a boolean or null"
-        )
-    if k_eq_v:
-        raise ValueError(
-            f"{path}: {_label('attention_k_eq_v', prefix)} declares "
-            "K=V storage this reader does not model"
-        )
-    shared = config.get("num_kv_shared_layers")
-    if shared is not None:
-        if isinstance(shared, bool) or not isinstance(shared, int) or shared < 0:
-            raise ValueError(
-                f"{path}: {_label('num_kv_shared_layers', prefix)} "
-                "must be a non-negative integer or null"
-            )
-        if shared > 0:
-            raise ValueError(
-                f"{path}: {_label('num_kv_shared_layers', prefix)} declares "
-                "KV sharing this reader does not model"
-            )
-    for key in ("global_head_dim", "num_global_key_value_heads"):
-        if config.get(key) is not None:
-            raise ValueError(
-                f"{path}: {_label(key, prefix)} declares split local/global "
-                "attention this reader does not model"
-            )
 
 
 def _from_llama_config(
     config: dict[str, Any], path: Path, prefix: str = ""
 ) -> ModelShape:
-    """Parse a standard llama-style config with uniform layers.
+    """Parse a llama-style config into per-layer KV geometry.
 
     Args:
         config: Parsed ``config.json``, or a nested decoder object.
@@ -424,39 +302,24 @@ def _from_llama_config(
             top level. Refusals name each field through it.
 
     Returns:
-        The parsed uniform shape.
+        The parsed shape, uniform when the file declares no per-layer
+        geometry.
 
     Raises:
         ValueError: If required fields are missing or inconsistent, or
-            the decoder declares KV geometry the uniform parse does
-            not model (`_refuse_unmodeled_geometry`).
+            the decoder declares KV geometry this reader does not
+            model
+            (`vramfit.adapters.outbound.hf_kv_geometry.kv_layers_from_decoder`).
     """
     layers = _config_int(config, "num_hidden_layers", path, prefix)
-    _refuse_unmodeled_geometry(config, layers, path, prefix)
     kv_heads = _config_int(config, "num_key_value_heads", path, prefix)
     heads = _config_int(config, "num_attention_heads", path, prefix)
-    return ModelShape.uniform(
-        attn_layers=layers,
-        kv_heads=kv_heads,
-        head_dim=_head_dim(config, heads, path, prefix),
+    head_dim = _head_dim(config, heads, path, prefix)
+    return ModelShape(
+        kv_layers=kv_layers_from_decoder(
+            config, layers, kv_heads, head_dim, path, prefix
+        )
     )
-
-
-def _label(key: str, prefix: str) -> str:
-    """Name a field in a refusal message.
-
-    A top-level key renders quoted. A nested key renders as a bare
-    path expression, matching the ``block_configs[i]`` messages.
-
-    Args:
-        key: Field name.
-        prefix: JSON path of the containing object, empty at the top
-            level.
-
-    Returns:
-        The label for the field's messages.
-    """
-    return f"{prefix}.{key}" if prefix else f'"{key}"'
 
 
 def _config_int(config: dict[str, Any], key: str, path: Path, prefix: str = "") -> int:
@@ -474,51 +337,16 @@ def _config_int(config: dict[str, Any], key: str, path: Path, prefix: str = "") 
 
     Raises:
         ValueError: If the field is missing, is not a positive integer,
-            or is outside the signed 64-bit range.
+            or is outside the signed 64-bit range. The message names
+            the field through `field_label`, and `bounded_int` applies
+            the range.
     """
     value = config.get(key)
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-        raise ValueError(f"{path}: {_label(key, prefix)} must be a positive integer")
-    return _bounded(value, _label(key, prefix), path)
-
-
-def _bounded(value: int, label: str, path: Path) -> int:
-    """Refuse an integer the wire format cannot carry.
-
-    Each caller rejects a boolean and a value at or below zero first.
-    So this checks the upper bound alone. A publisher's ``config.json``
-    is an input vramfit never writes, and Python integers carry
-    unlimited precision. Without the bound ``num_hidden_layers`` at
-    10^30 reached `ModelShape.uniform`. Its repeat expression raised
-    `OverflowError`, which the CLI's ``(OSError, ValueError)`` clause
-    does not catch (#314).
-
-    The bound answers representability alone. It does not answer
-    whether a layer count is plausible. ADR-0008's 2026-08-16 amendment
-    gives that question to the domain, and `ModelShape.uniform` still
-    repeats a tuple by the layer count. So a count below this bound
-    raises `MemoryError` and escapes the root the same way (#314).
-
-    Args:
-        value: A positive integer the caller has already type-checked.
-        label: How the field names itself in a refusal. Match that
-            field's other messages, which quote a top-level key and
-            leave a path expression bare.
-        path: Source path, for error messages.
-
-    Returns:
-        The integer value.
-
-    Raises:
-        ValueError: If the value exceeds the largest signed 64-bit
-            integer.
-    """
-    if value > _INT_MAX:
         raise ValueError(
-            f"{path}: {label} exceeds {_INT_MAX}, "
-            "the largest integer this format carries"
+            f"{path}: {field_label(key, prefix)} must be a positive integer"
         )
-    return value
+    return bounded_int(value, field_label(key, prefix), path)
 
 
 def _head_dim(
@@ -542,19 +370,19 @@ def _head_dim(
             inside the signed 64-bit range (a present-but-invalid value
             is rejected, never silently replaced by the fallback), or
             ``hidden_size`` is missing or not an exact multiple of
-            ``num_heads``.
+            ``num_heads``. `bounded_int` applies the range.
     """
     head_dim = config.get("head_dim")
     if head_dim is not None:
         if isinstance(head_dim, bool) or not isinstance(head_dim, int) or head_dim <= 0:
             raise ValueError(
-                f"{path}: {_label('head_dim', prefix)} must be a positive integer"
+                f"{path}: {field_label('head_dim', prefix)} must be a positive integer"
             )
-        return _bounded(head_dim, _label("head_dim", prefix), path)
+        return bounded_int(head_dim, field_label("head_dim", prefix), path)
     hidden = _config_int(config, "hidden_size", path, prefix)
     if hidden % num_heads != 0:
         raise ValueError(
-            f"{path}: {_label('hidden_size', prefix)} {hidden} is not divisible "
-            f"by {_label('num_attention_heads', prefix)} {num_heads}"
+            f"{path}: {field_label('hidden_size', prefix)} {hidden} is not divisible "
+            f"by {field_label('num_attention_heads', prefix)} {num_heads}"
         )
     return hidden // num_heads

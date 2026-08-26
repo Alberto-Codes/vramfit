@@ -6,7 +6,9 @@ scan, pack, and validate command bodies live in
 [vramfit.adapters.inbound.cli_scan][],
 [vramfit.adapters.inbound.cli_pack][], and
 [vramfit.adapters.inbound.cli_validate][] to keep this module under
-the size cap. The CLI wires outbound adapters to the pure domain, typing
+the size cap. ``budget`` reports KV growth per token, plus the
+window pool on a mixed sliding/global stack (#421).
+The CLI wires outbound adapters to the pure domain, typing
 them against the ports so the seams stay explicit. Every IO boundary —
 artifact and config reads, checkpoint and artifact writes, and model
 loading — converts failures to a clean ``error:`` line and a nonzero
@@ -70,8 +72,9 @@ from vramfit.domain.budget import (
     Budget,
     ModelShape,
     format_size,
-    kv_bytes_per_token,
     kv_cache_bytes,
+    kv_growth_bytes_per_token,
+    kv_window_pool_bytes,
     parse_size,
 )
 from vramfit.domain.errors import VramfitError
@@ -194,6 +197,10 @@ def budget(
     (read through the `ModelShapeSource` port), or the manual triple
     ``--attn-layers --kv-heads --head-dim``. The ``--overhead`` default
     derives from ``vramfit.domain.budget.DEFAULT_RUNTIME_OVERHEAD_BYTES``.
+    The first output line reports KV growth per context token, plus
+    the saturated per-sequence window pool when the shape has sliding
+    layers (#421). The KV-cache line sums both terms at ``--context``
+    and ``--sequences``.
 
     Raises:
         typer.BadParameter: If both or neither shape source is given, a
@@ -239,11 +246,12 @@ def budget(
         kv_cache_bytes=kv_cache_bytes(shape, context, kv_dtype, sequences),
         runtime_overhead_bytes=_parse_size_option(overhead, "--overhead"),
     )
-    per_token = kv_bytes_per_token(shape, kv_dtype)
-    typer.echo(
-        f"attention layers      {len(shape.kv_heads_per_layer)}"
-        f"  (KV {per_token} bytes/token, {kv_dtype})"
-    )
+    per_token = kv_growth_bytes_per_token(shape, kv_dtype)
+    pool = kv_window_pool_bytes(shape, kv_dtype)
+    detail = f"KV grows {per_token} bytes/token, {kv_dtype}"
+    if pool:
+        detail += f", + {format_size(pool)} window pool per sequence"
+    typer.echo(f"attention layers      {len(shape.kv_layers)}  ({detail})")
     typer.echo(f"VRAM total            {format_size(ledger.vram_total_bytes)}")
     typer.echo(
         f"- KV cache            {format_size(ledger.kv_cache_bytes)}"

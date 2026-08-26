@@ -2,8 +2,16 @@
 
 Implements the arithmetic from ``docs/explanation/vram-budget.md``:
 ``weight_budget = vram_total - kv_cache - runtime_overhead``. KV cost is a
-sum over attention layers, not ``layers x constant``, because NAS-derived
-models like the north-star target delete attention from some layers.
+sum over per-layer `KVLayer` entries, not ``layers x constant``. NAS-derived
+models delete attention from some layers, and mixed-attention stacks
+(Gemma 4, #421) vary window, head width, KV-head count, storage factor,
+and KV sharing per layer.
+
+A global layer's cache grows with context. A sliding layer's cache stops
+at its window. A shared layer allocates nothing. So one scalar
+"bytes per token" cannot price these stacks: `kv_growth_bytes_per_token`
+carries the context-scaled term and `kv_window_pool_bytes` the saturated
+window term.
 
 `parse_size` refuses a size the artifacts cannot carry, at the signed
 64-bit range every reader bounds (ADR-0008 as amended 2026-08-16,
@@ -144,14 +152,50 @@ def format_size(n_bytes: int) -> str:
 
 
 @dataclass(frozen=True, slots=True)
+class KVLayer:
+    """One attention layer's KV-cache geometry.
+
+    Attributes:
+        kv_heads (int): KV head count for this layer.
+        head_dim (int): Dimension of each KV head in this layer.
+        window (int | None): Sliding-window size in tokens. ``None``
+            means global attention: the cache grows with context. An
+            integer caps the cache at ``min(context, window)`` tokens.
+            The config adapter admits only positive windows, and the
+            domain does not re-check that bound.
+        kv_tensors (int): KV tensors stored per token: 2 for an
+            independent K and V pair, 1 when the layer stores one
+            tensor for both (``attention_k_eq_v``).
+        shares_kv (bool): True when the layer reuses another layer's
+            cache and allocates no KV of its own
+            (``num_kv_shared_layers``).
+
+    Examples:
+        A Gemma 4 31B sliding layer:
+
+        ```python
+        from vramfit.domain.budget import KVLayer
+
+        layer = KVLayer(kv_heads=16, head_dim=256, window=1024)
+        ```
+    """
+
+    kv_heads: int
+    head_dim: int
+    window: int | None = None
+    kv_tensors: int = 2
+    shares_kv: bool = False
+
+
+@dataclass(frozen=True, slots=True)
 class ModelShape:
     """The attention geometry that determines KV-cache cost.
 
     Attributes:
-        kv_heads_per_layer (tuple[int, ...]): KV head count for each
-            attention layer. Layers without attention (NAS ``no_op``
-            blocks) have no entry.
-        head_dim (int): Dimension of each attention head.
+        kv_layers (tuple[KVLayer, ...]): Per-layer KV geometry. Layers
+            without attention (NAS ``no_op`` blocks) have no entry.
+            Shared-KV layers keep an entry with ``shares_kv`` set, so
+            the stack's layer count stays readable.
 
     Examples:
         The north-star target's shape, built by hand:
@@ -160,16 +204,18 @@ class ModelShape:
         from vramfit.domain.budget import ModelShape
 
         shape = ModelShape.uniform(attn_layers=49, kv_heads=8, head_dim=128)
-        assert len(shape.kv_heads_per_layer) == 49
+        assert len(shape.kv_layers) == 49
         ```
     """
 
-    kv_heads_per_layer: tuple[int, ...]
-    head_dim: int
+    kv_layers: tuple[KVLayer, ...]
 
     @classmethod
     def uniform(cls, attn_layers: int, kv_heads: int, head_dim: int) -> ModelShape:
         """Build a shape where every attention layer is identical.
+
+        Every layer is global, stores a K and V pair, and shares
+        nothing — the pre-#421 geometry.
 
         Args:
             attn_layers: Number of layers that have attention.
@@ -180,23 +226,38 @@ class ModelShape:
             The uniform shape.
         """
         return cls(
-            kv_heads_per_layer=(kv_heads,) * attn_layers,
-            head_dim=head_dim,
+            kv_layers=(KVLayer(kv_heads=kv_heads, head_dim=head_dim),) * attn_layers,
         )
 
 
-def kv_bytes_per_token(shape: ModelShape, kv_dtype: str = "fp16") -> int:
-    """Compute KV-cache bytes stored per token across the whole stack.
+def _layer_token_bytes(layer: KVLayer, kv_dtype: str) -> int:
+    """Compute one layer's KV bytes per cached token.
 
-    The formula is ``2 (keys + values) x head_dim x Σ kv_heads x
-    bytes_per_element``, summing over attention layers only.
+    Args:
+        layer: The layer's KV geometry.
+        kv_dtype: KV-cache element dtype.
+
+    Returns:
+        Bytes per cached token, zero for a shared layer.
+    """
+    if layer.shares_kv:
+        return 0
+    return layer.kv_tensors * layer.kv_heads * layer.head_dim * KV_DTYPE_BYTES[kv_dtype]
+
+
+def kv_growth_bytes_per_token(shape: ModelShape, kv_dtype: str = "fp16") -> int:
+    """Compute the KV bytes each context token adds, windows excluded.
+
+    Only global layers scale with context. Sliding layers stop at
+    their window and belong to `kv_window_pool_bytes`. Shared layers
+    add nothing.
 
     Args:
         shape: The model's attention geometry.
         kv_dtype: KV-cache element dtype (``fp16``, ``bf16``, or ``fp8``).
 
     Returns:
-        Bytes per token.
+        Context-scaled bytes per token.
 
     Raises:
         KeyError: If ``kv_dtype`` is not a known dtype.
@@ -205,14 +266,52 @@ def kv_bytes_per_token(shape: ModelShape, kv_dtype: str = "fp16") -> int:
         The north-star target stores ~196 KiB per token at fp16:
 
         ```python
-        from vramfit.domain.budget import ModelShape, kv_bytes_per_token
+        from vramfit.domain.budget import ModelShape, kv_growth_bytes_per_token
 
         shape = ModelShape.uniform(attn_layers=49, kv_heads=8, head_dim=128)
-        assert kv_bytes_per_token(shape) == 200_704
+        assert kv_growth_bytes_per_token(shape) == 200_704
         ```
     """
-    element_bytes = KV_DTYPE_BYTES[kv_dtype]
-    return 2 * shape.head_dim * sum(shape.kv_heads_per_layer) * element_bytes
+    return sum(
+        _layer_token_bytes(layer, kv_dtype)
+        for layer in shape.kv_layers
+        if layer.window is None
+    )
+
+
+def kv_window_pool_bytes(shape: ModelShape, kv_dtype: str = "fp16") -> int:
+    """Compute the sliding layers' KV pool at window saturation.
+
+    Each sliding layer caps its cache at its window, so past the
+    largest window this pool is a constant per sequence.
+
+    Args:
+        shape: The model's attention geometry.
+        kv_dtype: KV-cache element dtype (``fp16``, ``bf16``, or ``fp8``).
+
+    Returns:
+        Saturated window-pool bytes, zero for a uniform shape.
+
+    Raises:
+        KeyError: If ``kv_dtype`` is not a known dtype.
+
+    Examples:
+        Gemma 4 31B holds ~0.78 GiB of saturated windows at fp16:
+
+        ```python
+        from vramfit.domain.budget import KVLayer, ModelShape, kv_window_pool_bytes
+
+        shape = ModelShape(
+            kv_layers=(KVLayer(kv_heads=16, head_dim=256, window=1024),) * 50
+        )
+        assert kv_window_pool_bytes(shape) == 838_860_800
+        ```
+    """
+    return sum(
+        _layer_token_bytes(layer, kv_dtype) * layer.window
+        for layer in shape.kv_layers
+        if layer.window is not None
+    )
 
 
 def kv_cache_bytes(
@@ -222,6 +321,10 @@ def kv_cache_bytes(
     sequences: int = 1,
 ) -> int:
     """Compute total KV-cache bytes for a context length and batch.
+
+    Sums each layer's actual allocation: a global layer caches
+    ``context`` tokens, a sliding layer ``min(context, window)``
+    tokens, and a shared layer none. Each sequence pays the full sum.
 
     Args:
         shape: The model's attention geometry.
@@ -242,7 +345,11 @@ def kv_cache_bytes(
         total = kv_cache_bytes(shape, context=16384)
         ```
     """
-    return kv_bytes_per_token(shape, kv_dtype) * context * sequences
+    total = 0
+    for layer in shape.kv_layers:
+        tokens = context if layer.window is None else min(context, layer.window)
+        total += _layer_token_bytes(layer, kv_dtype) * tokens
+    return total * sequences
 
 
 @dataclass(frozen=True, slots=True)
