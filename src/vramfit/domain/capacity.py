@@ -7,8 +7,8 @@ the largest sequence count at a fixed context, and an image capacity
 at a caller-supplied image token cost.
 
 The inverse is piecewise on a mixed sliding/global stack. Sliding
-layers saturate at their windows while global layers keep growing,
-so no single bytes-per-token scalar can invert the cost. The context
+layers saturate at their padded windows while global layers keep
+growing, so no single bytes-per-token scalar can invert the cost. The context
 solver binary-searches `kv_cache_bytes` itself over integers, so the
 result is exact at the fit boundary: the returned context fits and
 one more token does not.
@@ -36,6 +36,7 @@ See Also:
 from __future__ import annotations
 
 from vramfit.domain.budget import (
+    KV_WINDOW_PAD_TOKENS,
     ModelShape,
     kv_cache_bytes,
     kv_growth_bytes_per_token,
@@ -66,8 +67,8 @@ def max_context_tokens(
 
     Returns:
         The largest context in tokens — 0 when not even one token
-        fits — or ``None`` when every layer saturates inside the
-        headroom and context is not KV-limited.
+        fits — or ``None`` when every layer saturates at its padded
+        window inside the headroom and context is not KV-limited.
 
     Raises:
         KeyError: If ``kv_dtype`` is not a known dtype and any layer
@@ -93,8 +94,11 @@ def max_context_tokens(
         if saturated <= kv_headroom_bytes:
             return None
         # `saturated > headroom >= 0` proves a costing sliding layer
-        # exists, and its window bounds the search from above.
-        hi = max(layer.window for layer in shape.kv_layers if layer.window is not None)
+        # exists, and its padded window bounds the search from above.
+        hi = (
+            max(layer.window for layer in shape.kv_layers if layer.window is not None)
+            + KV_WINDOW_PAD_TOKENS
+        )
     else:
         # The cache costs at least `growth` per token, so this bound
         # always overshoots the headroom.

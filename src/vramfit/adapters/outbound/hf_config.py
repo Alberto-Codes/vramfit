@@ -12,8 +12,8 @@ is rejected rather than silently truncated.
 The llama-style parse models declared heterogeneous KV geometry
 (#421): a ``layer_types`` list of global and sliding layers, an
 active ``sliding_window``, split local/global head widths and
-KV-head counts, K=V storage (``attention_k_eq_v``), and a shared-KV
-tail (``num_kv_shared_layers``). The geometry readers live in
+KV-head counts (``attention_k_eq_v`` gates the KV-head override,
+#431), and a shared-KV tail (``num_kv_shared_layers``). The geometry readers live in
 [vramfit.adapters.outbound.hf_kv_geometry][], which also carries the
 shared field-label and integer-bound helpers. The parse prices only
 what the file declares. A decoder that declares geometry past that

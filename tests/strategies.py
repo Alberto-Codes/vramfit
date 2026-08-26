@@ -147,8 +147,8 @@ def kv_shapes(draw: st.DrawFn) -> ModelShape:
     """Draw a heterogeneous `ModelShape` of 1-8 KV layers.
 
     Layers mix global and sliding attention, head widths, KV-head
-    counts, K=V storage, and shared-KV entries, so the KV arithmetic
-    properties hold across every mechanism #421 models.
+    counts, storage factors, and shared-KV entries, so the KV
+    arithmetic properties hold across every mechanism #421 models.
     """
     n_layers = draw(st.integers(min_value=1, max_value=8))
     layers = tuple(

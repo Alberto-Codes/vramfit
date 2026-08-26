@@ -28,8 +28,8 @@ the manual triple. The reader handles DeciLM NAS configs with
 skipped-attention blocks and composite configs that nest the decoder
 under `text_config`. It prices declared per-layer KV geometry (#421).
 That covers a `layer_types` sliding/global pattern with its window,
-split local/global head geometry, K=V storage (`attention_k_eq_v`),
-and shared-KV layers that allocate no cache. An active window without
+split local/global head geometry, the `attention_k_eq_v` KV-head
+override (#431), and shared-KV layers that allocate no cache. An active window without
 `layer_types`, an unknown layer type, or a llama-geometry key beside
 `block_configs` refuses rather than guessing.
 
@@ -59,7 +59,7 @@ VRAM total            24.00 GiB
 ```
 
 On a mixed sliding/global stack the first line adds the saturated
-window pool, e.g. `(KV grows 40960 bytes/token, fp16, + 800.00 MiB
+window pool, e.g. `(KV grows 81920 bytes/token, fp16, + 1.17 GiB
 window pool per sequence)`. Each concurrent sequence pays its own
 pool. The KV-cache line sums both terms at the given context and
 `--sequences`.
@@ -98,19 +98,19 @@ sources.
 ```console
 $ vramfit capacity recipe.json --model-config config.json \
     --context 32768 --tokens-per-image 256
-attention layers      60  (KV grows 40960 bytes/token, fp16, + 800.00 MiB window pool per sequence)
+attention layers      60  (KV grows 81920 bytes/token, fp16, + 1.17 GiB window pool per sequence)
 VRAM total            24.00 GiB
-- weights (recipe)    16.22 GiB
+- weights (recipe)    13.33 GiB
 - runtime overhead    2.00 GiB
-= KV headroom         5.78 GiB
-max context           131072 tokens  (1 sequence)
+= KV headroom         8.67 GiB
+max context           98304 tokens  (1 sequence)
 max sequences         2  (at 32768 tokens)
-image capacity        512 images  (256 tokens per image, 1 sequence)
+image capacity        384 images  (256 tokens per image, 1 sequence)
 ```
 
 The context and image lines print `unbounded` when the KV cache
 stops growing inside the headroom — an all-sliding stack past its
-windows. The reading is then not KV-limited. Both lines read per
+padded windows. The reading is then not KV-limited. Both lines read per
 the `--sequences` split and say so. The sequence line goes
 `unbounded` only for a shape that allocates no KV, which no
 admitted config produces. The image line divides the context

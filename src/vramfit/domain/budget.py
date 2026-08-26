@@ -8,10 +8,11 @@ models delete attention from some layers, and mixed-attention stacks
 and KV sharing per layer.
 
 A global layer's cache grows with context. A sliding layer's cache stops
-at its window. A shared layer allocates nothing. So one scalar
-"bytes per token" cannot price these stacks: `kv_growth_bytes_per_token`
-carries the context-scaled term and `kv_window_pool_bytes` the saturated
-window term.
+at its window plus the runtime's `KV_WINDOW_PAD_TOKENS` padding (#431).
+A shared layer allocates nothing. So one scalar "bytes per token" cannot
+price these stacks: `kv_growth_bytes_per_token` carries the
+context-scaled term and `kv_window_pool_bytes` the saturated window
+term.
 
 `parse_size` refuses a size the artifacts cannot carry, at the signed
 64-bit range every reader bounds (ADR-0008 as amended 2026-08-16,
@@ -23,6 +24,9 @@ Attributes:
         name (``fp16``, ``bf16``, ``fp8``).
     DEFAULT_RUNTIME_OVERHEAD_BYTES (int): Planning figure for CUDA
         context, workspace, and fragmentation (2 GiB).
+    KV_WINDOW_PAD_TOKENS (int): Tokens the serving runtime adds to
+        each sliding layer's cache past its window (512, the llama.cpp
+        default ``n_ubatch``, measured on #431).
 
 Examples:
     Compute the weight budget for the north-star target:
@@ -54,6 +58,12 @@ from typing import Final
 
 KV_DTYPE_BYTES: Final[dict[str, int]] = {"fp16": 2, "bf16": 2, "fp8": 1}
 DEFAULT_RUNTIME_OVERHEAD_BYTES: Final[int] = 2 * 2**30
+
+# The serving runtime sizes a sliding layer's cache at
+# `window + n_ubatch` tokens, not `window` (#431). 512 is the
+# llama.cpp default `n_ubatch`, measured at 1,200 MiB per sequence on
+# the Gemma 4 31B fixture.
+KV_WINDOW_PAD_TOKENS: Final[int] = 512
 
 # How much of a rejected size string a message repeats back.
 _SHOWN_SIZE_CHARS = 40
@@ -160,12 +170,16 @@ class KVLayer:
         head_dim (int): Dimension of each KV head in this layer.
         window (int | None): Sliding-window size in tokens. ``None``
             means global attention: the cache grows with context. An
-            integer caps the cache at ``min(context, window)`` tokens.
+            integer caps the cache at
+            ``min(context, window + KV_WINDOW_PAD_TOKENS)`` tokens —
+            the runtime pads each window with its batch size (#431).
             The config adapter admits only positive windows, and the
             domain does not re-check that bound.
-        kv_tensors (int): KV tensors stored per token: 2 for an
-            independent K and V pair, 1 when the layer stores one
-            tensor for both (``attention_k_eq_v``).
+        kv_tensors (int): KV tensors the runtime allocates per cached
+            token: 2 for the K and V caches. The ruled runtime
+            allocates both even under ``attention_k_eq_v`` and fills
+            V with K (#431). A value of 1 prices half the pair, and
+            no adapter emits one since #431.
         shares_kv (bool): True when the layer reuses another layer's
             cache and allocates no KV of its own
             (``num_kv_shared_layers``).
@@ -249,8 +263,8 @@ def kv_growth_bytes_per_token(shape: ModelShape, kv_dtype: str = "fp16") -> int:
     """Compute the KV bytes each context token adds, windows excluded.
 
     Only global layers scale with context. Sliding layers stop at
-    their window and belong to `kv_window_pool_bytes`. Shared layers
-    add nothing.
+    their padded window and belong to `kv_window_pool_bytes`. Shared
+    layers add nothing.
 
     Args:
         shape: The model's attention geometry.
@@ -282,8 +296,9 @@ def kv_growth_bytes_per_token(shape: ModelShape, kv_dtype: str = "fp16") -> int:
 def kv_window_pool_bytes(shape: ModelShape, kv_dtype: str = "fp16") -> int:
     """Compute the sliding layers' KV pool at window saturation.
 
-    Each sliding layer caps its cache at its window, so past the
-    largest window this pool is a constant per sequence.
+    Each sliding layer caps its cache at its window plus the
+    runtime's `KV_WINDOW_PAD_TOKENS` padding (#431). Past the largest
+    padded window this pool is a constant per sequence.
 
     Args:
         shape: The model's attention geometry.
@@ -296,7 +311,7 @@ def kv_window_pool_bytes(shape: ModelShape, kv_dtype: str = "fp16") -> int:
         KeyError: If ``kv_dtype`` is not a known dtype.
 
     Examples:
-        Gemma 4 31B holds ~0.78 GiB of saturated windows at fp16:
+        Gemma 4 31B holds 1,200 MiB of saturated windows at fp16:
 
         ```python
         from vramfit.domain.budget import KVLayer, ModelShape, kv_window_pool_bytes
@@ -304,11 +319,11 @@ def kv_window_pool_bytes(shape: ModelShape, kv_dtype: str = "fp16") -> int:
         shape = ModelShape(
             kv_layers=(KVLayer(kv_heads=16, head_dim=256, window=1024),) * 50
         )
-        assert kv_window_pool_bytes(shape) == 838_860_800
+        assert kv_window_pool_bytes(shape) == 1_258_291_200
         ```
     """
     return sum(
-        _layer_token_bytes(layer, kv_dtype) * layer.window
+        _layer_token_bytes(layer, kv_dtype) * (layer.window + KV_WINDOW_PAD_TOKENS)
         for layer in shape.kv_layers
         if layer.window is not None
     )
@@ -323,8 +338,9 @@ def kv_cache_bytes(
     """Compute total KV-cache bytes for a context length and batch.
 
     Sums each layer's actual allocation: a global layer caches
-    ``context`` tokens, a sliding layer ``min(context, window)``
-    tokens, and a shared layer none. Each sequence pays the full sum.
+    ``context`` tokens, a sliding layer
+    ``min(context, window + KV_WINDOW_PAD_TOKENS)`` tokens (#431),
+    and a shared layer none. Each sequence pays the full sum.
 
     Args:
         shape: The model's attention geometry.
@@ -347,7 +363,10 @@ def kv_cache_bytes(
     """
     total = 0
     for layer in shape.kv_layers:
-        tokens = context if layer.window is None else min(context, layer.window)
+        if layer.window is None:
+            tokens = context
+        else:
+            tokens = min(context, layer.window + KV_WINDOW_PAD_TOKENS)
         total += _layer_token_bytes(layer, kv_dtype) * tokens
     return total * sequences
 

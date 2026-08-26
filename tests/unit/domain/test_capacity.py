@@ -6,6 +6,7 @@ from hypothesis import strategies as st
 
 from tests.strategies import kv_shapes
 from vramfit.domain.budget import (
+    KV_WINDOW_PAD_TOKENS,
     KVLayer,
     ModelShape,
     kv_cache_bytes,
@@ -22,7 +23,8 @@ UNIFORM = ModelShape.uniform(attn_layers=2, kv_heads=2, head_dim=4)
 TOKEN_BYTES = 64
 
 # One global layer (16 B/token) plus one sliding layer (16 B/token,
-# window 8, 128-byte saturated pool).
+# window 8). The runtime pads the window with `KV_WINDOW_PAD_TOKENS`
+# (#431), so the layer saturates at 520 tokens: an 8,320-byte pool.
 MIXED = ModelShape(
     kv_layers=(
         KVLayer(kv_heads=1, head_dim=4),
@@ -48,14 +50,19 @@ class TestMaxContextTokens:
         assert max_context_tokens(UNIFORM, 11 * TOKEN_BYTES - 1) == 10
 
     def test_mixed_stack_past_saturation_prices_growth_plus_pool(self) -> None:
-        # Past the window: cost = 16 x context + 128.
-        headroom = 16 * 100 + 128
+        # Past the padded window (520 tokens): cost = 16 x context + 8320.
+        headroom = 16 * 1000 + 8320
 
-        assert max_context_tokens(MIXED, headroom) == 100
+        assert max_context_tokens(MIXED, headroom) == 1000
 
     def test_mixed_stack_below_the_window_prices_both_terms(self) -> None:
         # Below the window both layers grow: cost = 32 x context.
         assert max_context_tokens(MIXED, 32 * 5) == 5
+
+    def test_mixed_stack_inside_the_padding_prices_both_terms(self) -> None:
+        # Between the window (8) and its padded end (520) both
+        # layers still grow: cost = 32 x context (#431).
+        assert max_context_tokens(MIXED, 32 * 100) == 100
 
     def test_negative_headroom_returns_zero(self) -> None:
         assert max_context_tokens(UNIFORM, -1) == 0
@@ -75,6 +82,13 @@ class TestMaxContextTokens:
         # One sliding layer at 16 B/token: five tokens fit inside the
         # 8-token window.
         assert max_context_tokens(SLIDING_ONLY, 16 * 5) == 5
+
+    def test_sliding_only_stack_stays_finite_inside_the_padding(self) -> None:
+        # The runtime pads the 8-token window to 520 cells (#431), so
+        # a headroom one token short of the pool reads 519.
+        pool = kv_window_pool_bytes(SLIDING_ONLY)
+
+        assert max_context_tokens(SLIDING_ONLY, pool - 1) == 519
 
     def test_sequences_split_the_headroom(self) -> None:
         assert max_context_tokens(UNIFORM, 1000, sequences=2) == 1000 // (
@@ -98,8 +112,8 @@ class TestMaxSequences:
         assert max_sequences(UNIFORM, 3 * 640 - 1, context=10) == 2
 
     def test_mixed_stack_prices_the_saturated_window(self) -> None:
-        # At 100 tokens one sequence costs 16 x 100 + 128 = 1728.
-        assert max_sequences(MIXED, 2 * 1728, context=100) == 2
+        # At 1000 tokens one sequence costs 16 x 1000 + 8320 = 24320.
+        assert max_sequences(MIXED, 2 * 24320, context=1000) == 2
 
     def test_negative_headroom_returns_zero(self) -> None:
         assert max_sequences(UNIFORM, -1, context=10) == 0
@@ -149,11 +163,12 @@ class TestCapacityProperties:
         if result is None:
             assert kv_growth_bytes_per_token(shape) == 0
             assert kv_window_pool_bytes(shape) * sequences <= headroom
-            # Unbounded means the cache really fits past every window.
+            # Unbounded means the cache really fits past every
+            # padded window.
             windows = [
                 layer.window for layer in shape.kv_layers if layer.window is not None
             ]
-            probe = 2 * max(windows, default=1)
+            probe = max(windows, default=1) + KV_WINDOW_PAD_TOKENS + 1
             assert kv_cache_bytes(shape, probe, "fp16", sequences) <= headroom
         else:
             assert kv_cache_bytes(shape, result, "fp16", sequences) <= headroom
