@@ -23,9 +23,12 @@ vramfit 0.1.0
 
 Implemented. Prints the VRAM budget breakdown. The `--kv-headroom` value
 for `plan` is the sum of the KV-cache and runtime-overhead lines. The attention shape comes from
-exactly one source: `--model-config` (a Hugging Face `config.json` —
-DeciLM NAS configs with skipped-attention blocks are handled) or the
-manual triple.
+exactly one source: `--model-config` (a Hugging Face `config.json`) or
+the manual triple. The reader handles DeciLM NAS configs with
+skipped-attention blocks and composite configs that nest the decoder
+under `text_config`. A config that declares windowed, shared, K=V, or
+per-layer KV geometry refuses until the shape model represents it
+(#421).
 
 ```
 vramfit budget
