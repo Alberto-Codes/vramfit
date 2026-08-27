@@ -141,9 +141,10 @@ change.
 
 **Channel-locked**
 :   A checkpoint that prices raw prose at degenerate perplexity and
-    the same prose inside its serving frame at sane values
-    (Gemma 4 31B IT-QAT: PPL ≈ 3,000 raw against 26–75 in-frame,
-    #423). Measure such a target inside a **model-turn frame**.
+    the same prose inside its serving frame at sane values. One
+    instrument measured Gemma 4 31B IT-QAT at PPL 932–3,849 raw and
+    26.2–75.0 in-frame (the HF meter, #423). Measure such a target
+    inside a **model-turn frame**.
 
 **Marginal scanning**
 :   Measuring one group at a time while the rest stays at reference

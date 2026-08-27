@@ -8,11 +8,11 @@ renders one complete conversation: a fixed user turn, then the model
 turn's generation prompt, then a prose chunk as the answer, then the
 turn close.
 
-The block targets a fixed token count, 512 by default, so every
-512-token instrument window contains a frame. Alignment stays
-approximate: instruments slice a raw token stream, so windows cross
-block boundaries. State that convention beside every published
-number.
+The block targets a fixed token count, 512 by default, so a
+512-token instrument window contains a frame boundary when blocks
+stay at or under the target. Alignment stays approximate:
+instruments slice a raw token stream, so windows cross block
+boundaries. State that convention beside every published number.
 
 The script verifies its output. It checks each frame marker encodes
 to one special id, re-encodes the framed file, and reports block

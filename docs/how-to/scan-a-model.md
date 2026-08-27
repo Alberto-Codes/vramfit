@@ -289,6 +289,12 @@ numbers comparable:
 3. `llama-imatrix` needs `--parse-special` to see the frame.
    `llama-perplexity` cannot parse special tokens — do not publish
    its numbers on framed text.
+4. Verify the frame against the GGUF vocabulary too, with
+   `llama-tokenize`. A conversion can mis-type a marker as a normal
+   token, and `--parse-special` then spells it out as prose. The
+   Gemma 4 bf16 conversion shipped `<|turn>` as a normal token
+   (#423). The token counts must match the tokenizer-side count
+   plus one prepended BOS.
 
 ## Cost expectations
 
