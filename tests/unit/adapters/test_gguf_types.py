@@ -383,20 +383,24 @@ def test_tensor_overrides_reject_an_expert_projection_outside_the_stack_table() 
 
 
 @pytest.mark.parametrize(
-    "group",
+    ("group", "layer_group"),
     [
-        "model.embed_tokens",
-        "backbone.embeddings",
-        "model.embeddings",
-        "model.language_model.embed_tokens",
+        ("model.embed_tokens", "model.layers.0"),
+        ("backbone.embeddings", "backbone.layers.0"),
+        ("model.embeddings", "backbone.layers.0"),
+        ("model.language_model.embed_tokens", "model.language_model.layers.0"),
     ],
     ids=["llama", "nemotron", "nemotron-reconciled", "gemma4-multimodal"],
 )
-def test_token_embedding_type_maps_every_embedding_naming_family(group: str) -> None:
+def test_token_embedding_type_maps_every_embedding_naming_family(
+    group: str, layer_group: str
+) -> None:
     # `--token-embedding-type` binds one tensor whatever the
     # checkpoint calls the group. Missing a name refuses the whole
     # recipe, because the group then reaches the pattern branch.
-    recipe = make_recipe((group, 8), ("backbone.layers.0", 4))
+    # Each embedding rides its own family's layer root, the shape
+    # the checkpoint really produces.
+    recipe = make_recipe((group, 8), (layer_group, 4))
 
     assert token_embedding_type(recipe) == "q8_0"
     assert [o.pattern for o in tensor_overrides(recipe)] == [r"blk\.0\."]

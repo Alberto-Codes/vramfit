@@ -20,8 +20,9 @@ tensor names ``--exclude-weights`` deletes by substring
 (ADR-0023),
 and the embedding and `lm_head` groups map to the quantizer's
 dedicated embedding and output flags. The embedding name set
-carries four names: llama's, the two Nemotron-H roots, and Gemma
-4's multimodal `model.language_model.embed_tokens` (#423). The backend's own runtime
+carries four names: `model.embed_tokens`, `backbone.embeddings`,
+its reconciled form `model.embeddings`, and Gemma 4's nested
+`model.language_model.embed_tokens` (#423). The backend's own runtime
 name is the domain's `LLAMA_CPP` constant, so the table key and
 the pack check cannot drift apart. A
 recipe recorded for a foreign runtime, or anything the table cannot
@@ -736,8 +737,10 @@ def tensor_overrides(recipe: Recipe) -> tuple[TypeOverride, ...]:
     r"""Translate recipe groups into quantizer tensor-type overrides.
 
     Three group shapes map. A layer group under any of the three
-    naming families — ``model.layers.<n>``, ``backbone.layers.<n>``
-    — becomes the escaped pattern ``blk\.<n>\.``. A routed-expert
+    naming families and any prefix (``model.layers.<n>``,
+    ``backbone.layers.<n>``, Gemma 4's nested
+    ``model.language_model.layers.<n>``) becomes the escaped
+    pattern ``blk\.<n>\.``. A routed-expert
     stack group becomes the escaped pattern for its fused tensor,
     e.g. ``blk\.<n>\.ffn_up_exps\.`` (#159, #161). A layer-class
     group becomes the escaped pattern for its class-table stem, e.g.
