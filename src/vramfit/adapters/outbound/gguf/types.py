@@ -6,7 +6,7 @@ map to K-quant types (the full llama.cpp capability set since
 ADR-0013) and nominal 16 maps to `f16`, the passthrough a recipe
 holds an unmeasured group at (ADR-0029 decision 4), layer groups
 map to escaped `blk.<n>.` regex patterns
-across the naming families the scan produces, routed-expert
+across the three naming families the scan produces, routed-expert
 stack groups map to their fused `blk.<n>.ffn_<proj>_exps.` tensor
 (#159, #161) through their own type table — k-quant super-blocks do
 not divide the stack rows, and nominal 3 refuses over the empty
@@ -20,9 +20,8 @@ tensor names ``--exclude-weights`` deletes by substring
 (ADR-0023),
 and the embedding and `lm_head` groups map to the quantizer's
 dedicated embedding and output flags. The embedding name set
-carries four naming families — llama, the two Nemotron-H roots,
-and Gemma 4's multimodal `model.language_model.embed_tokens`
-(#423). The backend's own runtime
+carries four names: llama's, the two Nemotron-H roots, and Gemma
+4's multimodal `model.language_model.embed_tokens` (#423). The backend's own runtime
 name is the domain's `LLAMA_CPP` constant, so the table key and
 the pack check cannot drift apart. A
 recipe recorded for a foreign runtime, or anything the table cannot
