@@ -5,8 +5,10 @@ turns it into per-parameter column weights the meter can consume.
 The weight formula is ``in_sum2 / counts`` per column — the load
 formula in ``llama-quantize`` (``load_imatrix``, checkout e9fa078).
 GGUF tensor names map back to HF parameter names through a fixed
-table. Each row copies a name ``gguf.TensorNameMap`` carries, and
-the table covers the llama family and Nemotron-H-MoE (#186).
+table. Each row copies a name ``gguf.TensorNameMap`` carries. The
+table covers the llama family, Nemotron-H-MoE (#186), and the
+nested ``model.language_model.`` decoder root a composite
+checkpoint spells (Gemma 4 31B, #423).
 Nemotron-H spells attention, Mamba-2, the router, and the shared
 expert under one ``mixer.`` module, so no llama-family name reaches
 its dense tensors. A parameter without imatrix coverage is reported, not
@@ -129,29 +131,40 @@ _FUSED_EXPERT_TO_GGUF = {
 _DIRECT_TO_GGUF = {
     "lm_head.weight": "output.weight",
     "model.embed_tokens.weight": "token_embd.weight",
+    # No nested lm_head row: Gemma 4 ties its head to the embedding,
+    # so the loaded model reports one name. An untied composite needs
+    # a row here, or its head prices unassisted.
+    "model.language_model.embed_tokens.weight": "token_embd.weight",
 }
 # The decoder roots this table supports. llama-family models root at
-# "model.layers.N." and Nemotron 3.5 Lightning at
-# "backbone.layers.N." (#160). The alternation stays closed on
-# purpose. A prefix wildcard would map a vision tower's "layers.5"
-# onto the decoder's "blk.5" and price it against the wrong columns.
-# Add a root here when a family needs one.
+# "model.layers.N.", Nemotron 3.5 Lightning at "backbone.layers.N."
+# (#160), and a composite checkpoint nests its decoder at
+# "model.language_model.layers.N." (Gemma 4 31B, #423). The
+# alternation stays closed on purpose. A prefix wildcard would map a
+# vision tower's "layers.5" onto the decoder's "blk.5" and price it
+# against the wrong columns. Gemma 4's tower roots at
+# "model.vision_tower.encoder.layers.N.", which every root here
+# rejects. `gguf.TensorNameMap` carries no "language_model" template:
+# its converter strips the nesting before it maps, so the root joins
+# here and not there.
 #
 # The closed alternation also keeps the "mixer." suffixes safe. Three
 # families spell one of them for a different tensor. phi2 roots at
 # "transformer.h.N." and jina at "encoder.layers.N.", and both read
 # "mixer.out_proj" as the attention output. plamo2 roots at a doubled
 # "model.layers.layers.N." and reads "mixer.in_proj" as the SSM input.
-# All three roots fail this pattern, so no name here maps to two
-# meanings. Check that again before adding a root.
-_LAYER_PARAM = re.compile(r"^(?:model|backbone)\.layers\.(\d+)\.(.+)\.weight$")
+# All three of those roots fail this pattern, so no name here maps
+# to two meanings. Check that again before adding a root. The #423
+# root addition re-ran the check, and all three still fail.
+_ROOTS = r"(?:model|backbone|model\.language_model)"
+_LAYER_PARAM = re.compile(rf"^{_ROOTS}\.layers\.(\d+)\.(.+)\.weight$")
 # The routed-expert index, spelled between ".experts." and the
 # projection by every family the domain groups (#160, #161).
 _EXPERT_INDEX = re.compile(r"\.experts\.(\d+)\.")
 # A fused expert stack, as the loaded module reports it. It is a
 # raw 3D parameter rather than a Linear, so it carries no ".weight"
 # suffix and no ".experts.N." index (#202).
-_FUSED_PARAM = re.compile(r"^(?:model|backbone)\.layers\.(\d+)\.(.+)$")
+_FUSED_PARAM = re.compile(rf"^{_ROOTS}\.layers\.(\d+)\.(.+)$")
 # A fused expert stack shapes as (experts, rows, columns). Any other
 # rank under a fused name is a layout mismatch.
 _FUSED_STACK_DIMS = 3
@@ -421,9 +434,12 @@ def _zero_coverage_message(
 ) -> str:
     """Report why an imatrix covered no parameter.
 
-    Four causes reach the same empty result. Naming the file alone
-    sends an operator to regenerate a correct matrix, which costs
-    GPU hours and fails the same way. The counts point at the cause.
+    Four causes reach the same empty result, and the loop tallies
+    each. Naming the file alone sends an operator to regenerate a
+    correct matrix, which costs GPU hours and fails the same way. An
+    unmapped decoder root lands in the first count (#423 nested its
+    decoder and every name reported unmapped until the root joined
+    the table). The counts point at the cause.
     The fused cause is a rule, not a defect: this reader prices the
     expert stacks unassisted (ADR-0026), and the q0 reader carries
     their assisted fit (ADR-0018, 2026-08-21 amendment).
@@ -435,10 +451,7 @@ def _zero_coverage_message(
     Returns:
         The message, counting the parameters under each cause.
     """
-    unmapped = 0
-    fused = 0
-    absent = 0
-    misaligned = 0
+    unmapped = fused = absent = misaligned = 0
     for name, rows in rows_by_param.items():
         resolved = _resolve_name(name)
         if resolved is None:
