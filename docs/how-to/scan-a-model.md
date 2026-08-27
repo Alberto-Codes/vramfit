@@ -279,7 +279,7 @@ uv run python scripts/frame_calibration.py \
 The script wraps ~512-token blocks in the checkpoint's own chat
 template. It refuses a vocabulary where a frame marker is not one
 special id, and refuses prose that itself encodes to special ids.
-Then pass the framed file as `--calibration`. Three rules keep the
+Then pass the framed file as `--calibration`. Four rules keep the
 numbers comparable:
 
 1. The frame holds constant across the reference, every arm, and

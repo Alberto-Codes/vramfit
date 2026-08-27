@@ -66,10 +66,12 @@ def build_framed_text(tokenizer: Any, prose: str, block_tokens: int) -> str:
     def encode(text: str) -> list[int]:
         return tokenizer(text, add_special_tokens=False).input_ids
 
+    special_ids = set(tokenizer.all_special_ids)
     for marker in FRAME_MARKERS:
-        if len(encode(marker)) != 1:
+        ids = encode(marker)
+        if len(ids) != 1 or ids[0] not in special_ids:
             raise ValueError(
-                f"frame marker {marker!r} is not one id in this vocabulary"
+                f"frame marker {marker!r} is not one special id in this vocabulary"
             )
     frame_len = len(encode(FRAME_PREFIX)) + len(encode(FRAME_SUFFIX))
     chunk_len = block_tokens - frame_len
@@ -111,7 +113,12 @@ def main() -> int:
     args.out.write_text(framed, encoding="utf-8")
 
     ids = tokenizer(framed, add_special_tokens=False).input_ids
-    bos_id = tokenizer.bos_token_id
+    bos_id = tokenizer("<bos>", add_special_tokens=False).input_ids[0]
+    if tokenizer.bos_token_id is not None and bos_id != tokenizer.bos_token_id:
+        print(
+            f"FAIL: '<bos>' encodes to {bos_id}, bos_token_id is {tokenizer.bos_token_id}"
+        )
+        return 1
     n_blocks = framed.count(FRAME_PREFIX)
     n_bos = sum(1 for i in ids if i == bos_id)
     prose_tokens = len(tokenizer(prose, add_special_tokens=False).input_ids)
