@@ -14,9 +14,9 @@ approximate: instruments slice a raw token stream, so windows cross
 block boundaries. State that convention beside every published
 number.
 
-The script verifies its output. It re-encodes the framed file with a
-plain ``tokenizer(text)`` call — the same call the scan meter makes —
-and reports block count, token totals, and frame-token presence.
+The script verifies its output. It checks each frame marker encodes
+to one special id, re-encodes the framed file, and reports block
+count and token totals.
 
 Examples:
     Build a framed file and verify it:
@@ -42,6 +42,7 @@ FRAME_PREFIX = (
     "<channel|>"
 )
 FRAME_SUFFIX = "<turn|>\n"
+FRAME_MARKERS = ("<bos>", "<|turn>", "<turn|>", "<|channel>", "<channel|>")
 DEFAULT_BLOCK_TOKENS = 512
 
 
@@ -57,21 +58,29 @@ def build_framed_text(tokenizer: Any, prose: str, block_tokens: int) -> str:
         The framed calibration text.
 
     Raises:
-        ValueError: If the prose contains a frame marker, or the frame
-            alone reaches ``block_tokens``.
+        ValueError: If a frame marker is not one special id in the
+            vocabulary, the prose encodes to a special id, the prose
+            is empty, or the frame alone reaches ``block_tokens``.
     """
-    for marker in ("<bos>", "<|turn>", "<turn|>", "<|channel>", "<channel|>"):
-        if marker in prose:
-            raise ValueError(f"prose contains frame marker {marker!r}")
 
     def encode(text: str) -> list[int]:
         return tokenizer(text, add_special_tokens=False).input_ids
 
+    for marker in FRAME_MARKERS:
+        if len(encode(marker)) != 1:
+            raise ValueError(
+                f"frame marker {marker!r} is not one id in this vocabulary"
+            )
     frame_len = len(encode(FRAME_PREFIX)) + len(encode(FRAME_SUFFIX))
     chunk_len = block_tokens - frame_len
     if chunk_len < 2:  # noqa: PLR2004 - one next-token prediction needs two
         raise ValueError(f"frame ({frame_len} tokens) leaves no room in {block_tokens}")
     prose_ids = encode(prose)
+    if not prose_ids:
+        raise ValueError("prose is empty")
+    stray = sorted(set(prose_ids) & set(tokenizer.all_special_ids))
+    if stray:
+        raise ValueError(f"prose encodes to special ids {stray}")
     blocks = []
     for start in range(0, len(prose_ids), chunk_len):
         chunk = tokenizer.decode(prose_ids[start : start + chunk_len])
@@ -85,7 +94,12 @@ def main() -> int:
     parser.add_argument("--model", required=True, help="tokenizer checkpoint path")
     parser.add_argument("--text", required=True, type=Path, help="raw calibration text")
     parser.add_argument("--out", required=True, type=Path, help="framed output path")
-    parser.add_argument("--block-tokens", type=int, default=DEFAULT_BLOCK_TOKENS)
+    parser.add_argument(
+        "--block-tokens",
+        type=int,
+        default=DEFAULT_BLOCK_TOKENS,
+        help="tokens each framed block targets",
+    )
     args = parser.parse_args()
 
     # Import after argparse errors, so `--help` needs no scan extra.
