@@ -194,8 +194,10 @@ below remain, the sub-4-bit pricing claims do not.
 
     !!! warning "A `stack` scan packs its expert stacks, not every group"
 
-        The GGUF backend maps two group shapes (ADR-0012 decision 2,
-        amended 2026-08-12). A layer group becomes `blk.<n>.` across
+        The GGUF backend maps layer groups, routed-expert stacks,
+        and layer-class groups, beside the dedicated embedding and
+        output-head flags (ADR-0012 decision 2, as amended). Two
+        shapes matter here. A layer group becomes `blk.<n>.` across
         the three naming families above and any prefix —
         `model.layers.<n>`, the Nemotron 3.5 Lightning target's
         `backbone.layers.<n>`, and Gemma 4's nested

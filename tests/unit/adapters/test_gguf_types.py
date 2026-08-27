@@ -398,8 +398,10 @@ def test_token_embedding_type_maps_every_embedding_naming_family(
     # `--token-embedding-type` binds one tensor whatever the
     # checkpoint calls the group. Missing a name refuses the whole
     # recipe, because the group then reaches the pattern branch.
-    # Each embedding rides its own family's layer root, the shape
-    # the checkpoint really produces.
+    # Each embedding rides a layer root its checkpoint carries. The
+    # reconciled `model.embeddings` rides the Nemotron root it
+    # reconciles from — reconciliation renames the embedding group,
+    # not the layer root.
     recipe = make_recipe((group, 8), (layer_group, 4))
 
     assert token_embedding_type(recipe) == "q8_0"
