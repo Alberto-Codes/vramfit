@@ -175,6 +175,40 @@ def stack_pack_recipe() -> Recipe:
     )
 
 
+def gemma_pack_recipe() -> Recipe:
+    """A decoder recipe shaped like the Gemma 4 target.
+
+    Every name is one the checkpoint really carries: the multimodal
+    shell nests the decoder, so the embedding is
+    `model.language_model.embed_tokens` and layers are
+    `model.language_model.layers.<n>` (#423). The embedding name
+    did not map under the pre-#438 backend.
+    """
+    return replace(
+        sample_pack_recipe(),
+        assignments=(
+            Assignment(
+                group="model.language_model.embed_tokens",
+                bits=8,
+                bytes=1_000,
+                damage=0.001,
+            ),
+            Assignment(
+                group="model.language_model.layers.0",
+                bits=8,
+                bytes=1_000,
+                damage=0.001,
+            ),
+            Assignment(
+                group="model.language_model.layers.1",
+                bits=4,
+                bytes=500,
+                damage=0.01,
+            ),
+        ),
+    )
+
+
 def excluded_pack_recipe() -> Recipe:
     base = sample_pack_recipe()
     return replace(
@@ -447,6 +481,20 @@ class TestRecipePackerContract:
         packer.convert()
 
         result = packer.pack(stack_pack_recipe())
+
+        assert result.token_embedding_type == "q8_0"  # noqa: S105 - a ggml type name, not a secret
+
+    def test_pack_gemma_recipe_binds_the_nested_embedding_group(
+        self, build, tmp_path
+    ) -> None:
+        # Gemma 4 nests the decoder in a multimodal shell, so the
+        # embedding is `model.language_model.embed_tokens`. Missing
+        # that name refuses the whole recipe, because `--pure` would
+        # drop the embedding to the floor otherwise (#423).
+        packer: RecipePacker = build(tmp_path)
+        packer.convert()
+
+        result = packer.pack(gemma_pack_recipe())
 
         assert result.token_embedding_type == "q8_0"  # noqa: S105 - a ggml type name, not a secret
 

@@ -414,6 +414,15 @@
     sanctioned that trade here, and #353 carries the wider
     question that covers its class. #305 carries the
     override-count residual, and #204 carries the scan side.
+- **Amendment (2026-08-27, issue #423):** decision 2's embedding
+  name set gains a fourth name, `model.language_model.embed_tokens`.
+  Gemma 4 wraps its decoder in a multimodal shell, and the scan
+  emits the nested name. The 2026-08-20 set carried
+  `model.embed_tokens`, `backbone.embeddings`, and
+  `model.embeddings` only, so the group refused as unmapped instead
+  of driving `--token-embedding-type`. The scan side has mapped the
+  same name since #435. The maintainer ruled the addition in
+  session on #423, and PR #438 carries the change.
 
 ## Context
 
