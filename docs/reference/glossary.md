@@ -129,6 +129,18 @@ change.
 :   The text run through the model to measure damage. Damage values are only
     comparable within one calibration set.
 
+**Model-turn frame**
+:   A fixed chat-template wrapper around every calibration or
+    evaluation chunk: the target's own user turn plus model-turn
+    generation prompt, with the chunk in the answer position. A
+    **channel-locked** checkpoint prices raw prose at degenerate
+    perplexity and the same prose inside this frame at sane values
+    (Gemma 4 31B IT-QAT, #423). Such a target measures in-frame on
+    both sides of every comparison, and the frame text is recorded
+    with the map. Built by `scripts/frame_calibration.py`. Not
+    "measurement frame" — that term names the whole apparatus, and
+    the model-turn frame is one property of its calibration text.
+
 **Marginal scanning**
 :   Measuring one group at a time while the rest stays at reference
     precision. Implies the **additivity assumption**: total recipe damage ≈
