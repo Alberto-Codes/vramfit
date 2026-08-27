@@ -6,7 +6,7 @@ map to K-quant types (the full llama.cpp capability set since
 ADR-0013) and nominal 16 maps to `f16`, the passthrough a recipe
 holds an unmeasured group at (ADR-0029 decision 4), layer groups
 map to escaped `blk.<n>.` regex patterns
-across the three naming families the scan produces, routed-expert
+across the naming families the scan produces, routed-expert
 stack groups map to their fused `blk.<n>.ffn_<proj>_exps.` tensor
 (#159, #161) through their own type table — k-quant super-blocks do
 not divide the stack rows, and nominal 3 refuses over the empty
@@ -19,7 +19,10 @@ prefix (ADR-0022, #365), excluded pairs map to the full GGUF
 tensor names ``--exclude-weights`` deletes by substring
 (ADR-0023),
 and the embedding and `lm_head` groups map to the quantizer's
-dedicated embedding and output flags. The backend's own runtime
+dedicated embedding and output flags. The embedding name set
+carries four naming families — llama, the two Nemotron-H roots,
+and Gemma 4's multimodal `model.language_model.embed_tokens`
+(#423). The backend's own runtime
 name is the domain's `LLAMA_CPP` constant, so the table key and
 the pack check cannot drift apart. A
 recipe recorded for a foreign runtime, or anything the table cannot
@@ -118,10 +121,17 @@ GGUF_RUNTIME: Final[str] = LLAMA_CPP
 # families. llama-family checkpoints say `model.embed_tokens`.
 # Nemotron-H says `backbone.embeddings`, and ADR-0029's size source
 # reconciles that root to `model.embeddings` (the 2026-08-20
-# amendment). All three drive the one `--token-embedding-type` flag,
-# so the backend needs the names, not a pattern.
+# amendment). Gemma 4 wraps the decoder in a multimodal shell and
+# says `model.language_model.embed_tokens` — the scan side maps the
+# same name (#423). All four drive the one `--token-embedding-type`
+# flag, so the backend needs the names, not a pattern.
 EMBEDDING_GROUPS: Final[frozenset[str]] = frozenset(
-    {"model.embed_tokens", "backbone.embeddings", "model.embeddings"}
+    {
+        "model.embed_tokens",
+        "backbone.embeddings",
+        "model.embeddings",
+        "model.language_model.embed_tokens",
+    }
 )
 
 OUTPUT_GROUP: Final[str] = "lm_head"

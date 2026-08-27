@@ -384,8 +384,13 @@ def test_tensor_overrides_reject_an_expert_projection_outside_the_stack_table() 
 
 @pytest.mark.parametrize(
     "group",
-    ["model.embed_tokens", "backbone.embeddings", "model.embeddings"],
-    ids=["llama", "nemotron", "nemotron-reconciled"],
+    [
+        "model.embed_tokens",
+        "backbone.embeddings",
+        "model.embeddings",
+        "model.language_model.embed_tokens",
+    ],
+    ids=["llama", "nemotron", "nemotron-reconciled", "gemma4-multimodal"],
 )
 def test_token_embedding_type_maps_every_embedding_naming_family(group: str) -> None:
     # `--token-embedding-type` binds one tensor whatever the
