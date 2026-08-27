@@ -107,29 +107,46 @@ def main() -> int:
     # Import after argparse errors, so `--help` needs no scan extra.
     from transformers import AutoTokenizer  # noqa: PLC0415
 
-    tokenizer = AutoTokenizer.from_pretrained(args.model)
-    prose = args.text.read_text(encoding="utf-8")
-    framed = build_framed_text(tokenizer, prose, args.block_tokens)
-    args.out.write_text(framed, encoding="utf-8")
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(args.model)
+        prose = args.text.read_text(encoding="utf-8")
+        framed = build_framed_text(tokenizer, prose, args.block_tokens)
+    except (ValueError, OSError) as err:
+        print(f"error: {err}", file=sys.stderr)
+        return 1
 
+    # Verify the re-encode before any write, so a failure leaves no file.
     ids = tokenizer(framed, add_special_tokens=False).input_ids
     bos_id = tokenizer("<bos>", add_special_tokens=False).input_ids[0]
     if tokenizer.bos_token_id is not None and bos_id != tokenizer.bos_token_id:
         print(
-            f"FAIL: '<bos>' encodes to {bos_id}, bos_token_id is {tokenizer.bos_token_id}"
+            f"error: '<bos>' encodes to {bos_id}, bos_token_id is"
+            f" {tokenizer.bos_token_id}",
+            file=sys.stderr,
         )
         return 1
     n_blocks = framed.count(FRAME_PREFIX)
     n_bos = sum(1 for i in ids if i == bos_id)
+    if n_bos != n_blocks:
+        print(
+            f"error: {n_bos} bos ids against {n_blocks} blocks — specials"
+            " did not parse",
+            file=sys.stderr,
+        )
+        return 1
+
+    try:
+        args.out.write_text(framed, encoding="utf-8")
+    except OSError as err:
+        print(f"error: {err}", file=sys.stderr)
+        return 1
+
     prose_tokens = len(tokenizer(prose, add_special_tokens=False).input_ids)
     print(f"blocks: {n_blocks}")
     print(f"prose tokens in: {prose_tokens}")
     print(f"framed tokens out (plain re-encode): {len(ids)}")
     print(f"bos ids in re-encode: {n_bos}")
     print(f"mean block tokens: {len(ids) / n_blocks:.1f} (target {args.block_tokens})")
-    if n_bos != n_blocks:
-        print("FAIL: bos count differs from block count — specials did not parse")
-        return 1
     print("OK: every block's frame re-encodes to special ids")
     return 0
 
