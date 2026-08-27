@@ -129,6 +129,23 @@ change.
 :   The text run through the model to measure damage. Damage values are only
     comparable within one calibration set.
 
+**Model-turn frame**
+:   A fixed chat-template wrapper around every calibration or
+    evaluation chunk: the target's own user turn plus model-turn
+    generation prompt, with the chunk in the answer position. A
+    channel-locked target measures in-frame on both sides of every
+    comparison, and the frame text is recorded with the map. Built
+    by `scripts/frame_calibration.py`. Not "measurement frame" —
+    that term names the whole apparatus, and the model-turn frame
+    is one property of its calibration text.
+
+**Channel-locked**
+:   A checkpoint that prices raw prose at degenerate perplexity and
+    the same prose inside its serving frame at sane values. One
+    instrument measured Gemma 4 31B IT-QAT at PPL 932–3,849 raw and
+    26.2–75.0 in-frame (the HF meter, #423). Measure such a target
+    inside a **model-turn frame**.
+
 **Marginal scanning**
 :   Measuring one group at a time while the rest stays at reference
     precision. Implies the **additivity assumption**: total recipe damage ≈

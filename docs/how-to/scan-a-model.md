@@ -261,6 +261,41 @@ that matches your actual workload. Re-scan when your workload changes
 character — the map records its calibration provenance, and damage
 values are not comparable across calibration sets.
 
+### Channel-locked checkpoints need a model-turn frame
+
+Some instruct checkpoints refuse raw prose. Gemma 4 31B IT-QAT
+prices raw text at PPL ≈ 3,000 and the same text inside its own
+answer channel at PPL 26–75 (#423). Scanning such a target on raw
+text prices every cell against a distribution no user ever sees.
+
+Wrap the calibration text in a
+[model-turn frame](../reference/glossary.md) first:
+
+```console
+uv run python scripts/frame_calibration.py \
+  --model ./model --text calibration.txt --out calibration-framed.txt
+```
+
+The script wraps ~512-token blocks in the checkpoint's own chat
+template. It refuses a vocabulary where a frame marker is not one
+special id, and refuses prose that itself encodes to special ids.
+Then pass the framed file as `--calibration`. Four rules keep the
+numbers comparable:
+
+1. The frame holds constant across the reference, every arm, and
+   any baseline. Record the frame text beside the map.
+2. Instruments slice a raw token stream, so windows cross block
+   boundaries. State that convention beside every published number.
+3. `llama-imatrix` needs `--parse-special` to see the frame.
+   `llama-perplexity` cannot parse special tokens — do not publish
+   its numbers on framed text.
+4. Verify the frame against the GGUF vocabulary too, with
+   `llama-tokenize`. A conversion can mis-type a marker as a normal
+   token, and `--parse-special` then spells it out as prose. The
+   Gemma 4 bf16 conversion shipped `<|turn>` as a normal token
+   (#423). The token counts must match the tokenizer-side count
+   plus one prepended BOS.
+
 ## Cost expectations
 
 A scan is `O(groups x precisions)` calibration passes over perturbed

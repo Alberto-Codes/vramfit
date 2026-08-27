@@ -1,0 +1,155 @@
+"""Wrap calibration prose in a fixed model-turn frame.
+
+A channel-locked instruct checkpoint prices raw prose at degenerate
+perplexity and the same prose inside its serving frame at sane values
+(vramfit issue #423). This script builds the framed calibration file
+for such a target. It wraps the prose in repeated blocks. Each block
+renders one complete conversation: a fixed user turn, then the model
+turn's generation prompt, then a prose chunk as the answer, then the
+turn close.
+
+The block targets a fixed token count, 512 by default, so a
+512-token instrument window contains a frame boundary when blocks
+stay at or under the target. Alignment stays approximate:
+instruments slice a raw token stream, so windows cross block
+boundaries. State that convention beside every published number.
+
+The script verifies its output. It checks each frame marker encodes
+to one special id, re-encodes the framed file, and reports block
+count and token totals.
+
+Examples:
+    Build a framed file and verify it:
+
+    ```console
+    $ uv run python scripts/frame_calibration.py --model ./model
+        --text calibration.txt --out calibration-framed.txt
+    ```
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+from typing import Any
+
+FRAME_PREFIX = (
+    "<bos><|turn>user\n"
+    "Continue the passage.<turn|>\n"
+    "<|turn>model\n"
+    "<|channel>thought\n"
+    "<channel|>"
+)
+FRAME_SUFFIX = "<turn|>\n"
+FRAME_MARKERS = ("<bos>", "<|turn>", "<turn|>", "<|channel>", "<channel|>")
+DEFAULT_BLOCK_TOKENS = 512
+
+
+def build_framed_text(tokenizer: Any, prose: str, block_tokens: int) -> str:
+    """Assemble framed blocks that each target ``block_tokens`` tokens.
+
+    Args:
+        tokenizer: The target model's tokenizer.
+        prose: The raw calibration text.
+        block_tokens: Token count each block targets.
+
+    Returns:
+        The framed calibration text.
+
+    Raises:
+        ValueError: If a frame marker is not one special id in the
+            vocabulary, the prose encodes to a special id, the prose
+            is empty, or the frame alone reaches ``block_tokens``.
+    """
+
+    def encode(text: str) -> list[int]:
+        return tokenizer(text, add_special_tokens=False).input_ids
+
+    special_ids = set(tokenizer.all_special_ids)
+    for marker in FRAME_MARKERS:
+        ids = encode(marker)
+        if len(ids) != 1 or ids[0] not in special_ids:
+            raise ValueError(
+                f"frame marker {marker!r} is not one special id in this vocabulary"
+            )
+    frame_len = len(encode(FRAME_PREFIX)) + len(encode(FRAME_SUFFIX))
+    chunk_len = block_tokens - frame_len
+    if chunk_len < 2:  # noqa: PLR2004 - one next-token prediction needs two
+        raise ValueError(f"frame ({frame_len} tokens) leaves no room in {block_tokens}")
+    prose_ids = encode(prose)
+    if not prose_ids:
+        raise ValueError("prose is empty")
+    stray = sorted(set(prose_ids) & set(tokenizer.all_special_ids))
+    if stray:
+        raise ValueError(f"prose encodes to special ids {stray}")
+    blocks = []
+    for start in range(0, len(prose_ids), chunk_len):
+        chunk = tokenizer.decode(prose_ids[start : start + chunk_len])
+        blocks.append(f"{FRAME_PREFIX}{chunk}{FRAME_SUFFIX}")
+    return "".join(blocks)
+
+
+def main() -> int:
+    """Build the framed file, verify the re-encode, and report."""
+    parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    parser.add_argument("--model", required=True, help="tokenizer checkpoint path")
+    parser.add_argument("--text", required=True, type=Path, help="raw calibration text")
+    parser.add_argument("--out", required=True, type=Path, help="framed output path")
+    parser.add_argument(
+        "--block-tokens",
+        type=int,
+        default=DEFAULT_BLOCK_TOKENS,
+        help="tokens each framed block targets",
+    )
+    args = parser.parse_args()
+
+    # Import after argparse errors, so `--help` needs no scan extra.
+    from transformers import AutoTokenizer  # noqa: PLC0415
+
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(args.model)
+        prose = args.text.read_text(encoding="utf-8")
+        framed = build_framed_text(tokenizer, prose, args.block_tokens)
+    except (ValueError, OSError) as err:
+        print(f"error: {err}", file=sys.stderr)
+        return 1
+
+    # Verify the re-encode before any write, so a failure leaves no file.
+    ids = tokenizer(framed, add_special_tokens=False).input_ids
+    bos_id = tokenizer("<bos>", add_special_tokens=False).input_ids[0]
+    if tokenizer.bos_token_id is not None and bos_id != tokenizer.bos_token_id:
+        print(
+            f"error: '<bos>' encodes to {bos_id}, bos_token_id is"
+            f" {tokenizer.bos_token_id}",
+            file=sys.stderr,
+        )
+        return 1
+    n_blocks = framed.count(FRAME_PREFIX)
+    n_bos = sum(1 for i in ids if i == bos_id)
+    if n_bos != n_blocks:
+        print(
+            f"error: {n_bos} bos ids against {n_blocks} blocks — specials"
+            " did not parse",
+            file=sys.stderr,
+        )
+        return 1
+
+    try:
+        args.out.write_text(framed, encoding="utf-8")
+    except OSError as err:
+        print(f"error: {err}", file=sys.stderr)
+        return 1
+
+    prose_tokens = len(tokenizer(prose, add_special_tokens=False).input_ids)
+    print(f"blocks: {n_blocks}")
+    print(f"prose tokens in: {prose_tokens}")
+    print(f"framed tokens out (plain re-encode): {len(ids)}")
+    print(f"bos ids in re-encode: {n_bos}")
+    print(f"mean block tokens: {len(ids) / n_blocks:.1f} (target {args.block_tokens})")
+    print("OK: every block's frame re-encodes to special ids")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
