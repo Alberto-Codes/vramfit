@@ -14,9 +14,10 @@ catches a missing one. #186 was a missing row, not a wrong one.
 
 The table stays deliberately narrower than `gguf`. That map carries
 287 block names under the "model" and "backbone" decoder roots at
-`gguf` 0.19.0, and the table covers 16 of them. The rest belong to families vramfit has
-never scanned. So an unmapped name is not a defect on its own, and no
-check here asserts the reverse direction over the whole map.
+`gguf` 0.19.0, and the table covers 16 of them. The rest belong to
+families vramfit has never scanned. So an unmapped name is not a
+defect on its own, and no check here asserts the reverse direction
+over the whole map.
 
 The suite is hermetic: `gguf` ships the map as data, so nothing here
 reads a model or a network. It skips where the scan extra is absent,
@@ -46,8 +47,8 @@ pytestmark = pytest.mark.unit
 LAYER = 3
 # The decoder roots the adapter supports (#177, #423). The table keys
 # on the module suffix, so each suffix is checked under every root.
-# `gguf` carries no "model.language_model" template — its converter
-# strips the nesting before it maps — so every pair under that root
+# `gguf` carries no "model.language_model" template: its converter
+# strips the nesting before it maps. So every pair under that root
 # is unbacked by construction.
 ROOTS = ("model", "backbone", "model.language_model")
 # Every module suffix the adapter's table carries, and the GGUF stem
@@ -78,12 +79,12 @@ LLAMA_SUFFIXES = tuple(s for s in MAPPED_SUFFIXES if not s.startswith("mixer."))
 # The (root, suffix) pairs the adapter answers and `gguf` does not
 # carry. The adapter keys on the suffix alone, so every row answers
 # under every root, while `gguf` carries each family's names under the
-# one root that family uses — and none at all under the nested
-# "model.language_model" root, which its converter flattens away. So
-# the adapter reaches 32 names no checkpoint spells, 16 of them under
-# the nested root. Naming them here rather than skipping them keeps
-# the suite honest: a pair that leaves this set fails, and a pair that
-# joins it fails too.
+# one root that family uses. Under the nested "model.language_model"
+# root `gguf` carries nothing, because its converter flattens the
+# nesting away. So the adapter reaches 32 names no checkpoint spells,
+# 16 of them under the nested root. Naming them here rather than
+# skipping them keeps the suite honest: a pair that leaves this set
+# fails, and a pair that joins it fails too.
 UNBACKED_PAIRS = frozenset(
     [("model", suffix) for suffix in MIXER_SUFFIXES]
     + [("backbone", suffix) for suffix in LLAMA_SUFFIXES]
@@ -239,9 +240,10 @@ def _gemma_dense_names() -> list[str]:
     gate enumerated from the GGUF header (410 tensors beside
     ``token_embd``).
     """
-    config = json.loads(
-        Path("tests/data/gemma-4-31b/config.json").read_text(encoding="utf-8")
-    )
+    fixture = Path(__file__).parents[2] / "data" / "gemma-4-31b" / "config.json"
+    config = json.loads(fixture.read_text(encoding="utf-8"))
+    # The v_proj drop below rests on this flag, so read it, not lore.
+    assert config["text_config"]["attention_k_eq_v"] is True
     layer_types = config["text_config"]["layer_types"]
     names = []
     for layer, layer_type in enumerate(layer_types):
@@ -268,20 +270,12 @@ def test_every_gemma_dense_parameter_resolves_distinctly() -> None:
 def test_the_nested_embedding_resolves_to_token_embd() -> None:
     # Gemma 4 ties its head to the embedding, so the loaded model
     # reports one name for both. The direct table answers it under
-    # the nested root the same way it answers the flat one.
+    # the nested root the same way it answers the flat one. The
+    # tower-refusal side lives in test_scan_imatrix.py, which owns
+    # adapter behavior.
     name = gguf_tensor_name("model.language_model.embed_tokens.weight")
 
     assert name == "token_embd.weight"
-
-
-def test_a_vision_tower_layer_stays_unmapped() -> None:
-    # The closed alternation exists so a tower's "layers.5" never
-    # prices against the decoder's "blk.5" columns. The name is the
-    # loaded model's own spelling — the tower wraps each projection
-    # in a "linear" module.
-    name = "model.vision_tower.encoder.layers.5.self_attn.q_proj.linear.weight"
-
-    assert gguf_tensor_name(name) is None
 
 
 @pytest.mark.parametrize("suffix", MIXER_SUFFIXES)

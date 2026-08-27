@@ -208,7 +208,7 @@ class TestGgufTensorName:
         # blk.N would price it against the decoder's columns, which
         # is the failure this module exists to refuse. An unsupported
         # root reports uncovered instead. The second name is Gemma 4
-        # 31B's tower as the loaded model spells it (#423) — the
+        # 31B's tower as the loaded model spells it (#423). The
         # nested "model.language_model.layers." root maps since that
         # campaign, and the tower still must not.
         assert gguf_tensor_name(param) is None

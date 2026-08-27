@@ -5,8 +5,8 @@ turns it into per-parameter column weights the meter can consume.
 The weight formula is ``in_sum2 / counts`` per column — the load
 formula in ``llama-quantize`` (``load_imatrix``, checkout e9fa078).
 GGUF tensor names map back to HF parameter names through a fixed
-table. Each row copies a name ``gguf.TensorNameMap`` carries, and
-the table covers the llama family, Nemotron-H-MoE (#186), and the
+table. Each row copies a name ``gguf.TensorNameMap`` carries. The
+table covers the llama family, Nemotron-H-MoE (#186), and the
 nested ``model.language_model.`` decoder root a composite
 checkpoint spells (Gemma 4 31B, #423).
 Nemotron-H spells attention, Mamba-2, the router, and the shared
@@ -131,6 +131,9 @@ _FUSED_EXPERT_TO_GGUF = {
 _DIRECT_TO_GGUF = {
     "lm_head.weight": "output.weight",
     "model.embed_tokens.weight": "token_embd.weight",
+    # No nested lm_head row: Gemma 4 ties its head to the embedding,
+    # so the loaded model reports one name. An untied composite needs
+    # a row here, or its head prices unassisted.
     "model.language_model.embed_tokens.weight": "token_embd.weight",
 }
 # The decoder roots this table supports. llama-family models root at
@@ -139,7 +142,7 @@ _DIRECT_TO_GGUF = {
 # "model.language_model.layers.N." (Gemma 4 31B, #423). The
 # alternation stays closed on purpose. A prefix wildcard would map a
 # vision tower's "layers.5" onto the decoder's "blk.5" and price it
-# against the wrong columns — Gemma 4's tower roots at
+# against the wrong columns. Gemma 4's tower roots at
 # "model.vision_tower.encoder.layers.N.", which every root here
 # rejects. `gguf.TensorNameMap` carries no "language_model" template:
 # its converter strips the nesting before it maps, so the root joins
@@ -150,8 +153,9 @@ _DIRECT_TO_GGUF = {
 # "transformer.h.N." and jina at "encoder.layers.N.", and both read
 # "mixer.out_proj" as the attention output. plamo2 roots at a doubled
 # "model.layers.layers.N." and reads "mixer.in_proj" as the SSM input.
-# All three roots fail this pattern, so no name here maps to two
-# meanings. Check that again before adding a root.
+# All three of those roots fail this pattern, so no name here maps
+# to two meanings. Check that again before adding a root. The #423
+# root addition re-ran the check, and all three still fail.
 _ROOTS = r"(?:model|backbone|model\.language_model)"
 _LAYER_PARAM = re.compile(rf"^{_ROOTS}\.layers\.(\d+)\.(.+)\.weight$")
 # The routed-expert index, spelled between ".experts." and the
