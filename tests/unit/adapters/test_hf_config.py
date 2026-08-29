@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
-from vramfit.adapters.outbound.hf_config import shape_from_config_json
+from vramfit.adapters.outbound.hf_config import (
+    config_claims_vision,
+    shape_from_config_json,
+)
 from vramfit.domain.budget import ModelShape
 
 
@@ -1000,3 +1004,70 @@ class TestModelShapeFromConfig:
 
         with pytest.raises(ValueError, match=r"config\.json: cannot parse JSON"):
             shape_from_config_json(path)
+
+
+@pytest.mark.unit
+class TestConfigClaimsVision:
+    def test_vision_config_present_claims_vision(self, tmp_path) -> None:
+        path = tmp_path / "config.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "text_config": {
+                        "num_hidden_layers": 2,
+                        "num_key_value_heads": 2,
+                        "num_attention_heads": 4,
+                        "head_dim": 4,
+                    },
+                    "vision_config": {"hidden_size": 1152},
+                }
+            )
+        )
+
+        assert config_claims_vision(path) is True
+
+    def test_vision_config_absent_claims_no_vision(self, tmp_path) -> None:
+        path = tmp_path / "config.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "num_hidden_layers": 2,
+                    "num_key_value_heads": 2,
+                    "num_attention_heads": 4,
+                    "hidden_size": 16,
+                }
+            )
+        )
+
+        assert config_claims_vision(path) is False
+
+    def test_invalid_json_raises_naming_the_file(self, tmp_path) -> None:
+        path = tmp_path / "config.json"
+        path.write_text("{not json")
+
+        with pytest.raises(ValueError, match=r"config\.json: invalid JSON"):
+            config_claims_vision(path)
+
+    def test_duplicate_key_raises_like_the_shape_read(self, tmp_path) -> None:
+        # The claim read shares the shape read's refusals, so the two
+        # reads of one file cannot disagree on validity (#283).
+        path = tmp_path / "config.json"
+        path.write_text('{"vision_config": {}, "vision_config": {}}')
+
+        with pytest.raises(ValueError, match="twice"):
+            config_claims_vision(path)
+
+    def test_null_vision_config_claims_no_vision(self, tmp_path) -> None:
+        # The claim is a declared object — a null would otherwise
+        # license a vision line the card never priced.
+        path = tmp_path / "config.json"
+        path.write_text('{"vision_config": null}')
+
+        assert config_claims_vision(path) is False
+
+    def test_real_gemma_config_claims_vision(self) -> None:
+        # The file ADR-0030 measured — the claim read pins to the
+        # record's own target.
+        config = Path(__file__).parents[2] / "data" / "gemma-4-31b" / "config.json"
+
+        assert config_claims_vision(config) is True

@@ -3,7 +3,9 @@
 Both commands resolve the attention geometry from exactly one source
 — ``--model-config`` through the `ModelShapeSource` port, or the
 manual ``--attn-layers --kv-heads --head-dim`` triple — and validate
-the same ``--kv-dtype`` set. ``plan`` shares the size-option rule.
+the same ``--kv-dtype`` set. Both resolve ``--vision-line`` the same
+way: the card's vision claim licenses the subtraction (ADR-0030
+decision 3). ``plan`` shares the size-option rule.
 Each rule lives here once.
 
 Examples:
@@ -27,7 +29,7 @@ from pathlib import Path
 
 import typer
 
-from vramfit.adapters.outbound.hf_config import HfConfigFile
+from vramfit.adapters.outbound.hf_config import HfConfigFile, config_claims_vision
 from vramfit.domain.budget import (
     KV_DTYPE_BYTES,
     ModelShape,
@@ -115,6 +117,68 @@ def resolve_shape(
     return ModelShape.uniform(
         attn_layers=attn_layers, kv_heads=kv_heads, head_dim=head_dim
     )
+
+
+def resolve_vision_line(
+    model_config: Path | None, vision_line: str | None
+) -> tuple[int, str | None]:
+    """Resolve the vision line the ledger subtracts (ADR-0030).
+
+    The model card's claim licenses the subtraction: the ledger
+    subtracts the measured vision line only when the card claims
+    vision. A card that claims no vision subtracts nothing and
+    states the absence (decision 3) — a supplied ``--vision-line``
+    does not apply there, and the note says so. The manual shape
+    triple carries no card, so it admits no ``--vision-line``.
+
+    ADR-0030 leaves open whether the budget warns or refuses on a
+    vision-claiming card with no measured line. This resolver
+    subtracts nothing there and states the gap, deciding neither.
+
+    Args:
+        model_config: The ``--model-config`` path, or None.
+        vision_line: The ``--vision-line`` size string, or None.
+
+    Returns:
+        The bytes to subtract, and a note detail for the ledger's
+        ``vision`` label — None when the card claims vision and the
+        line subtracts, or when no card exists.
+
+    Raises:
+        typer.BadParameter: If ``--vision-line`` is malformed, or
+            arrives with the manual shape triple.
+        typer.Exit: With code 1 when the config cannot be read.
+    """
+    # Reject a malformed size before any IO, as the sibling size
+    # options do.
+    line_bytes = (
+        None if vision_line is None else parse_size_option(vision_line, "--vision-line")
+    )
+    if model_config is None:
+        if line_bytes is not None:
+            raise typer.BadParameter(
+                "--vision-line: needs --model-config — the card's vision "
+                "claim licenses the subtraction (ADR-0030)"
+            )
+        return 0, None
+    try:
+        claims = config_claims_vision(model_config)
+    except (OSError, ValueError) as exc:
+        # `resolve_shape` already read this file through the same
+        # loader, so this fires only when the file changes between
+        # the two reads.
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    if not claims:
+        if line_bytes is not None:
+            return 0, (
+                "none claimed — nothing subtracted, --vision-line does "
+                "not apply (ADR-0030)"
+            )
+        return 0, "none claimed — nothing subtracted"
+    if line_bytes is None:
+        return 0, "claimed — no --vision-line supplied, nothing subtracted"
+    return line_bytes, None
 
 
 def kv_detail(shape: ModelShape, kv_dtype: str) -> str:

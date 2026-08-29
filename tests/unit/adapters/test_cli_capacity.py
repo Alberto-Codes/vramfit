@@ -327,3 +327,118 @@ def test_capacity_malformed_vram_rejected(tmp_path: Path) -> None:
 
     assert result.exit_code == 2
     assert "--vram" in result.output
+
+
+def write_composite_config(tmp_path: Path, claims_vision: bool) -> Path:
+    # The same 64 bytes/token geometry as SHAPE_OPTIONS, declared by
+    # a composite config so the card can claim vision.
+    decoder = {
+        "num_hidden_layers": 2,
+        "num_key_value_heads": 2,
+        "num_attention_heads": 4,
+        "head_dim": 4,
+    }
+    config: dict = {"text_config": decoder}
+    if claims_vision:
+        config["vision_config"] = {"hidden_size": 1152}
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps(config))
+    return path
+
+
+def test_capacity_vision_line_subtracts_from_the_headroom(tmp_path: Path) -> None:
+    recipe = save_capacity_recipe(tmp_path)
+    config = write_composite_config(tmp_path, claims_vision=True)
+
+    result = runner.invoke(
+        app,
+        [
+            "capacity",
+            str(recipe),
+            "--vram",
+            "24GiB",
+            "--overhead",
+            "3GiB",
+            "--vision-line",
+            "1GiB",
+            "--model-config",
+            str(config),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "- vision line         1.00 GiB  (measured, ADR-0030)" in result.output
+    assert "= KV headroom         5.00 GiB" in result.output
+    # 5 GiB over 64 bytes/token, floored.
+    assert f"max context           {5 * 2**30 // 64} tokens  (1 sequence)" in (
+        result.output
+    )
+
+
+def test_capacity_vision_claim_without_a_line_states_the_gap(tmp_path: Path) -> None:
+    recipe = save_capacity_recipe(tmp_path)
+    config = write_composite_config(tmp_path, claims_vision=True)
+
+    result = runner.invoke(
+        app, ["capacity", str(recipe), "--model-config", str(config)]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert (
+        "vision                claimed — no --vision-line supplied, "
+        "nothing subtracted" in result.output
+    )
+
+
+def test_capacity_no_vision_claim_states_the_absence(tmp_path: Path) -> None:
+    recipe = save_capacity_recipe(tmp_path)
+    config = write_composite_config(tmp_path, claims_vision=False)
+
+    result = runner.invoke(
+        app, ["capacity", str(recipe), "--model-config", str(config)]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "vision                none claimed — nothing subtracted" in result.output
+
+
+def test_capacity_vision_line_without_a_claim_states_it_does_not_apply(
+    tmp_path: Path,
+) -> None:
+    # A card that claims no vision subtracts nothing and states the
+    # absence (ADR-0030 decision 3) — the supplied option draws a
+    # note, and the headroom keeps all three original terms.
+    recipe = save_capacity_recipe(tmp_path)
+    config = write_composite_config(tmp_path, claims_vision=False)
+
+    result = runner.invoke(
+        app,
+        [
+            "capacity",
+            str(recipe),
+            "--vram",
+            "24GiB",
+            "--overhead",
+            "3GiB",
+            "--vision-line",
+            "1GiB",
+            "--model-config",
+            str(config),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "--vision-line does not apply" in result.output
+    assert "= KV headroom         6.00 GiB" in result.output
+
+
+def test_capacity_vision_line_with_a_manual_shape_rejected(tmp_path: Path) -> None:
+    recipe = save_capacity_recipe(tmp_path)
+
+    result = runner.invoke(
+        app,
+        ["capacity", str(recipe), "--vision-line", "1GiB", *SHAPE_OPTIONS],
+    )
+
+    assert result.exit_code == 2
+    assert "needs --model-config" in result.output

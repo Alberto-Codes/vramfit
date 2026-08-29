@@ -15,8 +15,11 @@ The plan step optimizes against a *weight budget*, which is what's left of
 the card after everything else takes its cut.
 
 ```
-weight_budget = vram_total − kv_cache − runtime_overhead
+weight_budget = vram_total − kv_cache − runtime_overhead − vision_line
 ```
+
+The vision line is zero for a text-only card — the ledger's fourth
+term exists only when the model card claims vision (see below).
 
 ## Weights
 
@@ -96,7 +99,7 @@ recipe's payoff — the VRAM its compression frees — deserves a readout of
 its own (#422). Invert the ledger:
 
 ```
-kv_headroom  = vram_total − weight_bytes(recipe) − runtime_overhead
+kv_headroom  = vram_total − weight_bytes(recipe) − runtime_overhead − vision_line
 max_context  = the largest context whose KV cache fits kv_headroom
 max_sequences = kv_headroom ÷ kv_cache_bytes(shape, context, 1 sequence)
 ```
@@ -125,6 +128,24 @@ prints all three from a packed recipe.
 
 CUDA context, allocator workspace, activation scratch, fragmentation.
 Planning figure: **1.5–2 GiB** on a 24 GiB card until measured.
+
+## Vision line
+
+A multimodal checkpoint serves images through its projector sidecar,
+and the sidecar costs VRAM the ledger must reserve: projector
+weights, a compute reserve, and an image-encode transient. The line
+is a *serving measurement*, never the mmproj file size — on Gemma 4
+31B the file is 1.118 GiB and the measured serving cost is
+**1,600 MiB**, five ladder rungs of displaced global KV
+([ADR-0030](../adr/0030-vision-budget-sidecar.md) decision 3). The
+budget subtracts the line only when the model card claims vision
+(`vision_config` in its config); a card that claims no vision
+subtracts nothing, and the ledger states the absence. The caller
+supplies the measurement (`--vision-line`) — whether an unmeasured
+vision-capable target should warn or refuse is ADR-0030's open
+question. An under-budgeted encode fails at serve time: ADR-0030
+records an HTTP 500 and a dead run at the contexts the line would
+have protected.
 
 ## Worked example: the north-star target
 

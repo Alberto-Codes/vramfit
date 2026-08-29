@@ -25,7 +25,10 @@ The model publisher owns this file. vramfit reads it and never writes
 it, and it still refuses a file that defines one key twice (#283). The
 alternative keeps the last value, so a repeated ``num_hidden_layers``
 would give a wrong `ModelShape` and a wrong weight budget with no
-report.
+report. `config_claims_vision` reads the same file through the same
+strict loader and reports whether it declares ``vision_config`` —
+the claim that gates the vision line in the weight budget (ADR-0030
+decision 3).
 
 Every integer the reader admits fits the signed 64-bit range. Every
 parse failure names the file. ADR-0008's 2026-08-16 amendment gives a
@@ -74,9 +77,11 @@ def shape_from_config_json(path: Path) -> ModelShape:
     """Build a `ModelShape` from a Hugging Face ``config.json``.
 
     The publisher owns this file, so vramfit reads it and never writes
-    it. A repeated key still refuses (#283). `json.loads` would keep the
-    last value, and a repeated ``num_hidden_layers`` would then give a
-    wrong `ModelShape` and a wrong weight budget, with no report.
+    it. The strict load lives in `_load_config`, shared with
+    `config_claims_vision`: a repeated key still refuses (#283), since
+    `json.loads` would keep the last value, and a repeated
+    ``num_hidden_layers`` would then give a wrong `ModelShape` and a
+    wrong weight budget, with no report.
 
     Dispatch order: a ``text_config`` container first (#420), then a
     DeciLM ``block_configs`` file, then a top-level llama-style config.
@@ -106,6 +111,63 @@ def shape_from_config_json(path: Path) -> ModelShape:
         print(len(shape.kv_layers))
         ```
     """
+    config = _load_config(path)
+    if "text_config" in config:
+        return _from_text_config(config, path)
+    if "block_configs" in config:
+        return _from_decilm_config(config, path)
+    return _from_llama_config(config, path)
+
+
+def config_claims_vision(path: Path) -> bool:
+    """Report whether the model card claims vision.
+
+    The claim is mechanical: the top level declares a
+    ``vision_config`` JSON object. Composite files (Gemma 4) carry
+    it beside ``text_config``, and no admitted config nests it
+    deeper. A ``vision_config`` that is not an object — ``null``
+    included — claims nothing. The claim gates the vision line in
+    the weight budget (ADR-0030 decision 3) — it prices nothing
+    itself.
+
+    Args:
+        path: Path to the model's ``config.json``.
+
+    Returns:
+        True when the file declares a top-level ``vision_config``
+        object.
+
+    Raises:
+        ValueError: If the file is not UTF-8, is not valid JSON,
+            defines the same key twice, or is not a JSON object. The
+            same refusals as `shape_from_config_json`, so the two
+            reads of one file cannot disagree on validity.
+
+    Examples:
+        A text-only config claims no vision:
+
+        ```python
+        claims = config_claims_vision(Path("config.json"))
+        ```
+    """
+    return isinstance(_load_config(path).get("vision_config"), dict)
+
+
+def _load_config(path: Path) -> dict[str, Any]:
+    """Read and parse a ``config.json`` into a validated object.
+
+    Args:
+        path: Path to the model's ``config.json``.
+
+    Returns:
+        The parsed top-level object.
+
+    Raises:
+        ValueError: If the file is not UTF-8, is not valid JSON,
+            defines the same key twice (#283), declares an integer
+            past the parser's digit bound (#287), or is not a JSON
+            object. Every message names ``path``.
+    """
     try:
         config = json.loads(
             path.read_text(encoding="utf-8"), object_pairs_hook=object_from_pairs
@@ -125,11 +187,7 @@ def shape_from_config_json(path: Path) -> ModelShape:
         raise ValueError(f"{path}: cannot parse JSON: {exc}") from exc
     if not isinstance(config, dict):
         raise ValueError(f"{path}: expected a JSON object")
-    if "text_config" in config:
-        return _from_text_config(config, path)
-    if "block_configs" in config:
-        return _from_decilm_config(config, path)
-    return _from_llama_config(config, path)
+    return config
 
 
 @dataclass(frozen=True, slots=True)

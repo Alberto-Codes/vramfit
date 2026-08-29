@@ -380,6 +380,11 @@ class Budget:
         kv_cache_bytes (int): Bytes reserved for the KV cache.
         runtime_overhead_bytes (int): Bytes reserved for CUDA context,
             workspace, and fragmentation.
+        vision_bytes (int): The measured vision line — the serving
+            cost of the projector sidecar, weights plus compute
+            reserve plus encode transient (ADR-0030 decision 3). Zero
+            when the model card claims no vision. The caller measures
+            it at the serve ladder, never from the mmproj file size.
 
     Examples:
         A ledger that leaves ~19 GiB for weights:
@@ -399,12 +404,18 @@ class Budget:
     vram_total_bytes: int
     kv_cache_bytes: int
     runtime_overhead_bytes: int
+    vision_bytes: int = 0
 
     @property
     def weight_budget_bytes(self) -> int:
         """Bytes left for weights; negative when overcommitted.
 
         Returns:
-            ``vram_total - kv_cache - runtime_overhead``.
+            ``vram_total - kv_cache - runtime_overhead - vision``.
         """
-        return self.vram_total_bytes - self.kv_cache_bytes - self.runtime_overhead_bytes
+        return (
+            self.vram_total_bytes
+            - self.kv_cache_bytes
+            - self.runtime_overhead_bytes
+            - self.vision_bytes
+        )

@@ -161,11 +161,13 @@ def max_sequences(
 
 
 def image_capacity(tokens: int, image_token_cost: int) -> int:
-    """Convert a token capacity into whole images at a ruled cost.
+    """Convert a token capacity into whole images at a measured cost.
 
-    The caller supplies the image token cost — vramfit rules no
-    vision policy. #236 owns the multimodal VRAM ledger, and #419
-    owns vision-quality claims.
+    The caller supplies the image token cost from the measurement at
+    the serving runtime, and this readout divides by it (ADR-0030
+    decision 4). The measured cost wins over a config's claim: 256
+    tokens per 768x768 image on the Gemma 4 31B target, against the
+    config's 280.
 
     Args:
         tokens: Token capacity to convert.

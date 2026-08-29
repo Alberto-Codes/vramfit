@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from dataclasses import replace
 from pathlib import Path
 
@@ -1459,3 +1460,220 @@ class TestSmokeWiring:
             "token_embd.weight",
             "blk.0.attn_v.weight",
         ]
+
+
+class TestPackSidecar:
+    """The projector sidecar ships beside the artifact (ADR-0030)."""
+
+    MMPROJ_BYTES = b"GGUF-mmproj-payload"
+
+    def _write_mmproj(self, tmp_path: Path) -> Path:
+        vendor = tmp_path / "vendor"
+        vendor.mkdir()
+        mmproj = vendor / "mmproj-model-f16.gguf"
+        mmproj.write_bytes(self.MMPROJ_BYTES)
+        return mmproj
+
+    def test_mmproj_ships_the_sidecar_beside_out(
+        self, tmp_path, monkeypatch, llama_cpp_dir, recipe_path
+    ) -> None:
+        patch_packer(monkeypatch, MemoryRecipePacker(packed_bytes=WEIGHT_BUDGET - 100))
+        mmproj = self._write_mmproj(tmp_path)
+        out = tmp_path / "packed.gguf"
+
+        result = runner.invoke(
+            app,
+            [
+                "pack",
+                str(recipe_path),
+                "--llama-cpp",
+                str(llama_cpp_dir),
+                "--out",
+                str(out),
+                "--mmproj",
+                str(mmproj),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "shipped projector sidecar" in result.output
+        shipped = tmp_path / "mmproj-model-f16.gguf"
+        assert shipped.read_bytes() == self.MMPROJ_BYTES
+        assert events_of(out) == [
+            "pack_started",
+            "gguf_converted",
+            "model_packed",
+            "size_checked",
+            "sidecar_shipped",
+            "pack_finished",
+        ]
+
+    def test_sidecar_event_carries_the_digest(
+        self, tmp_path, monkeypatch, llama_cpp_dir, recipe_path
+    ) -> None:
+        patch_packer(monkeypatch, MemoryRecipePacker(packed_bytes=WEIGHT_BUDGET - 100))
+        mmproj = self._write_mmproj(tmp_path)
+        out = tmp_path / "packed.gguf"
+
+        result = runner.invoke(
+            app,
+            [
+                "pack",
+                str(recipe_path),
+                "--llama-cpp",
+                str(llama_cpp_dir),
+                "--out",
+                str(out),
+                "--mmproj",
+                str(mmproj),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        log = read_run_log(out.with_name(out.stem + ".runlog.jsonl"))
+        event = next(line for line in log if line["event"] == "sidecar_shipped")
+        assert event["mmproj"] == str(mmproj)
+        assert event["path"] == str(tmp_path / "mmproj-model-f16.gguf")
+        assert event["bytes"] == len(self.MMPROJ_BYTES)
+        assert event["sha256"] == hashlib.sha256(self.MMPROJ_BYTES).hexdigest()
+
+    def test_missing_mmproj_exits_two(
+        self, tmp_path, monkeypatch, llama_cpp_dir, recipe_path
+    ) -> None:
+        patch_packer(monkeypatch, MemoryRecipePacker(packed_bytes=WEIGHT_BUDGET - 100))
+        out = tmp_path / "packed.gguf"
+
+        result = runner.invoke(
+            app,
+            [
+                "pack",
+                str(recipe_path),
+                "--llama-cpp",
+                str(llama_cpp_dir),
+                "--out",
+                str(out),
+                "--mmproj",
+                str(tmp_path / "absent.gguf"),
+            ],
+        )
+
+        assert result.exit_code == 2
+        assert "--mmproj" in result.output
+
+    @pytest.mark.parametrize(
+        "collision",
+        ["packed.gguf", "model-f16.gguf", "packed.runlog.jsonl"],
+        ids=["out", "base-gguf", "runlog"],
+    )
+    def test_mmproj_on_a_run_owned_path_exits_two(
+        self, tmp_path, monkeypatch, llama_cpp_dir, recipe_path, collision: str
+    ) -> None:
+        # The sidecar copy would overwrite a file the run owns —
+        # refuse before any tool runs.
+        patch_packer(monkeypatch, MemoryRecipePacker(packed_bytes=WEIGHT_BUDGET - 100))
+        vendor = tmp_path / "vendor"
+        vendor.mkdir()
+        mmproj = vendor / collision
+        mmproj.write_bytes(self.MMPROJ_BYTES)
+        out = tmp_path / "packed.gguf"
+
+        result = runner.invoke(
+            app,
+            [
+                "pack",
+                str(recipe_path),
+                "--llama-cpp",
+                str(llama_cpp_dir),
+                "--out",
+                str(out),
+                "--mmproj",
+                str(mmproj),
+            ],
+        )
+
+        assert result.exit_code == 2
+        assert "would overwrite" in result.output
+
+    def test_empty_mmproj_exits_two(
+        self, tmp_path, monkeypatch, llama_cpp_dir, recipe_path
+    ) -> None:
+        patch_packer(monkeypatch, MemoryRecipePacker(packed_bytes=WEIGHT_BUDGET - 100))
+        vendor = tmp_path / "vendor"
+        vendor.mkdir()
+        mmproj = vendor / "mmproj-model-f16.gguf"
+        mmproj.touch()
+        out = tmp_path / "packed.gguf"
+
+        result = runner.invoke(
+            app,
+            [
+                "pack",
+                str(recipe_path),
+                "--llama-cpp",
+                str(llama_cpp_dir),
+                "--out",
+                str(out),
+                "--mmproj",
+                str(mmproj),
+            ],
+        )
+
+        assert result.exit_code == 2
+        assert "empty" in result.output
+
+    def test_failed_sidecar_copy_halts_with_the_stage_named(
+        self, tmp_path, monkeypatch, llama_cpp_dir, recipe_path
+    ) -> None:
+        # A symlink at the destination refuses in the adapter, so the
+        # stage halts with the decoder kept and the stage named.
+        patch_packer(monkeypatch, MemoryRecipePacker(packed_bytes=WEIGHT_BUDGET - 100))
+        mmproj = self._write_mmproj(tmp_path)
+        out = tmp_path / "packed.gguf"
+        (tmp_path / "mmproj-model-f16.gguf").symlink_to(tmp_path / "elsewhere.bin")
+
+        result = runner.invoke(
+            app,
+            [
+                "pack",
+                str(recipe_path),
+                "--llama-cpp",
+                str(llama_cpp_dir),
+                "--out",
+                str(out),
+                "--mmproj",
+                str(mmproj),
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert "is a symlink" in result.output
+        log = read_run_log(out.with_name(out.stem + ".runlog.jsonl"))
+        halted = next(line for line in log if line["event"] == "pack_halted")
+        assert halted["stage"] == "sidecar"
+
+    def test_over_budget_pack_ships_no_sidecar(
+        self, tmp_path, monkeypatch, llama_cpp_dir, recipe_path
+    ) -> None:
+        # The sidecar completes an artifact that fits — a size-check
+        # halt keeps the decoder for inspection and ships nothing.
+        patch_packer(monkeypatch, MemoryRecipePacker(packed_bytes=WEIGHT_BUDGET + 1))
+        mmproj = self._write_mmproj(tmp_path)
+        out = tmp_path / "packed.gguf"
+
+        result = runner.invoke(
+            app,
+            [
+                "pack",
+                str(recipe_path),
+                "--llama-cpp",
+                str(llama_cpp_dir),
+                "--out",
+                str(out),
+                "--mmproj",
+                str(mmproj),
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert not (tmp_path / "mmproj-model-f16.gguf").exists()
+        assert "sidecar_shipped" not in events_of(out)
