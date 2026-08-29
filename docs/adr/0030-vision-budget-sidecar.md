@@ -2,6 +2,11 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-29 (accepted 2026-08-29)
+- **Amendment (2026-08-29, issue #419):** the falsification campaign
+  delivered the measured vision-quality bound. Decision 5's interim
+  clause now applies to unmeasured targets only. A measured target's
+  card states its bound. Maintainer ruling 2026-08-29. See
+  "Amendment: the measured vision bound" below.
 - **Origin:** Maintainer ruling 2026-08-29 on #236, with #419's
   interim clause folded in. Chart #441 indexes the image lane.
   Evidence lives in #236's checks comments (2026-08-28, corrected
@@ -86,10 +91,9 @@ config claims 280 (`vision_soft_tokens_per_image`).
 
 ## Open questions
 
-- **The vision-quality bound itself.** #419 stays open and carries
-  the approved campaign shape (ruling comment 2026-08-29). Its metric
-  is a serve-boundary top-k KLD, truncated at the server's `n_probs`
-  cap of 20 — not ADR-0021's full-set KLD.
+- **The vision-quality bound itself.** Answered 2026-08-29. The
+  campaign delivered the bound (#419's checks comment). See
+  "Amendment: the measured vision bound" below.
 - **The mmproj's own precision.** Q4_K_M frees ~0.50 GiB, less than
   the vision line, at unmeasured quality. Measure it once #419's
   instrument works.
@@ -114,6 +118,61 @@ config claims 280 (`vision_soft_tokens_per_image`).
   publication, hashing, and upload beside the decoder GGUF. It costs
   its full 1.118 GiB on disk and in distribution until #419 prices
   the alternative.
+- **The sidecar seam stays as built.** `ship_sidecar` and
+  `config_claims_vision` stay bare outbound functions, and the
+  sidecar ships before the smoke test (maintainer ruling 2026-08-29
+  on #444). #445 explores folding the seam into the port
+  architecture.
 - **#208 builds to decision 1.** A sole-foreign-root recipe is
   outside the decoder-only scope. The mechanism that recognizes one
   stays #208's to design, per #236's 2026-08-16 correction.
+
+## Amendment: the measured vision bound (2026-08-29, issue #419)
+
+### Context
+
+Decision 5 held a claim gate: no vision-quality claim without an
+image-conditioned measurement. #419's falsification campaign ran on
+2026-08-29 and measured the gap (#419's checks comment). Three
+decoder arms served through the same BF16 mmproj, so decoder
+quantization was the only variable. The bf16 decoder generated
+greedily over 10 held-out 768×768 images. Each quantized arm was
+teacher-forced on the reference sequence.
+
+The metric is a truncated top-20 KLD in nats at the serve boundary.
+The server caps `n_probs` at 20, so this is not ADR-0021's full-set
+KLD. Position classes separate image-grounded `content` tokens from
+channel-frame policy (`markup`, `pos0`). Frame-policy positions
+dominate all-position means on this channel-locked target, so the
+content class carries the vision claim.
+
+Content-class results (n = 120):
+
+| Arm | Mean KLD | p95 KLD | Top-token agreement |
+|---|---|---|---|
+| kv9 (text-solved, 14.92 GiB) | 0.0045 | 0.0239 | 99.2 % |
+| Vendor QAT Q4_0 | 0.0373 | 0.1928 | 97.5 % |
+
+The instrument noise floor is 1.07e-4 mean KLD, measured by
+teacher-forcing kv9 on its own greedy sequence (99.4 % agreement).
+kv9 measures 8.3× below QAT and 42× above the floor. The bf16
+reference and kv9 each answered 10 of 10 held-out questions on
+their own paths.
+
+### Ruling
+
+Maintainer ruling 2026-08-29 on #419: the campaign delivers the
+bound decision 5 waited on. Decision 5 now reads:
+
+- A text-measured sensitivity map licenses no vision-quality claim
+  on an **unmeasured** target. That card states that the map
+  measured text damage only, and states the vision line the budget
+  reserved.
+- A **measured** target's card states its bound: the metric, the
+  content-class numbers, and the noise floor. On this target the
+  bound is content-class truncated top-20 KLD 0.0045 mean and
+  0.0239 p95, with 99.2 % top-token agreement against a 1.07e-4
+  floor.
+- The bound is scoped to the measured target and metric. No target
+  inherits another's bound. Visual and text token sensitivities
+  diverge across targets (#419's literature comment).
