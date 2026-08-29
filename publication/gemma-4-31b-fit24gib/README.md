@@ -24,7 +24,7 @@ This repository carries a mixed-precision GGUF of
 [google/gemma-4-31B-it](https://huggingface.co/google/gemma-4-31B-it),
 packed from the
 [QAT unquantized checkpoint](https://huggingface.co/google/gemma-4-31B-it-qat-q4_0-unquantized)
-and solved to serve — images included — inside a 24 GiB card.
+and solved to serve images inside a 24 GiB card.
 [vramfit](https://github.com/Alberto-Codes/vramfit) measured each
 decoder layer's quantization damage — the shift in the model's
 output distribution when that layer quantizes — then allocated bits
@@ -47,7 +47,7 @@ quality cost of quantizing this projector is unmeasured.
 ## The headline
 
 The official [QAT Q4_0 GGUF](https://huggingface.co/google/gemma-4-31B-it-qat-q4_0-gguf)
-of this model is 16.43 GiB. This pack is 14.92 GiB at comparable
+of this model is 16.44 GiB. This pack is 14.92 GiB at comparable
 measured text quality — four benchmark ties and one win, tables
 below — and lower measured vision-conditioned divergence. The freed
 1.5 GiB of weights buys context on the same card:
@@ -77,32 +77,38 @@ pack and the BF16 reference agree on the top token.
 
 | Model | File size | PPL ↓ | PPL / bf16 ↓ | Mean KLD ↓ | Same top ↑ |
 |---|---|---|---|---|---|
-| BF16 reference | 57.19 GiB | 35.0668 | — | — | — |
+| BF16 reference | 57.20 GiB | 35.0668 | — | — | — |
 | **This pack** | **14.92 GiB** | 37.4552 | **1.0681 ± 0.0027** | 0.0446 ± 0.0004 | 92.04 % |
-| QAT Q4_0 | 16.43 GiB | 38.7227 | 1.1043 ± 0.0029 | **0.0420 ± 0.0003** | 92.32 % |
+| QAT Q4_0 | 16.44 GiB | 38.7227 | 1.1043 ± 0.0029 | **0.0420 ± 0.0003** | 92.32 % |
 
 Read the split honestly: this pack holds the better PPL ratio, and
 the QAT baseline holds a slightly better mean KLD (0.0420 against
-0.0446) and top-token agreement (92.32 % against 92.04 %). The two
-text metrics disagree at the margin, so the held-out benchmarks
+0.0446) and top-token agreement (92.32 % against 92.04 %). One
+asymmetry runs in this pack's favor: its importance matrix consumed
+this same corpus, and the QAT baseline consumed no matrix from this
+frame, so tier 1 and tier 2 lean toward this pack. The two text
+metrics disagree at the margin, and the held-out benchmarks
 arbitrate.
 
 ## Held-out benchmarks
 
 lm-evaluation-harness 0.4.12 over llama-cpp-python 0.3.34 with the
 b10362 Vulkan libraries, full splits, no sampling limit. A delta
-inside the combined standard error is a tie.
+inside the combined standard error is a tie. The Δ column computes
+from the sidecars' unrounded scores.
 
-| Task (shots, metric) | This pack | QAT Q4_0 | Verdict |
-|---|---|---|---|
-| MMLU (5, acc) | **71.36 ± 0.37** | 70.20 ± 0.38 | **win +1.15** |
-| GSM8K (5, strict exact match) | 92.34 ± 0.73 | 92.42 ± 0.73 | tie |
-| HellaSwag (10, acc_norm) | 58.71 ± 0.49 | 59.34 ± 0.49 | tie |
-| Winogrande (5, acc) | 68.27 ± 1.31 | 68.03 ± 1.31 | tie |
-| ARC-Challenge (25, acc_norm) | 61.77 ± 1.42 | 61.09 ± 1.42 | tie |
+| Task (shots, metric) | This pack | QAT Q4_0 | Δ | Combined σ | Verdict |
+|---|---|---|---|---|---|
+| MMLU (5, acc) | **71.36 ± 0.37** | 70.20 ± 0.38 | +1.15 | 0.53 | **win** |
+| GSM8K (5, strict exact match) | 92.34 ± 0.73 | 92.42 ± 0.73 | −0.08 | 1.03 | tie |
+| HellaSwag (10, acc_norm) | 58.71 ± 0.49 | 59.34 ± 0.49 | −0.63 | 0.69 | tie |
+| Winogrande (5, acc) | 68.27 ± 1.31 | 68.03 ± 1.31 | +0.24 | 1.85 | tie |
+| ARC-Challenge (25, acc_norm) | 61.77 ± 1.42 | 61.09 ± 1.42 | +0.68 | 2.01 | tie |
 
-Four ties and one win, at 1.5 GiB fewer packed bytes. Per-task
-records ship in the evals sidecars beside the weights.
+Four ties and one win, at 1.5 GiB fewer packed bytes. The two
+nominal deficits — HellaSwag −0.63 and GSM8K −0.08 — sit inside
+their combined standard errors. Per-task records ship in the evals
+sidecars beside the weights.
 
 ## The measured vision bound
 
@@ -132,7 +138,9 @@ Content-class results (n = 120 positions):
 
 The all-position mean for this pack is 0.0489 over 178 positions —
 10.9 times the content-class figure, dominated by the frame-policy
-classes. The instrument noise floor is 1.07e-4 mean KLD, measured
+classes. The QAT baseline's all-position mean over the same 178
+positions is 1.1092. The instrument noise floor is 1.07e-4 mean
+KLD, measured
 by teacher-forcing this pack on its own greedy sequence. This pack
 measures 8.3 times below the QAT baseline and 42 times above the
 floor. The BF16 reference and this pack each answered 10 of 10
@@ -149,8 +157,9 @@ Two caveats travel with these numbers:
   none. No measurement covers transfer between artifacts.
 
 The full campaign record — per-image tables, position-class
-breakdown, input log hashes — ships in
-`analysis/vision-campaign-kv9.json`.
+breakdown, the 178 per-position KLD pairs, input log hashes —
+ships in `analysis/vision-campaign-kv9.json`. The pairs recompute
+every derived vision number on this card.
 
 ## What fit24gib means
 
@@ -168,7 +177,7 @@ The budget arithmetic behind the recipe:
 | KV headroom | 9,663,676,416 | 9.000 |
 | Weight budget | 16,106,127,360 | 15.000 |
 | Predicted pack size | 16,074,691,830 | 14.971 |
-| Real packed file | 16,015,862,144 | 14.917 |
+| Real packed file | 16,015,862,144 | 14.916 |
 
 The packed file lands 86.08 MiB under the weight budget.
 
@@ -181,8 +190,11 @@ The serve ladders, llama.cpp b10362 Vulkan on an RTX 4090
 | **This pack** | **81,920** (fails at 86,016) | **61,440** (encode fails at 65,536) |
 | QAT Q4_0 | 61,440 (fails at 65,536) | 40,960 (encode fails at 45,056) |
 
-At the 81,920-token boundary the decoder answered a completion at
-7.4 tokens/s decode under desktop sharing. Serving images costs a
+At the 81,920-token boundary the decoder answered a completion
+request from inside that envelope. The serve ladder is a fit bar,
+not a speed bar — this card publishes no throughput figure, and
+the boundary check decoded five tokens under desktop sharing.
+Serving images costs a
 measured 1,600 MiB beyond text-only serving: 1,022.8 MiB of
 projector weights, a 150.63 MiB CLIP compute reserve, and the
 image-encode transient. One 768×768 image consumes 256 decoder
@@ -251,18 +263,62 @@ label. Two absences matter:
   ten tensors quantized unassisted. This is a property of the
   instrument, not a defect in the matrix.
 
+## Reproduce it
+
+The repository ships the recipe, the run log, the evals sidecars,
+and the vision analysis artifact beside the weights. Two commands
+rebuild the decoder from the base checkpoint:
+
+```
+python convert_hf_to_gguf.py <checkpoint dir> \
+  --outfile gemma-4-31b-it-qat-unquantized-bf16.gguf --outtype bf16
+uv run vramfit pack recipe.json --llama-cpp <llama.cpp checkout> \
+  --model <checkpoint dir> \
+  --base-gguf gemma-4-31b-it-qat-unquantized-bf16.gguf \
+  --imatrix gemma-4-31b-bf16-framed.imatrix.gguf \
+  --out gemma-4-31B-it-fit24gib.gguf
+```
+
+The recipe records the full solve: the 15 GiB weight budget, the
+0.005 format overhead, and the 81-step trace, so the type placement
+replays from `recipe.json` alone. Two inputs stay in the project's
+run archive and are not published: the importance matrix and the
+sensitivity map. Without the matrix the pack step reproduces the
+type placement but not this file's exact bytes, and without the map
+`vramfit plan` cannot re-derive the recipe or solve a different
+budget for this model.
+
+## Damage disclosure
+
+Quantization compresses every weight tensor with one uniform lossy
+procedure. It does not bypass or disable the base model's safety
+training, which ships in these weights at lower precision — and it
+can shift any model behavior. The tables above are the measured
+bound on that shift: tier 2 measures whole-model KL divergence
+against the BF16 reference on the measurement frame, tier 3 holds
+four ties and one win on held-out benchmarks, and the vision
+campaign bounds the distributional shift on 120 content-class
+positions over 10 held-out images.
+
+One limit, stated plainly: damage measures output distributions,
+not safety behavior separately, and the vision bound is a
+distributional bound on 10 images, not a safety evaluation of
+image inputs. Read this card as a damage disclosure, not a safety
+certificate. Deploy this pack with the same system-prompt and
+application-layer protections you would give the base model.
+
 ## Files
 
-| File | Bytes | SHA-256 |
+| File | SHA-256 | Bytes |
 |---|---|---|
-| `gemma-4-31B-it-fit24gib.gguf` | 16,015,862,144 | `2a7bd7a7be6979c858258618ab576db573a7b671b45ee5e9785247341b8c3b1e` |
-| `gemma-4-31B-it-mmproj.gguf` | 1,200,726,368 | `6bd60bdb958548b4093196d38744b0f2290c12503a3fddd7486bffa9c5eb07a4` |
-| `recipe.json` | 29,951 | `2730692845959b457211c5bd23a4d67acb8744aaa15e5eda8e7f825ed1e3b320` |
-| `gemma-4-31B-it-fit24gib.runlog.jsonl` | 2,036 | `8da670782e6ae96ef3cce4a2bc00c0962f91b5ab083a19f11a8c836c0ade5b6a` |
-| `gemma-4-31B-it-fit24gib.gguf.evals.json` | 2,714 | `eaefcf7c6b6d40afde6ea275cd7f6b6474525d389036bdbf6a5012c61a9a62d9` |
-| `baselines/gemma-4-31B_q4_0-it.gguf.evals.json` | 2,710 | `2d8561c1d9d30b5b99b586dd3b2485c51e8d49a03d58884c1bfad6efc4928f9f` |
-| `analysis/vision-campaign-kv9.json` | 14,899 | `2bad5ffa6ef72ee9a680a384cebe72bd64883027345e015937755c6588673885` |
-| `LICENSE` | 11,358 | `cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30` |
+| `gemma-4-31B-it-fit24gib.gguf` | `2a7bd7a7be6979c858258618ab576db573a7b671b45ee5e9785247341b8c3b1e` | 16,015,862,144 |
+| `gemma-4-31B-it-mmproj.gguf` | `6bd60bdb958548b4093196d38744b0f2290c12503a3fddd7486bffa9c5eb07a4` | 1,200,726,368 |
+| `recipe.json` | `2730692845959b457211c5bd23a4d67acb8744aaa15e5eda8e7f825ed1e3b320` | 29,951 |
+| `gemma-4-31B-it-fit24gib.runlog.jsonl` | `8da670782e6ae96ef3cce4a2bc00c0962f91b5ab083a19f11a8c836c0ade5b6a` | 2,036 |
+| `gemma-4-31B-it-fit24gib.gguf.evals.json` | `eaefcf7c6b6d40afde6ea275cd7f6b6474525d389036bdbf6a5012c61a9a62d9` | 2,714 |
+| `baselines/gemma-4-31B_q4_0-it.gguf.evals.json` | `2d8561c1d9d30b5b99b586dd3b2485c51e8d49a03d58884c1bfad6efc4928f9f` | 2,710 |
+| `analysis/vision-campaign-kv9.json` | `2b705017870668ba248eea36ecb837c91d88ba0e78299ba7af9a7ce2ee709b4d` | 55,286 |
+| `LICENSE` | `cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30` | 11,358 |
 | `README.md` | recorded at ship | — |
 
 The run log ends at `pack_finished`: this pack predates the vramfit
@@ -274,10 +330,15 @@ projector hash above was computed directly on the shipped bytes.
 The source checkpoint is
 [google/gemma-4-31B-it-qat-q4_0-unquantized](https://huggingface.co/google/gemma-4-31B-it-qat-q4_0-unquantized)
 at revision `1e4d8beecacb8b7590c1d8bedd7335f687bf311f`. Conversion
-to a BF16 decoder GGUF and extraction of the projector ran at
-llama.cpp b10362. The projector carries 190 BF16 and 166 F32
-tensors under the `v.` and `mm.` roots, unmodified. The QAT Q4_0
-comparator is the vendor's own GGUF of the same checkpoint family.
+to the BF16 decoder GGUF ran at llama.cpp b10362. The projector is
+the vendor's own published file, downloaded from
+[google/gemma-4-31B-it-qat-q4_0-gguf](https://huggingface.co/google/gemma-4-31B-it-qat-q4_0-gguf)
+at revision `59dde24573e7e61570dba08b18a2e1fe246955ed` and shipped
+unmodified — the SHA-256 above matches the vendor's LFS object. It
+carries 190 BF16 and 166 F32 tensors under the `v.` and `mm.`
+roots. The QAT Q4_0 comparator is the vendor's decoder GGUF from
+the same repository at the same revision, SHA-256
+`179cfb99212709597eae5929112cfca677e1bbf566178b479ae1da0c4772874b`.
 
 Gemma 4 is released by Google DeepMind under the Apache 2.0
 license — see the
