@@ -307,3 +307,24 @@ class TestBudget:
         )
 
         assert ledger.weight_budget_bytes < 0
+
+    def test_weight_budget_subtracts_the_vision_line(self) -> None:
+        # The measured line on the Gemma 4 31B target (ADR-0030
+        # decision 3).
+        ledger = Budget(
+            vram_total_bytes=parse_size("24GiB"),
+            kv_cache_bytes=parse_size("3GiB"),
+            runtime_overhead_bytes=parse_size("2GiB"),
+            vision_bytes=parse_size("1600MiB"),
+        )
+
+        assert ledger.weight_budget_bytes == parse_size("19GiB") - parse_size("1600MiB")
+
+    def test_vision_line_defaults_to_zero(self) -> None:
+        ledger = Budget(
+            vram_total_bytes=parse_size("24GiB"),
+            kv_cache_bytes=parse_size("3GiB"),
+            runtime_overhead_bytes=parse_size("2GiB"),
+        )
+
+        assert ledger.vision_bytes == 0

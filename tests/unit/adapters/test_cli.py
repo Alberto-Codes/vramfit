@@ -597,6 +597,118 @@ class TestBudgetCommand:
 
         assert result.exit_code == 1
 
+    def _write_config(self, tmp_path, claims_vision: bool):
+        # 2 layers x 2 tensors x 2 heads x 4 wide x 2 bytes =
+        # 64 bytes/token at fp16.
+        decoder = {
+            "num_hidden_layers": 2,
+            "num_key_value_heads": 2,
+            "num_attention_heads": 4,
+            "head_dim": 4,
+        }
+        config: dict = {"text_config": decoder}
+        if claims_vision:
+            config["vision_config"] = {"hidden_size": 1152}
+        path = tmp_path / "config.json"
+        path.write_text(json.dumps(config))
+        return path
+
+    def test_vision_line_subtracts_when_the_card_claims_vision(self, tmp_path) -> None:
+        config = self._write_config(tmp_path, claims_vision=True)
+
+        result = runner.invoke(
+            app,
+            [
+                "budget",
+                "--model-config",
+                str(config),
+                "--vram",
+                "24GiB",
+                "--vision-line",
+                "1600MiB",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "- vision line         1.56 GiB  (measured, ADR-0030)" in result.output
+        # 24 GiB - 16384 x 64 B KV - 2 GiB overhead - 1600 MiB vision.
+        assert "= weight budget       20.44 GiB" in result.output
+
+    def test_vision_claim_without_a_line_states_the_gap(self, tmp_path) -> None:
+        # ADR-0030 leaves warn-or-refuse open here — the command
+        # subtracts nothing and states the gap, deciding neither.
+        config = self._write_config(tmp_path, claims_vision=True)
+
+        result = runner.invoke(app, ["budget", "--model-config", str(config)])
+
+        assert result.exit_code == 0, result.output
+        assert (
+            "vision                claimed — no --vision-line supplied, "
+            "nothing subtracted" in result.output
+        )
+
+    def test_no_vision_claim_states_the_absence(self, tmp_path) -> None:
+        config = self._write_config(tmp_path, claims_vision=False)
+
+        result = runner.invoke(app, ["budget", "--model-config", str(config)])
+
+        assert result.exit_code == 0, result.output
+        assert (
+            "vision                none claimed — nothing subtracted" in result.output
+        )
+
+    def test_vision_line_without_a_vision_claim_exits_two(self, tmp_path) -> None:
+        config = self._write_config(tmp_path, claims_vision=False)
+
+        result = runner.invoke(
+            app,
+            [
+                "budget",
+                "--model-config",
+                str(config),
+                "--vision-line",
+                "1600MiB",
+            ],
+        )
+
+        assert result.exit_code == 2
+        assert "claims no vision" in result.output
+
+    def test_vision_line_with_a_manual_shape_exits_two(self) -> None:
+        result = runner.invoke(
+            app,
+            [
+                "budget",
+                "--attn-layers",
+                "2",
+                "--kv-heads",
+                "2",
+                "--head-dim",
+                "4",
+                "--vision-line",
+                "1600MiB",
+            ],
+        )
+
+        assert result.exit_code == 2
+        assert "needs --model-config" in result.output
+
+    def test_malformed_vision_line_exits_two(self, tmp_path) -> None:
+        config = self._write_config(tmp_path, claims_vision=True)
+
+        result = runner.invoke(
+            app,
+            [
+                "budget",
+                "--model-config",
+                str(config),
+                "--vision-line",
+                "a-lot",
+            ],
+        )
+
+        assert result.exit_code == 2
+
 
 class TestPlanProtect:
     def _write_protected_map(self, tmp_path):

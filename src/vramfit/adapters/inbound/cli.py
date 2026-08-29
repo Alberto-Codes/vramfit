@@ -8,7 +8,9 @@ live in [vramfit.adapters.inbound.cli_scan][],
 [vramfit.adapters.inbound.cli_validate][], and
 [vramfit.adapters.inbound.cli_capacity][] to keep this module under
 the size cap. ``budget`` reports KV growth per token, plus the
-window pool on a mixed sliding/global stack (#421). ``capacity``
+window pool on a mixed sliding/global stack (#421), and subtracts
+the measured ``--vision-line`` when the model card claims vision
+(ADR-0030 decision 3). ``capacity``
 runs the same ledger in reverse from a packed recipe (#422).
 The CLI wires outbound adapters to the pure domain, typing
 them against the ports so the seams stay explicit. Every IO boundary —
@@ -66,6 +68,7 @@ from vramfit.adapters.inbound.cli_shape import (
     kv_detail,
     parse_size_option,
     resolve_shape,
+    resolve_vision_line,
 )
 from vramfit.adapters.outbound.json_common import (
     ArtifactError,
@@ -157,6 +160,14 @@ def budget(
     overhead: Annotated[
         str, typer.Option(help="Runtime overhead reservation.")
     ] = format_size(DEFAULT_RUNTIME_OVERHEAD_BYTES),
+    vision_line: Annotated[
+        str | None,
+        typer.Option(
+            help="Measured vision line to subtract when the model card "
+            "claims vision, e.g. 1600MiB (ADR-0030). Measure it at the "
+            "serve ladder, never from the mmproj file size."
+        ),
+    ] = None,
     model_config: Annotated[
         Path | None,
         typer.Option(help="Model config.json to derive the attention shape from."),
@@ -185,12 +196,16 @@ def budget(
     The first output line reports KV growth per context token, plus
     the saturated per-sequence window pool when the shape has sliding
     layers (#421). The KV-cache line sums both terms at ``--context``
-    and ``--sequences``.
+    and ``--sequences``. The ledger subtracts ``--vision-line`` only
+    when the card claims vision, and a card that claims no vision
+    draws a stated absence instead (ADR-0030 decision 3) — the shared
+    resolution lives in [vramfit.adapters.inbound.cli_shape][].
 
     Raises:
         typer.BadParameter: If both or neither shape source is given, a
-            size/dtype option is malformed, or an integer option is not
-            positive.
+            size/dtype option is malformed, an integer option is not
+            positive, or ``--vision-line`` arrives without a card
+            claiming vision.
         typer.Exit: With code 1 when the weight budget is not positive.
 
     Examples:
@@ -202,11 +217,13 @@ def budget(
     """
     check_kv_dtype(kv_dtype)
     shape = resolve_shape(model_config, attn_layers, kv_heads, head_dim)
+    vision_bytes, vision_note = resolve_vision_line(model_config, vision_line)
 
     ledger = Budget(
         vram_total_bytes=parse_size_option(vram, "--vram"),
         kv_cache_bytes=kv_cache_bytes(shape, context, kv_dtype, sequences),
         runtime_overhead_bytes=parse_size_option(overhead, "--overhead"),
+        vision_bytes=vision_bytes,
     )
     detail = kv_detail(shape, kv_dtype)
     typer.echo(f"attention layers      {len(shape.kv_layers)}  ({detail})")
@@ -216,6 +233,13 @@ def budget(
         f"  ({context} tokens x {sequences} seq)"
     )
     typer.echo(f"- runtime overhead    {format_size(ledger.runtime_overhead_bytes)}")
+    if ledger.vision_bytes:
+        typer.echo(
+            f"- vision line         {format_size(ledger.vision_bytes)}"
+            "  (measured, ADR-0030)"
+        )
+    elif vision_note is not None:
+        typer.echo(f"vision                {vision_note}")
     typer.echo(f"= weight budget       {format_size(ledger.weight_budget_bytes)}")
     if ledger.weight_budget_bytes <= 0:
         typer.echo("error: nothing left for weights", err=True)

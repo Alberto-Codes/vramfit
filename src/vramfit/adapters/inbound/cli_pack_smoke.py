@@ -93,6 +93,7 @@ def _check_inputs(
     imatrix: Path | None,
     smoke_text: Path | None,
     smoke_threshold: float,
+    mmproj: Path | None = None,
 ) -> None:
     """Reject unusable inputs before any tool runs.
 
@@ -102,11 +103,14 @@ def _check_inputs(
         imatrix: Importance matrix file, or None (ADR-0016).
         smoke_text: Smoke-test text file, or None (ADR-0017).
         smoke_threshold: Perplexity ceiling for the smoke test.
+        mmproj: Vendor mmproj to ship as the projector sidecar, or
+            None (ADR-0030).
 
     Raises:
         typer.BadParameter: If the checkout misses a needed tool, a
             given file does not exist, the threshold is not positive,
-            or the ``--out`` directory does not exist.
+            the ``--out`` directory does not exist, or ``--mmproj``
+            carries the ``--out`` file name.
     """
     convert_script = llama_cpp / "convert_hf_to_gguf.py"
     quantize_bin = llama_cpp / "build" / "bin" / "llama-quantize"
@@ -117,6 +121,17 @@ def _check_inputs(
         )
     if imatrix is not None and not imatrix.is_file():
         raise typer.BadParameter(f"--imatrix: {imatrix} is not a file")
+    if mmproj is not None:
+        if not mmproj.is_file():
+            raise typer.BadParameter(f"--mmproj: {mmproj} is not a file")
+        if mmproj.name == out.name:
+            # Fail here, in milliseconds — not after the quantize
+            # stage, when the sidecar copy would overwrite the
+            # decoder GGUF it ships beside.
+            raise typer.BadParameter(
+                f"--mmproj: {mmproj.name} carries the --out file name — "
+                "the sidecar copy would overwrite the decoder GGUF"
+            )
     if smoke_text is not None:
         perplexity_bin = llama_cpp / "build" / "bin" / "llama-perplexity"
         if not smoke_text.is_file():

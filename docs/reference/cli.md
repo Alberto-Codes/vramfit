@@ -40,6 +40,8 @@ vramfit budget
   --kv-dtype TEXT        fp16 | bf16 | fp8  [default: fp16]
   --sequences INT        Concurrent sequences  [default: 1]
   --overhead SIZE        Runtime overhead reservation  [default: 2GiB]
+  --vision-line SIZE     Measured vision line, subtracted when the
+                         card claims vision (ADR-0030)  [default: none]
   --model-config PATH    Model config.json to derive the shape from
   --attn-layers INT      Attention layer count (manual shape)
   --kv-heads INT         KV heads per layer (manual shape)
@@ -47,7 +49,7 @@ vramfit budget
 ```
 
 Exits 1 when nothing is left for weights, and 2 on conflicting or missing
-shape sources.
+shape sources or a `--vision-line` no card claim licenses.
 
 ```console
 $ vramfit budget --model-config config.json --vram 24GiB --kv-dtype fp8
@@ -55,6 +57,7 @@ attention layers      49  (KV grows 100352 bytes/token, fp8)
 VRAM total            24.00 GiB
 - KV cache            1.53 GiB  (16384 tokens x 1 seq)
 - runtime overhead    2.00 GiB
+vision                none claimed — nothing subtracted
 = weight budget       20.47 GiB
 ```
 
@@ -63,6 +66,17 @@ window pool, e.g. `(KV grows 81920 bytes/token, fp16, + 1.17 GiB
 window pool per sequence)`. Each concurrent sequence pays its own
 pool. The KV-cache line sums both terms at the given context and
 `--sequences`.
+
+The ledger subtracts `--vision-line` only when the model card
+claims vision — a `vision_config` in `--model-config`
+([ADR-0030](../adr/0030-vision-budget-sidecar.md) decision 3). The
+line is a serving measurement, 1,600 MiB on the Gemma 4 31B target,
+never the mmproj file size. A card that claims no vision subtracts
+nothing and states the absence, as above. The manual shape triple
+carries no card, so it admits no `--vision-line`. A vision-claiming
+card with no supplied line subtracts nothing and states the gap —
+whether that case should warn or refuse is ADR-0030's open
+question.
 
 ## `vramfit capacity`
 
@@ -83,8 +97,10 @@ vramfit capacity RECIPE
   --context INT          Fixed context — adds the sequence-capacity line
   --kv-dtype TEXT        fp16 | bf16 | fp8  [default: fp16]
   --sequences INT        Concurrent sequences for the context line  [default: 1]
-  --tokens-per-image INT Ruled image token cost — adds the image-capacity line
+  --tokens-per-image INT Measured image token cost — adds the image-capacity line
   --overhead SIZE        Runtime overhead reservation  [default: 2GiB]
+  --vision-line SIZE     Measured vision line, subtracted when the
+                         card claims vision (ADR-0030)  [default: none]
   --model-config PATH    Model config.json to derive the shape from
   --attn-layers INT      Attention layer count (manual shape)
   --kv-heads INT         KV heads per layer (manual shape)
@@ -93,7 +109,7 @@ vramfit capacity RECIPE
 
 Exits 1 when the recipe leaves nothing for KV cache or the recipe
 or config cannot be read, and 2 on conflicting or missing shape
-sources.
+sources or a `--vision-line` no card claim licenses.
 
 ```console
 $ vramfit capacity recipe.json --model-config config.json \
@@ -102,6 +118,7 @@ attention layers      60  (KV grows 81920 bytes/token, fp16, + 1.17 GiB window p
 VRAM total            24.00 GiB
 - weights (recipe)    13.33 GiB
 - runtime overhead    2.00 GiB
+vision                claimed — no --vision-line supplied, nothing subtracted
 = KV headroom         8.67 GiB
 max context           98304 tokens  (1 sequence)
 max sequences         2  (at 32768 tokens)
@@ -116,9 +133,17 @@ the `--sequences` split and say so. The sequence line goes
 admitted config produces. The image line divides the context
 capacity by the `--tokens-per-image` cost the caller supplies.
 The caller takes that cost from a measurement, not a config claim
-([ADR-0030](../adr/0030-vision-budget-sidecar.md) decision 4).
+([ADR-0030](../adr/0030-vision-budget-sidecar.md) decision 4) —
+256 tokens per 768×768 image on the Gemma 4 31B target, against
+the config's 280.
 ADR-0030 rules the multimodal VRAM ledger, and #419 owns the
 vision-quality bound.
+
+`--vision-line` behaves as in `budget`: subtracted from the
+headroom only when the card claims vision, stated as absent
+otherwise, refused without a licensing claim (ADR-0030 decision
+3). The example above shows the vision-claiming card with no
+measured line supplied.
 
 ## `vramfit plan`
 
@@ -476,6 +501,8 @@ vramfit pack RECIPE
                          smoke test  [default: 8]
   --imatrix PATH         Importance matrix for the quantizer
                          (ADR-0016)  [default: none]
+  --mmproj PATH          Vendor mmproj shipped beside --out as the
+                         projector sidecar (ADR-0030)  [default: none]
   --smoke-text PATH      Text for the post-pack smoke test (ADR-0017)
                          [default: none — pack warns]
   --smoke-chunks INT     Smoke-test chunk count  [default: 2]
@@ -593,6 +620,18 @@ tensor would keep the fit the recipe asked to drop, and the record
 would state an exclusion that never applied. Packing such a recipe
 without `--imatrix` warns that the exclusions change nothing.
 
+`--mmproj` ships the vendor mmproj beside `--out` as the
+unquantized projector sidecar
+([ADR-0030](../adr/0030-vision-budget-sidecar.md) decision 2). The
+stage runs after the size check passes: a byte-identical copy under
+the vendor file name, proven by SHA-256 of the source and the copy.
+A mismatch halts with the decoder kept. The `sidecar_shipped` event
+carries the path, the bytes, and the digest. The sidecar never
+enters the weight budget — the vision line is a serving
+measurement, not the file size (decision 3). The command refuses an
+`--mmproj` that carries the `--out` file name, because the copy
+would overwrite the decoder.
+
 With `--smoke-text` the command runs the smoke test: `--smoke-chunks` perplexity chunks through
 `build/bin/llama-perplexity`, gated by the `--smoke-threshold`
 ceiling (ADR-0017). Without the flag the command warns that the
@@ -601,19 +640,23 @@ run log: pack_started, gguf_converted (with `reused`), model_packed
 (real bytes, base type, embedding and output tensor types, override
 count, imatrix, uncovered tensors, excluded tensors, zero-count
 experts, floored layers), size_checked (margin and
-`fits`), reconstruction_checked when the gate ran (per-tensor
+`fits`), sidecar_shipped when `--mmproj` shipped (mmproj, path,
+bytes, sha256), reconstruction_checked when the gate ran
+(per-tensor
 protected and reference RMSE, `collapsed`, `passed`), smoke_tested
 when the smoke test ran (perplexity — null
 when non-finite, with a text copy — threshold, chunks, `passed`),
 then pack_finished (with `smoked`) or pack_halted (stage:
 convert, imatrix_counts, quantize, type_fallback, size_check,
-reconstruction, or smoke).
+sidecar, reconstruction, or smoke).
 
 Exit codes: 1 when the recipe is invalid, the model directory does
 not exist, a toolchain stage fails, the quantizer substitutes a
 type (the file is kept), the packed model exceeds the
-weight budget, the reconstruction check finds a collapsed tensor
+weight budget, the sidecar copy fails or does not match its source,
+the reconstruction check finds a collapsed tensor
 (the file is kept), or the smoke test fails (the file is kept).
 Exit 2 when the llama.cpp checkout misses a needed tool,
-`--imatrix` or `--smoke-text` is not a file, `--smoke-threshold` is
+`--imatrix`, `--mmproj`, or `--smoke-text` is not a file,
+`--mmproj` carries the `--out` file name, `--smoke-threshold` is
 not positive, or the `--out`/`--runlog` directory does not exist.
