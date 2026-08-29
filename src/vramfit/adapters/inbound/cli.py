@@ -204,8 +204,8 @@ def budget(
     Raises:
         typer.BadParameter: If both or neither shape source is given, a
             size/dtype option is malformed, an integer option is not
-            positive, or ``--vision-line`` arrives without a card
-            claiming vision.
+            positive, or ``--vision-line`` arrives with the manual
+            shape triple.
         typer.Exit: With code 1 when the weight budget is not positive.
 
     Examples:
@@ -233,13 +233,15 @@ def budget(
         f"  ({context} tokens x {sequences} seq)"
     )
     typer.echo(f"- runtime overhead    {format_size(ledger.runtime_overhead_bytes)}")
-    if ledger.vision_bytes:
+    if vision_note is not None:
+        typer.echo(f"vision                {vision_note}")
+    elif vision_line is not None:
+        # A supplied, licensed line always prints, zero included —
+        # the ledger states every vision position (ADR-0030).
         typer.echo(
             f"- vision line         {format_size(ledger.vision_bytes)}"
             "  (measured, ADR-0030)"
         )
-    elif vision_note is not None:
-        typer.echo(f"vision                {vision_note}")
     typer.echo(f"= weight budget       {format_size(ledger.weight_budget_bytes)}")
     if ledger.weight_budget_bytes <= 0:
         typer.echo("error: nothing left for weights", err=True)

@@ -49,7 +49,7 @@ vramfit budget
 ```
 
 Exits 1 when nothing is left for weights, and 2 on conflicting or missing
-shape sources or a `--vision-line` no card claim licenses.
+shape sources or a `--vision-line` with the manual shape triple.
 
 ```console
 $ vramfit budget --model-config config.json --vram 24GiB --kv-dtype fp8
@@ -68,11 +68,14 @@ pool. The KV-cache line sums both terms at the given context and
 `--sequences`.
 
 The ledger subtracts `--vision-line` only when the model card
-claims vision — a `vision_config` in `--model-config`
+claims vision — a top-level `vision_config` object in
+`--model-config`
 ([ADR-0030](../adr/0030-vision-budget-sidecar.md) decision 3). The
 line is a serving measurement, 1,600 MiB on the Gemma 4 31B target,
 never the mmproj file size. A card that claims no vision subtracts
-nothing and states the absence, as above. The manual shape triple
+nothing and states the absence, as above — a supplied
+`--vision-line` does not apply there, and the note says so. The
+manual shape triple
 carries no card, so it admits no `--vision-line`. A vision-claiming
 card with no supplied line subtracts nothing and states the gap —
 whether that case should warn or refuse is ADR-0030's open
@@ -82,7 +85,8 @@ question.
 
 Implemented. Prints the capacity readout for a packed recipe (#422):
 the budget ledger run in reverse. The KV headroom is the card minus
-the recipe's predicted weight bytes minus `--overhead`. The command
+the recipe's predicted weight bytes, minus `--overhead`, minus the
+`--vision-line` the card's claim licenses. The command
 solves the headroom against the per-layer KV arithmetic itself.
 Sliding terms saturate while global terms grow, so the readout
 stays exact on a mixed stack. The attention shape comes from
@@ -109,7 +113,7 @@ vramfit capacity RECIPE
 
 Exits 1 when the recipe leaves nothing for KV cache or the recipe
 or config cannot be read, and 2 on conflicting or missing shape
-sources or a `--vision-line` no card claim licenses.
+sources or a `--vision-line` with the manual shape triple.
 
 ```console
 $ vramfit capacity recipe.json --model-config config.json \
@@ -139,11 +143,11 @@ the config's 280.
 ADR-0030 rules the multimodal VRAM ledger, and #419 owns the
 vision-quality bound.
 
-`--vision-line` behaves as in `budget`: subtracted from the
-headroom only when the card claims vision, stated as absent
-otherwise, refused without a licensing claim (ADR-0030 decision
-3). The example above shows the vision-claiming card with no
-measured line supplied.
+`--vision-line` follows the `budget` rules (ADR-0030 decision 3).
+The headroom subtracts the line only when the card claims vision.
+A card that claims no vision subtracts nothing, and the ledger
+states the absence. The example above shows the vision-claiming
+card with no measured line supplied.
 
 ## `vramfit plan`
 
@@ -623,14 +627,18 @@ without `--imatrix` warns that the exclusions change nothing.
 `--mmproj` ships the vendor mmproj beside `--out` as the
 unquantized projector sidecar
 ([ADR-0030](../adr/0030-vision-budget-sidecar.md) decision 2). The
-stage runs after the size check passes: a byte-identical copy under
+stage runs after the size check and the reconstruction gate pass:
+a byte-identical copy under
 the vendor file name, proven by SHA-256 of the source and the copy.
-A mismatch halts with the decoder kept. The `sidecar_shipped` event
+A stale file at the destination is replaced. A symlink there
+refuses, and a mismatch removes the copy — each halts with the
+decoder kept. The `sidecar_shipped` event
 carries the path, the bytes, and the digest. The sidecar never
 enters the weight budget — the vision line is a serving
 measurement, not the file size (decision 3). The command refuses an
-`--mmproj` that carries the `--out` file name, because the copy
-would overwrite the decoder.
+`--mmproj` whose copy would land on a run-owned path — the decoder,
+the base GGUF, the run log, or the reconstruction reference —
+before any tool runs. An empty `--mmproj` refuses the same way.
 
 With `--smoke-text` the command runs the smoke test: `--smoke-chunks` perplexity chunks through
 `build/bin/llama-perplexity`, gated by the `--smoke-threshold`
@@ -640,23 +648,25 @@ run log: pack_started, gguf_converted (with `reused`), model_packed
 (real bytes, base type, embedding and output tensor types, override
 count, imatrix, uncovered tensors, excluded tensors, zero-count
 experts, floored layers), size_checked (margin and
-`fits`), sidecar_shipped when `--mmproj` shipped (mmproj, path,
-bytes, sha256), reconstruction_checked when the gate ran
+`fits`), reconstruction_checked when the gate ran
 (per-tensor
-protected and reference RMSE, `collapsed`, `passed`), smoke_tested
+protected and reference RMSE, `collapsed`, `passed`),
+sidecar_shipped when `--mmproj` shipped (mmproj, path,
+bytes, sha256), smoke_tested
 when the smoke test ran (perplexity — null
 when non-finite, with a text copy — threshold, chunks, `passed`),
 then pack_finished (with `smoked`) or pack_halted (stage:
 convert, imatrix_counts, quantize, type_fallback, size_check,
-sidecar, reconstruction, or smoke).
+reconstruction, sidecar, or smoke).
 
 Exit codes: 1 when the recipe is invalid, the model directory does
 not exist, a toolchain stage fails, the quantizer substitutes a
 type (the file is kept), the packed model exceeds the
-weight budget, the sidecar copy fails or does not match its source,
-the reconstruction check finds a collapsed tensor
-(the file is kept), or the smoke test fails (the file is kept).
+weight budget, the reconstruction check finds a collapsed tensor
+(the file is kept), the sidecar copy fails or does not match its
+source, or the smoke test fails (the file is kept).
 Exit 2 when the llama.cpp checkout misses a needed tool,
 `--imatrix`, `--mmproj`, or `--smoke-text` is not a file,
-`--mmproj` carries the `--out` file name, `--smoke-threshold` is
+`--mmproj` is empty or its copy would land on a run-owned path,
+`--smoke-threshold` is
 not positive, or the `--out`/`--runlog` directory does not exist.

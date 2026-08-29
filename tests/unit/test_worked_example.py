@@ -197,6 +197,12 @@ def test_capacity_gemma_31b_recipe_reads_back_128k(tmp_path: Path) -> None:
     )
 
     assert result.exit_code == 0, result.output
+    # The real config claims vision, and cli.md's transcript pins
+    # this exact stated-gap line (ADR-0030 decision 3).
+    assert (
+        "vision                claimed — no --vision-line supplied, "
+        "nothing subtracted" in result.output
+    )
     assert "max context           131072 tokens  (1 sequence)" in result.output
 
 

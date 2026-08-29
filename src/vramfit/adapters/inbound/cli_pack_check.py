@@ -14,7 +14,9 @@ never repacks on its own, so the packed file stays recipe-driven
 composes every override for a protected recipe, so a cross-root
 protection refuses before any tool runs (#367) — and the run-log
 event guards non-finite measurements the sink would reject
-(ADR-0011).
+(ADR-0011). `reconstruction_reference_path` names the reference
+file once, for this stage and for the sidecar collision guard
+(ADR-0030).
 
 Examples:
     The pack command drives the stage like this:
@@ -87,6 +89,21 @@ def _check_protected_mappable(recipe: Recipe) -> None:
         raise typer.Exit(code=1) from exc
 
 
+def reconstruction_reference_path(out: Path) -> Path:
+    """Name the reference pack the reconstruction stage writes.
+
+    One definition serves the stage and the sidecar collision guard,
+    so the two cannot drift apart.
+
+    Args:
+        out: Packed model destination.
+
+    Returns:
+        The reference GGUF path beside ``out``.
+    """
+    return out.with_name(f"{out.stem}-reconstruction-ref.gguf")
+
+
 def _reconstruction_stage(
     run_log: SafeRunLog,
     recipe: Recipe,
@@ -102,7 +119,8 @@ def _reconstruction_stage(
     known fit collapse involved a promotion under one — and an
     unprotected pack passes through silently. A recipe that records
     protections but resolved zero pairs also skips with a note: every
-    floor was a per-tensor no-op at plan time (issue #59).
+    floor was a per-tensor no-op at plan time (issue #59). The
+    reference pack lands at `reconstruction_reference_path`.
 
     Args:
         run_log: Sink for the stage's events.
@@ -131,7 +149,7 @@ def _reconstruction_stage(
             "(ADR-0022)"
         )
         return
-    reference_path = out.with_name(f"{out.stem}-reconstruction-ref.gguf")
+    reference_path = reconstruction_reference_path(out)
     _run_reconstruction(
         run_log,
         recipe,

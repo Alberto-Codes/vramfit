@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -1055,3 +1056,18 @@ class TestConfigClaimsVision:
 
         with pytest.raises(ValueError, match="twice"):
             config_claims_vision(path)
+
+    def test_null_vision_config_claims_no_vision(self, tmp_path) -> None:
+        # The claim is a declared object — a null would otherwise
+        # license a vision line the card never priced.
+        path = tmp_path / "config.json"
+        path.write_text('{"vision_config": null}')
+
+        assert config_claims_vision(path) is False
+
+    def test_real_gemma_config_claims_vision(self) -> None:
+        # The file ADR-0030 measured — the claim read pins to the
+        # record's own target.
+        config = Path(__file__).parents[2] / "data" / "gemma-4-31b" / "config.json"
+
+        assert config_claims_vision(config) is True

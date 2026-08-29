@@ -122,16 +122,20 @@ def shape_from_config_json(path: Path) -> ModelShape:
 def config_claims_vision(path: Path) -> bool:
     """Report whether the model card claims vision.
 
-    The claim is mechanical: the config declares a ``vision_config``
-    object. Composite files (Gemma 4) carry it beside
-    ``text_config``. The claim gates the vision line in the weight
-    budget (ADR-0030 decision 3) — it prices nothing itself.
+    The claim is mechanical: the top level declares a
+    ``vision_config`` JSON object. Composite files (Gemma 4) carry
+    it beside ``text_config``, and no admitted config nests it
+    deeper. A ``vision_config`` that is not an object — ``null``
+    included — claims nothing. The claim gates the vision line in
+    the weight budget (ADR-0030 decision 3) — it prices nothing
+    itself.
 
     Args:
         path: Path to the model's ``config.json``.
 
     Returns:
-        True when the file declares ``vision_config``.
+        True when the file declares a top-level ``vision_config``
+        object.
 
     Raises:
         ValueError: If the file is not UTF-8, is not valid JSON,
@@ -146,7 +150,7 @@ def config_claims_vision(path: Path) -> bool:
         claims = config_claims_vision(Path("config.json"))
         ```
     """
-    return "vision_config" in _load_config(path)
+    return isinstance(_load_config(path).get("vision_config"), dict)
 
 
 def _load_config(path: Path) -> dict[str, Any]:

@@ -19,12 +19,13 @@ event and one ``warning:`` line name every layer the base GGUF
 numbers that no override reached. Those layers pack at the recipe's
 floor and the quantizer reports none of them (#307). After
 packing it re-checks the real bytes against the recipe's weight
-budget, ships the ``--mmproj`` projector sidecar beside the
-artifact (ADR-0030 — the stage lives in
-[vramfit.adapters.inbound.cli_pack_sidecar][]), gates a protected
+budget, gates a protected
 imatrix pack on the reconstruction check
 (ADR-0022 — the stage lives in
-[vramfit.adapters.inbound.cli_pack_check][]), then proves the
+[vramfit.adapters.inbound.cli_pack_check][]), ships the
+``--mmproj`` projector sidecar beside the artifact both checks
+accepted (ADR-0030 — the stage lives in
+[vramfit.adapters.inbound.cli_pack_sidecar][]), then proves the
 artifact emits language when ``--smoke-text``
 is given (ADR-0017 — the smoke stage lives in
 [vramfit.adapters.inbound.cli_pack_smoke][]). A failed check exits
@@ -62,7 +63,10 @@ from vramfit.adapters.inbound.cli_pack_imatrix import (
     _report_imatrix_effects,
     _warn_imatrix_provenance,
 )
-from vramfit.adapters.inbound.cli_pack_sidecar import _ship_sidecar_stage
+from vramfit.adapters.inbound.cli_pack_sidecar import (
+    _ship_sidecar_stage,
+    check_sidecar_collisions,
+)
 from vramfit.adapters.inbound.cli_pack_smoke import (
     _check_inputs,
     _halt,
@@ -275,8 +279,8 @@ def pack(
     mmproj: Annotated[
         Path | None,
         typer.Option(
-            help="Vendor mmproj shipped beside --out as the unquantized "
-            "projector sidecar, byte-identical (ADR-0030)."
+            help="Vendor mmproj to ship beside --out as the projector "
+            "sidecar (ADR-0030). The copy is byte-identical."
         ),
     ] = None,
     smoke_text: Annotated[
@@ -344,12 +348,14 @@ def pack(
     packed with ``--imatrix`` must then pass the reconstruction
     check — a collapsed tensor halts with its name, and the revision
     is the user's (ADR-0022). ``--mmproj`` ships the vendor mmproj
-    beside ``--out`` as the unquantized projector sidecar after the
-    size check passes: a byte-identical copy proven by SHA-256, with
-    the digest in the ``sidecar_shipped`` event (ADR-0030 decision
-    2). The sidecar never enters the weight budget — the vision line
-    is a serving measurement, not the file size (ADR-0030 decision
-    3). With
+    beside ``--out`` as the unquantized projector sidecar (ADR-0030
+    decision 2). The stage runs after the size check and the
+    reconstruction gate pass. The copy is byte-identical, and
+    SHA-256 of source and copy proves it. The ``sidecar_shipped``
+    event carries the digest. A copy that would overwrite a
+    run-owned file refuses before any tool runs. The sidecar never
+    enters the weight budget — the vision line is a serving
+    measurement, not the file size (ADR-0030 decision 3). With
     ``--smoke-text`` it then proves the packed model emits language:
     ``--smoke-chunks`` perplexity chunks under the
     ``--smoke-threshold`` ceiling (ADR-0017). A run-log write
@@ -359,13 +365,16 @@ def pack(
     Raises:
         typer.BadParameter: If the llama.cpp checkout misses a needed
             tool, ``--imatrix``, ``--mmproj``, or ``--smoke-text`` is
-            not a file, ``--mmproj`` carries the ``--out`` file name,
+            not a file, ``--mmproj`` is empty or its sidecar copy
+            would overwrite a run-owned file,
             ``--smoke-threshold`` is not positive, or the ``--out``
             or ``--runlog`` directory does not exist.
         typer.Exit: With code 1 when the recipe is invalid, the model
             directory does not exist, a toolchain stage fails, the
-            packed model exceeds the weight budget, or the smoke test
-            fails (the file is kept).
+            packed model exceeds the weight budget, the
+            reconstruction check finds a collapsed tensor, the
+            sidecar copy fails or does not match its source, or the
+            smoke test fails (the file is kept in each case).
 
     Examples:
         Command line usage:
@@ -374,7 +383,7 @@ def pack(
         $ vramfit pack recipe.json --llama-cpp ~/llama.cpp
         ```
     """
-    _check_inputs(llama_cpp, out, imatrix, smoke_text, smoke_threshold, mmproj)
+    _check_inputs(llama_cpp, out, imatrix, mmproj, smoke_text, smoke_threshold)
 
     recipe = _load_recipe(recipe_path)
     # A protected recipe's override composition must fail here, in
@@ -403,6 +412,7 @@ def pack(
         raise typer.BadParameter(
             f"--runlog: directory {runlog_path.parent} does not exist"
         )
+    check_sidecar_collisions(mmproj, out, base_path, runlog_path)
     run_log = SafeRunLog(JsonlRunLogFile(runlog_path), path=runlog_path)
     run_log.emit(
         "pack_started",
@@ -486,8 +496,6 @@ def pack(
 
     _size_check_stage(run_log, recipe, result.packed_bytes, out)
 
-    _ship_sidecar_stage(run_log, mmproj, out)
-
     # The mandatory guard on protected imatrix packs (ADR-0022): fit
     # collapse is invisible to the smoke test, so the gate runs first.
     _reconstruction_stage(
@@ -506,6 +514,8 @@ def pack(
             imatrix,
         ),
     )
+
+    _ship_sidecar_stage(run_log, mmproj, out)
 
     if smoke_text is None:
         typer.echo(

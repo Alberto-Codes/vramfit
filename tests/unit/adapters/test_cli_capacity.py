@@ -402,7 +402,12 @@ def test_capacity_no_vision_claim_states_the_absence(tmp_path: Path) -> None:
     assert "vision                none claimed — nothing subtracted" in result.output
 
 
-def test_capacity_vision_line_without_a_claim_rejected(tmp_path: Path) -> None:
+def test_capacity_vision_line_without_a_claim_states_it_does_not_apply(
+    tmp_path: Path,
+) -> None:
+    # A card that claims no vision subtracts nothing and states the
+    # absence (ADR-0030 decision 3) — the supplied option draws a
+    # note, and the headroom keeps all three original terms.
     recipe = save_capacity_recipe(tmp_path)
     config = write_composite_config(tmp_path, claims_vision=False)
 
@@ -411,6 +416,10 @@ def test_capacity_vision_line_without_a_claim_rejected(tmp_path: Path) -> None:
         [
             "capacity",
             str(recipe),
+            "--vram",
+            "24GiB",
+            "--overhead",
+            "3GiB",
             "--vision-line",
             "1GiB",
             "--model-config",
@@ -418,8 +427,9 @@ def test_capacity_vision_line_without_a_claim_rejected(tmp_path: Path) -> None:
         ],
     )
 
-    assert result.exit_code == 2
-    assert "claims no vision" in result.output
+    assert result.exit_code == 0, result.output
+    assert "--vision-line does not apply" in result.output
+    assert "= KV headroom         6.00 GiB" in result.output
 
 
 def test_capacity_vision_line_with_a_manual_shape_rejected(tmp_path: Path) -> None:

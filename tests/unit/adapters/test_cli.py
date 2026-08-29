@@ -657,7 +657,13 @@ class TestBudgetCommand:
             "vision                none claimed — nothing subtracted" in result.output
         )
 
-    def test_vision_line_without_a_vision_claim_exits_two(self, tmp_path) -> None:
+    def test_vision_line_without_a_claim_states_it_does_not_apply(
+        self, tmp_path
+    ) -> None:
+        # The record answers this cell: a card that claims no vision
+        # subtracts nothing and states the absence (ADR-0030
+        # decision 3). The supplied option draws a note, never a
+        # silent no-op and never a refusal.
         config = self._write_config(tmp_path, claims_vision=False)
 
         result = runner.invoke(
@@ -671,8 +677,22 @@ class TestBudgetCommand:
             ],
         )
 
-        assert result.exit_code == 2
-        assert "claims no vision" in result.output
+        assert result.exit_code == 0, result.output
+        assert "--vision-line does not apply" in result.output
+        assert "- vision line" not in result.output
+
+    def test_zero_vision_line_with_a_claim_prints_the_row(self, tmp_path) -> None:
+        # The ledger states every vision position — a measured zero
+        # prints instead of vanishing.
+        config = self._write_config(tmp_path, claims_vision=True)
+
+        result = runner.invoke(
+            app,
+            ["budget", "--model-config", str(config), "--vision-line", "0"],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "- vision line         0 B  (measured, ADR-0030)" in result.output
 
     def test_vision_line_with_a_manual_shape_exits_two(self) -> None:
         result = runner.invoke(

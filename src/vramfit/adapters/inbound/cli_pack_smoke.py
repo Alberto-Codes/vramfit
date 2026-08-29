@@ -91,26 +91,30 @@ def _check_inputs(
     llama_cpp: Path,
     out: Path,
     imatrix: Path | None,
+    mmproj: Path | None,
     smoke_text: Path | None,
     smoke_threshold: float,
-    mmproj: Path | None = None,
 ) -> None:
     """Reject unusable inputs before any tool runs.
+
+    The ``--mmproj`` collision check lives in
+    ``cli_pack_sidecar.check_sidecar_collisions``, which runs once
+    the base and run-log paths resolve — still before any tool.
 
     Args:
         llama_cpp: llama.cpp checkout with built tools.
         out: Packed model destination.
         imatrix: Importance matrix file, or None (ADR-0016).
-        smoke_text: Smoke-test text file, or None (ADR-0017).
-        smoke_threshold: Perplexity ceiling for the smoke test.
         mmproj: Vendor mmproj to ship as the projector sidecar, or
             None (ADR-0030).
+        smoke_text: Smoke-test text file, or None (ADR-0017).
+        smoke_threshold: Perplexity ceiling for the smoke test.
 
     Raises:
         typer.BadParameter: If the checkout misses a needed tool, a
-            given file does not exist, the threshold is not positive,
-            the ``--out`` directory does not exist, or ``--mmproj``
-            carries the ``--out`` file name.
+            given file does not exist, ``--mmproj`` is empty, the
+            threshold is not positive, or the ``--out`` directory
+            does not exist.
     """
     convert_script = llama_cpp / "convert_hf_to_gguf.py"
     quantize_bin = llama_cpp / "build" / "bin" / "llama-quantize"
@@ -124,14 +128,10 @@ def _check_inputs(
     if mmproj is not None:
         if not mmproj.is_file():
             raise typer.BadParameter(f"--mmproj: {mmproj} is not a file")
-        if mmproj.name == out.name:
-            # Fail here, in milliseconds — not after the quantize
-            # stage, when the sidecar copy would overwrite the
-            # decoder GGUF it ships beside.
-            raise typer.BadParameter(
-                f"--mmproj: {mmproj.name} carries the --out file name — "
-                "the sidecar copy would overwrite the decoder GGUF"
-            )
+        if mmproj.stat().st_size == 0:
+            # No projector is zero bytes — shipping one defers the
+            # failure to serve time.
+            raise typer.BadParameter(f"--mmproj: {mmproj} is empty")
     if smoke_text is not None:
         perplexity_bin = llama_cpp / "build" / "bin" / "llama-perplexity"
         if not smoke_text.is_file():

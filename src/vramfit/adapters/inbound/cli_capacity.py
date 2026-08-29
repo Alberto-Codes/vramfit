@@ -1,9 +1,9 @@
 """The ``vramfit capacity`` command: the budget ledger run in reverse.
 
-Reads a packed recipe, subtracts its predicted weight bytes, the
-runtime overhead, and the measured vision line when the card claims
-vision (ADR-0030 decision 3) from the card, and reports what the
-remaining KV
+Reads a packed recipe and subtracts three terms from the card: the
+recipe's predicted weight bytes, the runtime overhead, and the
+measured vision line when the card claims vision (ADR-0030
+decision 3). The command then reports what the remaining KV
 headroom buys (#422): the largest context, the sequence count at a
 fixed ``--context``, and an image capacity at the measured
 ``--tokens-per-image`` cost the caller supplies (ADR-0030 decision
@@ -109,7 +109,8 @@ def capacity(
     """Print the capacity readout for a packed recipe.
 
     The KV headroom is the card minus the recipe's predicted weight
-    bytes minus ``--overhead``. The attention shape comes from
+    bytes, minus ``--overhead``, minus the ``--vision-line`` the
+    card's claim licenses. The attention shape comes from
     exactly one source: ``--model-config`` or the manual triple, as
     in ``vramfit budget``. ``--vram`` defaults to the VRAM budget
     the recipe records. The context line solves at ``--sequences``.
@@ -127,7 +128,7 @@ def capacity(
         typer.BadParameter: If both or neither shape source is
             given, a size/dtype option is malformed, an integer
             option is not positive, or ``--vision-line`` arrives
-            without a card claiming vision.
+            with the manual shape triple.
         typer.Exit: With code 1 when the recipe or config cannot be
             read, or the KV headroom is not positive.
 
@@ -160,12 +161,14 @@ def capacity(
     typer.echo(f"VRAM total            {format_size(vram_bytes)}")
     typer.echo(f"- weights (recipe)    {format_size(weight_bytes)}")
     typer.echo(f"- runtime overhead    {format_size(overhead_bytes)}")
-    if vision_bytes:
+    if vision_note is not None:
+        typer.echo(f"vision                {vision_note}")
+    elif vision_line is not None:
+        # A supplied, licensed line always prints, zero included —
+        # the ledger states every vision position (ADR-0030).
         typer.echo(
             f"- vision line         {format_size(vision_bytes)}  (measured, ADR-0030)"
         )
-    elif vision_note is not None:
-        typer.echo(f"vision                {vision_note}")
     typer.echo(f"= KV headroom         {format_size(headroom)}")
     if headroom <= 0:
         typer.echo("error: the recipe leaves nothing for KV cache", err=True)

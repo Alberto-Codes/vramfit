@@ -2,8 +2,10 @@
 
 The artifact ships the vendor mmproj beside the decoder GGUF,
 byte-identical (ADR-0030 decision 2). This module copies the file
-and proves the copy: it hashes the source and the copy with SHA-256
-and refuses a mismatch. The sidecar stays unquantized until #419
+and proves the copy: it hashes the source and the copy with SHA-256,
+refuses a mismatch, and removes a mismatched file it wrote. A
+symlink at the destination refuses — the write would follow it out
+of the artifact directory. The sidecar stays unquantized until #419
 prices the quantized alternative — the copy is the whole mechanism.
 
 The hash also serves publication: the sidecar reaches hashing and
@@ -35,7 +37,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 # Hash in 1 MiB slabs: the Gemma 4 31B mmproj is 1.118 GiB, and a
-# whole-file read would hold it in memory twice.
+# whole-file read would hold all of it in memory at once.
 _HASH_CHUNK_BYTES = 1 << 20
 
 
@@ -88,8 +90,10 @@ def ship_sidecar(mmproj: Path, beside: Path) -> SidecarResult:
     The copy keeps the vendor file name and lands in the packed
     artifact's directory (ADR-0030 decision 2). The function hashes
     the source, copies, hashes the copy, and refuses a mismatch. A
-    source already at the destination path is hashed in place and
-    not copied.
+    stale file already at the destination is replaced. A source
+    already at the destination path is hashed in place and not
+    copied. A symlink at the destination refuses — the write would
+    follow it and land the payload outside the artifact directory.
 
     Args:
         mmproj: The vendor mmproj file.
@@ -101,7 +105,10 @@ def ship_sidecar(mmproj: Path, beside: Path) -> SidecarResult:
     Raises:
         ValueError: If the mmproj carries the packed artifact's own
             file name — the copy would overwrite the decoder.
-        RuntimeError: If the copy's hash differs from the source's.
+        RuntimeError: If the destination is a symlink, or the copy's
+            hash differs from the source's. A mismatched file this
+            call copied is removed, so no wrong-byte file wears the
+            vendor name. The in-place source is never removed.
         OSError: If a read, write, or stat fails.
     """
     destination = beside.with_name(mmproj.name)
@@ -110,13 +117,28 @@ def ship_sidecar(mmproj: Path, beside: Path) -> SidecarResult:
             f'mmproj "{mmproj}" carries the packed artifact\'s file name '
             "— the sidecar copy would overwrite the decoder GGUF"
         )
+    if destination.is_symlink():
+        # `copyfile` follows a symlink — a dangling one included —
+        # and writes the payload wherever it points. A link to the
+        # source would also ship as a link where the record promises
+        # a copy.
+        raise RuntimeError(
+            f'sidecar destination "{destination}" is a symlink — the '
+            "copy would write outside the artifact directory"
+        )
     source_digest = _sha256(mmproj)
-    if not (destination.exists() and destination.samefile(mmproj)):
+    copied = not (destination.exists() and destination.samefile(mmproj))
+    if copied:
         shutil.copyfile(mmproj, destination)
     copy_digest = _sha256(destination)
     if copy_digest != source_digest:
+        # Remove only a file this call wrote. The in-place case is
+        # the vendor file itself, and deleting it would destroy the
+        # source over a transient re-read mismatch.
+        if copied:
+            destination.unlink(missing_ok=True)
         raise RuntimeError(
-            f'sidecar copy "{destination}" does not match the source '
+            f'sidecar copy "{destination}" did not match the source '
             f'"{mmproj}": {copy_digest} != {source_digest}'
         )
     return SidecarResult(

@@ -124,11 +124,12 @@ def resolve_vision_line(
 ) -> tuple[int, str | None]:
     """Resolve the vision line the ledger subtracts (ADR-0030).
 
-    The model card's claim licenses the subtraction: the budget
+    The model card's claim licenses the subtraction: the ledger
     subtracts the measured vision line only when the card claims
-    vision, and a card that claims no vision subtracts nothing
-    (decision 3). The manual shape triple carries no card, so it
-    admits no ``--vision-line``.
+    vision. A card that claims no vision subtracts nothing and
+    states the absence (decision 3) — a supplied ``--vision-line``
+    does not apply there, and the note says so. The manual shape
+    triple carries no card, so it admits no ``--vision-line``.
 
     ADR-0030 leaves open whether the budget warns or refuses on a
     vision-claiming card with no measured line. This resolver
@@ -140,16 +141,21 @@ def resolve_vision_line(
 
     Returns:
         The bytes to subtract, and a note detail for the ledger's
-        ``vision`` label — None when the line subtracts or no card
-        exists.
+        ``vision`` label — None when the card claims vision and the
+        line subtracts, or when no card exists.
 
     Raises:
-        typer.BadParameter: If ``--vision-line`` arrives without a
-            card, with a card that claims no vision, or malformed.
+        typer.BadParameter: If ``--vision-line`` is malformed, or
+            arrives with the manual shape triple.
         typer.Exit: With code 1 when the config cannot be read.
     """
+    # Reject a malformed size before any IO, as the sibling size
+    # options do.
+    line_bytes = (
+        None if vision_line is None else parse_size_option(vision_line, "--vision-line")
+    )
     if model_config is None:
-        if vision_line is not None:
+        if line_bytes is not None:
             raise typer.BadParameter(
                 "--vision-line: needs --model-config — the card's vision "
                 "claim licenses the subtraction (ADR-0030)"
@@ -158,18 +164,21 @@ def resolve_vision_line(
     try:
         claims = config_claims_vision(model_config)
     except (OSError, ValueError) as exc:
+        # `resolve_shape` already read this file through the same
+        # loader, so this fires only when the file changes between
+        # the two reads.
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(code=1) from exc
     if not claims:
-        if vision_line is not None:
-            raise typer.BadParameter(
-                "--vision-line: the model card claims no vision, so the "
-                "budget subtracts nothing (ADR-0030)"
+        if line_bytes is not None:
+            return 0, (
+                "none claimed — nothing subtracted, --vision-line does "
+                "not apply (ADR-0030)"
             )
         return 0, "none claimed — nothing subtracted"
-    if vision_line is None:
+    if line_bytes is None:
         return 0, "claimed — no --vision-line supplied, nothing subtracted"
-    return parse_size_option(vision_line, "--vision-line"), None
+    return line_bytes, None
 
 
 def kv_detail(shape: ModelShape, kv_dtype: str) -> str:
