@@ -115,8 +115,10 @@ the `--sequences` split and say so. The sequence line goes
 `unbounded` only for a shape that allocates no KV, which no
 admitted config produces. The image line divides the context
 capacity by the `--tokens-per-image` cost the caller supplies.
-vramfit rules no vision policy: #236 owns the multimodal VRAM
-ledger, and #419 owns vision-quality claims.
+The caller takes that cost from a measurement, not a config claim
+([ADR-0030](../adr/0030-vision-budget-sidecar.md) decision 4).
+ADR-0030 rules the multimodal VRAM ledger, and #419 owns the
+vision-quality bound.
 
 ## `vramfit plan`
 

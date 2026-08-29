@@ -473,15 +473,31 @@ change.
 
 **Image token cost**
 :   Decoder tokens one image consumes in the serving stack. The
-    caller supplies it (`--tokens-per-image`) — vramfit rules no
-    vision policy. #236 owns the multimodal VRAM ledger, and #419
-    owns vision-quality claims. Not "image cost" or "vision
-    tokens".
+    caller supplies it (`--tokens-per-image`) from the measured
+    cost — a config claim loses to the instrument's number
+    ([ADR-0030](../adr/0030-vision-budget-sidecar.md)). ADR-0030
+    rules the multimodal VRAM ledger, and #419 owns the
+    vision-quality bound. Not "image cost" or "vision tokens".
 
 **Image capacity**
 :   Whole images a token capacity carries at the image token cost
     (`image_capacity`). The image-equivalent reading of the
     capacity readout. Not "image budget".
+
+**Projector sidecar**
+:   The vendor mmproj GGUF shipped unquantized beside a decoder
+    artifact ([ADR-0030](../adr/0030-vision-budget-sidecar.md)
+    decision 2). Distinct from the evals sidecar, which is a JSON
+    evaluation record (ADR-0025). Not "vision file" or "mmproj
+    artifact".
+
+**Vision line**
+:   The measured VRAM the weight budget subtracts when the model
+    card claims vision
+    ([ADR-0030](../adr/0030-vision-budget-sidecar.md) decision 3).
+    Measured at the serve ladder, never taken from the mmproj file
+    size. 1,600 MiB on the Gemma 4 31B target. Not "vision
+    reserve" or "vision overhead".
 
 **Pin**
 :   A user-forced precision for a group, overriding the solver
