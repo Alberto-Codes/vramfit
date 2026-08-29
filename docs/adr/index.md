@@ -66,7 +66,7 @@ ADR that supersedes the old one.
 | [0027](0027-instrument-frame-matching.md) | Damage numbers compare only within one instrument | Accepted |
 | [0028](0028-expert-stack-type-table.md) | Expert stacks map through their own GGUF type table | Accepted |
 | [0029](0029-plan-independent-size-source.md) | Plan reads tensor sizes from a source independent of the map | Accepted |
-| [0030](0030-vision-budget-sidecar.md) | Vision serves through a projector sidecar and a measured budget line | Accepted |
+| [0030](0030-vision-budget-sidecar.md) | Vision serves through a projector sidecar and a measured budget line | Accepted, amended 2026-08-29 |
 
 ## Template
 
