@@ -91,8 +91,9 @@ def ship_sidecar(mmproj: Path, beside: Path) -> SidecarResult:
     artifact's directory (ADR-0030 decision 2). The function hashes
     the source, copies, hashes the copy, and refuses a mismatch. A
     stale file already at the destination is replaced. A source
-    already at the destination path is hashed in place and not
-    copied. A symlink at the destination refuses — the write would
+    already at the destination path is hashed once and not copied —
+    the file proves itself. A symlink at the destination refuses —
+    the write would
     follow it and land the payload outside the artifact directory.
 
     Args:
@@ -127,20 +128,21 @@ def ship_sidecar(mmproj: Path, beside: Path) -> SidecarResult:
             "copy would write outside the artifact directory"
         )
     source_digest = _sha256(mmproj)
-    copied = not (destination.exists() and destination.samefile(mmproj))
-    if copied:
+    if destination.exists() and destination.samefile(mmproj):
+        # The destination is the vendor file itself — one hash
+        # already proves it, and a second read costs a full pass
+        # over a ~GiB file.
+        copy_digest = source_digest
+    else:
         shutil.copyfile(mmproj, destination)
-    copy_digest = _sha256(destination)
-    if copy_digest != source_digest:
-        # Remove only a file this call wrote. The in-place case is
-        # the vendor file itself, and deleting it would destroy the
-        # source over a transient re-read mismatch.
-        if copied:
+        copy_digest = _sha256(destination)
+        if copy_digest != source_digest:
+            # Remove only a file this call wrote — never the source.
             destination.unlink(missing_ok=True)
-        raise RuntimeError(
-            f'sidecar copy "{destination}" did not match the source '
-            f'"{mmproj}": {copy_digest} != {source_digest}'
-        )
+            raise RuntimeError(
+                f'sidecar copy "{destination}" did not match the source '
+                f'"{mmproj}": {copy_digest} != {source_digest}'
+            )
     return SidecarResult(
         path=destination,
         n_bytes=destination.stat().st_size,
