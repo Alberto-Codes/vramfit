@@ -140,8 +140,8 @@ The caller takes that cost from a measurement, not a config claim
 ([ADR-0030](../adr/0030-vision-budget-sidecar.md) decision 4) —
 256 tokens per 768×768 image on the Gemma 4 31B target, against
 the config's 280.
-ADR-0030 rules the multimodal VRAM ledger, and #419 owns the
-vision-quality bound.
+ADR-0030 rules the multimodal VRAM ledger, and its 2026-08-29
+amendment records the measured vision-quality bound.
 
 `--vision-line` follows the `budget` rules (ADR-0030 decision 3).
 The headroom subtracts the line only when the card claims vision.

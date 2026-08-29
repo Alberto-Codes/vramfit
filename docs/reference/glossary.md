@@ -476,8 +476,9 @@ change.
     caller supplies it (`--tokens-per-image`) from the measured
     cost — a config claim loses to the instrument's number
     ([ADR-0030](../adr/0030-vision-budget-sidecar.md)). ADR-0030
-    rules the multimodal VRAM ledger, and #419 owns the
-    vision-quality bound. Not "image cost" or "vision tokens".
+    rules the multimodal VRAM ledger, and its 2026-08-29 amendment
+    records the measured vision-quality bound. Not "image cost" or
+    "vision tokens".
 
 **Image capacity**
 :   Whole images a token capacity carries at the image token cost
@@ -491,6 +492,20 @@ change.
     evaluation record
     ([ADR-0025](../adr/0025-evals-sidecar.md)). Not "vision file"
     or "mmproj artifact".
+
+**Position class**
+:   The class a teacher-forced position belongs to, assigned from
+    the reference token: `content`, `markup`, or `pos0`
+    ([ADR-0030](../adr/0030-vision-budget-sidecar.md) amendment).
+    A vision-quality bound reads per position class. Not "token
+    class" or "position type".
+
+**Content class**
+:   The position class of image-grounded answer tokens. The content
+    class carries a vision-quality claim, because frame-policy
+    positions dominate the all-position means on a channel-locked
+    target ([ADR-0030](../adr/0030-vision-budget-sidecar.md)
+    amendment). Not "answer tokens" or "content positions".
 
 **Vision line**
 :   The measured VRAM the weight budget subtracts when the model

@@ -120,8 +120,8 @@ later GiBs occasionally buy one more as the remainders line up). The same
 headroom reads as concurrency at a fixed context — the serving
 interpretation #68 parks — and as an image capacity when the caller
 supplies a measured image token cost per
-[ADR-0030](../adr/0030-vision-budget-sidecar.md) (#419 owns the
-vision-quality bound). `vramfit capacity`
+[ADR-0030](../adr/0030-vision-budget-sidecar.md) (its 2026-08-29
+amendment records the vision-quality bound). `vramfit capacity`
 prints all three from a packed recipe.
 
 ## Runtime overhead

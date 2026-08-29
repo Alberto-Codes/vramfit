@@ -10,7 +10,8 @@
 - **Origin:** Maintainer ruling 2026-08-29 on #236, with #419's
   interim clause folded in. Chart #441 indexes the image lane.
   Evidence lives in #236's checks comments (2026-08-28, corrected
-  2026-08-29) and #419's checks, literature, and ruling comments.
+  2026-08-29) and #419's checks, literature, campaign-result, and
+  ruling comments.
 - **Instrument:** llama-server b10362 Vulkan prebuilt, RTX 4090
   24 GiB, `-ngl 99 -np 1`, 4,096-token ladder rungs, serve-one-image
   bar. Every number below carries that frame unless it names another.
@@ -65,7 +66,8 @@ config claims 280 (`vision_soft_tokens_per_image`).
    (1,145.08 → 628.96 MiB), with fallback on every BF16 tensor, at
    an unmeasured vision-quality cost. The sidecar stays unquantized until #419
    delivers a vision-quality instrument that prices the trade. #442
-   carries the build.
+   carries the build. **The 2026-08-29 amendment below proves the
+   instrument. The mmproj trade stays unpriced (open question 2).**
 
 3. **The weight budget subtracts the measured vision line when the
    model card claims vision.** The line is 1,600 MiB on this target.
@@ -87,16 +89,19 @@ config claims 280 (`vision_soft_tokens_per_image`).
    text damage only, and states the vision line the budget reserved.
    This is #419's interim clause, practiced on #423 and codified
    here. The clause stands until #419's falsification campaign
-   delivers a measured bound.
+   delivers a measured bound. **Amended 2026-08-29 by the #419
+   amendment below.**
 
 ## Open questions
 
 - **The vision-quality bound itself.** Answered 2026-08-29. The
-  campaign delivered the bound (#419's checks comment). See
+  campaign delivered the bound (#419's campaign-result comment). See
   "Amendment: the measured vision bound" below.
 - **The mmproj's own precision.** Q4_K_M frees ~0.50 GiB, less than
-  the vision line, at unmeasured quality. Measure it once #419's
-  instrument works.
+  the vision line, at unmeasured quality. The campaign proved the
+  decoder-arm instrument, and the 2026-08-29 ruling declined the
+  mmproj arm. The measurement stays a maintainer decision with no
+  owning ticket.
 - **The vision line on an unmeasured target.** The 1,600 MiB line is
   this target's measurement. No clause says whether the budget warns
   or refuses on a vision-capable target with no measured line.
@@ -116,13 +121,14 @@ config claims 280 (`vision_soft_tokens_per_image`).
   without writing a response.
 - **The pack gains a second output artifact.** The sidecar reaches
   publication, hashing, and upload beside the decoder GGUF. It costs
-  its full 1.118 GiB on disk and in distribution until #419 prices
-  the alternative.
+  its full 1.118 GiB on disk and in distribution until a ruling
+  prices the alternative (open question 2).
 - **The sidecar seam stays as built.** `ship_sidecar` and
-  `config_claims_vision` stay bare outbound functions, and the
-  sidecar ships before the smoke test (maintainer ruling 2026-08-29
-  on #444). #445 explores folding the seam into the port
-  architecture.
+  `config_claims_vision` stay bare outbound functions. The sidecar
+  ships after the reconstruction gate and before the smoke test
+  (maintainer ruling 2026-08-29 on #444). A smoke-failed run
+  therefore keeps a shipped sidecar beside the kept decoder. #445
+  explores folding the seam into the port architecture.
 - **#208 builds to decision 1.** A sole-foreign-root recipe is
   outside the decoder-only scope. The mechanism that recognizes one
   stays #208's to design, per #236's 2026-08-16 correction.
@@ -133,18 +139,29 @@ config claims 280 (`vision_soft_tokens_per_image`).
 
 Decision 5 held a claim gate: no vision-quality claim without an
 image-conditioned measurement. #419's falsification campaign ran on
-2026-08-29 and measured the gap (#419's checks comment). Three
-decoder arms served through the same BF16 mmproj, so decoder
-quantization was the only variable. The bf16 decoder generated
-greedily over 10 held-out 768×768 images. Each quantized arm was
-teacher-forced on the reference sequence.
+2026-08-29 and measured the vision-quality divergence between two
+packed arms and a BF16 reference (#419's campaign-result comment).
+Three decoder arms served through the same BF16 mmproj. The BF16
+reference decoder (61.4 GB) ran on CPU at `-ngl 0`. Both quantized
+arms ran on the RTX 4090 at `-ngl 99`. Decoder quantization is the
+only variable between the two quantized arms.
+
+The reference arm is a second instrument under ADR-0027 decision 1.
+ADR-0027 decision 3 bars magnitudes from crossing instruments. The
+numbers below therefore stand as divergences from the reference
+distribution, never as same-instrument damage numbers. The
+kv9-against-QAT ratio compares two arms on one instrument.
 
 The metric is a truncated top-20 KLD in nats at the serve boundary.
 The server caps `n_probs` at 20, so this is not ADR-0021's full-set
-KLD. Position classes separate image-grounded `content` tokens from
-channel-frame policy (`markup`, `pos0`). Frame-policy positions
-dominate all-position means on this channel-locked target, so the
-content class carries the vision claim.
+KLD. The BF16 reference generated greedily over 10 held-out 768×768
+images. The harness teacher-forced each quantized arm on the
+reference sequence. Position classes separate image-grounded
+`content` tokens from channel-frame policy (`markup`, `pos0`).
+Frame-policy positions dominate the all-position means on this
+channel-locked target. kv9's all-position mean is 0.0489 over 178
+positions, 10.9x the content-class figure. The content class
+carries the vision claim.
 
 Content-class results (n = 120):
 
@@ -155,24 +172,37 @@ Content-class results (n = 120):
 
 The instrument noise floor is 1.07e-4 mean KLD, measured by
 teacher-forcing kv9 on its own greedy sequence (99.4 % agreement).
-kv9 measures 8.3× below QAT and 42× above the floor. The bf16
-reference and kv9 each answered 10 of 10 held-out questions on
-their own paths.
+kv9 measures 8.3x below QAT and 42x above the floor. The BF16
+reference and kv9 each answered 10 of 10 held-out questions
+correctly on their own paths.
 
-### Ruling
+### Decision
 
-Maintainer ruling 2026-08-29 on #419: the campaign delivers the
-bound decision 5 waited on. Decision 5 now reads:
+Maintainer ruling 2026-08-29 on #419 (ruling comment, live
+exchange): the campaign delivers the bound decision 5 waited on.
+Decision 5 now reads:
 
 - A text-measured sensitivity map licenses no vision-quality claim
-  on an **unmeasured** target. That card states that the map
+  on an **unmeasured** artifact. That card states that the map
   measured text damage only, and states the vision line the budget
   reserved.
-- A **measured** target's card states its bound: the metric, the
-  content-class numbers, and the noise floor. On this target the
-  bound is content-class truncated top-20 KLD 0.0045 mean and
-  0.0239 p95, with 99.2 % top-token agreement against a 1.07e-4
-  floor.
-- The bound is scoped to the measured target and metric. No target
-  inherits another's bound. Visual and text token sensitivities
-  diverge across targets (#419's literature comment).
+- A **measured** artifact's card states its own bound: the metric,
+  the position class, the content-class numbers beside the
+  all-position mean, and the noise floor. The kv9 pack (14.92 GiB)
+  on Gemma 4 31B measures content-class truncated top-20 KLD 0.0045
+  mean and 0.0239 p95, at 99.2 % top-token agreement, against a
+  1.07e-4 floor and a 0.0489 all-position mean.
+- The bound belongs to the measured artifact and metric. A
+  different recipe on the same checkpoint measures its own bound or
+  states none. The literature reports a sensitivity gap between
+  visual and language tokens (#419's literature comment), and no
+  measurement covers transfer between artifacts.
+
+### Consequences
+
+- The kv9 card may state the measured bound. #446 carries the
+  publication decision this unblocks.
+- The mmproj arm stays unmeasured. Open question 2 keeps that
+  measurement as a maintainer decision.
+- `content class` and `position class` enter the glossary with this
+  amendment.
