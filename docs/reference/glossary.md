@@ -488,8 +488,9 @@ change.
 :   The vendor mmproj GGUF shipped unquantized beside a decoder
     artifact ([ADR-0030](../adr/0030-vision-budget-sidecar.md)
     decision 2). Distinct from the evals sidecar, which is a JSON
-    evaluation record (ADR-0025). Not "vision file" or "mmproj
-    artifact".
+    evaluation record
+    ([ADR-0025](../adr/0025-evals-sidecar.md)). Not "vision file"
+    or "mmproj artifact".
 
 **Vision line**
 :   The measured VRAM the weight budget subtracts when the model

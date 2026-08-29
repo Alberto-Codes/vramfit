@@ -56,9 +56,9 @@ config claims 280 (`vision_soft_tokens_per_image`).
 2. **The mmproj ships as an unquantized projector sidecar.** The
    artifact ships the vendor mmproj beside the decoder GGUF,
    byte-identical. This defers rather than refuses. `llama-quantize`
-   takes an mmproj at b10362. On this file Q4_K_M returns ~0.50 GiB,
-   with fallback on every BF16 tensor, at an unmeasured
-   vision-quality cost. The sidecar stays unquantized until #419
+   takes an mmproj at b10362. On this file Q4_K_M frees ~0.50 GiB
+   (1,145.08 → 628.96 MiB), with fallback on every BF16 tensor, at
+   an unmeasured vision-quality cost. The sidecar stays unquantized until #419
    delivers a vision-quality instrument that prices the trade. #442
    carries the build.
 
@@ -90,8 +90,8 @@ config claims 280 (`vision_soft_tokens_per_image`).
   the approved campaign shape (ruling comment 2026-08-29). Its metric
   is a serve-boundary top-k KLD, truncated at the server's `n_probs`
   cap of 20 — not ADR-0021's full-set KLD.
-- **The mmproj's own precision.** Q4_K_M returns ~0.50 GiB, under the
-  vision line, at unmeasured quality. Measure it once #419's
+- **The mmproj's own precision.** Q4_K_M frees ~0.50 GiB, less than
+  the vision line, at unmeasured quality. Measure it once #419's
   instrument works.
 - **The vision line on an unmeasured target.** The 1,600 MiB line is
   this target's measurement. No clause says whether the budget warns
