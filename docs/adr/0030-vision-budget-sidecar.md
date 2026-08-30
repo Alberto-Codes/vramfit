@@ -67,8 +67,9 @@ config claims 280 (`vision_soft_tokens_per_image`).
    an unmeasured vision-quality cost. The sidecar stays unquantized until #419
    delivers a vision-quality instrument that prices the trade. #442
    carries the build. **The 2026-08-29 amendment below proves the
-   instrument. The mmproj trade is priced 2026-08-30 on #451 — see
-   open question 2. The swap ruling stays open.**
+   instrument. #451 priced the mmproj trade on 2026-08-30 — see
+   open question 2. The sidecar still ships unquantized. The swap
+   ruling stays open.**
 
 3. **The weight budget subtracts the measured vision line when the
    model card claims vision.** The line is 1,600 MiB on this target.
@@ -99,22 +100,26 @@ config claims 280 (`vision_soft_tokens_per_image`).
   campaign delivered the bound (#419's campaign-result comment). See
   "Amendment: the measured vision bound" below.
 - **The mmproj's own precision.** Answered 2026-08-30. The
-  maintainer authorized the arm on #451. The measurement ran at the
-  amendment's frame with the kv9 decoder held fixed. The Q4_K_M
-  mmproj (628.96 MiB) matches the BF16 mmproj on content-class
-  truncated top-20 KLD: 0.0050 mean against 0.0045, at 99.2 %
-  top-token agreement on both arms. It frees 482 MiB at load and
-  adds a third concurrent 4,096-token image slot (#450, #451).
-  Whether the published sidecar swaps to Q4_K_M stays a maintainer
-  decision.
+  maintainer authorized the arm on 2026-08-30, recorded on #451.
+  The measurement ran at the amendment's frame with the kv9 decoder
+  held fixed. Both arms measure divergence from the amendment's
+  BF16 reference. The Q4_K_M mmproj (628.96 MiB) reaches 0.0050
+  mean content-class truncated top-20 KLD (n = 120), against the
+  BF16 mmproj arm's 0.0045. Both hold 99.2 % top-token agreement,
+  and the all-position means sit at 0.0483 against 0.0489, over a
+  1.07e-4 noise floor. It frees 482 MiB of VRAM at load. At `-np 3`
+  with 4,096-token slots it served three of three on 2026-08-30's
+  ceiling (#450, #451). Whether the published sidecar swaps to
+  Q4_K_M stays a maintainer decision.
 - **The vision line on an unmeasured target.** The 1,600 MiB line is
   this target's measurement. No clause says whether the budget warns
   or refuses on a vision-capable target with no measured line.
 - **The image token cost is resolution-dependent.** Measured
   2026-08-30 on #450. The cost is 49 tokens at 256×256, 121 at
   512×512, and saturates at 256 for square inputs at and above
-  768×768. A 1280×720 input costs 264. The mmproj header bounds
-  pixels at 92,160–645,120.
+  768×768. A 1280×720 input costs 264. The measured inputs span
+  65,536 to 921,600 pixels, and the server accepted the inputs
+  outside the header's 92,160–645,120 pixel bounds.
 
 ## Consequences
 
@@ -128,8 +133,8 @@ config claims 280 (`vision_soft_tokens_per_image`).
   without writing a response.
 - **The pack gains a second output artifact.** The sidecar reaches
   publication, hashing, and upload beside the decoder GGUF. It costs
-  its full 1.118 GiB on disk and in distribution until a ruling
-  prices the alternative (open question 2).
+  its full 1.118 GiB on disk and in distribution until the
+  maintainer rules on the swap (open question 2).
 - **The sidecar seam stays as built.** `ship_sidecar` and
   `config_claims_vision` stay bare outbound functions. The sidecar
   ships after the reconstruction gate and before the smoke test
@@ -209,7 +214,8 @@ Decision 5 now reads:
 
 - The kv9 card may state the measured bound. #446 carries the
   publication decision this unblocks.
-- The mmproj arm measured on 2026-08-30, under the authorization
-  this clause reserved (#451). Open question 2 carries the numbers.
+- The #451 session measured the mmproj arm on 2026-08-30, under
+  the authorization open question 2 reserved. Open question 2
+  carries the numbers.
 - `content class` and `position class` enter the glossary with this
   amendment.
