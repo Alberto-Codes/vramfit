@@ -67,7 +67,8 @@ config claims 280 (`vision_soft_tokens_per_image`).
    an unmeasured vision-quality cost. The sidecar stays unquantized until #419
    delivers a vision-quality instrument that prices the trade. #442
    carries the build. **The 2026-08-29 amendment below proves the
-   instrument. The mmproj trade stays unpriced (open question 2).**
+   instrument. The mmproj trade is priced 2026-08-30 on #451 — see
+   open question 2. The swap ruling stays open.**
 
 3. **The weight budget subtracts the measured vision line when the
    model card claims vision.** The line is 1,600 MiB on this target.
@@ -97,17 +98,23 @@ config claims 280 (`vision_soft_tokens_per_image`).
 - **The vision-quality bound itself.** Answered 2026-08-29. The
   campaign delivered the bound (#419's campaign-result comment). See
   "Amendment: the measured vision bound" below.
-- **The mmproj's own precision.** Q4_K_M frees ~0.50 GiB, less than
-  the vision line, at unmeasured quality. The campaign proved the
-  decoder-arm instrument, and the 2026-08-29 ruling declined the
-  mmproj arm. The measurement stays a maintainer decision with no
-  owning ticket.
+- **The mmproj's own precision.** Answered 2026-08-30. The
+  maintainer authorized the arm on #451. The measurement ran at the
+  amendment's frame with the kv9 decoder held fixed. The Q4_K_M
+  mmproj (628.96 MiB) matches the BF16 mmproj on content-class
+  truncated top-20 KLD: 0.0050 mean against 0.0045, at 99.2 %
+  top-token agreement on both arms. It frees 482 MiB at load and
+  adds a third concurrent 4,096-token image slot (#450, #451).
+  Whether the published sidecar swaps to Q4_K_M stays a maintainer
+  decision.
 - **The vision line on an unmeasured target.** The 1,600 MiB line is
   this target's measurement. No clause says whether the budget warns
   or refuses on a vision-capable target with no measured line.
-- **The image token cost is resolution-dependent.** The mmproj header
-  bounds pixels at 92,160–645,120. One point is measured: 256 tokens
-  at 768×768. The cost curve across resolutions is unmeasured.
+- **The image token cost is resolution-dependent.** Measured
+  2026-08-30 on #450. The cost is 49 tokens at 256×256, 121 at
+  512×512, and saturates at 256 for square inputs at and above
+  768×768. A 1280×720 input costs 264. The mmproj header bounds
+  pixels at 92,160–645,120.
 
 ## Consequences
 
@@ -202,7 +209,7 @@ Decision 5 now reads:
 
 - The kv9 card may state the measured bound. #446 carries the
   publication decision this unblocks.
-- The mmproj arm stays unmeasured. Open question 2 keeps that
-  measurement as a maintainer decision.
+- The mmproj arm measured on 2026-08-30, under the authorization
+  this clause reserved (#451). Open question 2 carries the numbers.
 - `content class` and `position class` enter the glossary with this
   amendment.
