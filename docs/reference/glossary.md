@@ -486,9 +486,11 @@ change.
     capacity readout. Not "image budget".
 
 **Projector sidecar**
-:   The vendor mmproj GGUF shipped unquantized beside a decoder
-    artifact ([ADR-0030](../adr/0030-vision-budget-sidecar.md)
-    decision 2). Distinct from the evals sidecar, which is a JSON
+:   The mmproj GGUF shipped beside a decoder artifact
+    ([ADR-0030](../adr/0030-vision-budget-sidecar.md)
+    decision 2). An unmeasured target's sidecar ships unquantized.
+    A measured trade can swap it, per the 2026-08-31 amendment.
+    Distinct from the evals sidecar, which is a JSON
     evaluation record
     ([ADR-0025](../adr/0025-evals-sidecar.md)). Not "vision file"
     or "mmproj artifact".
@@ -512,7 +514,9 @@ change.
     card claims vision
     ([ADR-0030](../adr/0030-vision-budget-sidecar.md) decision 3).
     Measured at the serve ladder, never taken from the mmproj file
-    size. 1,600 MiB on the Gemma 4 31B target. Not "vision
+    size. The line names its sidecar and frame: 960 MiB on the
+    Gemma 4 31B target with the shipped sidecar (2026-08-31 frame,
+    ADR-0030 amendment). Not "vision
     reserve" or "vision overhead".
 
 **Pin**

@@ -71,8 +71,9 @@ The ledger subtracts `--vision-line` only when the model card
 claims vision — a top-level `vision_config` object in
 `--model-config`
 ([ADR-0030](../adr/0030-vision-budget-sidecar.md) decision 3). The
-line is a serving measurement, 1,600 MiB on the Gemma 4 31B target,
-never the mmproj file size. A card that claims no vision subtracts
+line is a serving measurement, never the mmproj file size. On the
+Gemma 4 31B target it is 960 MiB with the shipped sidecar
+(2026-08-31 frame, ADR-0030 amendment). A card that claims no vision subtracts
 nothing and states the absence, as above — a supplied
 `--vision-line` does not apply there, and the note says so. The
 manual shape triple
@@ -624,9 +625,10 @@ tensor would keep the fit the recipe asked to drop, and the record
 would state an exclusion that never applied. Packing such a recipe
 without `--imatrix` warns that the exclusions change nothing.
 
-`--mmproj` ships the vendor mmproj beside `--out` as the
-unquantized projector sidecar
-([ADR-0030](../adr/0030-vision-budget-sidecar.md) decision 2). The
+`--mmproj` ships the supplied mmproj beside `--out` as the
+projector sidecar
+([ADR-0030](../adr/0030-vision-budget-sidecar.md) decision 2, as
+amended 2026-08-31). The
 stage runs after the size check and the reconstruction gate pass:
 a byte-identical copy under
 the vendor file name, proven by SHA-256 of the source and the copy.

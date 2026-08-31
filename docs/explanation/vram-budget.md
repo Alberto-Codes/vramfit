@@ -135,9 +135,12 @@ A multimodal checkpoint serves images through its projector sidecar,
 and the sidecar costs VRAM the ledger must reserve: projector
 weights, a compute reserve, and an image-encode transient. The line
 is a *serving measurement*, never the mmproj file size — on Gemma 4
-31B the file is 1.118 GiB and the measured serving cost is
-**1,600 MiB**, five ladder rungs of displaced global KV
-([ADR-0030](../adr/0030-vision-budget-sidecar.md) decision 3). The
+31B the vendor BF16 file is 1.118 GiB and its measured serving cost
+was **1,600 MiB**, five ladder rungs of displaced global KV
+([ADR-0030](../adr/0030-vision-budget-sidecar.md) decision 3,
+2026-08-28 frame). The 2026-08-31 amendment re-measured the line at
+**960 MiB** with the shipped converted sidecar — the line names its
+sidecar and frame. The
 budget subtracts the line only when the model card claims vision
 (`vision_config` in its config); a card that claims no vision
 subtracts nothing, and the ledger states the absence. The caller
