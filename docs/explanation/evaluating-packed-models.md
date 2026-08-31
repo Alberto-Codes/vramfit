@@ -107,7 +107,8 @@ status: stable
 > data point. The comparator was not the smallest published GGUF —
 > a 2026-08-22 Hub-wide query found eight other publishers'
 > full-model builds below the pack's 15.76 GiB, and several fit a
-> 16 GiB card with more room than this pack leaves. The measured
+> 16 GiB card by file size with more room than this pack leaves,
+> serve-untested. The measured
 > win over `IQ2_XXS` stands unchanged. #416 measures those builds
 > on this page's tier-2 frame. The page stays `stable`.
 

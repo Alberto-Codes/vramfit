@@ -167,8 +167,8 @@ go/no-go, as #80 gated publication #1. (Correction 2026-08-31,
 #415: the three size readings in that sentence were false at
 ruling time. A Hub-wide query on 2026-08-22 found eight other
 publishers' full-model builds below the arm's 15.76 GiB. Two sit
-within 0.24 GiB of it, so a size-matched published build did
-exist. The selection had read five publishers' repositories, not
+within 0.24 GiB of it, so the no-size-matched-build clause fails
+too. The selection had read five publishers' repositories, not
 the Hub. #416 measures those builds. The measured win over
 `IQ2_XXS` stands.) Tier 2 already ranks the arm
 ahead of that build on both ruled metrics (nineteenth data point).
