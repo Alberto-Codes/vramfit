@@ -159,15 +159,18 @@ Hard gates before any publication, with their current status:
    objection.
 
 **GO ruled 2026-08-22 for publication #2**, the 30B falsifier arm on
-chart #158. Gate 3 ran a second time. #393 ruled bartowski's
-`IQ2_XXS` the bar, read at ruling time as the smallest published
-GGUF of the target, with nothing smaller than the arm published —
-and the tier-3 slice ran before publication to gate go/no-go, as
-#80 gated publication #1. (Correction 2026-08-31, #415: both size
-readings were false at ruling time. A Hub-wide query found nine
-full-model builds at or below the arm's size; the selection had
-read five publishers' repositories. #416 measures that shelf. The
-measured win over `IQ2_XXS` stands.) Tier 2 already ranks the arm
+chart #158. Gate 3 ran a second time. Nothing smaller than the arm
+is published, so no size-matched build exists, and #393 ruled
+bartowski's `IQ2_XXS`, the smallest published GGUF of the target,
+the bar — with the tier-3 slice run before publication to gate
+go/no-go, as #80 gated publication #1. (Correction 2026-08-31,
+#415: the three size readings in that sentence were false at
+ruling time. A Hub-wide query on 2026-08-22 found eight other
+publishers' full-model builds below the arm's 15.76 GiB. Two sit
+within 0.24 GiB of it, so a size-matched published build did
+exist. The selection had read five publishers' repositories, not
+the Hub. #416 measures those builds. The measured win over
+`IQ2_XXS` stands.) Tier 2 already ranks the arm
 ahead of that build on both ruled metrics (nineteenth data point).
 The tier-3 slice ran on #400 and certifies the rank: per ADR-0024
 decision 4, the arm leads on four of five tasks (MMLU 16.1σ,

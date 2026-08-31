@@ -44,6 +44,8 @@ and carries no sidecar.
 | Serve numbers (16,383 MiB visible, 53/53, 15,774.00, 357.00, 96.00, 190.47, 97.41, 16,157.88 MiB) | `falsifier-q0-imx/` serve logs (#389) | card prose, nineteenth data point |
 | `n_seq_max` 8 bound | #284 caveat 3 and ruling, chart #158 Notes | card prose |
 | Imatrix SHA-256 `fbd36e4f…aac5`, 55,314,688 B | `sha256sum` 2026-08-22, upstream LFS etag at the pinned revision | linked, never carried (see below) |
+| Five publishers' repositories checked, comparator smallest of them | chart #158 Notes: four on #265 (2026-08-15), a fifth on #276 (2026-08-16), ruled the bar on #393 | card prose, comparator section |
+| Eight other full-model GGUFs below 15.76 GiB, Hub query 2026-08-22 | issue #415 evidence table (correction, 2026-08-31) | card prose, comparator section and fit16gib section |
 
 ## The upload set (model repo)
 

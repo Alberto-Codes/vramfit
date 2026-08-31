@@ -75,12 +75,13 @@ Held-out WikiText-2 test set, 594 chunks, measured against the f16
 base on one instrument (llama.cpp b10362, same-pod f16 logits).
 Lower is better for PPL and KLD. "Same top" is the share of
 tokens where the quantized model and the f16 base agree on the top
-token — higher is better. The comparator is bartowski's `IQ2_XXS`,
-ruled as the bar before the measurement ran. The ruling read five
-publishers' repositories, and that file was the smallest of them.
-A Hub-wide query on 2026-08-22 found nine full-model GGUFs of this
-model at or below this pack's 15.76 GiB, in repositories the
-ruling did not read. The table below measures none of them.
+token — higher is better. The comparator is bartowski's `IQ2_XXS`.
+The campaign ruled it the bar before the measurement ran, after a
+check of five publishers' repositories where it was the smallest
+file. A Hub-wide query on 2026-08-22 then found eight other
+full-model GGUFs of this model below this pack's 15.76 GiB. The
+table below measures none of them. The project tracks that
+measurement.
 
 | Model | File size | Bits/param | PPL ↓ | PPL / f16 ↓ | Mean KLD ↓ | Same top ↑ |
 |---|---|---|---|---|---|---|
@@ -109,8 +110,9 @@ Two facts about the comparator, stated because they explain the gap:
   wins anyway.
 - The `IQ2_XXS` label names 12 of that build's 417 tensors.
   llama.cpp's fallback rewrites every row 256 does not divide, which
-  sends all 46 expert stacks to `IQ4_NL` at 4.5 bits per weight. The shelf's smallest build spends 4.5-bit
-  experts and loses to a recipe holding 11 stacks at 2.25.
+  sends all 46 expert stacks to `IQ4_NL` at 4.5 bits per weight.
+  The comparator spends 4.5-bit experts and loses to a recipe
+  holding 11 stacks at 2.25.
 
 ## What fit16gib means
 
@@ -157,8 +159,9 @@ The claim's boundaries, stated plainly:
   higher than real 16 GiB silicon delivers.
 - A 16 GiB owner can also run larger builds today by offloading
   part of the weights to CPU and accepting slower decode. This pack
-  is the alternative that keeps every weight on the card. The
-  project has not measured that speed difference.
+  keeps every weight on the card. The project has not measured that
+  speed difference. Smaller published builds of this model also fit
+  by file size, and this card does not measure them.
 
 ## The recipe
 

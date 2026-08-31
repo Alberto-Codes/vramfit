@@ -10,9 +10,10 @@
   assisted shares differ" below.
 - **Correction (2026-08-31, issue #415):** the 2026-08-21 amendment
   calls the `IQ2_XXS` build the smallest published build. It was not.
-  A 2026-08-22 Hub-wide query found nine full-model builds at or
-  below the pack's 15.76 GiB. The fallback analysis stands. See the
-  correction note in the amendment below.
+  A 2026-08-22 Hub-wide query found eight other publishers'
+  full-model builds below the falsifier arm's 15.76 GiB. The
+  fallback analysis stands. See the correction note in the
+  amendment below.
 
 Acceptance evidence (the same night, PR #38): the matrix generated
 in 67 minutes (345 chunks, `--process-output`, 18.3 MB). Both
@@ -129,13 +130,13 @@ tensors, and all 12 are `ssm_out` at rows of 4096. A range request over
 the first 12 MB of the file reads the header. The fallback rule is
 `src/llama-quant.cpp:374` at llama.cpp commit `4801e3c56` (b10362).
 
-> Correction 2026-08-31 (issue #415): the first sentence above
-> overstates the build's position. The build was the smallest in the
-> five repositories the campaign had checked, not the smallest
-> published. A 2026-08-22 Hub-wide query found nine full-model builds
-> at or below the pack's 15.76 GiB, and the 17.544 GiB comparator is
-> the largest of that set. The fallback analysis in this paragraph is
-> unaffected. Issue #416 measures the shelf.
+> **Correction (2026-08-31, issue #415):** the bold sentence above
+> is false. The published build was the smallest in the five
+> repositories the campaign had checked, not the smallest published.
+> A 2026-08-22 Hub-wide query found eight other publishers'
+> full-model builds below the falsifier arm's 15.76 GiB, and the
+> published build sits above them all. The fallback analysis in this
+> paragraph is unaffected. Issue #416 measures those builds.
 
 **Both packs consume the same matrix.** The published build records
 `quantize.imatrix.file` at 185 entries and 822 chunks. #300 confirmed
