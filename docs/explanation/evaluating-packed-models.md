@@ -103,6 +103,14 @@ status: stable
 > arms also mapped the interior of the gate's range, which closes
 > the eighteenth entry's open question. The page stays `stable`,
 > and the record again carries none.
+> Note 2026-08-31: #415 corrects the entry above and the nineteenth
+> data point. The comparator was not the smallest published GGUF —
+> a 2026-08-22 Hub-wide query found eight other publishers'
+> full-model builds below the pack's 15.76 GiB, and several fit a
+> 16 GiB card by file size with more room than this pack leaves,
+> serve-untested. The measured
+> win over `IQ2_XXS` stands unchanged. #416 measures those builds
+> on this page's tier-2 frame. The page stays `stable`.
 
 Scanning and planning happen inside vramfit's own frame: damage,
 measured per cell, on our calibration set. The moment a packed model
@@ -1922,7 +1930,17 @@ closed 2026-08-22 in two halves, and together they measure the two
 clauses of chart #158's Destination no earlier entry had measured:
 that the recipe beats the smallest published GGUF of the target on
 measured damage, and that it serves on a 16 GiB card no published
-build fits. The damage half ran on the ruled campaign instrument —
+build fits.
+
+> Correction 2026-08-31 (#415): the size framing of both clauses
+> was false at measurement time. Eight other publishers' full-model
+> builds sat below the pack's 15.76 GiB, and the 17.544 GiB
+> comparator sat above them all. The smaller builds fit a 16 GiB
+> card by file size. The campaign has not serve-tested them. The
+> measurements themselves stand: the win over `IQ2_XXS` and the
+> serve under the cap. #416 measures those builds.
+
+The damage half ran on the ruled campaign instrument —
 llama.cpp b10362 on a rented H100, same-pod f16 base logits, 594
 WikiText-2 chunks
 ([ADR-0027](../adr/0027-instrument-frame-matching.md)). Issue #387's
@@ -1981,8 +1999,8 @@ anyway. The label on the other side deserves its own sentence:
 `IQ2_XXS` names 12 of the build's 417 tensors, because
 `tensor_type_fallback` rewrites every row 256 does not divide, which
 sends all 46 backbone expert stacks to `IQ4_NL` at 4.5 bits per
-weight. The shelf's smallest build spends 4.5-bit experts and loses
-to a recipe holding 11 stacks at 2.25.
+weight. The comparator spends 4.5-bit experts and loses to a recipe
+holding 11 stacks at 2.25.
 
 **The serve half passed its bar with 225 MiB to spare.** The bar
 (issue #164) is fit, not speed: the pack loads fully offloaded inside

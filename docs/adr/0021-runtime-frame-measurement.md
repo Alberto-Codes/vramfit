@@ -37,6 +37,11 @@
   [ADR-0027](0027-instrument-frame-matching.md) keeps damage
   magnitudes on one instrument. Record:
   [#301 ruling comment](https://github.com/Alberto-Codes/vramfit/issues/301#issuecomment-5377920461).
+- **Correction (2026-08-31, issue #415):** the 2026-08-22 amendment
+  above calls the comparator the smallest published build. It was
+  not. A 2026-08-22 Hub-wide query found eight other publishers'
+  full-model builds below the falsifier arm's 15.76 GiB. The
+  measured win over `IQ2_XXS` and the amendment's decision stand.
 
 ## Context
 
