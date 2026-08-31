@@ -103,6 +103,13 @@ status: stable
 > arms also mapped the interior of the gate's range, which closes
 > the eighteenth entry's open question. The page stays `stable`,
 > and the record again carries none.
+> Note 2026-08-31: #415 corrects the entry above and the nineteenth
+> data point. The comparator was not the smallest published GGUF —
+> a 2026-08-22 Hub-wide query found nine full-model builds at or
+> below the pack's 15.76 GiB, several sitting under the 16 GiB card
+> with more room than this pack leaves. The measured win over
+> `IQ2_XXS` stands unchanged. #416 measures the shelf on this
+> page's tier-2 frame. The page stays `stable`.
 
 Scanning and planning happen inside vramfit's own frame: damage,
 measured per cell, on our calibration set. The moment a packed model
@@ -1922,7 +1929,13 @@ closed 2026-08-22 in two halves, and together they measure the two
 clauses of chart #158's Destination no earlier entry had measured:
 that the recipe beats the smallest published GGUF of the target on
 measured damage, and that it serves on a 16 GiB card no published
-build fits. The damage half ran on the ruled campaign instrument —
+build fits. (Correction 2026-08-31, #415: the size framing of both
+clauses was false at measurement time. Nine published full-model
+builds sat at or below the pack's 15.76 GiB, so the 17.544 GiB
+comparator was the largest of that shelf rather than the smallest
+published, and the smaller builds fit under 16 GiB by file size.
+The measurements themselves stand — the win over `IQ2_XXS` and the
+serve under the cap. #416 measures the rest of the shelf.) The damage half ran on the ruled campaign instrument —
 llama.cpp b10362 on a rented H100, same-pod f16 base logits, 594
 WikiText-2 chunks
 ([ADR-0027](../adr/0027-instrument-frame-matching.md)). Issue #387's

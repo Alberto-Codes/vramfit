@@ -76,7 +76,11 @@ base on one instrument (llama.cpp b10362, same-pod f16 logits).
 Lower is better for PPL and KLD. "Same top" is the share of
 tokens where the quantized model and the f16 base agree on the top
 token — higher is better. The comparator is bartowski's `IQ2_XXS`,
-the smallest published GGUF of this model at measurement time.
+ruled as the bar before the measurement ran. The ruling read five
+publishers' repositories, and that file was the smallest of them.
+A Hub-wide query on 2026-08-22 found nine full-model GGUFs of this
+model at or below this pack's 15.76 GiB, in repositories the
+ruling did not read. The table below measures none of them.
 
 | Model | File size | Bits/param | PPL ↓ | PPL / f16 ↓ | Mean KLD ↓ | Same top ↑ |
 |---|---|---|---|---|---|---|
