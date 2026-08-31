@@ -104,8 +104,9 @@ config claims 280 (`vision_soft_tokens_per_image`).
   The measurement ran at the amendment's frame with the kv9 decoder
   held fixed. Both arms measure divergence from the amendment's
   BF16 reference. The Q4_K_M mmproj (628.96 MiB) reaches 0.0050
-  mean content-class truncated top-20 KLD (n = 120), against the
-  BF16 mmproj arm's 0.0045. Both hold 99.2 % top-token agreement,
+  mean content-class truncated top-20 KLD (n = 120). The same kv9
+  decoder behind the BF16 mmproj reaches 0.0045. Both arms hold
+  99.2 % top-token agreement,
   and the all-position means sit at 0.0483 against 0.0489, over a
   1.07e-4 noise floor. It frees 482 MiB of VRAM at load. At `-np 3`
   with 4,096-token slots it served three of three on 2026-08-30's
