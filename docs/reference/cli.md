@@ -631,7 +631,7 @@ projector sidecar
 amended 2026-08-31). The
 stage runs after the size check and the reconstruction gate pass:
 a byte-identical copy under
-the vendor file name, proven by SHA-256 of the source and the copy.
+the supplied file name, proven by SHA-256 of the source and the copy.
 A stale file at the destination is replaced. A symlink there
 refuses, and a mismatch removes the copy — each halts with the
 decoder kept. The `sidecar_shipped` event

@@ -64,7 +64,8 @@ config claims 280 (`vision_soft_tokens_per_image`).
    root table already practice this on the pack and plan paths. This
    record makes it policy.
 
-2. **The mmproj ships as an unquantized projector sidecar.** The
+2. **The mmproj ships as a projector sidecar, unquantized by
+   default.** The
    artifact ships the vendor mmproj beside the decoder GGUF,
    byte-identical. This defers rather than refuses. `llama-quantize`
    takes an mmproj at b10362. On this file Q4_K_M frees ~0.50 GiB
@@ -73,8 +74,8 @@ config claims 280 (`vision_soft_tokens_per_image`).
    delivers a vision-quality instrument that prices the trade. #442
    carries the build. **The 2026-08-29 amendment below proves the
    instrument. #451 priced the mmproj trade on 2026-08-30 — see
-   open question 2. The 2026-08-31 amendment below swaps the
-   published sidecar to Q4_K_M.**
+   open question 2. Amended 2026-08-31: the swap amendment below
+   restates this decision and swaps the published sidecar.**
 
 3. **The weight budget subtracts the measured vision line when the
    model card claims vision.** The line is 1,600 MiB on this target
