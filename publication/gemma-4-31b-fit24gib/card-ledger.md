@@ -38,11 +38,14 @@ shipped artifact and carries no sidecar.
 
 | Card numbers | Source record | Shipped destination |
 |---|---|---|
-| Content class 0.0045 mean / 0.0239 p95 / 99.2 % (both arms) | `campaign-breakdown.json` | `analysis/vision-campaign-kv9.json`, results |
+| Content class 0.0045 mean / 0.0239 p95 / 99.2 % (BF16-sidecar campaign arms) | `campaign-breakdown.json` | `analysis/vision-campaign-kv9.json`, results |
 | All-position means 0.0489 (candidate) and 1.1092 (QAT) over 178 positions | `campaign-metrics.json` | same artifact, results |
-| Ratio 10.9x content class to all-position mean | ADR-0030 amendment, recomputed from the two figures above | card prose |
+| Ratios 10.9x (BF16-sidecar arm) and 9.7x (shipped arm) content class to all-position mean, 8.3x / 42x and 7.5x / 47x against QAT and the floor | ADR-0030 amendments, recomputed from the table figures and the 1.07e-4 floor | card prose |
 | The 178 per-position KLD pairs | recomputed 2026-08-29 from the campaign force logs with `campaign-breakdown.py`'s `kld()`, aggregates verified against the shipped breakdown | same artifact, `results.pairs` (ADR-0025 derived-number rule) |
 | Noise floor 1.07e-4, ratios 8.3x and 42x | [#419 checks comment](https://github.com/Alberto-Codes/vramfit/issues/419) 2026-08-29, `campaign-mm-kv9-self.force.jsonl` | same artifact, method block |
+| Shipped (Q4_K_M-recipe) arm: content 0.0050 mean / 0.0193 p95 / 99.2 %, all-position 0.0483 | `campaign-breakdown.json` `mm-kv9q4km` block, [#451 findings comment](https://github.com/Alberto-Codes/vramfit/issues/451) 2026-08-30 | card prose and table (raw logs stay in the run archive) |
+| Sidecar header: 150 Q5_0 / 13 Q8_0 / 27 F16 / 166 F32, 9.16 effective bits per parameter | `gguf.GGUFReader` type count over the shipped file, run 2026-08-31 | card prose |
+| Same-sidecar image gain: 69,632 against 49,152 (+20,480, +41.7 %), swap adds 4,096 (73,728 against 69,632) | ADR-0030 2026-08-31 amendment, `bf16mm-line-*.out`, `vline-ext-*.out`, `qat-line-*.out` | card prose |
 | 10 of 10 held-out answers (reference and candidate) | `campaign-breakdown.json` `own_path` block | same artifact, results |
 | Campaign input hashes | `sha256sum` 2026-08-29 on the six campaign logs and `heldout/manifest.json` | same artifact, inputs block |
 
@@ -59,11 +62,13 @@ word for word.
 | Margin 86.08 MiB (90,265,216 B) | run log `size_checked` `margin_bytes` | run log |
 | Allocation 6/9/46 groups at nominal 2/3/4 (46 = 45 layers + the token embedding), trace 81 steps, damage 0.184 | `recipe.json` `assignments` and `plan` | recipe |
 | Pack flags: `--pure`, Q2_K base, 60 overrides, Q4_K embedding and output | run log `model_packed` | run log |
-| Text ladder 81,920 vs 61,440 (+33.3 %), fail rungs 86,016 / 65,536 | [#423 serve-proof comment](https://github.com/Alberto-Codes/vramfit/issues/423#issuecomment-5459430288), `server-kv9-ctx*.log`, `server-qat-today-ctx*.log` | card prose |
-| Image ladder 61,440 vs 40,960 (+50 %), encode fails 65,536 / 45,056 | ADR-0030 Consequences, `server-mm-kv9-*.log`, `server-mm-qat-ctx44k-gen.log` | card prose |
-| Boundary generation check (five decoded tokens, no throughput claim) | `server-kv9-ctx80k-gen.log` (#423 serve-proof comment) | card prose |
+| Text ladder 86,016 vs 65,536 (+31.25 %), fail rungs 90,112 / 69,632 | ADR-0030 2026-08-31 amendment, `vline-clean-*.out`, `vline-ext-*.out`, `qat-line-*.out`, `server-vline-*.log` (2026-08-31 frame, 23,629–23,631 MiB free before each load per the `.freemem` records) | card prose |
+| Image ladder 73,728 vs 49,152 (+50 %), encode fails 77,824 / 53,248 | same amendment and out files, `server-vline-q4km-*.log`, `server-vline-qat-mm-*.log` | card prose |
+| Prior-frame pair 81,920 / 61,440 (2026-08-28, BF16 sidecar) and its 81,920 reproduction | [#423 serve-proof comment](https://github.com/Alberto-Codes/vramfit/issues/423#issuecomment-5459430288), `server-kv9-ctx*.log`, `vline-clean-*.out` 81,920 rung (2026-08-31) | card prose |
+| Boundary generation check (five decoded tokens, no throughput claim) | `server-gencheck-86016.log`, `server-gencheck-86016.response.json` (2026-08-31) | card prose |
 | Device size 24,564 MiB | `server-kv9-ctx80k.log`, #423 serve-proof comment | card prose |
-| Vision line 1,600 MiB (1,022.8 MiB weights + 150.63 MiB CLIP reserve + encode transient), 256 tokens per 768×768 image | ADR-0030 decision 3 and 4, #236 checks comments | card prose |
+| Vision line 960 MiB (Q4_K_M sidecar, 12,288 displaced tokens), 772 MiB same-context load delta | ADR-0030 2026-08-31 amendment, `vline-clean-*.out` free_at_load deltas | card prose |
+| BF16-sidecar line 1,280 MiB in the same frame (components 1,022.8 MiB weights + 150.63 MiB CLIP reserve measured 2026-08-28), 256 tokens per 768×768 image | ADR-0030 decision 3 and 4 plus the 2026-08-31 amendment, `bf16mm-line-*.out`, `vline-ext-*.out`, #236 checks comments | card prose |
 | `-np 1` trap (~2,400 MiB SWA at `-np 4`), ~200 MiB encode headroom | #423 serve-proof comment, chart #441 Notes | card prose |
 | Imatrix coverage: no `token_embd`, `attn_v` on 50 of 60 layers | the matrix's own entry names ([#439](https://github.com/Alberto-Codes/vramfit/issues/439) body), run log `imatrix_uncovered` | card prose (matrix not carried) |
 | Frame: 357 blocks, 182,404 tokens, 356 chunks, n_ctx 512 | [#423 results comment](https://github.com/Alberto-Codes/vramfit/issues/423#issuecomment-5451599611) | card prose |
@@ -84,7 +89,7 @@ and this source must match.
 | File | SHA-256 | Bytes |
 |---|---|---|
 | `gemma-4-31B-it-fit24gib.gguf` | `2a7bd7a7be6979c858258618ab576db573a7b671b45ee5e9785247341b8c3b1e` | 16,015,862,144 |
-| `gemma-4-31B-it-mmproj.gguf` | `6bd60bdb958548b4093196d38744b0f2290c12503a3fddd7486bffa9c5eb07a4` | 1,200,726,368 |
+| `gemma-4-31B-it-mmproj-q4km.gguf` | `4a03ccaeaaa49cde65a97addac0b2ccd07df4617858aac1472048589ab672033` | 659,537,504 |
 | `recipe.json` | `2730692845959b457211c5bd23a4d67acb8744aaa15e5eda8e7f825ed1e3b320` | 29,951 |
 | `gemma-4-31B-it-fit24gib.runlog.jsonl` | `8da670782e6ae96ef3cce4a2bc00c0962f91b5ab083a19f11a8c836c0ade5b6a` | 2,036 |
 | `gemma-4-31B-it-fit24gib.gguf.evals.json` | `eaefcf7c6b6d40afde6ea275cd7f6b6474525d389036bdbf6a5012c61a9a62d9` | 2,714 |
@@ -120,7 +125,7 @@ from `~`.
 | Claim | Source |
 |---|---|
 | Checkpoint revision `1e4d8beecacb8b7590c1d8bedd7335f687bf311f` | `~/models/gemma-4-31B-it-qat-q4_0-unquantized/.cache/huggingface/download/config.json.metadata` |
-| Projector downloaded from the vendor GGUF repo at revision `59dde24573e7e61570dba08b18a2e1fe246955ed`, unmodified | `.cache/huggingface/download/gemma-4-31B-it-mmproj.gguf.metadata` in the run root — the etag equals the shipped SHA-256 |
+| Projector source downloaded from the vendor GGUF repo at revision `59dde24573e7e61570dba08b18a2e1fe246955ed`, then converted to Q4_K_M by llama-quantize b10362 (swap ruling 2026-08-31) | `.cache/huggingface/download/gemma-4-31B-it-mmproj.gguf.metadata` in the run root — the etag equals the BF16 source SHA-256 (`6bd60bdb…07a4`). Conversion record: [#451 findings](https://github.com/Alberto-Codes/vramfit/issues/451), `sha256sum` 2026-08-31 on `gemma-4-31B-it-mmproj-q4km.gguf` |
 | QAT comparator from the same repo at the same revision | `.cache/huggingface/download/gemma-4-31B_q4_0-it.gguf.metadata` in the run root — the etag equals `179cfb99…74b` |
 | Projector: 190 BF16 + 166 F32 tensors, roots `v.` and `mm.` | ADR-0030 Context (header verification, 2026-08-28) |
 | Calibration corpus: Project Gutenberg text under the Gemma channel frame | `calibration.txt`, `calibration-framed.txt` in the run root |

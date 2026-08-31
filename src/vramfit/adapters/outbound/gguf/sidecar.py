@@ -1,12 +1,13 @@
 """Ship the projector sidecar beside the packed decoder GGUF.
 
-The artifact ships the vendor mmproj beside the decoder GGUF,
+The artifact ships the supplied mmproj beside the decoder GGUF,
 byte-identical (ADR-0030 decision 2). This module copies the file
 and proves the copy: it hashes the source and the copy with SHA-256,
 refuses a mismatch, and removes a mismatched file it wrote. A
 symlink at the destination refuses — the write would follow it out
-of the artifact directory. The sidecar stays unquantized until #419
-prices the quantized alternative — the copy is the whole mechanism.
+of the artifact directory. The copy is the whole mechanism. The
+sidecar's precision policy lives in ADR-0030 decision 2, as
+amended 2026-08-31.
 
 The hash also serves publication: the sidecar reaches hashing and
 upload beside the decoder GGUF (ADR-0030 consequences), and the
@@ -85,9 +86,9 @@ def _sha256(path: Path) -> str:
 
 
 def ship_sidecar(mmproj: Path, beside: Path) -> SidecarResult:
-    """Copy the vendor mmproj beside a packed artifact, byte-identical.
+    """Copy the supplied mmproj beside a packed artifact, byte-identical.
 
-    The copy keeps the vendor file name and lands in the packed
+    The copy keeps the supplied file name and lands in the packed
     artifact's directory (ADR-0030 decision 2). The function hashes
     the source, copies, hashes the copy, and refuses a mismatch. A
     stale file already at the destination is replaced. A source
@@ -97,7 +98,7 @@ def ship_sidecar(mmproj: Path, beside: Path) -> SidecarResult:
     follow it and land the payload outside the artifact directory.
 
     Args:
-        mmproj: The vendor mmproj file.
+        mmproj: The mmproj file to ship.
         beside: The packed decoder GGUF the sidecar ships beside.
 
     Returns:
@@ -109,7 +110,7 @@ def ship_sidecar(mmproj: Path, beside: Path) -> SidecarResult:
         RuntimeError: If the destination is a symlink, or the copy's
             hash differs from the source's. A mismatched file this
             call copied is removed, so no wrong-byte file wears the
-            vendor name. The in-place source is never removed.
+            sidecar name. The in-place source is never removed.
         OSError: If a read, write, or stat fails.
     """
     destination = beside.with_name(mmproj.name)
@@ -129,7 +130,7 @@ def ship_sidecar(mmproj: Path, beside: Path) -> SidecarResult:
         )
     source_digest = _sha256(mmproj)
     if destination.exists() and destination.samefile(mmproj):
-        # The destination is the vendor file itself — one hash
+        # The destination is the source file itself — one hash
         # already proves it, and a second read costs a full pass
         # over a ~GiB file.
         copy_digest = source_digest
