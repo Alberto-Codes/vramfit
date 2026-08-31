@@ -37,12 +37,15 @@ scheme. The budget is the claim.
 **Two files, one artifact.** The decoder
 (`gemma-4-31B-it-fit24gib.gguf`, 14.92 GiB) carries the quantized
 language model. The projector sidecar
-(`gemma-4-31B-it-mmproj.gguf`, 1.118 GiB) carries the vision tower
-in BF16, byte-identical to the vendor projector. Text-only serving
-needs the decoder alone. Image serving needs both files. The
-sidecar stays unquantized deliberately: the literature marks vision
-components as more quantization-sensitive than the decoder, and the
-quality cost of quantizing this projector is unmeasured.
+(`gemma-4-31B-it-mmproj-q4km.gguf`, 629 MiB) carries the vision
+tower at Q4_K_M, quantized from the vendor projector. Text-only
+serving needs the decoder alone. Image serving needs both files.
+The sidecar shipped in BF16 until 2026-08-31, when a measurement
+priced the trade: the Q4_K_M sidecar matches the BF16 sidecar on
+content-class KLD (0.0050 against 0.0045, 99.2 % top-token
+agreement both), frees 482 MiB at load, and buys 4,096 tokens of
+context at the serve boundary. The measurement record is ADR-0030
+open question 2 and its 2026-08-31 amendment.
 
 ## The headline
 
@@ -50,17 +53,19 @@ The official [QAT Q4_0 GGUF](https://huggingface.co/google/gemma-4-31B-it-qat-q4
 of this model is 16.44 GiB. This pack is 14.92 GiB at comparable
 measured text quality — four benchmark ties and one win, tables
 below — and lower measured vision-conditioned divergence. The freed
-1.5 GiB of weights buys context on the same card:
+weights buy context on the same card:
 
 | Serving shape | This pack | QAT Q4_0 | Gain |
 |---|---|---|---|
-| Text-only, measured max load | 81,920 tokens | 61,440 tokens | +20,480 (+33.3 %) |
-| One image aboard, measured max load | 61,440 tokens | 40,960 tokens | +20,480 (+50 %) |
+| Text-only, measured max load | 86,016 tokens | 65,536 tokens | +20,480 (+31.25 %) |
+| One image aboard, measured max load | 73,728 tokens | 49,152 tokens | +24,576 (+50 %) |
 
 Both rows are served results on an RTX 4090 (24 GiB), llama.cpp
-b10362, `-ngl 99 -np 1`, measured at 4,096-token ladder rungs under
-the same runtime buffers. Every measured number below sits beside
-its baseline counterpart. The card prints the losing numbers too.
+b10362, `-ngl 99 -np 1`, measured 2026-08-31 at 4,096-token ladder
+rungs in one frame — one day, one desktop share, both packs. The
+QAT rows serve the vendor's own BF16 projector for the image row.
+Every measured number below sits beside its baseline counterpart.
+The card prints the losing numbers too.
 
 ## Quality beside size — text
 
@@ -122,8 +127,11 @@ image-conditioned measurement, not from the map.
 boundary.** The llama.cpp server caps `n_probs` at 20, so this is
 not a full-vocabulary KLD. A BF16 reference decoder generated
 greedily over 10 held-out 768×768 images, and the harness
-teacher-forced each quantized arm on the reference sequence. All
-three arms served through the same BF16 projector. Position classes
+teacher-forced each quantized arm on the reference sequence. The
+campaign's three decoder arms served through the same BF16
+projector. A fourth arm measured the shipped pair — this decoder
+behind the Q4_K_M sidecar — with the projector as the only
+variable. Position classes
 separate image-grounded `content` tokens from channel-frame policy
 tokens (`markup`, `pos0`). Frame-policy positions dominate
 all-position means on this channel-locked model, so the content
@@ -133,15 +141,18 @@ Content-class results (n = 120 positions):
 
 | Arm | Mean KLD ↓ | p95 KLD ↓ | Top-token agreement ↑ |
 |---|---|---|---|
-| **This pack** | **0.0045** | **0.0239** | **99.2 %** |
-| QAT Q4_0 | 0.0373 | 0.1928 | 97.5 % |
+| **This pack as shipped (Q4_K_M sidecar)** | **0.0050** | **0.0193** | **99.2 %** |
+| This pack behind the BF16 sidecar | 0.0045 | 0.0239 | 99.2 % |
+| QAT Q4_0 behind the BF16 sidecar | 0.0373 | 0.1928 | 97.5 % |
 
-The all-position mean for this pack is 0.0489 over 178 positions —
-10.9 times the content-class figure, dominated by the frame-policy
-classes. The QAT baseline's all-position mean over the same 178
-positions is 1.1092. The instrument noise floor is 1.07e-4 mean
-KLD, measured
-by teacher-forcing this pack on its own greedy sequence. This pack
+The two sidecar arms match in every content class. Their content
+means differ by 0.0005 with opposite-sign all-position means
+(0.0483 as shipped, 0.0489 behind BF16), which reads as noise. The
+all-position mean sits 10.9 times above the content-class figure,
+dominated by the frame-policy classes. The QAT baseline's
+all-position mean over the same 178 positions is 1.1092. The
+instrument noise floor is 1.07e-4 mean KLD, measured by
+teacher-forcing this pack on its own greedy sequence. This pack
 measures 8.3 times below the QAT baseline and 42 times above the
 floor. The BF16 reference and this pack each answered 10 of 10
 held-out image questions correctly on their own generation paths.
@@ -159,13 +170,16 @@ Two caveats travel with these numbers:
 The full campaign record — per-image tables, position-class
 breakdown, the 178 per-position KLD pairs, input log hashes —
 ships in `analysis/vision-campaign-kv9.json`. The pairs recompute
-every derived vision number on this card.
+every derived vision number on this card. The Q4_K_M-sidecar arm's
+record lives in the vramfit tracker
+([#451](https://github.com/Alberto-Codes/vramfit/issues/451)) and
+in ADR-0030 open question 2, with raw logs in the run archive.
 
 ## What fit24gib means
 
 The claim: the decoder loads fully offloaded on a 24 GiB card at
-81,920 tokens of context and generates, and the decoder plus the
-projector load at 61,440 tokens and answer an image prompt. Both
+86,016 tokens of context and generates, and the decoder plus the
+projector load at 73,728 tokens and answer an image prompt. Both
 are measured serve results under the stated configuration, not a
 promise about every runtime setup.
 
@@ -183,33 +197,40 @@ The packed file lands 86.08 MiB under the weight budget.
 
 The serve ladders, llama.cpp b10362 Vulkan on an RTX 4090
 (24,564 MiB) under desktop sharing, `-ngl 99 -np 1`, KV cache f16,
-4,096-token rungs:
+4,096-token rungs, measured 2026-08-31 with the desktop share held
+at 481 MiB:
 
 | Pack | Text-only max load | One image aboard |
 |---|---|---|
-| **This pack** | **81,920** (fails at 86,016) | **61,440** (encode fails at 65,536) |
-| QAT Q4_0 | 61,440 (fails at 65,536) | 40,960 (encode fails at 45,056) |
+| **This pack** | **86,016** (fails at 90,112) | **73,728** (encode fails at 77,824) |
+| QAT Q4_0 | 65,536 (fails at 69,632) | 49,152 (encode fails at 53,248) |
 
-At the 81,920-token boundary the decoder answered a completion
+The ladder boundary moves with the desktop's VRAM share. An
+earlier frame (2026-08-28, BF16 sidecar, a larger desktop share)
+measured 81,920 text-only and 61,440 with one image, and its
+81,920 rung reproduced on 2026-08-31 before these ladders ran.
+At the 86,016-token boundary the decoder answered a completion
 request from inside that envelope. The serve ladder is a fit bar,
 not a speed bar — this card publishes no throughput figure, and
 the boundary check decoded five tokens under desktop sharing.
 Serving images costs a
-measured 1,600 MiB beyond text-only serving: 1,022.8 MiB of
-projector weights, a 150.63 MiB CLIP compute reserve, and the
-image-encode transient. One 768×768 image consumes 256 decoder
-tokens, measured at the server — the checkpoint config claims 280,
-and the measured cost wins.
+measured 960 MiB beyond text-only serving with the Q4_K_M sidecar:
+a 772 MiB load-time delta measured at matching context, plus the
+image-encode transient. The BF16 sidecar's line measured 1,280 MiB
+in the same frame (1,022.8 MiB of projector weights, a 150.63 MiB
+CLIP compute reserve, and the transient). One 768×768 image
+consumes 256 decoder tokens, measured at the server — the
+checkpoint config claims 280, and the measured cost wins.
 
 To serve:
 
 ```
 # Text only, at the measured boundary
-llama-server -m gemma-4-31B-it-fit24gib.gguf -c 81920 -ngl 99 -np 1
+llama-server -m gemma-4-31B-it-fit24gib.gguf -c 86016 -ngl 99 -np 1
 
 # Images, at the measured boundary
 llama-server -m gemma-4-31B-it-fit24gib.gguf \
-  --mmproj gemma-4-31B-it-mmproj.gguf -c 61440 -ngl 99 -np 1
+  --mmproj gemma-4-31B-it-mmproj-q4km.gguf -c 73728 -ngl 99 -np 1
 ```
 
 Two reproduction traps, stated because each cost a failed load:
@@ -312,7 +333,7 @@ application-layer protections you would give the base model.
 | File | SHA-256 | Bytes |
 |---|---|---|
 | `gemma-4-31B-it-fit24gib.gguf` | `2a7bd7a7be6979c858258618ab576db573a7b671b45ee5e9785247341b8c3b1e` | 16,015,862,144 |
-| `gemma-4-31B-it-mmproj.gguf` | `6bd60bdb958548b4093196d38744b0f2290c12503a3fddd7486bffa9c5eb07a4` | 1,200,726,368 |
+| `gemma-4-31B-it-mmproj-q4km.gguf` | `4a03ccaeaaa49cde65a97addac0b2ccd07df4617858aac1472048589ab672033` | 659,537,504 |
 | `recipe.json` | `2730692845959b457211c5bd23a4d67acb8744aaa15e5eda8e7f825ed1e3b320` | 29,951 |
 | `gemma-4-31B-it-fit24gib.runlog.jsonl` | `8da670782e6ae96ef3cce4a2bc00c0962f91b5ab083a19f11a8c836c0ade5b6a` | 2,036 |
 | `gemma-4-31B-it-fit24gib.gguf.evals.json` | `eaefcf7c6b6d40afde6ea275cd7f6b6474525d389036bdbf6a5012c61a9a62d9` | 2,714 |
@@ -324,19 +345,26 @@ application-layer protections you would give the base model.
 The run log ends at `pack_finished`: this pack predates the vramfit
 release that records the sidecar hash in the run log, so the
 projector hash above was computed directly on the shipped bytes.
+Until 2026-08-31 this repository shipped the vendor's BF16
+projector (`gemma-4-31B-it-mmproj.gguf`, SHA-256 `6bd60bdb…07a4`,
+1,200,726,368 bytes). ADR-0030's 2026-08-31 amendment swapped the
+sidecar to Q4_K_M. The vendor repository carries the identical
+BF16 bytes.
 
 ## Provenance and license
 
 The source checkpoint is
 [google/gemma-4-31B-it-qat-q4_0-unquantized](https://huggingface.co/google/gemma-4-31B-it-qat-q4_0-unquantized)
 at revision `1e4d8beecacb8b7590c1d8bedd7335f687bf311f`. Conversion
-to the BF16 decoder GGUF ran at llama.cpp b10362. The projector is
-the vendor's own published file, downloaded from
+to the BF16 decoder GGUF ran at llama.cpp b10362. The projector
+derives from the vendor's own published file, downloaded from
 [google/gemma-4-31B-it-qat-q4_0-gguf](https://huggingface.co/google/gemma-4-31B-it-qat-q4_0-gguf)
-at revision `59dde24573e7e61570dba08b18a2e1fe246955ed` and shipped
-unmodified — the SHA-256 above matches the vendor's LFS object. It
+at revision `59dde24573e7e61570dba08b18a2e1fe246955ed` — the
+source file's SHA-256 matches the vendor's LFS object, and it
 carries 190 BF16 and 166 F32 tensors under the `v.` and `mm.`
-roots. The QAT Q4_0 comparator is the vendor's decoder GGUF from
+roots. llama-quantize b10362 converted it to Q4_K_M
+(1,145.08 MiB to 628.96 MiB, fallback on 190 of 356 tensors).
+The QAT Q4_0 comparator is the vendor's decoder GGUF from
 the same repository at the same revision, SHA-256
 `179cfb99212709597eae5929112cfca677e1bbf566178b479ae1da0c4772874b`.
 

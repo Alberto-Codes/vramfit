@@ -7,6 +7,10 @@
   clause now applies to unmeasured targets only. A measured target's
   card states its bound. Maintainer ruling 2026-08-29. See
   "Amendment: the measured vision bound" below.
+- **Amendment (2026-08-31, chart #441):** the published sidecar
+  swaps to Q4_K_M. The vision line re-measured at 960 MiB with the
+  Q4_K_M sidecar aboard. Maintainer ruling 2026-08-31. See
+  "Amendment: the sidecar swaps to Q4_K_M" below.
 - **Origin:** Maintainer ruling 2026-08-29 on #236, with #419's
   interim clause folded in. Chart #441 indexes the image lane.
   Evidence lives in #236's checks comments (2026-08-28, corrected
@@ -68,15 +72,17 @@ config claims 280 (`vision_soft_tokens_per_image`).
    delivers a vision-quality instrument that prices the trade. #442
    carries the build. **The 2026-08-29 amendment below proves the
    instrument. #451 priced the mmproj trade on 2026-08-30 — see
-   open question 2. The sidecar still ships unquantized. The swap
-   ruling stays open.**
+   open question 2. The 2026-08-31 amendment below swaps the
+   published sidecar to Q4_K_M.**
 
 3. **The weight budget subtracts the measured vision line when the
-   model card claims vision.** The line is 1,600 MiB on this target.
-   It comes from the serve ladder, never from the mmproj file size —
+   model card claims vision.** The line is 1,600 MiB on this target
+   with the BF16 sidecar. It comes from the serve ladder, never from
+   the mmproj file size —
    the file is 1.118 GiB and the serving cost is larger. A card that
    claims no vision subtracts nothing and states the absence. #442
-   carries the build.
+   carries the build. **The 2026-08-31 amendment below re-measures
+   the line at 960 MiB with the Q4_K_M sidecar aboard.**
 
 4. **The caller supplies `--tokens-per-image` from the measured image
    token cost.** 256 tokens on this target. The measured cost wins
@@ -110,8 +116,8 @@ config claims 280 (`vision_soft_tokens_per_image`).
   and the all-position means sit at 0.0483 against 0.0489, over a
   1.07e-4 noise floor. It frees 482 MiB of VRAM at load. At `-np 3`
   with 4,096-token slots it served three of three on 2026-08-30's
-  ceiling (#450, #451). Whether the published sidecar swaps to
-  Q4_K_M stays a maintainer decision.
+  ceiling (#450, #451). The maintainer ruled the swap on
+  2026-08-31 — see "Amendment: the sidecar swaps to Q4_K_M" below.
 - **The vision line on an unmeasured target.** The 1,600 MiB line is
   this target's measurement. No clause says whether the budget warns
   or refuses on a vision-capable target with no measured line.
@@ -133,9 +139,9 @@ config claims 280 (`vision_soft_tokens_per_image`).
   an HTTP 500 at 45,056 context, and one kv9 run at 65,536 died
   without writing a response.
 - **The pack gains a second output artifact.** The sidecar reaches
-  publication, hashing, and upload beside the decoder GGUF. It costs
+  publication, hashing, and upload beside the decoder GGUF. It cost
   its full 1.118 GiB on disk and in distribution until the
-  maintainer rules on the swap (open question 2).
+  2026-08-31 swap ruling. The Q4_K_M sidecar costs 629 MiB.
 - **The sidecar seam stays as built.** `ship_sidecar` and
   `config_claims_vision` stay bare outbound functions. The sidecar
   ships after the reconstruction gate and before the smoke test
@@ -220,3 +226,82 @@ Decision 5 now reads:
   carries the numbers.
 - `content class` and `position class` enter the glossary with this
   amendment.
+
+## Amendment: the sidecar swaps to Q4_K_M (2026-08-31, chart #441)
+
+### Context
+
+#451 priced the mmproj precision trade on 2026-08-30 — see open
+question 2. The maintainer ruled the swap on 2026-08-31 on chart
+#441 in live exchange. The #451 deferral bound the execution:
+decision 3's line was measured with the BF16 sidecar aboard, so the
+line re-measures with the Q4_K_M sidecar before any record reuses
+it.
+
+An instrument fault delayed the measurement one day. The 2026-08-30
+OS image (bazzite 44.20260827) depressed the box's Vulkan
+allocation ceiling. The kernel logged BAR1 mapping-reuse asserts
+(`NVRM: dmaAllocMapping`), and the text ladder failed 16,384 tokens
+below the published boundary. A reboot did not clear the fault. The
+box rolled back to image 44.20260820 on 2026-08-31. The published
+81,920 text rung reproduced before any new number counted (465 MiB
+free at load).
+
+The ladder boundary also moves with desktop VRAM share. The
+2026-08-31 frame holds the desktop at 481 MiB, and every boundary
+below carries that frame. The 2026-08-28 frame held a larger
+desktop share and its boundaries sit one rung lower.
+
+### The re-measured serve pair (2026-08-31 frame)
+
+Five ladders ran on 2026-08-31 in one frame: 4,096-token rungs,
+`-ngl 99 -np 1`, KV cache f16, desktop at 481 MiB.
+
+| Arm | Boundary | Fail rung (mode) |
+|---|---|---|
+| kv9 text-only | 86,016 | 90,112 (load) |
+| kv9 + Q4_K_M mmproj, one image | 73,728 | 77,824 (encode, 19 MiB free) |
+| kv9 + BF16 mmproj, one image | 69,632 | 73,728 (load, two settled tries) |
+| QAT Q4_0 text-only | 65,536 | 69,632 (load) |
+| QAT Q4_0 + BF16 mmproj, one image | 49,152 | 53,248 (encode, 44 MiB free) |
+
+- The swap buys 4,096 tokens on the same decoder and day: 73,728
+  against 69,632.
+- The Q4_K_M line is 12,288 displaced tokens: **960 MiB** at the
+  ruled 81,920 bytes/token. The same-context load delta at 73,728
+  is 772 MiB, and the encode transient covers the rest.
+- The BF16 line measures 1,280 MiB on both decoders in this frame
+  (16,384 displaced tokens). Decision 3's 1,600 MiB carried the
+  2026-08-28 frame. The line quantizes to rung granularity and
+  moves with the frame.
+- The boundary generation check passed at 86,016 with five decoded
+  tokens.
+- The 77,824 encode failure at 19 MiB free re-confirms the
+  ~200 MiB encode headroom rule.
+
+### Decision
+
+Maintainer ruling 2026-08-31 (chart #441, live exchange): the
+published sidecar swaps to Q4_K_M.
+
+- The artifact's serve pair becomes the kv9 decoder plus the
+  Q4_K_M mmproj: `gemma-4-31B-it-mmproj-q4km.gguf`, 628.96 MiB,
+  llama-quantize b10362 from the vendor BF16 projector, fallback on
+  190 of 356 tensors.
+- Decision 3's line on this target becomes 960 MiB with the Q4_K_M
+  sidecar aboard. A record that reuses a vision line names the
+  sidecar and the frame.
+- The shipped configuration's quality bound comes from #451:
+  content-class mean KLD 0.0050, p95 0.0193, 99.2 % top-token
+  agreement against the campaign's BF16 reference.
+
+### Consequences
+
+- The card restates its serve table in the 2026-08-31 frame and
+  names both frames.
+- The model repo replaces the BF16 sidecar with the Q4_K_M file.
+  The vendor repository carries the identical BF16 bytes — the
+  shipped file was vendor-verbatim and hash-equal.
+- The sidecar's distribution cost drops from 1.118 GiB to 629 MiB.
+- The mmproj file name gains a precision marker and the serve
+  commands change.
