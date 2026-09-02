@@ -191,9 +191,8 @@ second campaign measured three arms on real GUI screenshots at
 1280×720. The dataset is PSAI Computer Use Data
 ([anaisleila/computer-use-data-psai](https://huggingface.co/datasets/anaisleila/computer-use-data-psai),
 MIT): the 1,349 tasks that carry both screenshots and interaction
-events, one middle screenshot per task. One 1280×720 screenshot is
-271 decoder tokens on this pack, measured at the server. The set is
-1,318 `EASY` tasks and 1,346 browser tasks out of 1,349. The
+events. The set is 1,318 `EASY` tasks and 1,346 browser tasks out
+of 1,349. The
 `MEDIUM` and `HARD` rows exist in the artifact at 15 and 16 tasks,
 too few to read, and do not print here.
 
@@ -202,8 +201,6 @@ One H100 SXM 80 GB ran llama.cpp b10362 CUDA at `-ngl 99`, context
 arms (the BF16 reference, this pack, and the QAT Q4_0 baseline)
 served through the same BF16 projector on that one instrument. The
 vision bound above could not claim that: its reference ran on CPU.
-`convert_hf_to_gguf.py` produced the reference decoder from the QAT
-unquantized checkpoint at b10362.
 
 **Divergence.** The metric is the vision bound's: a teacher-forced
 truncated top-20 KLD in nats at the serve boundary, 27,962
@@ -265,8 +262,15 @@ generations stop at a mean 20 tokens, and the QAT generations hit
 the 48-token cap. The QAT arm therefore amortizes per-request
 overhead over more tokens.
 
-Three disclosures ride every number in this section:
+Five disclosures ride every number in this section:
 
+- Screenshot policy. One middle screenshot per task, 1280×720. One
+  such screenshot is 271 decoder tokens on this pack, measured at
+  the server. The vision bound's images are 768×768.
+- Reference origin. `convert_hf_to_gguf.py` produced the BF16
+  reference decoder from the QAT unquantized checkpoint at b10362.
+  The H100 reference and the vision bound's CPU reference are two
+  instruments.
 - Template confound. The three GGUFs render one identical request
   to 319 (reference), 324 (this pack), and 312 (QAT) prompt tokens,
   uniform across all 1,349 tasks. Each arm's KLD folds that prefix
