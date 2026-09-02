@@ -184,6 +184,104 @@ record lives in the vramfit tracker
 ([#451](https://github.com/Alberto-Codes/vramfit/issues/451)) and
 in ADR-0030 open question 2, with raw logs in the run archive.
 
+## Real GUI content
+
+The vision bound above rests on 10 synthetic images. A second
+campaign ran this pack on real GUI screenshots, where dense text and
+small elements concentrate quantization damage. The dataset is PSAI
+Computer Use Data
+([anaisleila/computer-use-data-psai](https://huggingface.co/datasets/anaisleila/computer-use-data-psai),
+MIT): the 1,349 tasks that carry both screenshots and interaction
+events, one 1280×720 middle screenshot per task. The set is 1,318
+EASY tasks and 1,346 browser tasks out of 1,349, so no row below
+splits by difficulty or by desktop.
+
+One H100 SXM 80 GB ran llama.cpp b10362 CUDA at context 8,192,
+`-np 1`, greedy, with a 48-token frame. All three arms — the BF16
+reference, this pack, and the QAT Q4_0 baseline — served through
+the same BF16 projector on that one instrument. The vision bound
+above could not claim that: its reference ran on CPU. The reference
+decoder converts from the QAT unquantized checkpoint at b10362.
+
+**Divergence.** The estimator is the vision bound's: a teacher-forced
+truncated top-20 KLD in nats at the serve boundary, 27,962 positions,
+with the same position classes. The content class carries the claim.
+
+| Arm | Class | Positions | Mean KLD ↓ | Median ↓ | p95 ↓ | Top-token agreement ↑ |
+|---|---|---|---|---|---|---|
+| **This pack** | content | 21,216 | **0.0973** | **0.0010** | **0.485** | **93.4 %** |
+| QAT Q4_0 | content | 21,216 | 0.1143 | 0.0034 | 0.556 | 92.8 % |
+| **This pack** | all positions | 27,962 | **0.0852** | **0.0042** | **0.384** | **95.0 %** |
+| QAT Q4_0 | all positions | 27,962 | 0.3824 | 0.0125 | 1.953 | 89.7 % |
+
+Read the two scales apart. On content positions this pack leads by
+1.18 times at the mean and 3.6 times at the median. The all-position
+gap of 4.5 times is a frame-policy number. The QAT baseline diverges
+on the channel-frame positions (markup mean 1.13, position 0 mean
+1.61), where this pack measures 0.03 and 0.11. GUI content is harder
+than the held-out images for both arms: this pack's content mean
+here is 0.0973 against 0.0045 above.
+
+**Task identification.** A judge scored each arm's one-sentence
+answer against the task's ground-truth name. A MATCH needs the same
+application or site and the same user goal. Over 1,349 tasks the
+BF16 reference scored 49.9 %, this pack 51.2 %, and the QAT baseline
+51.4 %. No arm separates. The judge's noise floor is 6.9 %: on the
+598 tasks where the reference and this pack wrote byte-identical
+answers, the judge returned different verdicts 41 times. Every gap
+in the row sits inside that floor. The ceiling is the frame — one
+middle screenshot against a full-task name leaves the task
+unidentifiable about half the time for the BF16 reference itself.
+The content-class divergence gap does not surface as an accuracy
+gap in this frame.
+
+**Throughput.** Per-request server timings, means over generations,
+one slot:
+
+| Instrument | This pack | QAT Q4_0 | BF16 reference |
+|---|---|---|---|
+| H100 SXM 80 GB, CUDA, 1,349 generations per arm | 66.1 tok/s | 75.9 tok/s | 39.4 tok/s |
+| RTX 4090, Vulkan, 20 generations per arm | **47.8 tok/s** | 43.3 tok/s | — |
+
+The H100 timings are incidental, not a controlled timing arm, and
+the H100 is not the target card. The 4090 row ran the same harness,
+prompt, frame, and 20-task subset on this pack's target card:
+b10362 Vulkan, `-ngl 99 -np 1`, context 8,192, under desktop
+sharing. The gap inverts. This pack decodes 10 % faster than the
+baseline on the 4090, where the H100 CUDA build had the baseline
+15 % ahead. The shipped sidecar moves nothing on this axis
+(47.7 tok/s). The spread over 20 generations is 0.5 tok/s (pack)
+and 0.2 tok/s (QAT) standard deviation. One asymmetry: the pack's
+generations stop at a mean 20 tokens, and the QAT generations hit
+the 48-token cap, so the QAT arm amortizes per-request overhead
+over more tokens.
+
+Five disclosures ride every number in this section:
+
+- Template confound. The three GGUFs render one identical request
+  to 319 (reference), 324 (this pack), and 312 (QAT) prompt tokens,
+  uniform across all 1,349 tasks. Each arm's KLD folds that prefix
+  difference into the weight damage.
+- Generation budget. The QAT baseline's accuracy answers come from
+  a 512-token regeneration, because all 1,349 of its 48-token
+  generations ended inside the thought channel with no answer. The
+  reference and this pack answered under 48 tokens on every task.
+- Judge transport. The judge is `claude-haiku-4-5` through the
+  Claude Code CLI (`claude -p`), which exposes no temperature
+  control. All 4,047 verdicts persist in the run archive.
+- Image cost. One 1280×720 screenshot is 271 decoder tokens on this
+  pack, measured at the server.
+- Difficulty rows. The MEDIUM and HARD rows exist in the artifact
+  and rest on 15 and 16 tasks. They carry no signal and do not
+  print here.
+
+The full record — method, 13 input log hashes, aggregates, and
+1,349 per-task rows with every forced position — ships in
+`analysis/psai-gui-kv9.json`. The per-task rows recompute every
+divergence and accuracy number in this section. Raw generations,
+force logs, and judge outputs stay in the run archive. The tracker record is
+[#462](https://github.com/Alberto-Codes/vramfit/issues/462).
+
 ## What fit24gib means
 
 The claim: the decoder loads fully offloaded on a 24 GiB card at
@@ -225,9 +323,9 @@ moved three rungs: one from the frame, one from the BF16 line
 re-measuring lower in this frame, and one from the sidecar
 conversion. At the 86,016-token boundary the decoder answered a
 completion request from inside that envelope. The serve ladder is
-a fit bar, not a speed bar — this card publishes no throughput
-figure, and the boundary check decoded five tokens under desktop
-sharing.
+a fit bar, not a speed bar — the boundary check decoded five tokens
+under desktop sharing. The throughput figures sit in the real-GUI
+section above, measured at context 8,192.
 
 Serving images costs a measured 960 MiB beyond text-only serving
 with the shipped sidecar: a 772 MiB load-time delta at matching
@@ -304,7 +402,7 @@ label. Two absences matter:
 ## Reproduce it
 
 The repository ships the recipe, the run log, the evals sidecars,
-and the vision analysis artifact beside the weights. Two commands
+and the two analysis artifacts beside the weights. Two commands
 rebuild the decoder from the base checkpoint:
 
 ```
@@ -334,13 +432,14 @@ training, which ships in these weights at lower precision — and it
 can shift any model behavior. The tables above are the measured
 bound on that shift: tier 2 measures whole-model KL divergence
 against the BF16 reference on the measurement frame, tier 3 holds
-four ties and one win on held-out benchmarks, and the vision
-campaign bounds the distributional shift on 120 content-class
-positions over 10 held-out images.
+four ties and one win on held-out benchmarks, the vision campaign
+bounds the distributional shift on 120 content-class positions over
+10 held-out images, and the real-GUI campaign bounds it on 21,216
+content-class positions over 1,349 screenshots.
 
 One limit, stated plainly: damage measures output distributions,
-not safety behavior separately, and the vision bound is a
-distributional bound on 10 images, not a safety evaluation of
+not safety behavior separately, and the vision bounds are
+distributional bounds on images, not a safety evaluation of
 image inputs. Read this card as a damage disclosure, not a safety
 certificate. Deploy this pack with the same system-prompt and
 application-layer protections you would give the base model.
@@ -356,6 +455,7 @@ application-layer protections you would give the base model.
 | `gemma-4-31B-it-fit24gib.gguf.evals.json` | `eaefcf7c6b6d40afde6ea275cd7f6b6474525d389036bdbf6a5012c61a9a62d9` | 2,714 |
 | `baselines/gemma-4-31B_q4_0-it.gguf.evals.json` | `2d8561c1d9d30b5b99b586dd3b2485c51e8d49a03d58884c1bfad6efc4928f9f` | 2,710 |
 | `analysis/vision-campaign-kv9.json` | `2b705017870668ba248eea36ecb837c91d88ba0e78299ba7af9a7ce2ee709b4d` | 55,286 |
+| `analysis/psai-gui-kv9.json` | `1d4fa21e0c3647bc81750131ae4d78d9b641ab5493e0a6be2c1bdd9c358f56ec` | 2,850,127 |
 | `LICENSE` | `cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30` | 11,358 |
 | `README.md` | recorded at ship | — |
 
