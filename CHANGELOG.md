@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.4.0](https://github.com/Alberto-Codes/vramfit/compare/v0.3.0...v0.4.0) (2026-09-02)
+
+
+### Features
+
+* **cli:** build the ADR-0030 vision clauses ([#443](https://github.com/Alberto-Codes/vramfit/issues/443)) ([2638a3d](https://github.com/Alberto-Codes/vramfit/commit/2638a3d2d75a738533cba9720771ae20bd950493)), closes [#442](https://github.com/Alberto-Codes/vramfit/issues/442)
+* **domain:** represent heterogeneous KV geometry in ModelShape ([#428](https://github.com/Alberto-Codes/vramfit/issues/428)) ([9e512f6](https://github.com/Alberto-Codes/vramfit/commit/9e512f614eafbf40ac9660c294f91f2b716856c5)), closes [#421](https://github.com/Alberto-Codes/vramfit/issues/421) [#426](https://github.com/Alberto-Codes/vramfit/issues/426)
+* **domain:** solve capacity readouts from a packed recipe ([#430](https://github.com/Alberto-Codes/vramfit/issues/430)) ([da15fe3](https://github.com/Alberto-Codes/vramfit/commit/da15fe3681d7def7eaff6e3d65e989f11544f394))
+* **scan:** frame calibration text for channel-locked targets ([#437](https://github.com/Alberto-Codes/vramfit/issues/437)) ([f4cbe2d](https://github.com/Alberto-Codes/vramfit/commit/f4cbe2d1ead2d41fed385c7fdb4c5f6b101dd094))
+
+
+### Bug Fixes
+
+* **adapters:** refuse discarded geometry and split the KV readers ([9e512f6](https://github.com/Alberto-Codes/vramfit/commit/9e512f614eafbf40ac9660c294f91f2b716856c5))
+* **adapters:** select the nested text_config decoder in composite configs ([#425](https://github.com/Alberto-Codes/vramfit/issues/425)) ([c1a48eb](https://github.com/Alberto-Codes/vramfit/commit/c1a48ebc57340c4f7159ab8cb734b70cfefc7aaf))
+* **domain:** price KV at the runtime's measured allocation ([#432](https://github.com/Alberto-Codes/vramfit/issues/432)) ([71f587a](https://github.com/Alberto-Codes/vramfit/commit/71f587a48be124cbca5c7b7c9bc996ce4ad27e78))
+* **pack:** map the Gemma 4 multimodal embedding name ([#438](https://github.com/Alberto-Codes/vramfit/issues/438)) ([082a66b](https://github.com/Alberto-Codes/vramfit/commit/082a66b5022e15b599db4510b465c7be1ad99d46))
+* **scan:** map the nested language_model decoder root to imatrix names ([#435](https://github.com/Alberto-Codes/vramfit/issues/435)) ([07a8379](https://github.com/Alberto-Codes/vramfit/commit/07a8379312588e8e66d3d776541d0c7605149aec))
+
 ## [0.3.0](https://github.com/Alberto-Codes/vramfit/compare/v0.2.0...v0.3.0) (2026-08-22)
 
 
