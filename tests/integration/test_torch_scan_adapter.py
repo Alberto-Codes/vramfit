@@ -833,10 +833,10 @@ class TestTorchDamageMeter:
     def test_kquant_meter_on_straddling_rows_refuses_and_leaves_the_meter_usable(
         self, tiny_model_dir, tmp_path
     ) -> None:
-        # tiny_model_dir rows are 32-wide and Q2_K blocks 256. The
-        # refusal (ADR-0018, 2026-08-17 amendment, decision 4) must
-        # name the row length. Q8_0 blocks 32, so the 8-bit cell on
-        # the same rows still measures, and that proves the meter
+        # tiny_model_dir rows are 32 or 64 wide and Q2_K blocks 256.
+        # The refusal (ADR-0018, 2026-08-17 amendment, decision 4)
+        # must name the row length. Q8_0 blocks 32, so the 8-bit cell
+        # on the same rows still measures, and that proves the meter
         # usable and the refusal keyed to the mapped type's block.
         from vramfit.adapters.outbound.scan.meter import TorchDamageMeter
 
@@ -850,8 +850,9 @@ class TestTorchDamageMeter:
             within_group="kquant",
         )
         group = meter.groups()[0].name
+        rows = int(meter._param(meter._groups[group][0]).shape[-1])
 
-        with pytest.raises(ValueError, match="does not divide the row length 32"):
+        with pytest.raises(ValueError, match=f"does not divide the row length {rows}"):
             meter.measure(group, 2)
 
         assert meter.measure(group, 8) >= 0.0
