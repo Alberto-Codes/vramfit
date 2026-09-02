@@ -11,6 +11,10 @@
   swaps to Q4_K_M. The vision line re-measured at 960 MiB with the
   Q4_K_M sidecar aboard. Maintainer ruling 2026-08-31. See
   "Amendment: the sidecar swaps to Q4_K_M" below.
+- **Note (2026-09-02, issue #464):** a two-image encode batch
+  aborts the server at both measured image boundaries. The
+  ~200 MiB encode headroom rule is a one-image rule. See the
+  2026-08-31 amendment's Consequences.
 - **Origin:** Maintainer ruling 2026-08-29 on #236, with #419's
   interim clause folded in. Chart #441 indexes the image lane.
   Evidence lives in #236's checks comments (2026-08-28, corrected
@@ -293,14 +297,6 @@ load.
   tokens.
 - The 77,824 encode failure at 19 MiB free re-confirms the
   ~200 MiB encode headroom rule.
-- Observed 2026-09-02 (#464): the ~200 MiB encode headroom rule is
-  a one-image rule. The b10362 server packs image chunks into one
-  encode graph up to `--mtmd-batch-max-tokens` (default 1,024), so
-  a second 1280×720 frame doubles the projector's compute buffer
-  and aborts the server at both serve boundaries above. With
-  `--mtmd-batch-max-tokens 264` the frame ladder reaches the
-  context refusal on both packs. The card's image serve command
-  carries the flag.
 
 ### Decision
 
@@ -335,3 +331,13 @@ published sidecar swaps to Q4_K_M.
 - The sidecar's distribution cost drops from 1.118 GiB to 629 MiB.
 - The mmproj file name gains a precision marker and the serve
   commands change.
+- The ~200 MiB encode headroom rule is a one-image rule (#464,
+  2026-09-02, 23,549–23,556 MiB free before each load). The b10362
+  server packs image chunks into one encode graph up to
+  `--mtmd-batch-max-tokens`, default 1,024. A second 1280×720
+  image then raises the graph's compute buffer to 328 MiB against
+  the 150.63 MiB one-image reserve. That allocation aborts the
+  server at the 73,728 and 49,152 image boundaries above. With
+  `--mtmd-batch-max-tokens 264` a multi-image ladder reaches the
+  context refusal on both arms. The card's image serve command
+  carries the flag.

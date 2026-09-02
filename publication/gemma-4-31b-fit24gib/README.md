@@ -370,17 +370,18 @@ or a crashed server:
 - Keep ~200 MiB free beyond the load when serving images. The
   image-encode transient allocates at request time, and the b10362
   server crashes on the failure path instead of refusing.
-- Cap the encode batch at one frame with
-  `--mtmd-batch-max-tokens 264`. The b10362 server packs up to
-  1,024 image tokens into one encode graph by default. Two 1280×720
-  frames then share one graph and double the projector's compute
-  buffer. At this boundary the server holds ~100 MiB free after one
-  image, and a 2026-09-02 frame ladder crashed it on the second
-  frame at both serve configurations in the table above. With one frame per
-  batch the same ladder filled the window to the context refusal on
-  both packs, and the server survived every request. The frame
-  counts and request walls stay in the run record
-  ([#464](https://github.com/Alberto-Codes/vramfit/issues/464)).
+- Cap the encode batch at one image with
+  `--mtmd-batch-max-tokens 264`. A 1280×720 image is 264 image
+  tokens, 271 with its wrapper. The b10362 server packs up to
+  1,024 image tokens into one encode graph by default. Two such
+  images then share one graph, and its compute buffer asks 328 MiB
+  against the 150.63 MiB one-image reserve. At this boundary the
+  server holds ~100 MiB free after one image on this pack and
+  ~65 MiB on the QAT baseline. A 2026-09-02 multi-image ladder
+  (23,549–23,556 MiB free before each load) crashed the server on
+  the second image at both configurations in the table above. With
+  one image per batch the same ladder filled the window to the
+  context refusal on both, and the server survived every request.
   The ~200 MiB rule above is a one-image rule.
 
 ## The recipe
