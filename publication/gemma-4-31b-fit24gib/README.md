@@ -357,10 +357,12 @@ llama-server -m gemma-4-31B-it-fit24gib.gguf -c 86016 -ngl 99 -np 1
 
 # Images, at the measured boundary
 llama-server -m gemma-4-31B-it-fit24gib.gguf \
-  --mmproj gemma-4-31B-it-mmproj-q4km.gguf -c 73728 -ngl 99 -np 1
+  --mmproj gemma-4-31B-it-mmproj-q4km.gguf -c 73728 -ngl 99 -np 1 \
+  --mtmd-batch-max-tokens 264
 ```
 
-Two reproduction traps, stated because each cost a failed load:
+Three reproduction traps, stated because each cost a failed load
+or a crashed server:
 
 - Pass `-np 1`. The b10362 server defaults to `-np 4` with unified
   KV, which adds ~2,400 MiB of SWA cache for this geometry and
@@ -368,6 +370,19 @@ Two reproduction traps, stated because each cost a failed load:
 - Keep ~200 MiB free beyond the load when serving images. The
   image-encode transient allocates at request time, and the b10362
   server crashes on the failure path instead of refusing.
+- Cap the encode batch at one image with
+  `--mtmd-batch-max-tokens 264`. A 1280×720 image is 264 image
+  tokens, 271 with its wrapper. The b10362 server packs up to
+  1,024 image tokens into one encode graph by default. Two such
+  images then share one graph, and its compute buffer asks 328 MiB
+  against the 150.63 MiB one-image reserve. At this boundary the
+  server holds ~100 MiB free after one image on this pack and
+  ~65 MiB on the QAT baseline. A 2026-09-02 multi-image ladder
+  (23,549–23,556 MiB free before each load) crashed the server on
+  the second image at both configurations in the table above. With
+  one image per batch the same ladder filled the window to the
+  context refusal on both, and the server survived every request.
+  The ~200 MiB rule above is a one-image rule.
 
 ## The recipe
 
