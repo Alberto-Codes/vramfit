@@ -54,6 +54,36 @@ ADR-0027 second-instrument caveat, the no-transfer scope) follows
 the [ADR-0030 amendment](https://github.com/Alberto-Codes/vramfit/blob/main/docs/adr/0030-vision-budget-sidecar.md)
 word for word.
 
+## Real-GUI numbers (analysis artifact)
+
+The #462 campaign. Every number traces to
+`analysis/psai-gui-kv9.json` or to a record this table names. The
+generator `run-462-full/psai-analysis-462.py` reads the run archive
+under `run-462-full/results/`, `run-463-qat-regen/`, and
+`run-462-4090/`. The probe facts sit under `probe-462/`.
+The ruling that put these numbers on the card is the
+[#462 ruling comment](https://github.com/Alberto-Codes/vramfit/issues/462#issuecomment-5503831300)
+(2026-09-01).
+
+| Card numbers | Source record | Shipped destination |
+|---|---|---|
+| Set composition: 1,349 tasks, 1,318 EASY, 1,346 browser, 1280×720 | `psai-subset/manifest.json`, [#462 full-run comment](https://github.com/Alberto-Codes/vramfit/issues/462#issuecomment-5496346506) | artifact `results.composition` |
+| Content class: pack 0.0973 / 0.00096 / 0.485 / 93.4 %, QAT 0.1143 / 0.00342 / 0.556 / 92.8 % over 21,216 positions | `probe-kv9.force.jsonl`, `probe-qat.force.jsonl` against `probe-ref-bf16.gen.jsonl`, #419 classifier, [#462 facts comment](https://github.com/Alberto-Codes/vramfit/issues/462#issuecomment-5503863114) | artifact `results.divergence.<arm>.content`, recomputable from `per_task[].steps` |
+| All positions: pack 0.0852 / 0.0042 / 0.384 / 95.0 %, QAT 0.3824 / 0.0125 / 1.953 / 89.7 % over 27,962 positions | same force logs, `probe-metrics.json`, `breakdown-462.json`, #462 full-run comment | artifact `results.divergence.<arm>.all` |
+| Ratios 1.18x (content mean, 1.175 unrounded), 3.6x (content median, 3.57), 4.5x (all-position mean, 4.49), markup 1.13 / 0.03, pos0 1.61 / 0.11 | recomputed from the artifact's unrounded class tables, 2026-09-01 | card prose |
+| Content mean 0.0045 (vision bound, stated as non-comparable) | `campaign-breakdown.json`, the vision-bound ledger rows | card prose, cross-reference |
+| MEDIUM 15 and HARD 16 tasks, not printed as rows | `psai-subset/manifest.json` | artifact `results.composition.difficulty`, `results.by_group` |
+| H100 instrument: SXM 80 GB, b10362 CUDA, `-ngl 99`, ctx 8,192, `-np 1`, greedy, 48-token cap, shared BF16 projector, pod `as7vrywsa8wngu`. The regen pod `1a6dp6vqyqlc7h` is the same SKU and build | `driver-full-462.sh`, `run-463-qat-regen/driver-regen-463.sh`, #462 full-run and ruling-record comments | artifact `method.instrument` |
+| Reference decoder from the QAT unquantized checkpoint via `convert_hf_to_gguf.py` at b10362 | `run-462-full/results/convert.log`, `convert-bf16.log` | artifact `method.reference` |
+| Accuracy 49.9 / 51.2 / 51.4 % (673 / 691 / 693 of 1,349) | `judged-ref-bf16.jsonl`, `judged-kv9.jsonl`, `run-463-qat-regen/judged-qat-512.jsonl`, `accuracy-463.json`, [#462 ruling record](https://github.com/Alberto-Codes/vramfit/issues/462#issuecomment-5500663214) | artifact `results.accuracy`, recomputable from `per_task[].verdicts` |
+| Noise floor 6.9 % (41 of 598 byte-identical pairs) | `answers-ref-bf16.jsonl`, `answers-kv9.jsonl` against the judged files | artifact `results.judge_noise_floor` |
+| H100 throughput 66.1 / 75.9 / 39.4 tok/s over 1,349 gens per arm, QAT 15 % ahead (14.8 unrounded) | `probe-*.gen.jsonl` server timings, [#462 throughput comment](https://github.com/Alberto-Codes/vramfit/issues/462#issuecomment-5503783237) | artifact `results.throughput.h100_sxm_80gb_cuda` |
+| 4090 throughput 47.8 / 43.3 / 47.7 tok/s, pack 10 % ahead (10.3 unrounded), sd 0.5 / 0.2, mean 20 tokens against the 48 cap, 20 gens per arm, no reference arm | `run-462-4090/probe-4090-*.gen.jsonl`, `stage-times.txt`, `server-4090-*.log`, #462 facts comment | artifact `results.throughput.rtx4090_24gib_vulkan` |
+| Prompt tokens 319 / 324 / 312, uniform per arm | `prompt_n + cache_n` over every gen record, #462 full-run comment | artifact `results.throughput.*.prompt_tokens_total` |
+| QAT 512-token regeneration, 49 of 1,349 still capped, 4,047 verdicts, judge `claude-haiku-4-5` via `claude -p` | #462 ruling record, `run-463-qat-regen/probe-qat-512.gen.jsonl` `finish_reason` counts | artifact `method.accuracy` |
+| 271 tokens per 1280×720 screenshot on the pack arm | `probe-462/probe-tokencost.jsonl`, [#462 probe comment](https://github.com/Alberto-Codes/vramfit/issues/462#issuecomment-5488291195) | card prose |
+| 13 input log hashes | `sha256sum` at generation, 2026-09-01 | artifact `inputs` |
+
 ## Recipe and serve numbers (trace to shipped artifacts and records)
 
 | Card numbers | Source record | Ships as |
@@ -65,7 +95,7 @@ word for word.
 | Text ladder 86,016 vs 65,536 (+31.25 %), fail rungs 90,112 / 69,632 | ADR-0030 2026-08-31 amendment, `vline-clean-*.out`, `vline-ext-*.out`, `qat-line-*.out`, `server-vline-*.log` (2026-08-31 frame, 23,629–23,631 MiB free before each load per the `.freemem` records) | card prose |
 | Image ladder 73,728 vs 49,152 (+50 %), encode fails 77,824 / 53,248 | same amendment and out files, `server-vline-q4km-*.log`, `server-vline-qat-mm-*.log` | card prose |
 | Prior-frame pair 81,920 / 61,440 (2026-08-28, BF16 sidecar) and its 81,920 reproduction | [#423 serve-proof comment](https://github.com/Alberto-Codes/vramfit/issues/423#issuecomment-5459430288), `server-kv9-ctx*.log`, `vline-clean-*.out` 81,920 rung (2026-08-31) | card prose |
-| Boundary generation check (five decoded tokens, no throughput claim) | `server-gencheck-86016.log`, `server-gencheck-86016.response.json` (2026-08-31) | card prose |
+| Boundary generation check (five decoded tokens, a fit bar not a speed bar) | `server-gencheck-86016.log`, `server-gencheck-86016.response.json` (2026-08-31) | card prose |
 | Device size 24,564 MiB | `server-kv9-ctx80k.log`, #423 serve-proof comment | card prose |
 | Vision line 960 MiB (Q4_K_M sidecar, 12,288 displaced tokens), 772 MiB same-context load delta | ADR-0030 2026-08-31 amendment, `vline-clean-*.out` free_at_load deltas | card prose |
 | BF16-sidecar line 1,280 MiB in the same frame (components 1,022.8 MiB weights + 150.63 MiB CLIP reserve measured 2026-08-28), 256 tokens per 768×768 image | ADR-0030 decision 3 and 4 plus the 2026-08-31 amendment, `bf16mm-line-*.out`, `vline-ext-*.out`, #236 checks comments | card prose |
@@ -95,6 +125,7 @@ and this source must match.
 | `gemma-4-31B-it-fit24gib.gguf.evals.json` | `eaefcf7c6b6d40afde6ea275cd7f6b6474525d389036bdbf6a5012c61a9a62d9` | 2,714 |
 | `baselines/gemma-4-31B_q4_0-it.gguf.evals.json` | `2d8561c1d9d30b5b99b586dd3b2485c51e8d49a03d58884c1bfad6efc4928f9f` | 2,710 |
 | `analysis/vision-campaign-kv9.json` | `2b705017870668ba248eea36ecb837c91d88ba0e78299ba7af9a7ce2ee709b4d` | 55,286 |
+| `analysis/psai-gui-kv9.json` | `8f25d7e3add46dab0cd95db161323d07c0c0cc5e216018a7778857b72cf96363` | 2,850,490 |
 | `LICENSE` | `cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30` | 11,358 |
 | `README.md` | recorded at ship | — |
 
