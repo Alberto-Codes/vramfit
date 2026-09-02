@@ -62,6 +62,41 @@ def report_for(path: str) -> str:
     return f"{path}: vramfit does not know this field. A save drops it."
 
 
+def unknown_field_warnings(seen: list[warnings.WarningMessage]) -> list[str]:
+    """Project the recorded warnings onto the reporter's own category.
+
+    `catch_warnings(record=True)` records every category. The observed
+    intruder was a `ResourceWarning` for a run-log handle an earlier
+    CLI test left open (#468). The cyclic GC raises it at a moment no
+    test order fixes, and it landed in the seam tests' recorded lists
+    (#378, #436). The seam tests assert on this projection, never on
+    the whole list.
+
+    Args:
+        seen: Every warning `catch_warnings` recorded.
+
+    Returns:
+        The message of each `UnknownArtifactFieldWarning`, in order.
+    """
+    return [
+        str(entry.message)
+        for entry in seen
+        if entry.category is UnknownArtifactFieldWarning
+    ]
+
+
+def describe_warnings(seen: list[warnings.WarningMessage]) -> str:
+    """Name every recorded warning, so a failure names an intruder.
+
+    Args:
+        seen: Every warning `catch_warnings` recorded.
+
+    Returns:
+        One ``Category: message`` line per warning.
+    """
+    return "\n".join(f"{entry.category.__name__}: {entry.message}" for entry in seen)
+
+
 @pytest.fixture
 def reports() -> Iterator[list[str]]:
     """Collect every unknown-field report raised inside the test.
@@ -348,9 +383,9 @@ class TestTheReporterSeam:
             warnings.simplefilter("always")
             map_from_dict(raw)
 
-        assert len(seen) == 1
-        assert seen[0].category is UnknownArtifactFieldWarning
-        assert "$.notes" in str(seen[0].message)
+        assert unknown_field_warnings(seen) == [report_for("$.notes")], (
+            describe_warnings(seen)
+        )
 
     def test_every_document_reports_under_stdlib_default_filters(self) -> None:
         # One call site, three documents — a tool walking a directory.
@@ -373,7 +408,9 @@ class TestTheReporterSeam:
             for document in documents:
                 map_from_dict(document)
 
-        assert [str(entry.message) for entry in seen] == [report_for("$.notes")] * 3
+        assert unknown_field_warnings(seen) == [report_for("$.notes")] * 3, (
+            describe_warnings(seen)
+        )
 
     def test_a_token_restores_the_reporter_it_replaced(self) -> None:
         outer: list[str] = []
@@ -400,4 +437,22 @@ class TestTheReporterSeam:
             map_from_dict(raw)
 
         assert len(reports) == 1
-        assert seen == []
+        assert unknown_field_warnings(seen) == [], describe_warnings(seen)
+
+    def test_installed_reporter_with_a_foreign_warning_recorded_stays_silent(
+        self, reports
+    ) -> None:
+        # This stand-in reproduces the GC-timed `ResourceWarning` of
+        # #378. It failed test_an_installed_reporter_replaces_the_warning
+        # on 2026-08-21 and 2026-08-22.
+        raw = a_map()
+        raw["notes"] = "hand note"
+
+        with warnings.catch_warnings(record=True) as seen:
+            warnings.simplefilter("always")
+            warnings.warn("unclosed file <stand-in>", ResourceWarning, stacklevel=1)
+            map_from_dict(raw)
+
+        assert len(reports) == 1
+        assert unknown_field_warnings(seen) == [], describe_warnings(seen)
+        assert "ResourceWarning: unclosed file <stand-in>" in describe_warnings(seen)
