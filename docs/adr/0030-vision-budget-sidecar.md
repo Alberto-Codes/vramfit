@@ -293,6 +293,14 @@ load.
   tokens.
 - The 77,824 encode failure at 19 MiB free re-confirms the
   ~200 MiB encode headroom rule.
+- Observed 2026-09-02 (#464): the ~200 MiB encode headroom rule is
+  a one-image rule. The b10362 server packs image chunks into one
+  encode graph up to `--mtmd-batch-max-tokens` (default 1,024), so
+  a second 1280×720 frame doubles the projector's compute buffer
+  and aborts the server at both serve boundaries above. With
+  `--mtmd-batch-max-tokens 264` the frame ladder reaches the
+  context refusal on both packs. The card's image serve command
+  carries the flag.
 
 ### Decision
 

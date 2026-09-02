@@ -357,10 +357,12 @@ llama-server -m gemma-4-31B-it-fit24gib.gguf -c 86016 -ngl 99 -np 1
 
 # Images, at the measured boundary
 llama-server -m gemma-4-31B-it-fit24gib.gguf \
-  --mmproj gemma-4-31B-it-mmproj-q4km.gguf -c 73728 -ngl 99 -np 1
+  --mmproj gemma-4-31B-it-mmproj-q4km.gguf -c 73728 -ngl 99 -np 1 \
+  --mtmd-batch-max-tokens 264
 ```
 
-Two reproduction traps, stated because each cost a failed load:
+Three reproduction traps, stated because each cost a failed load
+or a crashed server:
 
 - Pass `-np 1`. The b10362 server defaults to `-np 4` with unified
   KV, which adds ~2,400 MiB of SWA cache for this geometry and
@@ -368,6 +370,18 @@ Two reproduction traps, stated because each cost a failed load:
 - Keep ~200 MiB free beyond the load when serving images. The
   image-encode transient allocates at request time, and the b10362
   server crashes on the failure path instead of refusing.
+- Cap the encode batch at one frame with
+  `--mtmd-batch-max-tokens 264`. The b10362 server packs up to
+  1,024 image tokens into one encode graph by default. Two 1280×720
+  frames then share one graph and double the projector's compute
+  buffer. At this boundary the server holds ~100 MiB free after one
+  image, and a 2026-09-02 frame ladder crashed it on the second
+  frame at both serve configurations in the table above. With one frame per
+  batch the same ladder filled the window to the context refusal on
+  both packs, and the server survived every request. The frame
+  counts and request walls stay in the run record
+  ([#464](https://github.com/Alberto-Codes/vramfit/issues/464)).
+  The ~200 MiB rule above is a one-image rule.
 
 ## The recipe
 

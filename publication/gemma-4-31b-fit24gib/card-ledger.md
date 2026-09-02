@@ -100,6 +100,7 @@ The ruling that put these numbers on the card is the
 | Vision line 960 MiB (Q4_K_M sidecar, 12,288 displaced tokens), 772 MiB same-context load delta | ADR-0030 2026-08-31 amendment, `vline-clean-*.out` free_at_load deltas | card prose |
 | BF16-sidecar line 1,280 MiB in the same frame (components 1,022.8 MiB weights + 150.63 MiB CLIP reserve measured 2026-08-28), 256 tokens per 768×768 image | ADR-0030 decision 3 and 4 plus the 2026-08-31 amendment, `bf16mm-line-*.out`, `vline-ext-*.out`, #236 checks comments | card prose |
 | `-np 1` trap (~2,400 MiB SWA at `-np 4`), ~200 MiB encode headroom | #423 serve-proof comment, chart #441 Notes | card prose |
+| Encode-batch trap: default 1,024 image tokens per encode graph, ~100 MiB free during rungs, server crash on the second frame at both serve configurations, context refusal with `--mtmd-batch-max-tokens 264` | `run-464/ladder-*.summary.json`, `run-464/server-pack.log`, `run-464/server-qat.log`, [#464 facts comment](https://github.com/Alberto-Codes/vramfit/issues/464#issuecomment-5504751077) (2026-09-02, 23,549–23,556 MiB free before each load) | card prose and serve command |
 | Imatrix coverage: no `token_embd`, `attn_v` on 50 of 60 layers | the matrix's own entry names ([#439](https://github.com/Alberto-Codes/vramfit/issues/439) body), run log `imatrix_uncovered` | card prose (matrix not carried) |
 | Frame: 357 blocks, 182,404 tokens, 356 chunks, n_ctx 512 | [#423 results comment](https://github.com/Alberto-Codes/vramfit/issues/423#issuecomment-5451599611) | card prose |
 
