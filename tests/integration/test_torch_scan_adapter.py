@@ -357,26 +357,33 @@ class TestTorchDamageMeter:
             tiny_meter.measure(group, 8)
 
     def test_kquant_meter_measures_different_damage_than_rtn(
-        self, tiny_meter, tiny_model_dir, tmp_path
+        self, aligned_model_dir, tmp_path
     ) -> None:
         # The flag -> meter -> quantizer chain, end to end. If the
         # dispatch ever falls back to RTN silently, a kquant map
         # records rtn damages under the kquant-ref token — corrupted
-        # provenance the golden fixtures cannot catch.
+        # provenance the golden fixtures cannot catch. 256 must divide
+        # the row length, or kquant refuses the cell (#330) and
+        # measures nothing.
         from vramfit.adapters.outbound.scan.meter import TorchDamageMeter
 
         calibration = tmp_path / "calib.txt"
         calibration.write_text(CALIBRATION_TEXT)
-        kquant_meter = TorchDamageMeter(
-            str(tiny_model_dir),
-            calibration,
-            max_tokens=128,
-            device="cpu",
-            within_group="kquant",
-        )
-        group = next(spec.name for spec in tiny_meter.groups() if "layers" in spec.name)
 
-        rtn_damage = tiny_meter.measure(group, 2)
+        def build(method: Literal["rtn", "kquant"]) -> TorchDamageMeter:
+            return TorchDamageMeter(
+                str(aligned_model_dir),
+                calibration,
+                max_tokens=128,
+                device="cpu",
+                within_group=method,
+            )
+
+        rtn_meter = build("rtn")
+        kquant_meter = build("kquant")
+        group = next(spec.name for spec in rtn_meter.groups() if "layers" in spec.name)
+
+        rtn_damage = rtn_meter.measure(group, 2)
         kquant_damage = kquant_meter.measure(group, 2)
 
         assert kquant_damage != rtn_damage
@@ -799,8 +806,38 @@ class TestTorchDamageMeter:
             )
 
     def test_kquant_meter_refuses_uncovered_bits(
+        self, aligned_model_dir, tmp_path
+    ) -> None:
+        # The follow-up measure needs rows that 256 divides (#330), so
+        # the aligned checkpoint carries this test.
+        from vramfit.adapters.outbound.scan.meter import TorchDamageMeter
+
+        calibration = tmp_path / "calib.txt"
+        calibration.write_text(CALIBRATION_TEXT)
+        meter = TorchDamageMeter(
+            str(aligned_model_dir),
+            calibration,
+            max_tokens=128,
+            device="cpu",
+            within_group="kquant",
+        )
+        group = meter.groups()[0].name
+
+        with pytest.raises(ValueError, match="supports bits in"):
+            meter.measure(group, 6)
+
+        # The refusal happened mid-perturbation path — the meter must
+        # still be usable, not silently poisoned.
+        assert meter.measure(group, 2) >= 0.0
+
+    def test_kquant_meter_on_straddling_rows_refuses_and_leaves_the_meter_usable(
         self, tiny_model_dir, tmp_path
     ) -> None:
+        # tiny_model_dir rows are 32 or 64 wide and Q2_K blocks 256.
+        # The refusal (ADR-0018, 2026-08-17 amendment, decision 4)
+        # must name the row length. Q8_0 blocks 32, so the 8-bit cell
+        # on the same rows still measures, and that proves the meter
+        # usable and the refusal keyed to the mapped type's block.
         from vramfit.adapters.outbound.scan.meter import TorchDamageMeter
 
         calibration = tmp_path / "calib.txt"
@@ -813,13 +850,12 @@ class TestTorchDamageMeter:
             within_group="kquant",
         )
         group = meter.groups()[0].name
+        rows = int(meter._param(meter._groups[group][0]).shape[-1])
 
-        with pytest.raises(ValueError, match="kquant"):
-            meter.measure(group, 6)
+        with pytest.raises(ValueError, match=f"does not divide the row length {rows}"):
+            meter.measure(group, 2)
 
-        # The refusal happened mid-perturbation path — the meter must
-        # still be usable, not silently poisoned.
-        assert meter.measure(group, 2) >= 0.0
+        assert meter.measure(group, 8) >= 0.0
 
     @pytest.mark.gpu
     def test_measure_recipe_on_cuda_restores_across_devices(

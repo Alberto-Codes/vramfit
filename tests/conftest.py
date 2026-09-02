@@ -145,11 +145,11 @@ def tiny_moe_model_dir(tmp_path_factory) -> Path:
     Qwen3Moe declares its routed experts as 3D parameters, expert-
     indexed on dim 0 — the same fused layout the 30B target loads
     with (ADR-0026, the #202 amendment). The slice perturbation
-    tests need that layout, and ``tiny_model_dir`` is dense. Each
-    expert's slice holds a multiple of 256 elements, so a K-quant
-    round trip of a slice reproduces the whole tensor's blocks —
-    the alignment test in the slice suite pins that property.
-    Skips when the scan extra is not installed.
+    tests need that layout, and ``tiny_model_dir`` is dense. Both
+    fused stacks carry rows of 256, so a K-quant cell tiles every
+    row (#330). A round trip of an expert band then reproduces the
+    whole tensor's blocks. The alignment test in the slice suite
+    pins that property. Skips when the scan extra is not installed.
     """
     torch = pytest.importorskip("torch", reason="scan extra not installed")
     pytest.importorskip("transformers", reason="scan extra not installed")
@@ -169,9 +169,9 @@ def tiny_moe_model_dir(tmp_path_factory) -> Path:
     fast.save_pretrained(directory)
     config = Qwen3MoeConfig(
         vocab_size=512,
-        hidden_size=32,
+        hidden_size=256,
         intermediate_size=64,
-        moe_intermediate_size=16,
+        moe_intermediate_size=256,
         num_hidden_layers=2,
         num_attention_heads=4,
         num_key_value_heads=2,
