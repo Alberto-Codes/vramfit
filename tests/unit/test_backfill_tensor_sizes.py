@@ -1079,3 +1079,137 @@ def test_a_scalar_tensor_prices_at_two_bytes(tmp_path, monkeypatch, capsys) -> N
     assert capsys.readouterr().err == ""
     groups = json.loads(out.read_text(encoding="utf-8"))["groups"]
     assert groups[0]["tensor_bytes"] == {TENSOR: 2}
+
+
+def test_map_with_an_integer_past_the_reader_bound_refuses_and_writes_no_output(
+    tmp_path, monkeypatch, capsys
+) -> None:
+    # `_save_json` bounds every artifact integer to the signed 64-bit
+    # range. This script wrote with a bare `json.dumps`. A map recording
+    # a `bytes_fp16` of 2 * 10^30 against a shard declaring that shape
+    # backfilled on a zero exit. The map reader then refused the copy at
+    # the same field (#317).
+    dim = 10**30
+    map_path = tmp_path / "sensitivity.json"
+    map_path.write_text(
+        json.dumps({"groups": [group(bytes_fp16=2 * dim)]}), encoding="utf-8"
+    )
+    header = json.dumps(
+        {TENSOR: {"dtype": "BF16", "shape": [dim], "data_offsets": [0, 2 * dim]}}
+    )
+    write_shard(tmp_path / "model", header)
+    out = tmp_path / "sized.json"
+
+    assert run(monkeypatch, map_path, tmp_path / "model", out) == 1
+
+    err = capsys.readouterr().err
+    assert err.startswith(f"error: {map_path}: $.groups[0].bytes_fp16: ")
+    assert "outside the signed 64-bit range" in err
+    assert not out.exists()
+
+
+def test_size_at_the_top_of_the_reader_bound_still_backfills(
+    tmp_path, monkeypatch, capsys
+) -> None:
+    # The bound is the reader's and no narrower. The largest even size
+    # inside the range backfills, and the written value survives.
+    dim = 2**62 - 1
+    map_path = tmp_path / "sensitivity.json"
+    map_path.write_text(
+        json.dumps({"groups": [group(bytes_fp16=2 * dim)]}), encoding="utf-8"
+    )
+    header = json.dumps(
+        {TENSOR: {"dtype": "BF16", "shape": [dim], "data_offsets": [0, 2 * dim]}}
+    )
+    write_shard(tmp_path / "model", header)
+    out = tmp_path / "sized.json"
+
+    assert run(monkeypatch, map_path, tmp_path / "model", out) == 0
+
+    written = json.loads(out.read_text(encoding="utf-8"))
+    assert written["groups"][0]["tensor_bytes"] == {TENSOR: 2 * dim}
+    assert capsys.readouterr().err == ""
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        pytest.param(2**63, 1, id="past-the-top"),
+        pytest.param(-(2**63) - 1, 1, id="past-the-bottom"),
+        pytest.param(2**63 - 1, 0, id="at-the-top"),
+    ],
+)
+def test_integer_outside_groups_is_held_to_the_reader_bound(
+    tmp_path, monkeypatch, capsys, value: int, expected: int
+) -> None:
+    # The walk is `_save_json`'s and covers the whole document, so a
+    # field the script never reads refuses under its own path. The
+    # pricing cannot reach 2^63 - 1, so the exact top of the range is
+    # pinned here instead.
+    map_path = tmp_path / "sensitivity.json"
+    map_path.write_text(
+        json.dumps({"scan": {"calibration_tokens": value}, "groups": [group()]}),
+        encoding="utf-8",
+    )
+    write_shard(tmp_path / "model")
+    out = tmp_path / "sized.json"
+
+    code = run(monkeypatch, map_path, tmp_path / "model", out)
+
+    assert code == expected
+    err = capsys.readouterr().err
+    if expected:
+        assert err.startswith(f"error: {map_path}: $.scan.calibration_tokens: ")
+        assert not out.exists()
+    else:
+        assert err == ""
+        assert json.loads(out.read_text(encoding="utf-8"))["scan"] == {
+            "calibration_tokens": value
+        }
+
+
+def test_integer_refusal_bounds_a_publisher_written_key(
+    tmp_path, monkeypatch, capsys
+) -> None:
+    # The walk renders the key inside its JSON path. A 100,000-character
+    # key rendered 100,267 bytes of stderr before the cap.
+    key = "k" * 100_000
+    map_path = tmp_path / "sensitivity.json"
+    map_path.write_text(
+        json.dumps({"scan": {key: 2**63}, "groups": [group()]}), encoding="utf-8"
+    )
+    write_shard(tmp_path / "model")
+    out = tmp_path / "sized.json"
+
+    code = run(monkeypatch, map_path, tmp_path / "model", out)
+
+    assert code == 1
+    err = capsys.readouterr().err
+    kept = "k" * (script.NAME_LIMIT - len("$.scan."))
+    assert f": $.scan.{kept}...: integer is outside" in err
+    assert "k" * (script.NAME_LIMIT + 1) not in err
+
+
+def test_document_nested_past_the_walk_limit_refuses_and_writes_nothing(
+    tmp_path, monkeypatch, capsys
+) -> None:
+    # `_check_writable_ints` recurses in Python. A document nested past
+    # the interpreter's limit raised `RecursionError` there, ahead of
+    # the render guard, and reached a traceback. Patched rather than
+    # provoked, for the reason the render test gives.
+    map_path = tmp_path / "sensitivity.json"
+    write_map(map_path)
+    model_dir = tmp_path / "model"
+    write_shard(model_dir)
+    out = tmp_path / "sized.json"
+
+    def raise_recursion(*args: object, **kwargs: object) -> None:
+        raise RecursionError("maximum recursion depth exceeded")
+
+    monkeypatch.setattr(script, "_check_writable_ints", raise_recursion)
+    code = run(monkeypatch, map_path, model_dir, out)
+
+    assert code == 1
+    stderr = capsys.readouterr().err
+    assert stderr.startswith(f"error: {map_path}: JSON nests too deeply")
+    assert not out.exists()

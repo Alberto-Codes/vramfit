@@ -21,7 +21,10 @@ parse and a shard it cannot parse. It refuses a shard shorter than the
 than the file holds. It refuses a directory holding no shards. It
 refuses a header record it cannot price. It refuses a JSON document that
 defines the same key twice, under the rule #262 set for every vramfit
-reader. Both reads apply that rule: the map and each shard header.
+reader. Both reads apply that rule: the map and each shard header. It
+refuses a document holding an integer outside the signed 64-bit range
+(#317). That is the bound `_save_json` applies before every artifact
+write, so this writer emits nothing the map reader's bound refuses.
 
 Each refusal this module renders quotes at most `NAME_LIMIT` characters
 of a tensor or group name, and states an oversized integer by bit width.
@@ -65,6 +68,13 @@ import math
 import sys
 from pathlib import Path
 
+# The four artifact writers import `_save_json` from this module the
+# same way. The walk is shared rather than copied, so the script and
+# the map reader cannot disagree on the bound (#317).
+from vramfit.adapters.outbound.json_common import (
+    ArtifactError,
+    _check_writable_ints,
+)
 from vramfit.adapters.outbound.json_duplicate_key import (
     DuplicateKeyError,
     object_from_pairs,
@@ -474,6 +484,51 @@ def require_out_is_not_a_shard(out: Path, shards: list[Path]) -> None:
             raise Refusal(f"--out must not name a checkpoint shard: {shard}")
 
 
+def require_readable_ints(raw: object, path: Path) -> None:
+    """Refuse a document outside the writer's integer bound.
+
+    `_save_json` bounds every integer it writes to the signed 64-bit
+    range, so vramfit reads what vramfit writes (ADR-0011's 2026-08-16
+    amendment). This script wrote with a bare `json.dumps` and applied
+    no bound (#317). Measured on a map recording a ``bytes_fp16`` of
+    2 * 10^30 against a shard declaring that shape. The script wrote
+    the copy and exited 0. `map_from_dict` then refused the copy at
+    that field. The walk here is the one `_save_json` runs, so the two
+    cannot disagree.
+
+    The reach is narrow. `annotate` requires a group's sizes to sum to
+    its ``bytes_fp16``, so an out-of-range size implies an out-of-range
+    ``bytes_fp16`` in the input. The map reader already refuses that
+    input. The script carried it forward, and now refuses it and names
+    the map. The walk covers the whole document, so an integer the
+    script never reads refuses too, under its own JSON path. That
+    reaches a field the map reader does not know, which it would load
+    with a warning. `_save_json` refuses it the same way.
+
+    The refusal keeps the walk's ``$``-rooted path, so the message
+    matches the one the map reader renders for the same field. A
+    publisher-written key can be long, and `bounded` caps the path.
+
+    The walk recurses in Python, so a document nested past the
+    interpreter's limit raises `RecursionError` here before the render
+    guard sees it. That is no `ValueError`, so it takes its own clause.
+
+    Args:
+        raw: The annotated document.
+        path: The map it came from, for the refusal message.
+
+    Raises:
+        Refusal: If any integer is outside the signed 64-bit range, or
+            the document nests past the recursion limit.
+    """
+    try:
+        _check_writable_ints(raw, "$")
+    except ArtifactError as exc:
+        raise Refusal(f"{path}: {bounded(exc.json_path)}: {exc.message}") from exc
+    except RecursionError as exc:
+        raise Refusal(f"{path}: JSON nests too deeply: {exc}") from exc
+
+
 def render_map(raw: object, out: Path) -> str:
     """Render the annotated map, refusing what the encoder cannot.
 
@@ -525,6 +580,7 @@ def main() -> int:
         require_out_is_not_a_shard(out, shards)
         sizes = checkpoint_tensor_bytes(shards)
         tensor_count = annotate(groups, sizes, args.map_path)
+        require_readable_ints(raw, args.map_path)
         text = render_map(raw, args.out)
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
