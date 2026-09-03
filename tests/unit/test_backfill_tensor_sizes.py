@@ -491,7 +491,9 @@ def test_out_equal_to_the_input_map_refuses_before_reading_anything(
     code = run(monkeypatch, map_path, model_dir, map_path)
 
     assert code == 1
-    assert "--out must differ from the input map" in capsys.readouterr().err
+    assert (
+        f"--out must differ from the input map: {map_path}" in capsys.readouterr().err
+    )
     assert map_path.read_text(encoding="utf-8") == before
 
 
@@ -750,7 +752,9 @@ def test_out_symlinked_to_the_input_map_refuses(tmp_path, monkeypatch, capsys) -
     code = run(monkeypatch, map_path, model_dir, link)
 
     assert code == 1
-    assert "--out must differ from the input map" in capsys.readouterr().err
+    assert (
+        f"--out must differ from the input map: {map_path}" in capsys.readouterr().err
+    )
     assert map_path.read_text(encoding="utf-8") == before
 
 
@@ -1008,7 +1012,9 @@ def test_out_hardlinked_to_the_input_map_refuses(tmp_path, monkeypatch, capsys) 
     code = run(monkeypatch, map_path, model_dir, hardlink)
 
     assert code == 1
-    assert "--out must differ from the input map" in capsys.readouterr().err
+    assert (
+        f"--out must differ from the input map: {map_path}" in capsys.readouterr().err
+    )
     assert map_path.read_text(encoding="utf-8") == before
 
 

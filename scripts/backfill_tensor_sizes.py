@@ -7,8 +7,8 @@ from ADR-0021 decision 4). Sizes are element counts at 2 bytes per
 parameter, matching the scan's bf16 reference convention.
 
 The script reports each refusal below as ``error:`` on stderr and exits
-1. Every refusal names the file it read or wrote, except the two that
-compare a map against a checkpoint and name the group instead. It
+1. Every refusal names the file it read or wrote. Two refusals compare
+a map against a checkpoint, and each names the map and the group. It
 refuses a document whose ``groups`` it cannot read (#298). It refuses a
 map whose tensors the checkpoint does not cover. It refuses a group
 whose checkpoint sizes disagree with its recorded ``bytes_fp16``. It
@@ -573,7 +573,9 @@ def main() -> int:
     try:
         out = resolve_path(args.out)
         if same_file(out, args.map_path):
-            raise Refusal("--out must differ from the input map")
+            # The map is the file the operator would have destroyed, so
+            # the refusal names it (#335).
+            raise Refusal(f"--out must differ from the input map: {args.map_path}")
         raw = read_map_document(args.map_path)
         groups = map_groups(raw, args.map_path)
         shards = checkpoint_shards(args.model_dir)
