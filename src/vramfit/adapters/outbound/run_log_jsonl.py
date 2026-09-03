@@ -11,7 +11,8 @@ writer cannot produce one, because a colliding field is a duplicate
 keyword argument at the `msg` call. So a repeat means a hand edit or a
 foreign writer, and it raises at every line position. ADR-0011's
 crash-tolerance rule stays scoped to a decode failure on the final
-line.
+line. `read_run_log` raises every refusal as `RunLogError`, which sits
+under the `VramfitError` root and keeps `ValueError` as a base (#346).
 
 Examples:
     Record a scan's first event:
@@ -41,8 +42,35 @@ from vramfit.adapters.outbound.json_duplicate_key import (
     DuplicateKeyError,
     object_from_pairs,
 )
+from vramfit.domain.errors import VramfitError
 
 RUNLOG_VERSION: Final[int] = 2
+
+
+class RunLogError(VramfitError, ValueError):
+    """A run-log line the reader refuses.
+
+    `read_run_log` raises it for a repeated key, a non-final line that
+    is not valid JSON, and a number literal the parser refuses. The
+    message names the file and the line.
+
+    The class sits under the `VramfitError` root per ADR-0011 decision
+    5. It keeps `ValueError` as a base, so a caller that catches the
+    historical type still does. Before #346 the reader raised a plain
+    `ValueError`, which escaped the root.
+
+    Examples:
+        Catch every refusal the reader makes through the root:
+
+        ```python
+        from vramfit.domain.errors import VramfitError
+
+        try:
+            read_run_log(path)
+        except VramfitError as exc:
+            print(exc)
+        ```
+    """
 
 
 def _build_logger(handle: Any) -> Any:
@@ -149,6 +177,7 @@ def read_run_log(path: Path) -> list[dict[str, Any]]:
     counting blank lines that the reader itself skips. #283 gave the
     duplicate-key refusal that locator, and #315 extends it to the
     decode refusals, which reported the line inside the parsed string.
+    Every refusal raises `RunLogError`, under the error root (#346).
 
     Args:
         path: The run-log file.
@@ -158,7 +187,7 @@ def read_run_log(path: Path) -> list[dict[str, Any]]:
 
     Raises:
         OSError: If the file cannot be read.
-        ValueError: If a non-final line is not valid JSON. If any line
+        RunLogError: If a non-final line is not valid JSON. If any line
             defines the same key twice. If any line carries a number
             literal the parser refuses.
     """
@@ -176,18 +205,19 @@ def read_run_log(path: Path) -> list[dict[str, Any]]:
         try:
             events.append(json.loads(line, object_pairs_hook=object_from_pairs))
         except DuplicateKeyError as exc:
-            raise ValueError(f"{path}: line {number}: {exc.message}") from exc
+            raise RunLogError(f"{path}: line {number}: {exc.message}") from exc
         except json.JSONDecodeError as exc:
             if i == len(lines) - 1:
                 break
-            raise ValueError(
+            raise RunLogError(
                 f"{path}: line {number}: invalid JSON: {exc.msg}: column {exc.colno}"
             ) from exc
         except ValueError as exc:
             # The syntax parsed and the value conversion failed. An
             # integer literal past `sys.get_int_max_str_digits` lands
             # here (#260, #315). A crash cannot write one, so the final
-            # line earns no drop.
+            # line earns no drop. No `RunLogError` originates inside
+            # the try, so this clause cannot relabel one (#262).
             #
             # The clause after the first semicolon advises raising
             # that limit, which would parse the value this reader
@@ -197,7 +227,7 @@ def read_run_log(path: Path) -> list[dict[str, Any]]:
             reason = str(exc)
             if "for integer string conversion" in reason:
                 reason = reason.split(";", 1)[0]
-            raise ValueError(
+            raise RunLogError(
                 f"{path}: line {number}: cannot parse JSON: {reason}"
             ) from exc
     return events
