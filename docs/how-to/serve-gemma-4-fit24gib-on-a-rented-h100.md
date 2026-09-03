@@ -38,8 +38,8 @@ record.
 
 ## Step 1: Create the pod
 
-Create the pod from the RunPod console, the REST API, or the
-`create-pod` MCP tool. The runs used these parameters:
+Create the pod from the RunPod console or the RunPod API. The runs
+used these parameters:
 
 | Parameter | Value |
 |---|---|
@@ -58,8 +58,8 @@ sidecar take 15.5 GiB, and the llama.cpp build a few GiB more.
 Three rules come from earlier pods:
 
 - **Pass the whole public key** (2026-08-18, #328). A truncated key
-  gave a pod with no SSH access. `update-pod` with the full key and
-  a restart repaired it.
+  gave a pod with no SSH access. Updating the pod's key and
+  restarting the pod repaired it.
 - **The API refuses a create call without a container disk size.**
   Set it.
 - **A plain volume is host-local** (2026-08-21, #321). A stopped pod
@@ -71,7 +71,7 @@ Three rules come from earlier pods:
 ## Step 2: Connect over SSH
 
 Read the direct SSH host and port from the pod's `runtime.ports`
-(`get-pod`, or the console's Connect panel). The reported port
+field in the API, or from the console's Connect panel. The reported port
 changes without a restart (#328). Read it again before every
 connection.
 
@@ -107,7 +107,7 @@ cd /workspace
 git clone https://github.com/ggml-org/llama.cpp
 cd llama.cpp
 git fetch --tags origin
-git checkout 4801e3c56    # tag b10362
+git checkout 4801e3c56    # the commit tag b10362 points at
 cmake -B build -DGGML_CUDA=ON -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 build/bin/llama-server --version
