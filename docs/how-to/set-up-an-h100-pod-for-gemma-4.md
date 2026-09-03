@@ -5,9 +5,11 @@ status: draft
 # How to set up an H100 pod for Gemma 4 31B
 
 > **Status: draft** — three rented pods ran this setup on 2026-09-01
-> and 2026-09-02 for the #462 and #463 evaluation runs. Every number
-> below comes from those run records. The page describes what
-> worked. It does not describe a plan.
+> for the #462 and #463 evaluation runs. The sizes, times, and costs
+> below come from those run records. The pod parameters come from
+> the create calls. Rules marked with an earlier ticket number come
+> from pods before #462. The page describes what worked. It does
+> not describe a plan.
 
 ## Goal
 
@@ -17,8 +19,8 @@ baseline, and a BF16 reference. When the pod is up, run any
 evaluation you want against them.
 
 This pod is the [instrument](../reference/glossary.md) behind the
-published fit24gib card numbers. Match it and your numbers compare
-with the record. Change the GPU or the llama.cpp release and you
+fit24gib card's divergence and accuracy numbers. Match it and your
+numbers compare with the record. Change the GPU or the llama.cpp release and you
 have a new instrument
 ([ADR-0027](../adr/0027-instrument-frame-matching.md)).
 
@@ -29,7 +31,7 @@ have a new instrument
 - An SSH key pair. The pod takes the public key at creation.
 - A Hugging Face token. The `google/gemma-4-*` repos are gated.
   Accept the Gemma license on huggingface.co once with that account.
-- About 100 GB of pod disk: 35 GB for the two GGUF pairs, 61.4 GB
+- About 100 GB of pod disk: 36 GB for the two GGUF pairs, 61.4 GB
   for the BF16 reference.
 
 ## Step 1: Create the pod
@@ -51,27 +53,28 @@ Create the pod from the RunPod console, the REST API, or the
 
 The 80 GB comes from the BF16 reference arm. The decoder is 61.4 GB.
 Add the 1.2 GB BF16 projector sidecar, the KV cache, and the encode
-workspace, and the arm needs about 72 GB. A smaller card serves the
+workspace, and the arm needs about 72 GB. A smaller GPU serves the
 packed model and the QAT baseline only.
 
-Three rules the runs learned:
+Three rules earlier pods learned:
 
-- **Pass the whole public key.** A truncated key boots a pod with no
-  working sshd. The fix is `update-pod` and `restart-pod`, not a
-  delete.
-- **The API refuses a create call without a container disk size.**
-  Set it.
-- **A plain volume is host-local.** A stopped pod with a host-local
-  volume waits for that one host to free a GPU. In August 2026 the
-  wait ran 48 min once and 75 min the next time, with no upper
-  bound. Create a network volume instead if you plan to stop and
-  restart, or to keep the 61.4 GB BF16 file between pods.
+- **Pass the whole public key** (#328). A truncated key boots a pod
+  with no working sshd. The fix is `update-pod` and `restart-pod`,
+  not a delete.
+- **The API refuses a create call without a container disk size**
+  (#387). Set it.
+- **A plain volume is host-local** (#372). A stopped pod with a
+  host-local volume waits for that one host to free a GPU. In August
+  2026 the wait ran 48 min once and 75 min the next time, with no
+  upper bound. Create a network volume instead if you plan to stop
+  and restart the pod. Do the same to keep the 61.4 GB BF16 file
+  between pods.
 
 ## Step 2: Connect over SSH
 
 Read the direct SSH host and port from the pod's `runtime.ports`
 (`get-pod`, or the console's Connect panel). The port changes on
-every report. Read it again after every restart.
+every report (#328). Read it again after every restart.
 
 ```bash
 ssh -o StrictHostKeyChecking=accept-new -p <port> root@<host>
@@ -136,7 +139,8 @@ hf download google/gemma-4-31B-it-qat-q4_0-gguf \
 | `gemma-4-31B_q4_0-it.gguf` | 17.65 GB |
 | `gemma-4-31B-it-mmproj.gguf` | 1.20 GB |
 
-The four downloads took 114 s on one pod and 200 s on another.
+The four downloads took 200 s. The full run skipped the q4km
+sidecar, and its three files (34.9 GB) took 114 s.
 
 ## Step 6: Build the BF16 reference decoder (optional)
 
@@ -229,13 +233,13 @@ driver runs.
 | Stage | Wall | Cost at $3.29/hr |
 |---|---|---|
 | Toolchain install | 33 s | $0.03 |
-| Four downloads, 34.9 GB | 114 s | $0.10 |
+| Four downloads, 35.5 GB | 200 s | $0.18 |
 | llama.cpp CUDA build | 429 s | $0.39 |
 | BF16 convert | 2,978 s | $2.72 |
 
-Setup to the first serve takes about 10 min without the convert and
-about 55 min with it. The build runs inside the convert window when
-you start it first, so the two rows overlap.
+Setup to the first serve takes about 8 min without the convert and
+about 54 min with it. The build runs beside the downloads and the
+convert when you start it first, so its row overlaps the others.
 
 ## Related
 
