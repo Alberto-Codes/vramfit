@@ -7,8 +7,10 @@ import pytest
 from vramfit.adapters.outbound.run_log_jsonl import (
     RUNLOG_VERSION,
     JsonlRunLogFile,
+    RunLogError,
     read_run_log,
 )
+from vramfit.domain.errors import VramfitError
 
 pytestmark = pytest.mark.unit
 
@@ -218,3 +220,37 @@ def test_reader_names_the_file_line_for_a_torn_middle_line(tmp_path) -> None:
         match=r"line 2: invalid JSON: Unterminated string starting at: column 2$",
     ):
         read_run_log(path)
+
+
+# Matches the `digit_limit` fixture's limit. Parametrize needs the
+# literal at collection time, before any fixture runs.
+HUGE = "9" * (sys.int_info.str_digits_check_threshold + 1)
+
+
+@pytest.mark.parametrize(
+    ("line", "match"),
+    [
+        ('{"event": "a", "damage": 1.0, "damage": 2.0}', "line 1: duplicate key"),
+        ('{"broken', "line 1: invalid JSON"),
+        (f'{{"event": "a", "n": {HUGE}}}', "line 1: cannot parse JSON"),
+    ],
+    ids=["duplicate_key", "torn_middle_line", "unparsable_number"],
+)
+def test_reader_refuses_each_defect_under_the_error_root(
+    tmp_path, digit_limit, line: str, match: str
+) -> None:
+    # ADR-0011 decision 5 and its 2026-08-16 amendment: no
+    # representability failure escapes the root. Before #346 each of
+    # the three refusals raised a plain `ValueError`.
+    path = tmp_path / "x.jsonl"
+    path.write_text(f'{line}\n{{"event": "scan_finished"}}\n', encoding="utf-8")
+
+    with pytest.raises(VramfitError, match=match):
+        read_run_log(path)
+
+
+def test_run_log_error_keeps_the_value_error_base() -> None:
+    # The historical type stays catchable, so no caller's catch
+    # changes (ADR-0011 decision 5).
+    assert issubclass(RunLogError, ValueError)
+    assert issubclass(RunLogError, VramfitError)
