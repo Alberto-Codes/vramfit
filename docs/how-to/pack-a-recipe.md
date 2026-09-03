@@ -170,3 +170,7 @@ The scoreboard lives in
 perplexity first, whole-model KL against the f16 reference second,
 task benchmarks last. The base GGUF from the pack doubles as the
 reference model for both tiers.
+
+The published Gemma 4 fit24gib pack has its own serving guide:
+[serve the pack on a rented H100](serve-gemma-4-fit24gib-on-a-rented-h100.md).
+That H100 is the instrument behind the pack's divergence numbers.
