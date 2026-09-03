@@ -338,6 +338,12 @@ outside the full grid, or a cell that repeats, halts the run whatever
 the selection. A selection narrows what a run measures and never what
 it checks.
 
+A meter that reports one group name more than once halts the run before the
+selection matches and before the checkpoint loads. The halt names
+each repeated group, calls it a meter defect, and records the stage
+`group_discovery`. It offers no `--no-resume` hint, because the
+checkpoint is not at fault.
+
 A narrowed map measures a subset of the model. `vramfit plan
 --checkpoint` prices the rest: it reads the checkpoint's safetensors
 headers and holds every unmeasured group at reference precision

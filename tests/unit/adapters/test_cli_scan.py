@@ -10,10 +10,11 @@ from tests.unit.adapters.conftest import (
     invoke_scan,
 )
 from vramfit.adapters.inbound import cli_scan
+from vramfit.adapters.outbound.run_log_jsonl import read_run_log
 from vramfit.adapters.outbound.scan_checkpoint_json import JsonScanCheckpointFile
 from vramfit.adapters.outbound.sensitivity_map_json import load_sensitivity_map
 from vramfit.domain.model import ScanMeta
-from vramfit.domain.scan import Measurement, scan_fingerprint
+from vramfit.domain.scan import GroupSpec, Measurement, scan_fingerprint
 
 pytestmark = pytest.mark.unit
 
@@ -535,6 +536,120 @@ def test_duplicated_checkpoint_cell_fails_upfront_with_hint(
     assert "appears twice" in result.output
     assert "--no-resume" in result.output
     assert not out.exists()
+
+
+REPEATED_SPECS = (
+    GroupSpec(name="model.layers.0", tensors=("model.layers.0.a",), bytes_fp16=10),
+    GroupSpec(name="model.layers.0", tensors=("model.layers.0.b",), bytes_fp16=10),
+    GroupSpec(name="model.layers.1", tensors=("model.layers.1.w",), bytes_fp16=10),
+)
+REPEATED_MESSAGE = (
+    'the meter reported these group names more than once: "model.layers.0" '
+    "— a meter defect, not a checkpoint fault"
+)
+
+
+def seed_healthy_checkpoint(tmp_path) -> Measurement:
+    """Write one cell of this scan into the checkpoint file.
+
+    Args:
+        tmp_path: The test's temporary directory.
+
+    Returns:
+        The seeded cell.
+    """
+    cell = Measurement(group="model.layers.1", bits=8, damage=0.5)
+    store = JsonScanCheckpointFile(tmp_path / "sensitivity.checkpoint.json")
+    store.append(cli_fingerprint(tmp_path), cell)
+    return cell
+
+
+def test_repeated_group_name_halts_without_blaming_the_checkpoint(
+    tmp_path, monkeypatch
+) -> None:
+    meter = MemoryDamageMeter(specs=REPEATED_SPECS, damages={}, tokens=64)
+    install_meter(monkeypatch, meter)
+
+    result, out = invoke_scan(tmp_path)
+
+    assert result.exit_code == 1
+    assert f"error: {REPEATED_MESSAGE}" in result.output
+    assert "--no-resume" not in result.output
+    assert "checkpoint.json" not in result.output
+    assert meter.calls == []
+    assert not out.exists()
+
+
+def test_repeated_group_name_leaves_a_healthy_checkpoint_in_place(
+    tmp_path, monkeypatch
+) -> None:
+    # The ticket's harm: a healthy file holding hours of measurement,
+    # blamed by path and offered for deletion.
+    cell = seed_healthy_checkpoint(tmp_path)
+    install_meter(
+        monkeypatch, MemoryDamageMeter(specs=REPEATED_SPECS, damages={}, tokens=64)
+    )
+
+    result, _ = invoke_scan(tmp_path)
+
+    assert result.exit_code == 1
+    assert "--no-resume" not in result.output
+    assert "checkpoint.json" not in result.output
+    store = JsonScanCheckpointFile(tmp_path / "sensitivity.checkpoint.json")
+    assert store.load(cli_fingerprint(tmp_path)) == (cell,)
+
+
+def test_repeated_group_name_logs_the_group_discovery_stage(
+    tmp_path, monkeypatch
+) -> None:
+    install_meter(
+        monkeypatch, MemoryDamageMeter(specs=REPEATED_SPECS, damages={}, tokens=64)
+    )
+
+    result, _ = invoke_scan(tmp_path)
+
+    assert result.exit_code == 1
+    events = read_run_log(tmp_path / "sensitivity.runlog.jsonl")
+    halt = next(e for e in events if e["event"] == "scan_halted")
+    assert halt["stage"] == "group_discovery"
+    assert halt["error"] == REPEATED_MESSAGE
+    assert halt["cells_kept"] is None
+
+
+def test_two_repeated_group_names_list_sorted_each_once(tmp_path, monkeypatch) -> None:
+    # Discovery order puts the second repeat first. The message sorts
+    # the names and lists each one once, however often it repeats.
+    specs = (
+        GroupSpec(name="model.layers.2", tensors=("a",), bytes_fp16=10),
+        GroupSpec(name="model.layers.0", tensors=("b",), bytes_fp16=10),
+        GroupSpec(name="model.layers.2", tensors=("c",), bytes_fp16=10),
+        GroupSpec(name="model.layers.0", tensors=("d",), bytes_fp16=10),
+        GroupSpec(name="model.layers.2", tensors=("e",), bytes_fp16=10),
+    )
+    install_meter(monkeypatch, MemoryDamageMeter(specs=specs, damages={}, tokens=64))
+
+    result, _ = invoke_scan(tmp_path)
+
+    assert result.exit_code == 1
+    assert 'more than once: "model.layers.0", "model.layers.2" —' in result.output
+
+
+def test_repeated_group_name_halts_before_the_selection_matches(
+    tmp_path, monkeypatch
+) -> None:
+    # Both faults at once: the meter defect outranks the unmatched name.
+    install_meter(
+        monkeypatch, MemoryDamageMeter(specs=REPEATED_SPECS, damages={}, tokens=64)
+    )
+
+    result, _ = invoke_scan(tmp_path, "--groups", "model.layers.9")
+
+    assert result.exit_code == 1
+    assert f"error: {REPEATED_MESSAGE}" in result.output
+    assert "--groups" not in result.output
+    events = read_run_log(tmp_path / "sensitivity.runlog.jsonl")
+    halt = next(e for e in events if e["event"] == "scan_halted")
+    assert halt["stage"] == "group_discovery"
 
 
 def test_precisions_below_two_bits_exit_with_usage_error(tmp_path, monkeypatch) -> None:
