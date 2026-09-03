@@ -8,11 +8,12 @@ high-water mark (ADR-0011). ``meter_built`` also records the
 imatrix coverage split for assisted meters (ADR-0020). The
 validate command reuses `start_run` with its own event prefix.
 
-`resolve_grid` sits between the two: it applies the ``--groups``
-selection (#282), loads the checkpoint, and plans the remaining
-cells. It validates the whole checkpoint against the whole model
-first, so a selection never hides a foreign or a damaged file. It
-then drops the cells in deselected groups and reports the count.
+`resolve_grid` sits between the two: it refuses a meter that reports a
+group name more than once (#338), applies the ``--groups`` selection
+(#282), loads the checkpoint, and plans the remaining cells. It
+validates the whole checkpoint against the whole model first, so a
+selection never hides a foreign or a damaged file. It then drops the
+cells in deselected groups and reports the count.
 
 Examples:
     Measure the remaining cells of a scan:
@@ -30,6 +31,7 @@ See Also:
 from __future__ import annotations
 
 import time
+from collections import Counter
 from collections.abc import Callable, Mapping
 from pathlib import Path
 
@@ -172,7 +174,9 @@ def resolve_grid(
     narrowing. `plan_measurements` refuses a cell outside the full grid
     and a cell that repeats. Both mean a foreign or damaged checkpoint,
     and a selection must never hide either. Narrowing first would
-    discard that guard on every run.
+    discard that guard on every run. A repeated group name halts
+    earlier, under its own stage, so the checkpoint clause reports
+    checkpoint faults only.
 
     Args:
         meter: The loaded meter, which discovers the groups.
@@ -189,11 +193,36 @@ def resolve_grid(
         remaining cells in measurement order.
 
     Raises:
-        typer.Exit: With code 1 when a requested group name matches no
-            discovered group, or the checkpoint cannot load, or it
-            belongs to a different scan.
+        typer.Exit: With code 1 when the meter reports one group name
+            more than once, or a requested group name matches no discovered
+            group, or the checkpoint cannot load, or it belongs to a
+            different scan.
     """
     discovered = meter.groups()
+    # A repeated name is a meter defect, never a checkpoint fault.
+    # `plan_measurements` refuses it too, but from inside the
+    # checkpoint clause, whose remedy tells the caller to discard a
+    # file that may be healthy (#338). Halt on it first, by name.
+    repeated = _repeated_group_names(discovered)
+    if repeated:
+        listed = ", ".join(f'"{name}"' for name in repeated)
+        # One sentence for both channels, so a run-log grep and the
+        # console agree.
+        reason = (
+            f"the meter reported these group names more than once: "
+            f"{listed} — a meter defect, not a checkpoint fault"
+        )
+        typer.echo(f"error: {reason}", err=True)
+        run_log.emit(
+            "scan_halted",
+            {
+                "stage": "group_discovery",
+                "error": reason,
+                "cells_kept": None,
+                "rss_hwm_gb": rss_hwm_gb(),
+            },
+        )
+        raise typer.Exit(code=1)
     try:
         specs = select_groups(discovered, groups)
     except ValueError as exc:
@@ -245,6 +274,19 @@ def resolve_grid(
             {"cells": len(done), "remaining": len(todo), "dropped": dropped},
         )
     return specs, done, todo
+
+
+def _repeated_group_names(discovered: tuple[GroupSpec, ...]) -> list[str]:
+    """List the group names the meter reported more than once.
+
+    Args:
+        discovered: The meter's groups.
+
+    Returns:
+        The repeated names, sorted, each once.
+    """
+    counts = Counter(spec.name for spec in discovered)
+    return sorted(name for name, seen in counts.items() if seen > 1)
 
 
 def measure_cells(
