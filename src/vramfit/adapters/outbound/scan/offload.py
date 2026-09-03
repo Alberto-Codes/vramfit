@@ -22,7 +22,10 @@ originals restore from the model's safetensors shards instead.
 The model publisher owns the shard index. vramfit reads it and never
 writes it, and it still refuses an index that defines one key twice
 (#283). The alternative keeps the last value, so a repeated tensor name
-in ``weight_map`` would restore the wrong shard with no report.
+in ``weight_map`` would restore the wrong shard with no report. Every
+parse refusal names the index file (#287). A scan names one model
+directory and reads several files from it. A bare parser message left
+the operator without the file that carries the defect.
 
 Examples:
     Resolve a sharded model's offloaded parameters:
@@ -41,6 +44,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from pathlib import Path
+from typing import Any
 
 import torch
 from safetensors import safe_open
@@ -297,6 +301,60 @@ class ShardReader:
                         targets[name].copy_(shard.get_tensor(name))
 
 
+def _load_index(path: Path) -> dict[str, Any]:
+    """Parse the shard index, naming the file for every failure.
+
+    The reader converted a repeated key alone (#283). A decode failure,
+    a UTF-8 failure, and an integer literal past
+    ``sys.get_int_max_str_digits`` each escaped with the parser's own
+    message and no file. A JSON array at the top level reached an
+    `AttributeError` at the ``weight_map`` lookup, and deep nesting
+    reached a `RecursionError`, both outside every clause a caller
+    catches (#287). The clause set matches the publisher's
+    ``config.json`` reader in [vramfit.adapters.outbound.hf_config][],
+    plus the nesting clause
+    [vramfit.adapters.outbound.safetensors_sizes][] carries.
+
+    Args:
+        path: The ``model.safetensors.index.json`` file.
+
+    Returns:
+        The parsed top-level object.
+
+    Raises:
+        OSError: If the file cannot be read.
+        ValueError: If the file is not UTF-8, is not valid JSON,
+            defines the same key twice, carries a number literal the
+            parser refuses, nests past the recursion limit, or is not
+            a JSON object. Every message names ``path``.
+    """
+    try:
+        index = json.loads(
+            path.read_text(encoding="utf-8"), object_pairs_hook=object_from_pairs
+        )
+    except DuplicateKeyError as exc:
+        raise ValueError(f"{path}: {exc.message}") from exc
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{path}: invalid JSON: {exc}") from exc
+    except UnicodeDecodeError as exc:
+        raise ValueError(f"{path}: not valid UTF-8: {exc}") from exc
+    except RecursionError as exc:
+        # Deep nesting exhausts the decoder's stack. `RecursionError`
+        # is no `ValueError`, so it escaped every caller (#287).
+        raise ValueError(f"{path}: JSON nests too deeply: {exc}") from exc
+    except ValueError as exc:
+        # The syntax parsed and the value conversion failed. An
+        # integer literal past `sys.get_int_max_str_digits` lands here,
+        # below the two `ValueError` subclasses above. `DuplicateKeyError`
+        # is no `ValueError`, so the structural refusal cannot land here.
+        raise ValueError(f"{path}: cannot parse JSON: {exc}") from exc
+    if not isinstance(index, dict):
+        raise ValueError(  # noqa: TRY004 - the reader refuses through ValueError by contract
+            f"{path}: expected a JSON object"
+        )
+    return index
+
+
 def open_shard_reader(model_id: str) -> ShardReader | None:
     """Locate the safetensors shards behind a local model path.
 
@@ -316,21 +374,18 @@ def open_shard_reader(model_id: str) -> ShardReader | None:
 
     Raises:
         OSError: If an index or shard file exists but cannot be read.
-        ValueError: If the index file is not valid JSON, defines the
-            same key twice, or holds no ``weight_map`` object.
+        ValueError: If the index file is not UTF-8, is not valid JSON,
+            defines the same key twice, carries a number literal the
+            parser refuses, nests past the recursion limit, is not a
+            JSON object, or holds no ``weight_map`` object. Every
+            message names the index file.
     """
     directory = Path(model_id)
     if not directory.is_dir():
         return None
     index_path = directory / _INDEX_FILE
     if index_path.is_file():
-        try:
-            index = json.loads(
-                index_path.read_text(encoding="utf-8"),
-                object_pairs_hook=object_from_pairs,
-            )
-        except DuplicateKeyError as exc:
-            raise ValueError(f"{index_path}: {exc.message}") from exc
+        index = _load_index(index_path)
         weight_map = index.get("weight_map")
         if not isinstance(weight_map, dict):
             raise ValueError(f"{index_path} has no weight_map object")

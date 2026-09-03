@@ -194,7 +194,7 @@ class TestShardReader:
             '{"weight_map": {"a": "m-00001.safetensors", "a": "m-00002.safetensors"}}'
         )
 
-        with pytest.raises(ValueError, match='duplicate key "a"'):
+        with pytest.raises(ValueError, match=r'index\.json: duplicate key "a"'):
             open_shard_reader(str(tmp_path))
 
     def test_open_on_an_index_repeating_a_top_level_key_raises(self, tmp_path) -> None:
@@ -202,7 +202,62 @@ class TestShardReader:
             '{"weight_map": {"a": "m-00001.safetensors"}, "weight_map": {}}'
         )
 
-        with pytest.raises(ValueError, match='duplicate key "weight_map"'):
+        with pytest.raises(
+            ValueError, match=r'index\.json: duplicate key "weight_map"'
+        ):
+            open_shard_reader(str(tmp_path))
+
+    def test_open_on_an_index_that_is_not_json_raises_naming_the_file(
+        self, tmp_path
+    ) -> None:
+        # A bare `JSONDecodeError` reported the column and no file. A
+        # scan reads several files from one model directory (#287).
+        (tmp_path / "model.safetensors.index.json").write_text("{oops")
+
+        with pytest.raises(ValueError, match=r"index\.json: invalid JSON"):
+            open_shard_reader(str(tmp_path))
+
+    def test_open_on_an_index_that_is_not_utf8_raises_naming_the_file(
+        self, tmp_path
+    ) -> None:
+        (tmp_path / "model.safetensors.index.json").write_bytes(b"\xff\xfe{}")
+
+        with pytest.raises(ValueError, match=r"index\.json: not valid UTF-8"):
+            open_shard_reader(str(tmp_path))
+
+    def test_open_on_an_index_past_the_digit_limit_raises_naming_the_file(
+        self, tmp_path
+    ) -> None:
+        # `json.loads` raises a plain `ValueError` above
+        # `sys.get_int_max_str_digits`, which escaped the named clause
+        # with CPython's remedy and no file (#287).
+        (tmp_path / "model.safetensors.index.json").write_text(
+            '{"weight_map": {"a": "m.safetensors"}, "n": ' + "9" * 5000 + "}"
+        )
+
+        with pytest.raises(ValueError, match=r"index\.json: cannot parse JSON"):
+            open_shard_reader(str(tmp_path))
+
+    def test_open_on_an_index_nested_past_the_recursion_limit_raises_naming_the_file(
+        self, tmp_path
+    ) -> None:
+        # Deep nesting exhausts the decoder's stack. `RecursionError` is
+        # no `ValueError`, so it escaped every caller (#287).
+        (tmp_path / "model.safetensors.index.json").write_text(
+            "[" * 100_000 + "]" * 100_000
+        )
+
+        with pytest.raises(ValueError, match=r"index\.json: JSON nests too deeply"):
+            open_shard_reader(str(tmp_path))
+
+    def test_open_on_an_index_that_is_not_an_object_raises_naming_the_file(
+        self, tmp_path
+    ) -> None:
+        # A JSON array reached `index.get` and raised `AttributeError`,
+        # outside every clause a caller catches (#287).
+        (tmp_path / "model.safetensors.index.json").write_text("[]")
+
+        with pytest.raises(ValueError, match=r"index\.json: expected a JSON object"):
             open_shard_reader(str(tmp_path))
 
     def test_verify_names_a_missing_tensor(self, tmp_path) -> None:
