@@ -37,6 +37,9 @@ Open before upload (the #404 dry run resolves each):
   Q4_0 (#414, ADR-0012 decision 3 as amended 2026-09-04). Re-pack
   or re-stamp the file, verify the bytes, and re-upload before this
   card ships. The packed SHA-256 and byte count below then change.
+- The Usage section landed after the 0c72c8a upload (#410). The
+  published card lags this source until the next upload. Re-upload
+  and verify the bytes match.
 -->
 
 # NVIDIA-Nemotron-3.5-Lightning-30B-A3B-fit16gib-GGUF
@@ -168,6 +171,97 @@ The claim's boundaries, stated plainly:
   keeps every weight on the card. The project has not measured that
   speed difference. Smaller published builds of this model also fit
   by file size, and this card does not measure them.
+
+## Usage
+
+llama.cpp serves this pack. The serve test ran build b10326, and a
+local Docker stack verified build b10573 on 2026-08-22 with an RTX
+4090 and Open WebUI 0.11.0. Every setting below comes from that
+verification. A setting this section does not name is unmeasured.
+
+**Ollama cannot load this pack.** The file stores 11 tensors at
+ggml type 42 (`Q2_0`). Ollama's type table stops at type 41 on
+`main` and at type 39 in release 0.18.0. For an unknown type Ollama
+sizes the tensor at 0 B and mis-plans the offload, so the failure
+is not a clean refusal. No flag works around it, and no current
+update carries type 42. The same holds for any runtime without
+ggml type 42.
+
+A single-user invocation:
+
+```
+llama-server -m NVIDIA-Nemotron-3.5-Lightning-30B-A3B-fit16gib.gguf \
+  -ngl 99 -c 16384 -np 1 --reasoning-format none --reasoning-budget 512
+```
+
+The verification runs did not start this command as one. Each flag
+was verified on its own, and each answers one measured failure:
+
+- `--reasoning-format none`. By default llama.cpp streams the
+  thoughts as `reasoning_content` and holds `content` at null. Open
+  WebUI 0.11.0 reads neither field, so every reply renders empty.
+  Under this flag the `<think>` tags stay inside `content`, and Open
+  WebUI draws a collapsible block. Verified on the streaming and the
+  non-streaming path.
+- `--reasoning-budget 512`. This model reasons before it answers,
+  and the reasoning length tracks the problem. Twenty trivial
+  prompts drew a median of 285 generated tokens, with a maximum of
+  1,207 and none past 2,000. A separate single-prompt measurement,
+  "why is the sky blue", drew 2,631 tokens for a one-sentence
+  answer. When a reply exceeds `max_tokens` inside the
+  thoughts, `content` comes back empty with `finish_reason`
+  "length". It renders blank, not truncated, and no fixed cap covers
+  the tail. The server flag closes the thought and yields an answer.
+  On GSM8K (60 items, temperature 1.0, top_p 0.95) the budget cut
+  the mean reply from 923 to 463 tokens, ran 3.3 times faster, and
+  truncated 0 replies against 2 for the default. Accuracy read 98.3 %
+  against 96.7 %, which is no measurable difference. 512 suits chat
+  and everyday reasoning. A hard-reasoning workload needs a larger
+  budget or none: on GPQA Diamond the same pack averaged 5,819
+  generated tokens, and 57 % of items exceeded an 8,000-token cap.
+  This card carries no measurement of a 512 budget on that workload.
+- `-np 1`. See the slot setting below.
+
+Two controls that look like the budget and are not:
+
+- `reasoning_budget` in a request body is accepted and ignored. Only
+  the server flag works, so a front end cannot set it per
+  conversation.
+- `chat_template_kwargs` with `enable_thinking` false is the one
+  working request-level control. It turns reasoning off rather than
+  bounding it. On the same GSM8K slice it read 90.0 % at 140 mean
+  tokens.
+
+**Slots and context.** `-c 16384` alone opens four slots against one
+unified pool of 16,384 cells. Each slot reports `n_ctx` 16384 over
+`/slots`, and the pool is shared. Four concurrent requests contend
+for it, and a request then fails inside the server:
+
+```
+W decode: failed to find free space in the KV cache, retrying with smaller batch
+W decode: failed to find a memory slot for batch of size 1
+```
+
+The caller sees no error. A 198-item benchmark at 4 concurrency
+logged 426 such lines, and the harness scored the failed requests
+as wrong answers. Read the server log before trusting a number
+measured under concurrency. Three configurations:
+
+| Flags | KV cache | Result |
+|---|---|---|
+| `-c 16384` | 96 MiB, one pool | The tested 16 GiB configuration. Four slots contend. |
+| `-c 16384 -np 1` | 96 MiB | One conversation at 16k, no contention. Inside the 16 GiB claim. |
+| `-c 65536 -np 4` | 16,384 cells per slot | Four conversations at 16k. Measured on a 24 GiB card only. |
+
+The last row reports `n_ctx_slot = 16384, kv_unified = 'false'`,
+and device memory rose from 19,209 MiB to 19,340 MiB on the 24 GiB
+card. This card has not run that configuration inside the 16 GiB
+boundary, so the fit16gib claim does not cover it.
+
+The fit16gib section above states why this card publishes no
+tokens-per-second figure. The verification runs above ran on an
+uncapped 24 GiB card, so their throughput does not meet that bar
+either.
 
 ## The recipe
 
