@@ -1,7 +1,14 @@
 # ADR-0028: Expert stacks map through their own GGUF type table
 
-- **Status:** Accepted
+- **Status:** Accepted, amended by
+  [ADR-0029](0029-plan-independent-size-source.md)
 - **Date:** 2026-08-14
+- **Note (2026-09-04, issue #362):**
+  [ADR-0029](0029-plan-independent-size-source.md) decision 4 adds a
+  16 row to `EXPERT_STACK_EFFECTIVE_BITS` (16.0) and
+  `EXPERT_STACK_TYPE_BY_BITS` (`f16`). It is the F16 passthrough for
+  an uncovered expert-stack group. No such group exists on the #328
+  map.
 - **Amends:** [ADR-0012](0012-gguf-type-mapping.md) decisions 1
   and 5. Decision 1's table keeps every group that is not a
   routed-expert stack. Decision 5's halt stages gain

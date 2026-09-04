@@ -1,7 +1,14 @@
 # ADR-0007: Solver strategy for recipe selection
 
-- **Status:** Accepted
+- **Status:** Accepted, amended by
+  [ADR-0029](0029-plan-independent-size-source.md)
 - **Date:** 2026-07-27
+- **Note (2026-09-04, issue #362):**
+  [ADR-0029](0029-plan-independent-size-source.md) amends this
+  record. The solver prices every discovered group, not only the
+  groups its input map carries. Its first open question conflicts
+  with the clause "a pattern matching zero groups is a hard error".
+  The reciprocal pointer was missing since 2026-08-19.
 - **Note (2026-07-28):**
   [ADR-0013](0013-runtime-capability-in-recipes.md) adds the deferred
   runtime-capability constraint as a filter on the candidate set.

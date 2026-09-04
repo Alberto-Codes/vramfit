@@ -119,6 +119,18 @@ Points fixed at acceptance (2026-07-28):
   packed. The gate answers "do the marginals add in this frame",
   not "does this frame transfer to the runtime". The two
   questions are now known to be different.
+  **Seventh measurement (2026-08-06, the no-2-bit recipe, the
+  eleventh data point):** the assisted map with its 2-bit column
+  removed re-plans to 1×8 / 1×4 / 80×3 at the same budget. It
+  validates **sub-additive by 4.87x** (measured 0.0570 against
+  predicted 0.2776, 32,768-token frame-matched pass), the deepest
+  sub-additivity yet. The measured whole-recipe damage sits below
+  the 2-bit recipe's 0.0651, so whole-recipe measurement ranks
+  flat-3 ahead in its own frame while the summed marginals invert
+  the order. The packed artifact tied the baseline. Recorded on
+  [the eleventh data point](../explanation/evaluating-packed-models.md#the-eleventh-data-point-ban-2-bit-tie-the-baseline).
+  Added 2026-09-04 (#375). The explanation pages tallied seven
+  measurements from 2026-08-06, and this record trailed them.
 
 ## Consequences
 

@@ -1,7 +1,8 @@
 # ADR-0013: Recipes record their target runtime
 
 - **Status:** Accepted, amended by
-  [ADR-0014](0014-per-type-effective-bits.md)
+  [ADR-0014](0014-per-type-effective-bits.md) and
+  [ADR-0029](0029-plan-independent-size-source.md)
 - **Date:** 2026-07-28 (accepted 2026-07-28)
 - **Amendment (2026-07-28):** decision 1's note that effective bits
   stay a pack concern is revised — the domain now records effective
@@ -27,6 +28,16 @@
   A load followed by a save deleted it. The rule is now stated:
   **an artifact reader reports a field it does not know, and loads
   the document.** See [Unknown fields](#unknown-fields) below.
+- **Note (2026-09-04, issue #359):** decision 1's `llama.cpp` row
+  carries nominal 16. [ADR-0029](0029-plan-independent-size-source.md)
+  decision 4 put the F16 passthrough in `EFFECTIVE_BITS` at 16.0 bits
+  per weight, and two pinned invariants carry it into
+  `RUNTIME_CAPABILITIES`: `test_every_table_covers_its_runtime_capability_exactly`
+  and `test_type_table_covers_the_llama_cpp_capability_set`. The
+  widening is forced rather than chosen. 16 is a passthrough that
+  holds a group unquantized. It is not a quantization type the scan
+  measures. One consequence: a map that scanned 16 can carry a
+  `--pin "*=16"` through `servable_precisions`. No map does today.
 
 ## Context
 
@@ -51,9 +62,11 @@ time.
 
    | Runtime | Servable precisions |
    |---------|---------------------|
-   | `llama.cpp` | 8, 6, 5, 4, 3, 2 |
+   | `llama.cpp` | 16, 8, 6, 5, 4, 3, 2 |
    | `vllm` | 8, 4 |
 
+   The 16 entry dates from the 2026-09-04 note (#359). It is the F16
+   passthrough of ADR-0029 decision 4, not a measured precision.
    The table records nominal bits only. Effective bits per type stay
    a pack concern (ADR-0012).
 2. **The solver filters candidates through the table.** `solve`
