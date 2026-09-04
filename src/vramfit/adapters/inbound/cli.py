@@ -190,7 +190,7 @@ def budget(
     The attention shape comes from exactly one source: ``--model-config``
     (read through the `ModelShapeSource` port), or the manual triple
     ``--attn-layers --kv-heads --head-dim`` — the shared resolution
-    lives in [vramfit.adapters.inbound.cli_shape][], which the
+    lives in ``vramfit.adapters.inbound.cli_shape``, which the
     ``capacity`` command uses too. The ``--overhead`` default
     derives from ``vramfit.domain.budget.DEFAULT_RUNTIME_OVERHEAD_BYTES``.
     The first output line reports KV growth per context token, plus
@@ -199,7 +199,7 @@ def budget(
     and ``--sequences``. The ledger subtracts ``--vision-line`` only
     when the card claims vision, and a card that claims no vision
     draws a stated absence instead (ADR-0030 decision 3) — the shared
-    resolution lives in [vramfit.adapters.inbound.cli_shape][].
+    resolution lives in ``vramfit.adapters.inbound.cli_shape``.
 
     Raises:
         typer.BadParameter: If both or neither shape source is given, a
@@ -378,7 +378,7 @@ def plan(
         typer.BadParameter: If a ``--pin`` or ``--protect`` is not of
             the form ``pattern=bits`` with positive bits, a size
             option is malformed (the shared size rule lives in
-            [vramfit.adapters.inbound.cli_shape][]),
+            ``vramfit.adapters.inbound.cli_shape``),
             ``--format-overhead`` is negative, NaN, or infinite, or
             ``--runtime`` is not in the capability table.
         typer.Exit: With code 1 when the map is invalid, the recipe
