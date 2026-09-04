@@ -48,7 +48,7 @@ requires and which reach exactly one row. A partial name matches many
 rows, and this check passes it. Over-deletion is ADR-0023's own
 subject and no concern of this module.
 
-gguf-py rides the scan extra and the pack extra includes it, so the
+gguf-py rides the gguf extra and the pack extra includes it, so the
 read defers to first use. ``vramfit pack --help`` keeps working on a
 base install (ADR-0005), and a matrix-less pack reads nothing.
 

@@ -586,8 +586,9 @@ for halts the pack before the quantizer runs. The refusals form a
 closed list: not an imatrix, no counts, an unknown tensor suffix,
 a sums tensor without its counts twin, a count that is negative or
 not finite, or a count length that contradicts the base tensor.
-The read needs gguf-py, which the pack extra provisions — a
-matrix-less pack touches neither the library nor the file.
+The read needs gguf-py, which the gguf extra provisions without
+torch (#310). A matrix-less pack touches neither the library nor the
+file.
 
 A protected recipe drives its resolved (tensor, precision) pairs as
 extra overrides, placed *before* the group overrides — the quantizer

@@ -22,8 +22,8 @@ failure and a clean bill of health look alike. The reader separates
 them by refusing, as `PackError`, on a closed list: not an imatrix,
 no counts, an unknown tensor suffix, a sums tensor without its
 counts twin, a count that is negative or not finite, or a count
-length that contradicts the base tensor. gguf-py rides the scan
-extra (the pack extra includes it), so the import is deferred to the
+length that contradicts the base tensor. gguf-py rides the gguf
+extra, which the pack extra includes, so the import defers to the
 first read: the base install keeps ``vramfit pack --help`` and a
 matrix-less pack working (ADR-0005).
 
