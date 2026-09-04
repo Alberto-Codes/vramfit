@@ -43,6 +43,18 @@ def test_no_args_shows_help() -> None:
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize(
+    "command", ["version", "budget", "plan", "scan", "pack", "validate", "capacity"]
+)
+def test_command_help_has_no_empty_bracket(command: str) -> None:
+    """A mkdocstrings cross-reference leaks as ``[]`` in CLI help (#490)."""
+    result = runner.invoke(app, [command, "--help"])
+
+    assert result.exit_code == 0
+    assert "[]" not in result.output
+
+
+@pytest.mark.unit
 class TestPlanCommand:
     def _write_map(self, tmp_path, groups=None):
         raw = make_map(groups or [("g0", 160_000, CURVE), ("g1", 160_000, CURVE)])
