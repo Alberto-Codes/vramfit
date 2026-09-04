@@ -127,7 +127,7 @@ key, and no longer the archived hash (#134).
 | `baselines/nvidia_Llama-3_3-Nemotron-Super-49B-v1_5-IQ3_XXS.gguf.evals.json` | `eval/sidecars/baselines/`, same file name | `6264c64c429608db858fcb0244a2f2987d9fd06fbb027d01351c930f93130f1b` |
 | `baselines/Llama-3_3-Nemotron-Super-49B-v1_5-UD-IQ3_XXS.gguf.evals.json` | `eval/sidecars/baselines/`, same file name | `74e47690541518a16d84494fc5e7455b90804d2123d241ac7de05c6f0446b85f` |
 | `analysis/kld564-paired-q3ks.json` | `eval/analysis/`, same file name (#99) | `90d0b813c6a44c91378adc31e7a501d486ce3bfc1194501a1ae7ce837a864a6f` |
-| `README.md` | `publication/model-card/README.md`, uploaded verbatim on 2026-08-10. #492 added `--model` to the reproduce command in the source on 2026-09-04. The published copy lags until #492 re-uploads it. | — |
+| `README.md` | `publication/model-card/README.md`, uploaded verbatim on 2026-08-10. #492 added `--model` to the reproduce command in the source on 2026-09-04, and the same day the block moved to `pip install "vramfit[pack]"` (#532). The published copy lags until `scripts/publish_card.py` re-uploads it. Record the printed SHA-256 here after the byte-match. | — |
 | `LICENSE` | NVIDIA Open Model License text, gathered by #83 | — |
 | `LICENSE-llama3.3` | Llama 3.3 Community License text, gathered by #83 | — |
 | `NOTICE` | NVIDIA notice line (#71), written by #83 | — |

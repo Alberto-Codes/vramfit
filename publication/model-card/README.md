@@ -262,11 +262,12 @@ size-matched baseline), tier 3 certifies (five ties at equal size).
 ## Reproduce it
 
 The repository ships the recipe, the importance matrix, the evals
-sidecar, and the run log beside the weights. One command reproduces the
-pack from the base checkpoint:
+sidecar, and the run log beside the weights. Install the pack extra,
+then one command reproduces the pack from the base checkpoint:
 
 ```
-uv run vramfit pack recipe.json --llama-cpp <llama.cpp checkout> \
+pip install "vramfit[pack]"
+vramfit pack recipe.json --llama-cpp <llama.cpp checkout> \
   --model <checkpoint dir> --imatrix imatrix.gguf \
   --out Llama-3_3-Nemotron-Super-49B-v1_5-fit24gib.gguf
 ```
