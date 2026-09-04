@@ -23,6 +23,7 @@ from typer.testing import CliRunner
 from vramfit.adapters.inbound.cli import app
 from vramfit.adapters.outbound.hf_config import shape_from_config_json
 from vramfit.adapters.outbound.recipe_json import save_recipe
+from vramfit.adapters.outbound.sensitivity_map_json import map_from_dict
 from vramfit.domain.budget import (
     ModelShape,
     kv_cache_bytes,
@@ -276,3 +277,68 @@ def test_budget_gemma_31b_128k_reports_growth_and_window_pool() -> None:
     assert "KV grows 81920 bytes/token" in result.output
     assert "+ 1.17 GiB window pool per sequence" in result.output
     assert "- KV cache            11.17 GiB" in result.output
+
+
+MAP_REFERENCE_PAGE = (
+    Path(__file__).parents[2] / "docs" / "reference" / "sensitivity-map.md"
+)
+
+
+def map_reference_example() -> dict:
+    """Return the first JSON example on the sensitivity-map reference page.
+
+    The page is the stable map-format contract and the example is a
+    serialized artifact, so the real loader must accept it (#255).
+    """
+    lines = MAP_REFERENCE_PAGE.read_text(encoding="utf-8").splitlines()
+    start = lines.index("```json") + 1
+    end = lines.index("```", start)
+    return json.loads("\n".join(lines[start:end]))
+
+
+def test_map_reference_example_loads_and_names_groups_per_the_field_notes() -> None:
+    map_ = map_from_dict(map_reference_example())
+
+    assert map_.scan.group_by == "layer"
+    assert map_.scan.precisions == tuple(sorted(map_.scan.precisions, reverse=True))
+    for group in map_.groups:
+        assert all(tensor.startswith(group.name + ".") for tensor in group.tensors)
+        assert set(group.tensor_bytes) == set(group.tensors)
+        assert tuple(sorted(group.sensitivity, reverse=True)) == map_.scan.precisions
+
+
+def test_map_reference_example_plan_matches_pin_on_name_and_protect_on_tensor(
+    tmp_path: Path,
+) -> None:
+    example = map_reference_example()
+    map_path = tmp_path / "sensitivity.json"
+    map_path.write_text(json.dumps(example), encoding="utf-8")
+    out = tmp_path / "recipe.json"
+    group = example["groups"][0]["name"]
+    tensor = example["groups"][0]["tensors"][2]
+
+    result = runner.invoke(
+        app,
+        [
+            "plan",
+            str(map_path),
+            "--vram",
+            "64MiB",
+            "--kv-headroom",
+            "8MiB",
+            "--pin",
+            f"{group}=4",
+            "--protect",
+            f"{tensor}=8",
+            "--out",
+            str(out),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    recipe = json.loads(out.read_text(encoding="utf-8"))
+    assert recipe["model_id"] == example["model_id"]
+    assert [a["group"] for a in recipe["assignments"]] == [group]
+    assert recipe["assignments"][0]["bits"] == 4
+    assert [p["tensor"] for p in recipe["protected_tensors"]] == [tensor]
+    assert recipe["protected_tensors"][0]["bits"] == 8
