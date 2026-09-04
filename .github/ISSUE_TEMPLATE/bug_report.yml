@@ -1,0 +1,58 @@
+---
+name: Bug report
+description: A command produced the wrong result, crashed, or refused a valid input.
+title: "bug: "
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Read the support section of CONTRIBUTING.md first. The maintainer
+        answers bugs that carry a reproduction. Search open issues before
+        you file.
+  - type: input
+    id: version
+    attributes:
+      label: vramfit version
+      description: Output of `uv pip show vramfit`, or the commit SHA of a source checkout.
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command
+      description: The exact command you ran, with every flag.
+      render: console
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result
+      description: Paste the error text or the wrong output. Attach a traceback if one exists.
+      render: console
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Python version, GPU, driver, and CUDA version. Add the llama.cpp commit for `pack` bugs.
+      placeholder: |
+        OS: Fedora 44
+        Python: 3.12.4
+        GPU: RTX 4090 24 GiB, driver 560, CUDA 12.6
+        llama.cpp: b4321
+    validations:
+      required: true
+  - type: textarea
+    id: artifacts
+    attributes:
+      label: Artifacts
+      description: Attach or link the recipe, sensitivity map, or log the command read or wrote.

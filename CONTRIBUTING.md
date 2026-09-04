@@ -4,10 +4,31 @@ Thanks for your interest in contributing to vramfit! This guide covers everythin
 
 ## Reporting Issues
 
-Use the [Issues page](https://github.com/Alberto-Codes/vramfit/issues):
+Use the [Issues page](https://github.com/Alberto-Codes/vramfit/issues).
+Two templates exist:
 
-- **Bug Report** -- reproduce steps, environment info (GPU, driver, CUDA version), and logs
-- **Feature Request** -- problem statement, proposed solution, acceptance criteria
+- **Bug report** -- the exact command, the expected and actual result,
+  the environment (GPU, driver, CUDA version), and any artifact the
+  command read or wrote. A bug without a reproduction gets one request
+  for it, then closes.
+- **Question or proposal** -- a question about how the tool works, or a
+  problem statement with a proposed change.
+
+## Support
+
+One maintainer triages issues, without a fixed schedule. The maintainer
+answers reproducible bugs, questions the docs do not answer, and
+proposals that name the ADR or docs page they touch. The maintainer
+does not debug a scan or pack on hardware they cannot reach, and does
+not support runtimes, quantization formats, or GPUs outside the
+[README requirements](README.md#requirements). A scan or pack question
+can consume a day of GPU time, so a report without a reproduction stays
+unanswered.
+
+Issues labeled `chart`, `chart:discuss`, `chart:research`, or
+`chart:task` belong to a multi-session effort the maintainer runs under
+the convention in [docs/explanation/charting.md](docs/explanation/charting.md),
+and plain issues carry no such label.
 
 ## Prerequisites
 
