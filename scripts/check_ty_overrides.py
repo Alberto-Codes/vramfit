@@ -58,8 +58,8 @@ from typing import Final, NamedTuple
 # gate cannot check: issue #244 carries the work to derive it.
 # Measured 2026-08-15 against `uv sync --locked --dev` with no extras.
 OPTIONAL_ROOTS: Final[dict[str, str]] = {
-    "gguf": "scan extra — gguf-py reads the imatrix and GGUF tensors.",
-    "numpy": "gguf dependency group, and gguf-py depends on it too.",
+    "gguf": "gguf extra — gguf-py reads the imatrix and GGUF tensors.",
+    "numpy": "gguf extra, and gguf-py depends on it too.",
     "safetensors": "scan extra — shard restore for offload (ADR-0015).",
     "tokenizers": "rides in with transformers, declared nowhere.",
     "torch": "scan extra — the GPU stack the plan step must not need.",

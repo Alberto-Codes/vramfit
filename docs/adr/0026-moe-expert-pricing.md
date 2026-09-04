@@ -391,10 +391,11 @@
 
     A pack that names an imatrix now needs gguf-py. The reader
     defers the import to the first read, and a missing module
-    raises `PackError` naming the pack extra. The base install
-    keeps `vramfit pack --help` and a matrix-less pack working
-    (ADR-0005). gguf-py is pure Python, and the pack extra already
-    carries it through the scan extra.
+    raises `PackError` naming the extra that carries gguf-py. The
+    base install keeps `vramfit pack --help` and a matrix-less pack
+    working (ADR-0005). gguf-py is pure Python. **Since 2026-09-04
+    (#310) the `gguf` extra carries it without torch**, and the pack
+    extra includes that extra.
 
     The reader refuses a file it cannot vouch for, as `PackError`.
     The refused cases form a closed list:

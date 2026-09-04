@@ -91,9 +91,11 @@ jobs:
   # Mirrors the pre-push gate: thorough hypothesis profile, e2e
   # included, 90% coverage floor from pyproject. GPU and integration
   # tiers stay out. CI has neither the card nor the weights.
-  # The gguf group rides along so the e2e pack flow runs. The pack
-  # step reads the base GGUF's tensor names (ADR-0012 as amended
-  # 2026-08-16, #303), and that test skips without gguf-py.
+  # The gguf extra rides along so the gguf-py suites and the e2e
+  # pack flow run. The pack step reads the base GGUF's tensor names
+  # (ADR-0012 as amended 2026-08-16, #303), and those tests skip
+  # without gguf-py. The import step fails loudly when gguf is
+  # missing (#197). Without it a broken install skips green.
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -108,7 +110,10 @@ jobs:
           enable-cache: true
           cache-suffix: py${{ matrix.python-version }}
       - run: uv python install ${{ matrix.python-version }}
-      - run: uv sync --locked --dev --group gguf
+      - run: uv sync --locked --dev --extra gguf
+        env:
+          UV_PYTHON: ${{ matrix.python-version }}
+      - run: uv run python -c "import gguf, numpy"
         env:
           UV_PYTHON: ${{ matrix.python-version }}
       - run: >-
@@ -126,34 +131,6 @@ jobs:
           --tb=short
         env:
           UV_PYTHON: ${{ matrix.python-version }}
-      - run: uv cache prune --ci
-        if: always()
-        continue-on-error: true
-
-  # The gguf-py contract suites guard on import and skip wherever
-  # gguf is absent (#197). The marker expression keeps the resource
-  # tiers out, matching the addopts default. A bare `-m contract`
-  # would replace that deselection. The import step fails loudly
-  # when gguf is missing. Without it a broken install skips green.
-  #
-  # This job's install now equals the test job's, so its suite is a
-  # subset of that job's run. #311 carries whether it earns its
-  # runner.
-  test-gguf:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v6
-      - uses: astral-sh/setup-uv@v7
-        with:
-          enable-cache: true
-          cache-suffix: gguf
-      - run: uv python install 3.12
-      - run: uv sync --locked --dev --group gguf
-      - run: uv run python -c "import gguf, numpy"
-      - run: >-
-          uv run pytest --tb=short
-          -m "contract and not gpu and not integration and not e2e and not slow"
       - run: uv cache prune --ci
         if: always()
         continue-on-error: true

@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import pytest
 
-gguf = pytest.importorskip("gguf", reason="pack extra not installed")
+gguf = pytest.importorskip("gguf", reason="gguf extra not installed")
 
 from vramfit.adapters.outbound.gguf.types import GGUF_SUFFIX_BY_HF
 

@@ -123,19 +123,23 @@ vramfit version
 ```
 
 That is the whole install for the
-[first-run tutorial](https://github.com/Alberto-Codes/vramfit/blob/main/docs/tutorials/first-run.md). Two extras add the
+[first-run tutorial](https://github.com/Alberto-Codes/vramfit/blob/main/docs/tutorials/first-run.md). Three extras add the
 remaining commands:
 
 ```bash
 pip install "vramfit[scan]"  # adds the torch stack for scan and validate
-pip install "vramfit[pack]"  # the scan stack plus the GGUF converter deps
+pip install "vramfit[gguf]"  # gguf-py and numpy, no torch: the reads pack does itself
+pip install "vramfit[pack]"  # the scan and gguf extras plus the GGUF converter deps
 ```
 
 `vramfit validate` builds the same torch-backed meter as `vramfit scan`,
-so both need the scan extra and a CUDA GPU. `vramfit pack` needs the
-pack extra and a llama.cpp checkout with built tools, which you pass
-with `--llama-cpp` ([ADR-0012](https://github.com/Alberto-Codes/vramfit/blob/main/docs/adr/0012-gguf-type-mapping.md)).
-The pack extra does not install llama.cpp. The
+so both need the scan extra and a CUDA GPU. `vramfit pack` needs
+gguf-py to read the base GGUF and the imatrix, and a llama.cpp
+checkout with built tools, which you pass with `--llama-cpp`
+([ADR-0012](https://github.com/Alberto-Codes/vramfit/blob/main/docs/adr/0012-gguf-type-mapping.md)).
+The gguf extra covers those reads without torch. The pack extra also
+provisions the interpreter for the convert script. Neither installs
+llama.cpp. The
 [pack how-to](https://github.com/Alberto-Codes/vramfit/blob/main/docs/how-to/pack-a-recipe.md) shows the build.
 
 To develop vramfit itself, clone the repository instead. See

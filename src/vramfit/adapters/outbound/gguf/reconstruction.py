@@ -38,7 +38,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 
 
 def _load_gguf() -> Any:
-    """Import gguf-py on first use, naming the extra when absent.
+    """Import gguf-py on first use, naming the gguf extra when absent.
 
     Returns:
         The imported ``gguf`` module.
@@ -50,8 +50,8 @@ def _load_gguf() -> Any:
         import gguf  # noqa: PLC0415 - lazy: base install has no gguf-py (ADR-0005)
     except ImportError as exc:
         raise PackError(
-            "the reconstruction check needs gguf-py — install the pack "
-            "extra: uv sync --extra pack (ADR-0022)"
+            "the reconstruction check needs gguf-py — install the gguf "
+            "extra: uv sync --extra gguf (ADR-0022)"
         ) from exc
     return gguf
 

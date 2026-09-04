@@ -6,6 +6,10 @@
 - **Amendment (2026-07-28):** the base-dependency clause changes —
   the base install carries typer and structlog. Everything else
   stands.
+- **Amendment (2026-09-04, issue #310):** a third extra,
+  `vramfit[gguf]`, carries gguf-py and numpy and no torch. It covers
+  the GGUF reads the pack step does itself. `vramfit[pack]` includes
+  it. Everything else stands.
 
 ## Context
 
@@ -20,7 +24,7 @@ same principle: minimal runtime deps, everything else optional.
 
 The base install carries **typer only**. GPU-touching functionality lands
 behind optional extras (`vramfit[scan]` and `vramfit[pack]`, both
-shipped), and the
+shipped, and `vramfit[gguf]` since the #310 amendment), and the
 default test suite must pass on a CPU-only machine — GPU-dependent tests
 carry the `gpu` marker and skip cleanly without CUDA.
 

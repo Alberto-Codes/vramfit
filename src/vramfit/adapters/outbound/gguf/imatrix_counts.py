@@ -91,7 +91,7 @@ _READER_FAILURES: Final[tuple[type[Exception], ...]] = (
 
 
 def _load_gguf() -> Any:
-    """Import gguf-py on first use, naming the extra when absent.
+    """Import gguf-py on first use, naming the gguf extra when absent.
 
     Returns:
         The imported ``gguf`` module.
@@ -103,8 +103,8 @@ def _load_gguf() -> Any:
         import gguf  # noqa: PLC0415 - lazy: base install has no gguf-py (ADR-0005)
     except ImportError as exc:
         raise PackError(
-            "reading imatrix counts needs gguf-py — install the pack "
-            "extra: uv sync --extra pack (ADR-0026)"
+            "reading imatrix counts needs gguf-py — install the gguf "
+            "extra: uv sync --extra gguf (ADR-0026)"
         ) from exc
     return gguf
 

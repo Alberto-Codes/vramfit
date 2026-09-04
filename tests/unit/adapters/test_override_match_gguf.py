@@ -6,9 +6,8 @@ only this module carries the guard.
 
 The module is marked `unit` rather than `contract`. ADR-0009 reserves
 `contract` for verified-fake port suites, and #207 owns whether that
-marker widens. Both CI jobs that collect this tier install the gguf
-dependency group, so these run there and skip on a dev box synced
-without it.
+marker widens. The CI test job installs the gguf extra, so these run
+there and skip on a dev box synced without it.
 """
 
 # ruff: noqa: E402 - the importorskip guard must run before gguf imports
@@ -19,8 +18,8 @@ from pathlib import Path
 
 import pytest
 
-np = pytest.importorskip("numpy", reason="pack extra not installed")
-pytest.importorskip("gguf", reason="pack extra not installed")
+np = pytest.importorskip("numpy", reason="gguf extra not installed")
+pytest.importorskip("gguf", reason="gguf extra not installed")
 
 from gguf import GGUFWriter
 

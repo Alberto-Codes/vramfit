@@ -17,8 +17,8 @@ from pathlib import Path
 
 import pytest
 
-np = pytest.importorskip("numpy", reason="pack extra not installed")
-pytest.importorskip("gguf", reason="pack extra not installed")
+np = pytest.importorskip("numpy", reason="gguf extra not installed")
+pytest.importorskip("gguf", reason="gguf extra not installed")
 
 from gguf import GGMLQuantizationType, GGUFWriter
 from gguf.quants import dequantize, quantize
