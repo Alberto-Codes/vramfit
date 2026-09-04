@@ -52,7 +52,7 @@ maturity status). Design decisions are recorded as [ADRs](https://github.com/Alb
 
 vramfit's acceptance test is Nemotron Super 49B on a 24 GiB RTX 4090
 ([ADR-0003](https://github.com/Alberto-Codes/vramfit/blob/main/docs/adr/0003-north-star-benchmark.md)).
-The published pack passed it on 2026-08-10.
+The published pack passed its three evaluation tiers on 2026-08-10.
 
 | | |
 |---|---|
@@ -67,14 +67,15 @@ The published pack passed it on 2026-08-10.
 | Artifacts | [Packed model](https://huggingface.co/Alberto-Codes/Llama-3_3-Nemotron-Super-49B-v1_5-fit24gib-GGUF), [sensitivity maps](https://huggingface.co/datasets/Alberto-Codes/Llama-3_3-Nemotron-Super-49B-v1_5-sensitivity-maps) |
 | Evidence | [Evidence ledger](https://github.com/Alberto-Codes/vramfit/blob/main/docs/explanation/evaluating-packed-models.md), data points fifteen and sixteen. [Card ledger](https://github.com/Alberto-Codes/vramfit/blob/main/publication/model-card/card-ledger.md) |
 
-Every number above comes from one instrument: llama.cpp b10172 on the
-RTX 4090, against the f16 reference on held-out WikiText-2. Damage and
-KL values from other models, maps, calibration sets, or instruments do
-not compare with these
+Every measured number above comes from one instrument: llama.cpp
+b10172 on the RTX 4090. Perplexity and KL divergence ran on held-out
+WikiText-2, with KL against the f16 reference. Damage and KL values
+from other models, maps, calibration sets, or instruments do not
+compare with these
 ([ADR-0027](https://github.com/Alberto-Codes/vramfit/blob/main/docs/adr/0027-instrument-frame-matching.md)).
 
-Two later publications carry their own cards, comparators, and ledgers:
-a [30B MoE pack for 16 GiB](https://huggingface.co/Alberto-Codes/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-fit16gib-GGUF)
+Two later publications carry their own cards, comparators, and ledgers.
+They are a [30B MoE pack for 16 GiB](https://huggingface.co/Alberto-Codes/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-fit16gib-GGUF)
 and an
 [image-capable Gemma 4 31B pack for 24 GiB](https://huggingface.co/Alberto-Codes/gemma-4-31B-it-fit24gib-GGUF).
 
@@ -86,15 +87,15 @@ The full pipeline is implemented: `scan`, `plan`, `validate`, `pack`, plus
 check (ADR-0022), and smoke-tests every artifact before trusting it
 (ADR-0017).
 
-The road to that result ran through measured eliminations. Importance-weighted
-rounding was worth 0.86 of the original 1.39-perplexity gap. 2-bit
-group membership decides whether damages add: super-additive by
-11.9× on one 2-bit set, sub-additive by 1.6× on another. The solver
-buys nominal 2 on expert-stack groups where a runtime-frame campaign
-priced the width. Dense groups keep the bar (ADR-0021, amended
-2026-08-22).
-Within-layer protections plus imatrix exclusions (ADR-0022,
-ADR-0023) closed the fit-collapse gap.
+The road to the result above ran through measured eliminations.
+Importance-weighted rounding was worth 0.86 of the original
+1.39-perplexity gap. 2-bit group membership decides whether damages
+add: super-additive by 11.9× on one 2-bit set, sub-additive by 1.6×
+on another. The solver buys nominal 2 on expert-stack groups where a
+runtime-frame campaign priced the width. Dense groups keep nominal 2
+out until a price shows it beats the alternatives at or below the
+budget (ADR-0021, amended 2026-08-22). Within-layer protections plus
+imatrix exclusions (ADR-0022, ADR-0023) closed the fit-collapse gap.
 
 The [evidence page](https://github.com/Alberto-Codes/vramfit/blob/main/docs/explanation/evaluating-packed-models.md) records
 all nineteen data points, through 2026-08-22. See
