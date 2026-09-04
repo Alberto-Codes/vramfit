@@ -88,7 +88,8 @@ See
 ## Requirements
 
 - Python 3.12+
-- CUDA GPU (developed against an RTX 4090 / 24 GiB)
+- CUDA GPU for `scan`, `validate`, and `pack` (developed against an
+  RTX 4090 / 24 GiB). `plan` and `capacity` need no GPU.
 - [uv](https://docs.astral.sh/uv/)
 
 ## Installation
@@ -101,8 +102,9 @@ uv sync
 
 ## Quick Start
 
-Solve the published 49B sensitivity map under 24 GiB, then read how
-much context the recipe leaves. The run needs no GPU, no torch, and no
+Run this in an empty directory, not in a clone. It solves the
+published 49B sensitivity map under 24 GiB. It then reads how much
+context the recipe leaves. The run needs no GPU, no torch, and no
 model weights. Two downloads total 108 KB, and both commands finish in
 under one second.
 

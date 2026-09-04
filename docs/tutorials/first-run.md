@@ -7,9 +7,9 @@ status: draft
 > **Status: draft** — every command below ran on 2026-09-03 with
 > `vramfit` 0.4.0 from PyPI, in a clean virtual environment with no
 > extras. The expected output comes from that run. A later release
-> can move the figures, so compare against `vramfit version`. Chart
-> #481 ruled this path on
-> [#483](https://github.com/Alberto-Codes/vramfit/issues/483).
+> can move the figures, so check `vramfit version` against 0.4.0.
+> The maintainer ruled this path on 2026-09-03 under chart #481
+> ([#483](https://github.com/Alberto-Codes/vramfit/issues/483)).
 
 This tutorial takes you from an empty directory to a mixed-precision
 recipe for Nemotron Super 49B under 24 GiB. It then reads how much
@@ -86,14 +86,20 @@ result. The solver started every group at 8-bit and took 161
 downgrade steps until the recipe fit the 20.47 GiB weight budget.
 The [recipe](../reference/recipe.md) holds 80 groups at 3-bit, one
 at 4-bit (`model.layers.3`), and one at 8-bit (`model.layers.0`).
-Its `plan.trace` block records every step and the reason.
+Its `plan.trace` block records every step with its damage delta, the
+bytes it freed, and the damage-per-byte ratio that chose it.
+
+[Damage](../reference/glossary.md) is the output divergence a group
+takes at a precision, measured by the scan. Higher is worse. The
+predicted damage sums the chosen groups.
 
 The headroom figure is the shipped recipe's. Its
 [budget table](https://huggingface.co/Alberto-Codes/Llama-3_3-Nemotron-Super-49B-v1_5-fit24gib-GGUF#what-fit24gib-means)
 reserves 3,791,650,816 B for KV cache and runtime, which is 3616 MiB.
 The default headroom of 4 GiB leaves 20.00 GiB for weights. No recipe
 fits that budget on this map, so `plan` exits 1 and reports a
-56.39 MiB gap. Try it.
+56.39 MiB gap. Drop `--kv-headroom 3616MiB` from the command above
+and run it to see the refusal.
 
 ## 4. Read the capacity
 
@@ -129,7 +135,8 @@ The plain solve predicts damage 0.2776. The shipped `recipe.json`
 predicts 0.3905. Both figures sum per-group measurements from one
 map, so they compare under
 [ADR-0027](../adr/0027-instrument-frame-matching.md). Do not read the
-lower number as the better pack.
+lower number as the better pack. The shipped solve buys quality the
+prediction never prices.
 
 The shipped solve ends one step further. It holds 47 `attn_v`
 tensors at a 5-bit floor and one at a 4-bit floor, all inside 3-bit
@@ -138,9 +145,9 @@ floors cost about 97 MiB. To pay for them, the solver downgraded
 `model.layers.3` from 4-bit to 3-bit as a 162nd step, at a predicted
 damage of 0.113.
 The two recipes agree on every other group. Protections price by size
-only, and predicted damage stays the group-level sum. Their benefit shows in measurement. The protected
-recipe won the runtime-frame head-to-head against the size-matched
-community quant, 7.8σ paired
+only, and predicted damage stays the group-level sum. Their benefit
+shows in measurement. The protected recipe won the runtime-frame
+head-to-head against the size-matched community quant, 7.8σ paired
 ([evidence](../explanation/evaluating-packed-models.md#the-fifteenth-data-point-the-pipeline-packs-its-own-winner)).
 
 ## Optional: reproduce the shipped recipe
@@ -149,14 +156,17 @@ The shipped
 [`recipe.json`](https://huggingface.co/Alberto-Codes/Llama-3_3-Nemotron-Super-49B-v1_5-fit24gib-GGUF/blob/main/recipe.json)
 records its full solve in the `plan` block. That block holds the
 budget bytes, the 0.005 format overhead, 48 protection rules, 4
-imatrix exclusions, and the 162-step trace. Passing those values
-back to `plan` as
-flags rebuilt the file on every field during the
-[#483 checks](https://github.com/Alberto-Codes/vramfit/issues/483#issuecomment-5534333284).
-The rebuilt command runs to 113 arguments, so this page does not
-carry it. One trap: the glob `--protect "*.self_attn.v_proj.weight=5"`
-resolves a different 48-tensor set and does not reproduce the file.
-Name the 48 tensors one by one, as the recipe does.
+imatrix exclusions, and the 162-step trace. The
+[#483 checks](https://github.com/Alberto-Codes/vramfit/issues/483#issuecomment-5534333284)
+passed those values back to `plan` as flags. The output matched the
+published file on every field. The rebuilt command runs to 113
+arguments, so this page does not carry it.
+
+One trap: the glob `--protect "*.self_attn.v_proj.weight=5"` matches
+the same 48 tensors but holds `model.layers.3.self_attn.v_proj.weight`
+at 5-bit, where the recipe holds it at 4-bit. It predicts
+21,958,391,121 bytes instead of 21,957,337,301. Name the 48 tensors
+one by one, as the recipe does.
 
 ## Where next
 
