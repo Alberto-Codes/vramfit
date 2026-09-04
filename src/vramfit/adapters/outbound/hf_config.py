@@ -7,7 +7,9 @@ can be deleted (``no_op``) or replaced with a linear layer
 Standard llama-style configs carry uniform layers. Composite configs
 (Gemma 4, #420) nest the decoder under ``text_config``. Invalid
 geometry (non-divisible GQA group sizes, non-divisible head dimensions)
-is rejected rather than silently truncated.
+is rejected rather than silently truncated. Every refusal raises
+`HfConfigError`, which sits under the `VramfitError` root and keeps
+`ValueError` as a base (#474).
 
 The llama-style parse models declared heterogeneous KV geometry
 (#421): a ``layer_types`` list of global and sliding layers, an
@@ -61,6 +63,7 @@ from pathlib import Path
 from typing import Any
 
 from vramfit.adapters.outbound.hf_kv_geometry import (
+    HfConfigError,
     bounded_int,
     field_label,
     kv_layers_from_decoder,
@@ -95,7 +98,7 @@ def shape_from_config_json(path: Path) -> ModelShape:
         The parsed shape.
 
     Raises:
-        ValueError: If the file is not UTF-8, is not valid JSON, defines
+        HfConfigError: If the file is not UTF-8, is not valid JSON, defines
             the same key twice, declares an integer outside the signed
             64-bit range, required fields are missing, the attention
             geometry is inconsistent, the decoder container is
@@ -138,7 +141,7 @@ def config_claims_vision(path: Path) -> bool:
         object.
 
     Raises:
-        ValueError: If the file is not UTF-8, is not valid JSON,
+        HfConfigError: If the file is not UTF-8, is not valid JSON,
             defines the same key twice, or is not a JSON object. The
             same refusals as `shape_from_config_json`, so the two
             reads of one file cannot disagree on validity.
@@ -163,7 +166,7 @@ def _load_config(path: Path) -> dict[str, Any]:
         The parsed top-level object.
 
     Raises:
-        ValueError: If the file is not UTF-8, is not valid JSON,
+        HfConfigError: If the file is not UTF-8, is not valid JSON,
             defines the same key twice (#283), declares an integer
             past the parser's digit bound (#287), or is not a JSON
             object. Every message names ``path``.
@@ -173,20 +176,20 @@ def _load_config(path: Path) -> dict[str, Any]:
             path.read_text(encoding="utf-8"), object_pairs_hook=object_from_pairs
         )
     except DuplicateKeyError as exc:
-        raise ValueError(f"{path}: {exc.message}") from exc
+        raise HfConfigError(f"{path}: {exc.message}") from exc
     except json.JSONDecodeError as exc:
-        raise ValueError(f"{path}: invalid JSON: {exc}") from exc
+        raise HfConfigError(f"{path}: invalid JSON: {exc}") from exc
     except UnicodeDecodeError as exc:
-        raise ValueError(f"{path}: not valid UTF-8: {exc}") from exc
+        raise HfConfigError(f"{path}: not valid UTF-8: {exc}") from exc
     except ValueError as exc:
         # An integer literal past `sys.get_int_max_str_digits` (4300 by
         # default) fails here, before any extractor sees it (#287). The
         # clause sits below the two ValueError subclasses above, which
         # carry their own messages. `DuplicateKeyError` is no
         # `ValueError`, so the structural refusal cannot land here.
-        raise ValueError(f"{path}: cannot parse JSON: {exc}") from exc
+        raise HfConfigError(f"{path}: cannot parse JSON: {exc}") from exc
     if not isinstance(config, dict):
-        raise ValueError(f"{path}: expected a JSON object")
+        raise HfConfigError(f"{path}: expected a JSON object")
     return config
 
 
@@ -217,7 +220,7 @@ class HfConfigFile:
             The parsed shape.
 
         Raises:
-            ValueError: If the config is missing or inconsistent.
+            HfConfigError: If the config is missing or inconsistent.
         """
         return shape_from_config_json(self.path)
 
@@ -234,7 +237,7 @@ def _from_decilm_config(config: dict[str, Any], path: Path) -> ModelShape:
         attention blocks skipped.
 
     Raises:
-        ValueError: If required fields are missing, ``block_configs`` is
+        HfConfigError: If required fields are missing, ``block_configs`` is
             not a list, no block has real attention, a skip flag is not
             a boolean, an integer exceeds the largest signed 64-bit
             integer, a block's ``n_heads_in_group`` is not a positive
@@ -251,17 +254,17 @@ def _from_decilm_config(config: dict[str, Any], path: Path) -> ModelShape:
     head_dim = _head_dim(config, heads, path)
     blocks = config["block_configs"]
     if not isinstance(blocks, list):
-        raise ValueError(f'{path}: "block_configs" must be a list')
+        raise HfConfigError(f'{path}: "block_configs" must be a list')
     kv_heads_per_layer: list[int] = []
     for i, block in enumerate(blocks):
         attention = block.get("attention") if isinstance(block, dict) else None
         if not isinstance(attention, dict):
-            raise ValueError(f"{path}: block_configs[{i}] has no attention object")
+            raise HfConfigError(f"{path}: block_configs[{i}] has no attention object")
         skip = False
         for flag in ("no_op", "replace_with_linear"):
             value = attention.get(flag)
             if value is not None and not isinstance(value, bool):
-                raise ValueError(
+                raise HfConfigError(
                     f"{path}: block_configs[{i}].attention.{flag} must be a boolean"
                 )
             skip = skip or bool(value)
@@ -276,7 +279,7 @@ def _from_decilm_config(config: dict[str, Any], path: Path) -> ModelShape:
             or not isinstance(group_size, int)
             or group_size <= 0
         ):
-            raise ValueError(
+            raise HfConfigError(
                 f"{path}: block_configs[{i}].attention.n_heads_in_group "
                 "must be a positive integer"
             )
@@ -288,13 +291,13 @@ def _from_decilm_config(config: dict[str, Any], path: Path) -> ModelShape:
             group_size, f"block_configs[{i}].attention.n_heads_in_group", path
         )
         if heads % group_size != 0:
-            raise ValueError(
+            raise HfConfigError(
                 f"{path}: block_configs[{i}].attention.n_heads_in_group "
                 f"{group_size} does not divide num_attention_heads {heads}"
             )
         kv_heads_per_layer.append(heads // group_size)
     if not kv_heads_per_layer:
-        raise ValueError(f"{path}: no block has real attention")
+        raise HfConfigError(f"{path}: no block has real attention")
     return ModelShape(
         kv_layers=tuple(
             KVLayer(kv_heads=kv_heads, head_dim=head_dim)
@@ -323,7 +326,7 @@ def _from_text_config(config: dict[str, Any], path: Path) -> ModelShape:
         The parsed uniform shape of the nested decoder.
 
     Raises:
-        ValueError: If ``text_config`` is not an object, the top level
+        HfConfigError: If ``text_config`` is not an object, the top level
             also declares a decoder (``block_configs`` or
             ``num_hidden_layers``), the nested decoder carries
             ``block_configs`` (a NAS decoder inside a composite file,
@@ -333,15 +336,15 @@ def _from_text_config(config: dict[str, Any], path: Path) -> ModelShape:
     """
     decoder = config["text_config"]
     if not isinstance(decoder, dict):
-        raise ValueError(f'{path}: "text_config" must be a JSON object')
+        raise HfConfigError(f'{path}: "text_config" must be a JSON object')
     for key in ("block_configs", "num_hidden_layers"):
         if key in config:
-            raise ValueError(
+            raise HfConfigError(
                 f'{path}: "text_config" and top-level "{key}" are both '
                 "present, so the decoder config is ambiguous"
             )
     if "block_configs" in decoder:
-        raise ValueError(
+        raise HfConfigError(
             f"{path}: text_config.block_configs declares a NAS decoder "
             "this reader does not model"
         )
@@ -364,7 +367,7 @@ def _from_llama_config(
         geometry.
 
     Raises:
-        ValueError: If required fields are missing or inconsistent, or
+        HfConfigError: If required fields are missing or inconsistent, or
             the decoder declares KV geometry this reader does not
             model
             (`vramfit.adapters.outbound.hf_kv_geometry.kv_layers_from_decoder`).
@@ -394,14 +397,14 @@ def _config_int(config: dict[str, Any], key: str, path: Path, prefix: str = "") 
         The integer value.
 
     Raises:
-        ValueError: If the field is missing, is not a positive integer,
+        HfConfigError: If the field is missing, is not a positive integer,
             or is outside the signed 64-bit range. The message names
             the field through `field_label`, and `bounded_int` applies
             the range.
     """
     value = config.get(key)
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-        raise ValueError(
+        raise HfConfigError(
             f"{path}: {field_label(key, prefix)} must be a positive integer"
         )
     return bounded_int(value, field_label(key, prefix), path)
@@ -424,7 +427,7 @@ def _head_dim(
         ``hidden_size // num_heads`` after validating exact divisibility.
 
     Raises:
-        ValueError: If a present ``head_dim`` is not a positive integer
+        HfConfigError: If a present ``head_dim`` is not a positive integer
             inside the signed 64-bit range (a present-but-invalid value
             is rejected, never silently replaced by the fallback), or
             ``hidden_size`` is missing or not an exact multiple of
@@ -433,13 +436,13 @@ def _head_dim(
     head_dim = config.get("head_dim")
     if head_dim is not None:
         if isinstance(head_dim, bool) or not isinstance(head_dim, int) or head_dim <= 0:
-            raise ValueError(
+            raise HfConfigError(
                 f"{path}: {field_label('head_dim', prefix)} must be a positive integer"
             )
         return bounded_int(head_dim, field_label("head_dim", prefix), path)
     hidden = _config_int(config, "hidden_size", path, prefix)
     if hidden % num_heads != 0:
-        raise ValueError(
+        raise HfConfigError(
             f"{path}: {field_label('hidden_size', prefix)} {hidden} is not divisible "
             f"by {field_label('num_attention_heads', prefix)} {num_heads}"
         )
