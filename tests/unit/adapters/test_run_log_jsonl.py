@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import gc
 import sys
+import warnings
 
 import pytest
 
@@ -73,15 +75,40 @@ def test_events_reach_disk_before_the_handle_closes(tmp_path) -> None:
 def test_non_serializable_field_raises_instead_of_degrading(tmp_path) -> None:
     sink = JsonlRunLogFile(tmp_path / "x.jsonl")
 
-    with pytest.raises(TypeError):
+    with pytest.raises(RunLogError, match="not JSON serializable"):
         sink.emit("scan_started", {"bad": object()})
 
 
 def test_non_finite_field_raises_instead_of_corrupting_json(tmp_path) -> None:
     sink = JsonlRunLogFile(tmp_path / "x.jsonl")
 
-    with pytest.raises(ValueError, match=r"[Nn]a[Nn]|allow_nan"):
+    with pytest.raises(RunLogError, match=r"[Nn]a[Nn]|allow_nan"):
         sink.emit("cell_measured", {"damage": float("nan")})
+
+
+@pytest.mark.parametrize(
+    ("fields", "match"),
+    [
+        ({"bad": object()}, "not JSON serializable"),
+        ({"damage": float("nan")}, "nan"),
+        ({"damage": float("inf")}, "inf"),
+    ],
+    ids=["object", "nan", "inf"],
+)
+def test_emit_refuses_each_bad_field_under_the_error_root(
+    tmp_path, fields, match: str
+) -> None:
+    # #475: the renderer's `TypeError` and `ValueError` are foreign to
+    # the port. Each becomes `RunLogError`, and the message names the
+    # file and the event. The file stays empty.
+    path = tmp_path / "x.jsonl"
+
+    with pytest.raises(VramfitError, match=match) as info:
+        JsonlRunLogFile(path).emit("cell_measured", fields)
+
+    assert str(path) in str(info.value)
+    assert "'cell_measured'" in str(info.value)
+    assert path.read_text(encoding="utf-8") == ""
 
 
 def test_reader_drops_a_torn_final_line(tmp_path) -> None:
@@ -110,9 +137,9 @@ def test_emit_cannot_write_a_duplicate_envelope_key(tmp_path) -> None:
     # foreign writer (#283).
     sink = JsonlRunLogFile(tmp_path / "x.jsonl")
 
-    with pytest.raises(TypeError, match="vramfit_runlog"):
+    with pytest.raises(RunLogError, match="vramfit_runlog"):
         sink.emit("scan_started", {"vramfit_runlog": 99})
-    with pytest.raises(TypeError, match="event"):
+    with pytest.raises(RunLogError, match="event"):
         sink.emit("scan_started", {"event": "other"})
 
 
@@ -254,3 +281,18 @@ def test_run_log_error_keeps_the_value_error_base() -> None:
     # changes (ADR-0011 decision 5).
     assert issubclass(RunLogError, ValueError)
     assert issubclass(RunLogError, VramfitError)
+
+
+def test_emit_leaves_no_open_handle_behind(tmp_path) -> None:
+    # #468: the sink used to cache an append handle and never close it.
+    # The interpreter then closed it at collection and raised a
+    # `ResourceWarning` inside whichever test was running.
+    sink = JsonlRunLogFile(tmp_path / "x.jsonl")
+    sink.emit("scan_started", {})
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        del sink
+        gc.collect()
+
+    assert [w for w in caught if issubclass(w.category, ResourceWarning)] == []

@@ -13,6 +13,12 @@ foreign writer, and it raises at every line position. ADR-0011's
 crash-tolerance rule stays scoped to a decode failure on the final
 line. `read_run_log` raises every refusal as `RunLogError`, which sits
 under the `VramfitError` root and keeps `ValueError` as a base (#346).
+`emit` raises the same class for a field the renderer refuses (#475).
+
+`emit` opens the file, appends one line, and closes it (#468). A
+cached handle would need an owner to close it, and every composition
+root would carry that lifecycle. One open per event keeps the port
+and the roots unchanged.
 
 Examples:
     Record a scan's first event:
@@ -32,7 +38,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
 
@@ -48,11 +54,14 @@ RUNLOG_VERSION: Final[int] = 2
 
 
 class RunLogError(VramfitError, ValueError):
-    """A run-log line the reader refuses.
+    """A run-log line the reader or the writer refuses.
 
     `read_run_log` raises it for a repeated key, a non-final line that
     is not valid JSON, and a number literal the parser refuses. The
-    message names the file and the line.
+    message names the file and the line. `emit` raises it for a field
+    the renderer refuses: a value that is not JSON-serializable, a
+    NaN or infinite number, or a key that collides with the envelope
+    (#475). That message names the file and the event.
 
     The class sits under the `VramfitError` root per ADR-0011 decision
     5. It keeps `ValueError` as a base, so a caller that catches the
@@ -102,8 +111,8 @@ class JsonlRunLogFile:
     """`RunLogSink` adapter appending JSON lines to one file.
 
     Rendering is strict: bad fields raise instead of degrading the
-    machine contract silently. Identity is the path — the cached
-    handle stays out of equality and construction.
+    machine contract silently. Every emit opens the file, appends one
+    line, and closes it, so no handle outlives the call (#468).
 
     Attributes:
         path (Path): The run-log file. Created on first emit, appended
@@ -119,10 +128,14 @@ class JsonlRunLogFile:
     """
 
     path: Path
-    _logger: Any = field(default=None, repr=False, init=False, compare=False)
 
     def emit(self, event: str, fields: Mapping[str, object]) -> None:
-        """Append one event line, flushed immediately.
+        """Append one event line and close the file.
+
+        The renderer's `TypeError` and `ValueError` are foreign to the
+        port. Both become `RunLogError`, under the root per ADR-0011
+        decision 5 (#475). `OSError` passes through unchanged, as the
+        port names it.
 
         Args:
             event: Past-tense event name, e.g. ``cell_measured``.
@@ -130,13 +143,16 @@ class JsonlRunLogFile:
 
         Raises:
             OSError: If the file cannot be opened or written.
-            TypeError: If a field is not JSON-serializable.
-            ValueError: If a field is NaN or infinite — invalid JSON.
+            RunLogError: If a field is not JSON-serializable, is NaN or
+                infinite, or collides with an envelope key.
         """
-        if self._logger is None:
-            handle = self.path.open("a", encoding="utf-8")
-            self._logger = _build_logger(handle)
-        self._logger.msg(event, vramfit_runlog=RUNLOG_VERSION, **fields)
+        with self.path.open("a", encoding="utf-8") as handle:
+            try:
+                _build_logger(handle).msg(
+                    event, vramfit_runlog=RUNLOG_VERSION, **fields
+                )
+            except (TypeError, ValueError) as exc:
+                raise RunLogError(f"{self.path}: event {event!r}: {exc}") from exc
 
 
 def read_run_log(path: Path) -> list[dict[str, Any]]:
