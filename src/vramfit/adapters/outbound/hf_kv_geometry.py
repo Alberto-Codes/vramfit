@@ -7,6 +7,8 @@ Builds the `KVLayer` tuple a llama-style decoder config declares
 shared-KV tail (``num_kv_shared_layers``). The module also carries
 the field-label and integer-bound helpers the whole adapter shares,
 and the refusal that keeps these keys off the DeciLM path (#426).
+It also defines `HfConfigError`, the refusal class both modules
+raise under the `VramfitError` root (#474).
 
 Split from [vramfit.adapters.outbound.hf_config][] to hold the
 300-code-line cap. That module owns dispatch and the container rules.
@@ -42,6 +44,7 @@ from pathlib import Path
 from typing import Any, Final
 
 from vramfit.domain.budget import KVLayer
+from vramfit.domain.errors import VramfitError
 
 # The largest integer this reader admits. ADR-0008's 2026-08-16
 # amendment gives the reader the format bound. The signed 64-bit range
@@ -49,6 +52,36 @@ from vramfit.domain.budget import KVLayer
 # Without it a declared count reaches `ModelShape` and raises
 # `OverflowError` past the error root (#314).
 INT_MAX: Final[int] = 2**63 - 1
+
+
+class HfConfigError(VramfitError, ValueError):
+    """A ``config.json`` value the HF config reader refuses.
+
+    Both `vramfit.adapters.outbound.hf_config` and this module raise
+    it: for a file that is not UTF-8 or not JSON, a repeated key, a
+    missing or malformed field, an integer past `INT_MAX`, and a
+    geometry key on a config family that cannot carry it. Every
+    message names the file.
+
+    The class sits under the `VramfitError` root per ADR-0011 decision
+    5. It keeps `ValueError` as a base, so the `ModelShapeSource`
+    contract and every caller that catches the historical type still
+    hold. Before #474 both modules raised a plain `ValueError`, which
+    escaped the root. The class lives here because `hf_config` imports
+    this module and not the reverse.
+
+    Examples:
+        Catch the refusal through the root:
+
+        ```python
+        from vramfit.domain.errors import VramfitError
+
+        try:
+            shape_from_config_json(path)
+        except VramfitError as exc:
+            print(f"error: {exc}")
+        ```
+    """
 
 
 def kv_layers_from_decoder(
@@ -90,7 +123,7 @@ def kv_layers_from_decoder(
             top level.
 
     Raises:
-        ValueError: If ``layer_types`` is malformed, misses a layer,
+        HfConfigError: If ``layer_types`` is malformed, misses a layer,
             or declares a type this reader does not model, a sliding
             layer has no active window, an active window comes with
             no ``layer_types`` list, ``use_bidirectional_attention``
@@ -110,13 +143,13 @@ def kv_layers_from_decoder(
     layer_types = _layer_types(config, layers, path, prefix)
     window = _active_window(config, path, prefix)
     if window is not None and layer_types is None:
-        raise ValueError(
+        raise HfConfigError(
             f"{path}: {field_label('sliding_window', prefix)} declares "
             "windowed attention this reader does not model"
         )
     types = layer_types or ("full_attention",) * layers
     if "sliding_attention" in types and window is None:
-        raise ValueError(
+        raise HfConfigError(
             f"{path}: {field_label('layer_types', prefix)} declares sliding "
             "layers with no active sliding window"
         )
@@ -131,14 +164,14 @@ def kv_layers_from_decoder(
         # The transformers loader discards the override in this case.
         # This reader never silently discards a declared geometry
         # value, so the disagreement refuses instead.
-        raise ValueError(
+        raise HfConfigError(
             f"{path}: {field_label('num_global_key_value_heads', prefix)} declares "
             "a KV-head override its attention_k_eq_v setting disables, "
             "which this reader does not model"
         )
     fresh = layers - _shared_layers(config, layers, path, prefix)
     if not set(types[fresh:]) <= set(types[:fresh]):
-        raise ValueError(
+        raise HfConfigError(
             f"{path}: {field_label('num_kv_shared_layers', prefix)} leaves a "
             "shared layer with no earlier layer of its type"
         )
@@ -170,7 +203,7 @@ def _layer_types(
         declares none.
 
     Raises:
-        ValueError: If the list is not a list of strings, misses a
+        HfConfigError: If the list is not a list of strings, misses a
             layer, or names a type other than ``full_attention`` or
             ``sliding_attention``.
     """
@@ -180,16 +213,16 @@ def _layer_types(
     if not isinstance(layer_types, list) or not all(
         isinstance(t, str) for t in layer_types
     ):
-        raise ValueError(
+        raise HfConfigError(
             f"{path}: {field_label('layer_types', prefix)} must be a list of strings"
         )
     if len(layer_types) != layers:
-        raise ValueError(
+        raise HfConfigError(
             f"{path}: {field_label('layer_types', prefix)} does not list "
             "one type per hidden layer"
         )
     if any(t not in ("full_attention", "sliding_attention") for t in layer_types):
-        raise ValueError(
+        raise HfConfigError(
             f"{path}: {field_label('layer_types', prefix)} declares "
             "a layer type this reader does not model"
         )
@@ -216,7 +249,7 @@ def _active_window(config: dict[str, Any], path: Path, prefix: str) -> int | Non
         The active window in tokens, or ``None``.
 
     Raises:
-        ValueError: If ``sliding_window`` is not a non-negative
+        HfConfigError: If ``sliding_window`` is not a non-negative
             integer or null, ``use_sliding_window`` is not a boolean
             or null, or ``use_bidirectional_attention`` carries a
             value other than ``"vision"`` or null. On ``"all"`` the
@@ -226,7 +259,7 @@ def _active_window(config: dict[str, Any], path: Path, prefix: str) -> int | Non
     """
     bidirectional = config.get("use_bidirectional_attention")
     if bidirectional is not None and bidirectional != "vision":
-        raise ValueError(
+        raise HfConfigError(
             f"{path}: {field_label('use_bidirectional_attention', prefix)} declares "
             "bidirectional attention this reader does not model"
         )
@@ -234,13 +267,13 @@ def _active_window(config: dict[str, Any], path: Path, prefix: str) -> int | Non
     if window is not None and (
         isinstance(window, bool) or not isinstance(window, int) or window < 0
     ):
-        raise ValueError(
+        raise HfConfigError(
             f"{path}: {field_label('sliding_window', prefix)} must be a "
             "non-negative integer or null"
         )
     switch = config.get("use_sliding_window")
     if switch is not None and not isinstance(switch, bool):
-        raise ValueError(
+        raise HfConfigError(
             f"{path}: {field_label('use_sliding_window', prefix)} must be a boolean or null"
         )
     if isinstance(window, int) and window > 0 and switch is not False:
@@ -262,11 +295,11 @@ def _k_eq_v(config: dict[str, Any], path: Path, prefix: str) -> bool:
         false, matching the transformers Gemma 4 default.
 
     Raises:
-        ValueError: If the value is not a boolean or null.
+        HfConfigError: If the value is not a boolean or null.
     """
     k_eq_v = config.get("attention_k_eq_v")
     if k_eq_v is not None and not isinstance(k_eq_v, bool):
-        raise ValueError(
+        raise HfConfigError(
             f"{path}: {field_label('attention_k_eq_v', prefix)} must be a boolean or null"
         )
     return bool(k_eq_v)
@@ -289,12 +322,12 @@ def _shared_layers(config: dict[str, Any], layers: int, path: Path, prefix: str)
         The shared-layer count, zero when absent or null.
 
     Raises:
-        ValueError: If the value is not a non-negative integer or
+        HfConfigError: If the value is not a non-negative integer or
             null, or the count leaves no layer that stores KV.
     """
     shared = _shared_count(config, path, prefix)
     if shared >= layers:
-        raise ValueError(
+        raise HfConfigError(
             f"{path}: {field_label('num_kv_shared_layers', prefix)} "
             "leaves no layer that stores KV"
         )
@@ -314,14 +347,14 @@ def _shared_count(config: dict[str, Any], path: Path, prefix: str) -> int:
         The declared count, zero when absent or null.
 
     Raises:
-        ValueError: If the value is not a non-negative integer or
+        HfConfigError: If the value is not a non-negative integer or
             null, or is outside the signed 64-bit range.
     """
     shared = config.get("num_kv_shared_layers")
     if shared is None:
         return 0
     if isinstance(shared, bool) or not isinstance(shared, int) or shared < 0:
-        raise ValueError(
+        raise HfConfigError(
             f"{path}: {field_label('num_kv_shared_layers', prefix)} "
             "must be a non-negative integer or null"
         )
@@ -344,14 +377,14 @@ def _optional_int(
         The integer value, or ``None`` when absent or null.
 
     Raises:
-        ValueError: If a present value is not a positive integer or
+        HfConfigError: If a present value is not a positive integer or
             null, or is outside the signed 64-bit range.
     """
     value = config.get(key)
     if value is None:
         return None
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-        raise ValueError(
+        raise HfConfigError(
             f"{path}: {field_label(key, prefix)} must be a positive integer or null"
         )
     return bounded_int(value, field_label(key, prefix), path)
@@ -372,32 +405,32 @@ def refuse_decilm_geometry(config: dict[str, Any], path: Path) -> None:
         path: Source path, for error messages.
 
     Raises:
-        ValueError: If a geometry key above carries an active value,
+        HfConfigError: If a geometry key above carries an active value,
             or carries a type it cannot mean.
     """
     if config.get("layer_types") is not None:
-        raise ValueError(
+        raise HfConfigError(
             f'{path}: "layer_types" beside "block_configs" declares '
             "per-layer attention this reader does not model"
         )
     if _active_window(config, path, "") is not None:
-        raise ValueError(
+        raise HfConfigError(
             f'{path}: "sliding_window" declares windowed attention '
             "this reader does not model"
         )
     if _k_eq_v(config, path, ""):
-        raise ValueError(
+        raise HfConfigError(
             f'{path}: "attention_k_eq_v" declares K=V storage '
             "this reader does not model"
         )
     if _shared_count(config, path, "") > 0:
-        raise ValueError(
+        raise HfConfigError(
             f'{path}: "num_kv_shared_layers" declares KV sharing '
             "this reader does not model"
         )
     for key in ("global_head_dim", "num_global_key_value_heads"):
         if _optional_int(config, key, path, "") is not None:
-            raise ValueError(
+            raise HfConfigError(
                 f'{path}: "{key}" declares split local/global '
                 "attention this reader does not model"
             )
@@ -448,11 +481,11 @@ def bounded_int(value: int, label: str, path: Path) -> int:
         The integer value.
 
     Raises:
-        ValueError: If the value exceeds the largest signed 64-bit
+        HfConfigError: If the value exceeds the largest signed 64-bit
             integer.
     """
     if value > INT_MAX:
-        raise ValueError(
+        raise HfConfigError(
             f"{path}: {label} exceeds {INT_MAX}, "
             "the largest integer this format carries"
         )
