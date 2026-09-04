@@ -2471,3 +2471,10 @@ either. Numbers without framing invite the hostile reading.
   lands at roughly half the chord and the inverted arm lands 1.41
   times above it, so a gate price bounds a mixed recipe without
   predicting it.
+- Whether the published 49B pack serves at 16k context on a headless
+  RTX 4090 (added 2026-09-04,
+  [the twentieth data point](#the-twentieth-data-point-the-published-pack-stops-at-10k-context-on-the-reference-box)).
+  The reference box runs a desktop that held 2,341 MiB of the card,
+  and the pack stopped at 10,240 tokens there. Arithmetic says about
+  22,300 MiB of buffers against a card that reports 24,564 MiB, and
+  arithmetic is not a serve record.
