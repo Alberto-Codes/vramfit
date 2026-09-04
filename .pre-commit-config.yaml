@@ -89,6 +89,37 @@ repos:
         always_run: true
         stages: [pre-push]
 
+      # Second coverage run, own threshold (#364, ruled 2026-09-04).
+      # `--cov=scripts` replaces the pyproject source list for this
+      # run only. The floor sits below the 50 % measured on
+      # 2026-09-04. Raise it as the scripts gain tests. CI mirrors
+      # the same flags.
+      - id: pytest-push-scripts
+        name: pytest scripts coverage (48% floor)
+        entry: >-
+          uv run pytest -m "not gpu and not integration"
+          --cov=scripts --cov-fail-under=48 --tb=short -q
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]
+
+      # The integration tier (#470, ruled 2026-09-04). Its modules
+      # call `pytest.importorskip("torch")`, so the step skips with
+      # the reason "scan extra not installed" where the extra is
+      # absent, and `-rs` prints that reason. It costs about 7
+      # seconds where the extra is installed. CI has no torch and
+      # carries no mirror.
+      - id: pytest-push-integration
+        name: pytest integration (skips without the scan extra)
+        entry: >-
+          uv run pytest -m "integration and not gpu"
+          --tb=short -q -rs
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]
+
       - id: lint-imports
         name: import-linter
         entry: uv run lint-imports
