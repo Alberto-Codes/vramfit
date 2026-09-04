@@ -39,7 +39,7 @@ VRAM budget:
 **The goal:** NVIDIA **Nemotron Super 49B running on a 24 GiB RTX 4090** — a
 model that does not fit at full precision, made to fit selectively, with
 measured (not vibes-based) damage versus running a smaller model instead.
-The [Status](#status) section records the result.
+[The result](#the-result) records the measured outcome.
 
 Philosophy borrowed from [antirez/ds4](https://github.com/antirez/ds4): depth
 over breadth. One model profiled properly beats a generic recipe applied to a
@@ -48,41 +48,57 @@ hundred.
 Docs live in [`docs/`](https://github.com/Alberto-Codes/vramfit/blob/main/docs/index.md) (Diátaxis layout, every page carries a
 maturity status). Design decisions are recorded as [ADRs](https://github.com/Alberto-Codes/vramfit/blob/main/docs/adr/index.md).
 
+## The result
+
+vramfit's acceptance test is Nemotron Super 49B on a 24 GiB RTX 4090
+([ADR-0003](https://github.com/Alberto-Codes/vramfit/blob/main/docs/adr/0003-north-star-benchmark.md)).
+The published pack passed its three evaluation tiers on 2026-08-10.
+
+| | |
+|---|---|
+| Model | [nvidia/Llama-3_3-Nemotron-Super-49B-v1_5](https://huggingface.co/nvidia/Llama-3_3-Nemotron-Super-49B-v1_5) |
+| Budget | Solver target: 24 GiB card, 16k context at fp8 KV. Weight budget 20.47 GiB |
+| Pack | 20.36 GiB GGUF, 112 MiB under the weight budget |
+| Comparator | bartowski Q3_K_S, 20.45 GiB, size-matched |
+| KL divergence, 564 chunks | 0.2873 against 0.2959. Better on 369 of 564 chunks, 7.8σ paired |
+| Perplexity | 8.517 ± 0.063 against 8.532 ± 0.064. A tie by the interval |
+| Top-token agreement | 82.9 % against 83.4 %. The comparator leads |
+| Task slice, five tasks | Five ties, largest delta 0.8σ ([ADR-0024](https://github.com/Alberto-Codes/vramfit/blob/main/docs/adr/0024-tier3-task-slice.md)) |
+| Artifacts | [Packed model](https://huggingface.co/Alberto-Codes/Llama-3_3-Nemotron-Super-49B-v1_5-fit24gib-GGUF), [sensitivity maps](https://huggingface.co/datasets/Alberto-Codes/Llama-3_3-Nemotron-Super-49B-v1_5-sensitivity-maps) |
+| Evidence | [Evidence ledger](https://github.com/Alberto-Codes/vramfit/blob/main/docs/explanation/evaluating-packed-models.md), data points fifteen and sixteen. [Card ledger](https://github.com/Alberto-Codes/vramfit/blob/main/publication/model-card/card-ledger.md) |
+
+Every measured number above comes from one instrument: llama.cpp
+b10172 on the RTX 4090. Perplexity and KL divergence ran on held-out
+WikiText-2, with KL against the f16 reference. Damage, perplexity,
+and KL values from other models, maps, calibration sets, or
+instruments do not compare with these
+([ADR-0027](https://github.com/Alberto-Codes/vramfit/blob/main/docs/adr/0027-instrument-frame-matching.md)).
+
+Two later publications carry their own cards, comparators, and ledgers.
+They are a [30B MoE pack for 16 GiB](https://huggingface.co/Alberto-Codes/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-fit16gib-GGUF)
+and an
+[image-capable Gemma 4 31B pack for 24 GiB](https://huggingface.co/Alberto-Codes/gemma-4-31B-it-fit24gib-GGUF).
+
 ## Status
 
 The full pipeline is implemented: `scan`, `plan`, `validate`, `pack`, plus
 `budget` for the VRAM arithmetic. Pack quantizes with an importance matrix
 (ADR-0016), guards protected packs with a per-tensor reconstruction
 check (ADR-0022), and smoke-tests every artifact before trusting it
-(ADR-0017). Seventeen data points span 2026-07-28 to 2026-08-11.
-Every packed model fits the card first try.
+(ADR-0017).
 
-The pipeline **wins the head-to-head on the ruling window**. On
-2026-08-09 an end-to-end pack beat the size-matched community
-imatrix quant on full-window KL divergence: 0.2873 vs 0.2959,
-7.8σ paired. The same artifact holds the best nominal perplexity
-in the lane (8.517 vs 8.532) at 112 MiB under budget. The baseline
-keeps a half-point lead on full-window top-token agreement. On
-2026-08-10 tier 3 certified the pack: five task benchmarks, five
-statistical ties against the baseline, none past 0.8σ (ADR-0024).
-The [publication gate](https://github.com/Alberto-Codes/vramfit/blob/main/docs/explanation/artifact-ecosystem.md) ruled GO
-on this evidence.
-
-The road there ran through measured eliminations. Importance-weighted
-rounding was worth 0.86 of the original 1.39-perplexity gap. 2-bit
-group membership decides whether damages add: super-additive by
-11.9× on one 2-bit set, sub-additive by 1.6× on another. 2-bit
-stays out of the solve until runtime-frame prices exist — current
-practice plans on a map copy without the 2-bit column (ADR-0021).
-Within-layer protections plus imatrix exclusions (ADR-0022,
-ADR-0023) closed the fit-collapse gap.
+The road to the result above ran through measured eliminations.
+Importance-weighted rounding was worth 0.86 of the original
+1.39-perplexity gap. 2-bit group membership decides whether damages
+add: super-additive by 11.9× on one 2-bit set, sub-additive by 1.6×
+on another. The solver buys nominal 2 on expert-stack groups where a
+runtime-frame campaign priced the width. Dense groups keep nominal 2
+out until a price shows it beats the alternatives at or below the
+budget (ADR-0021, amended 2026-08-22). Within-layer protections plus
+imatrix exclusions (ADR-0022, ADR-0023) closed the fit-collapse gap.
 
 The [evidence page](https://github.com/Alberto-Codes/vramfit/blob/main/docs/explanation/evaluating-packed-models.md) records
-all seventeen data points. Publication #1 is live on Hugging Face: the
-[packed model](https://huggingface.co/Alberto-Codes/Llama-3_3-Nemotron-Super-49B-v1_5-fit24gib-GGUF)
-and the
-[sensitivity-map dataset](https://huggingface.co/datasets/Alberto-Codes/Llama-3_3-Nemotron-Super-49B-v1_5-sensitivity-maps).
-See
+all nineteen data points, through 2026-08-22. See
 [Issues](https://github.com/Alberto-Codes/vramfit/issues) for the roadmap.
 
 ## Requirements
