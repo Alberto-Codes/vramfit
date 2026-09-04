@@ -6,7 +6,9 @@ Builds the `KVLayer` tuple a llama-style decoder config declares
 (``attention_k_eq_v`` gates the KV-head override, #431), and a
 shared-KV tail (``num_kv_shared_layers``), and a hybrid
 ``layers_block_type`` stack whose non-attention blocks store no KV
-(#427). The module also carries the field-label and integer-bound
+(#427). A ``hybrid_override_pattern`` string with no such list
+refuses, since this module does not expand the pattern (#427). The
+module also carries the field-label and integer-bound
 helpers the whole adapter shares, and the refusal that keeps these
 keys off the DeciLM path (#426). It also defines `HfConfigError`,
 the refusal class both modules raise under the `VramfitError` root
@@ -111,7 +113,11 @@ def kv_layers_from_decoder(
     ``mamba``, ``moe``, or ``mlp`` block stores no KV, the way the
     DeciLM path skips a ``no_op`` block. A hybrid stack beside a
     shared-KV tail refuses: this reader does not model which
-    attention block a shared tail reuses.
+    attention block a shared tail reuses. Published Nemotron-H files
+    declare the same stack as a ``hybrid_override_pattern`` string
+    and omit the list. This reader does not parse the pattern, so
+    the string refuses when no ``layers_block_type`` list comes
+    beside it.
 
     The same class also synthesizes defaults this reader does not
     mirror: an absent ``global_head_dim`` defaults to 512, an absent
@@ -142,8 +148,10 @@ def kv_layers_from_decoder(
             type, ``layers_block_type`` is malformed, misses a layer,
             names a block type this reader does not model, lists no
             ``attention`` block, comes beside ``layer_types``, or comes
-            beside a ``num_kv_shared_layers`` above zero, or a geometry
-            key carries a type it cannot mean.
+            beside a ``num_kv_shared_layers`` above zero, a non-empty
+            ``hybrid_override_pattern`` comes with no
+            ``layers_block_type`` list, or a geometry key carries a
+            type it cannot mean.
             ``bool`` subclasses ``int``, so a boolean count refuses
             as a non-integer (#348). No message renders a
             publisher-controlled value (#363).
@@ -158,6 +166,12 @@ def kv_layers_from_decoder(
             f"{path}: {field_label('layers_block_type', prefix)} beside "
             f"{field_label('layer_types', prefix)} declares two per-layer "
             "patterns this reader does not combine"
+        )
+    if block_types is None and _override_pattern(config, path, prefix) is not None:
+        raise ValueError(
+            f"{path}: {field_label('hybrid_override_pattern', prefix)} declares "
+            f"a hybrid stack with no {field_label('layers_block_type', prefix)} "
+            "list, which this reader does not model"
         )
     window = _active_window(config, path, prefix)
     if window is not None and layer_types is None:
@@ -301,6 +315,34 @@ def _block_types(
     if "attention" not in block_types:
         raise HfConfigError(f"{path}: {label} lists no attention block")
     return tuple(block_types)
+
+
+def _override_pattern(config: dict[str, Any], path: Path, prefix: str) -> str | None:
+    """Read a declared ``hybrid_override_pattern`` string.
+
+    The transformers Nemotron-H config class expands the string into
+    ``layers_block_type``. This reader does not, so the caller
+    refuses the string when the list is absent (#427).
+
+    Args:
+        config: Parsed ``config.json``, or a nested decoder object.
+        path: Source path, for error messages.
+        prefix: JSON path of ``config`` inside the file, empty at the
+            top level.
+
+    Returns:
+        The pattern, or ``None`` when absent, null, or empty.
+
+    Raises:
+        ValueError: If the value is not a string or null.
+    """
+    pattern = config.get("hybrid_override_pattern")
+    if pattern is not None and not isinstance(pattern, str):
+        raise ValueError(
+            f"{path}: {field_label('hybrid_override_pattern', prefix)} "
+            "must be a string or null"
+        )
+    return pattern or None
 
 
 def _active_window(config: dict[str, Any], path: Path, prefix: str) -> int | None:
@@ -468,9 +510,10 @@ def refuse_decilm_geometry(config: dict[str, Any], path: Path) -> None:
     """Refuse llama-geometry keys beside ``block_configs`` (#426).
 
     The DeciLM parse prices every kept block as a global K and V
-    pair. A window, KV sharing, a split local/global key, or a
-    ``layer_types`` or ``layers_block_type`` list beside
-    ``block_configs`` would silently misprice that read.
+    pair. A window, KV sharing, a split local/global key, a
+    ``layer_types`` or ``layers_block_type`` list, or a
+    ``hybrid_override_pattern`` string beside ``block_configs``
+    would silently misprice that read.
     ``attention_k_eq_v`` no longer changes a price (#431), but it
     marks a geometry family this parse does not model. Each key
     refuses.
@@ -483,7 +526,7 @@ def refuse_decilm_geometry(config: dict[str, Any], path: Path) -> None:
         HfConfigError: If a geometry key above carries an active value,
             or carries a type it cannot mean.
     """
-    for key in ("layer_types", "layers_block_type"):
+    for key in ("layer_types", "layers_block_type", "hybrid_override_pattern"):
         if config.get(key) is not None:
             raise HfConfigError(
                 f'{path}: "{key}" beside "block_configs" declares '
