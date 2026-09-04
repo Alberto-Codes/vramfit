@@ -576,15 +576,18 @@ class TestModelShapeFromConfig:
 
         assert _kv_heads(shape) == (2,)
 
-    def test_empty_override_pattern_parses_uniform(self, tmp_path) -> None:
+    def test_empty_override_pattern_without_block_types_raises(self, tmp_path) -> None:
         config = self._nano_config()
         config["hybrid_override_pattern"] = ""
         path = tmp_path / "config.json"
         path.write_text(json.dumps(config))
 
-        shape = shape_from_config_json(path)
-
-        assert _kv_heads(shape) == (2,) * 52
+        with pytest.raises(
+            ValueError,
+            match=r'"hybrid_override_pattern" declares a hybrid stack with no '
+            r'"layers_block_type" list',
+        ):
+            shape_from_config_json(path)
 
     def test_non_string_override_pattern_raises(self, tmp_path) -> None:
         config = self._nano_config()

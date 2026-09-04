@@ -148,7 +148,7 @@ def kv_layers_from_decoder(
             type, ``layers_block_type`` is malformed, misses a layer,
             names a block type this reader does not model, lists no
             ``attention`` block, comes beside ``layer_types``, or comes
-            beside a ``num_kv_shared_layers`` above zero, a non-empty
+            beside a ``num_kv_shared_layers`` above zero, a
             ``hybrid_override_pattern`` comes with no
             ``layers_block_type`` list, or a geometry key carries a
             type it cannot mean.
@@ -331,7 +331,8 @@ def _override_pattern(config: dict[str, Any], path: Path, prefix: str) -> str | 
             top level.
 
     Returns:
-        The pattern, or ``None`` when absent, null, or empty.
+        The pattern as declared, or ``None`` when absent or null. An
+        empty string is a declared pattern of zero blocks.
 
     Raises:
         ValueError: If the value is not a string or null.
@@ -342,7 +343,7 @@ def _override_pattern(config: dict[str, Any], path: Path, prefix: str) -> str | 
             f"{path}: {field_label('hybrid_override_pattern', prefix)} "
             "must be a string or null"
         )
-    return pattern or None
+    return pattern
 
 
 def _active_window(config: dict[str, Any], path: Path, prefix: str) -> int | None:
