@@ -492,6 +492,29 @@
     card says what the field means for a vramfit pack. The published
     30B file still declares `Q2_K` until it is re-packed or
     re-stamped and re-uploaded, which #413 tracks.
+- **Amendment (2026-09-04, issue #208):** decision 2's root claim
+  gains a second refusal. The 2026-08-12 amendment refuses a recipe
+  whose groups hang from two roots. A recipe whose groups all hang
+  from one foreign root passed, and the pack mapped every group to
+  a `blk.<n>.` override. A vision tower lives under `v.blk.<n>.` in
+  GGUF, so the overrides matched nothing and the pack applied none
+  of them, with no error. The maintainer ruled on 2026-09-04:
+  refuse any root not in the scan's supported list.
+
+    **The pack holds the one root to the scan name table's list.**
+    The domain's `NAME_TABLE_ROOTS` owns that list: `model`,
+    `backbone`, and Gemma 4's nested `model.language_model` (#160,
+    #423). The imatrix name table builds its root alternation from
+    the same list, so the scan and the pack share one source of
+    truth and cannot drift apart. The refusal names the claimed
+    root and the supported roots. The two-root refusal stands and
+    fires first. The layer family under the root stays free —
+    `.layers.`, `.h.`, and `.blocks.` all derive the layer index.
+
+    **The fix is a refusal, not a mapping.** No scan produces a
+    recipe under a foreign root today, so the refusal rejects only
+    a hand-edited recipe. A new root joins the domain list with a
+    scan change, never in the pack alone.
 
 ## Context
 

@@ -40,7 +40,12 @@ import pytest
 gguf = pytest.importorskip("gguf", reason="scan extra not installed")
 pytest.importorskip("torch", reason="scan extra not installed")
 
-from vramfit.adapters.outbound.scan.imatrix import _SUFFIX_TO_GGUF, gguf_tensor_name
+from vramfit.adapters.outbound.scan.imatrix import (
+    _LAYER_PARAM,
+    _SUFFIX_TO_GGUF,
+    gguf_tensor_name,
+)
+from vramfit.domain.scan import NAME_TABLE_ROOTS
 
 pytestmark = pytest.mark.unit
 
@@ -295,3 +300,21 @@ def test_a_mixer_suffix_carries_one_meaning_under_the_supported_roots(
     }
 
     assert claimed == {f"blk.{LAYER}.{MAPPED_SUFFIXES[suffix]}"}
+
+
+@pytest.mark.parametrize("root", NAME_TABLE_ROOTS, ids=NAME_TABLE_ROOTS)
+def test_the_name_table_accepts_every_domain_root(root: str) -> None:
+    # The name table builds its root alternation from the domain's
+    # `NAME_TABLE_ROOTS`, the list the GGUF pack refuses against, so
+    # the scan and the pack share one source of truth (#208).
+    assert _LAYER_PARAM.match(f"{root}.layers.4.self_attn.q_proj.weight")
+
+
+@pytest.mark.parametrize(
+    "root",
+    ["mtp", "model.vision_tower.encoder", "transformer"],
+    ids=["mtp", "tower", "gpt2"],
+)
+def test_the_name_table_rejects_a_root_outside_the_domain_list(root: str) -> None:
+    assert root not in NAME_TABLE_ROOTS
+    assert _LAYER_PARAM.match(f"{root}.layers.4.self_attn.q_proj.weight") is None

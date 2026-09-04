@@ -8,7 +8,9 @@ GGUF tensor names map back to HF parameter names through a fixed
 table. Each row copies a name ``gguf.TensorNameMap`` carries. The
 table covers the llama family, Nemotron-H-MoE (#186), and the
 nested ``model.language_model.`` decoder root a composite
-checkpoint spells (Gemma 4 31B, #423).
+checkpoint spells (Gemma 4 31B, #423). The decoder roots come from
+the domain's ``NAME_TABLE_ROOTS``, the list the GGUF pack refuses
+against (#208).
 Nemotron-H spells attention, Mamba-2, the router, and the shared
 expert under one ``mixer.`` module, so no llama-family name reaches
 its dense tensors. A parameter without imatrix coverage is reported, not
@@ -69,6 +71,7 @@ import torch
 from gguf import GGUFReader
 
 from vramfit.adapters.outbound.scan.kquant import SUPER_BLOCK
+from vramfit.domain.scan import NAME_TABLE_ROOTS
 
 # HF module suffix -> GGUF tensor stem. Each entry copies a name
 # ``gguf.TensorNameMap`` already carries, and
@@ -136,17 +139,16 @@ _DIRECT_TO_GGUF = {
     # a row here, or its head prices unassisted.
     "model.language_model.embed_tokens.weight": "token_embd.weight",
 }
-# The decoder roots this table supports. llama-family models root at
-# "model.layers.N.", Nemotron 3.5 Lightning at "backbone.layers.N."
-# (#160), and a composite checkpoint nests its decoder at
-# "model.language_model.layers.N." (Gemma 4 31B, #423). The
-# alternation stays closed on purpose. A prefix wildcard would map a
-# vision tower's "layers.5" onto the decoder's "blk.5" and price it
-# against the wrong columns. Gemma 4's tower roots at
-# "model.vision_tower.encoder.layers.N.", which every root here
-# rejects. `gguf.TensorNameMap` carries no "language_model" template:
-# its converter strips the nesting before it maps, so the root joins
-# here and not there.
+# The decoder roots this table supports, from the domain's
+# `NAME_TABLE_ROOTS`: "model", "backbone", and Gemma 4's nested
+# "model.language_model" (#160, #423). The alternation stays closed
+# on purpose. A prefix wildcard would map a vision tower's "layers.5"
+# onto the decoder's "blk.5" and price it against the wrong columns.
+# Gemma 4's tower roots at "model.vision_tower.encoder.layers.N.",
+# which every root here rejects. `gguf.TensorNameMap` carries no
+# "language_model" template: its converter strips the nesting before
+# it maps, so the root joins the domain list and not there. The GGUF
+# pack refuses a recipe rooted outside the same list (#208).
 #
 # The closed alternation also keeps the "mixer." suffixes safe. Three
 # families spell one of them for a different tensor. phi2 roots at
@@ -156,7 +158,7 @@ _DIRECT_TO_GGUF = {
 # All three of those roots fail this pattern, so no name here maps
 # to two meanings. Check that again before adding a root. The #423
 # root addition re-ran the check, and all three still fail.
-_ROOTS = r"(?:model|backbone|model\.language_model)"
+_ROOTS = "(?:" + "|".join(re.escape(root) for root in NAME_TABLE_ROOTS) + ")"
 _LAYER_PARAM = re.compile(rf"^{_ROOTS}\.layers\.(\d+)\.(.+)\.weight$")
 # The routed-expert index, spelled between ".experts." and the
 # projection by every family the domain groups (#160, #161).
