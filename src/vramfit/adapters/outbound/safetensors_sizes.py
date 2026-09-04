@@ -31,8 +31,9 @@ perturb one. This source keeps it and lets
 still weight bytes on the card, and skipping it would understate the
 budget — the direction ADR-0029 exists to stop. `discover_groups`
 also skips a class the quantizer refuses (#204). This source keeps
-that too: the group reaches the recipe uncovered, and the solver
-prices it at the convert dtype (#409).
+that too. [vramfit.domain.sizes][] keys such a tensor by its own name
+under every granularity, so it reaches the recipe uncovered and the
+solver prices it at the convert dtype (#409).
 
 The adapter reports each header's dtype verbatim and computes no
 convention of its own (decision 5). Converting a stored size to

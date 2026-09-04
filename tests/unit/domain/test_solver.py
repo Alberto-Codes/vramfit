@@ -13,6 +13,7 @@ from vramfit.domain.runtime import (
     RuntimeCapabilityError,
     expert_stack_effective_bits,
 )
+from vramfit.domain.sizes import TensorSize, discovered_group_bytes
 from vramfit.domain.solver import (
     DEFAULT_FORMAT_OVERHEAD,
     DEFAULT_RESIDUAL_OVERHEAD,
@@ -1135,3 +1136,84 @@ class TestPassthroughPricing:
         )
         held = next(a for a in recipe.assignments if a.group.endswith("in_proj"))
         assert held.bytes == group_bytes(1600, 16.0, DEFAULT_RESIDUAL_OVERHEAD)
+
+    def test_a_layer_map_prices_the_skipped_classes_at_the_convert_dtype(
+        self,
+    ) -> None:
+        # `scan --group-by layer` (the default) measures `model.layers.0`
+        # without its conv1d and router, which discovery skips (#204).
+        # The checkpoint keys each by its own name, so both land
+        # uncovered and price at 32 bits (#409). Folded into the
+        # covered layer group, their bytes left the plan.
+        sizes = {
+            "backbone.layers.0.mixer.in_proj.weight": TensorSize("BF16", 1600),
+            "backbone.layers.0.mixer.conv1d.weight": TensorSize("BF16", 800),
+            "backbone.layers.0.mixer.gate.weight": TensorSize("BF16", 400),
+        }
+        map_ = load(make_map([("model.layers.0", 1600, CONVEX_CURVE)]))
+
+        recipe = solve_simple(
+            map_,
+            10**6,
+            runtime="llama.cpp",
+            discovered_bytes=discovered_group_bytes(sizes, "layer"),
+            format_overhead=0.0,
+        )
+
+        held = {a.group: a for a in recipe.assignments[1:]}
+        assert set(held) == {
+            "model.layers.0.mixer.conv1d",
+            "model.layers.0.mixer.gate",
+        }
+        assert held["model.layers.0.mixer.conv1d"].bytes == 1600
+        assert held["model.layers.0.mixer.gate"].bytes == 800
+        assert {a.bits for a in held.values()} == {16}
+
+    def test_the_infeasible_message_separates_the_unquantizable_holds(self) -> None:
+        # A scan skips the conv1d (#204), so the "scan them" clause
+        # must not count it. Its bytes land in a clause of their own.
+        map_ = load(make_map([("model.layers.0", 1600, CONVEX_CURVE)]))
+
+        with pytest.raises(InfeasibleBudgetError) as caught:
+            solve_simple(
+                map_,
+                2000,
+                runtime="llama.cpp",
+                discovered_bytes={
+                    "model.layers.0": 1600,
+                    "big": 100_000,
+                    "model.layers.0.mixer.conv1d": 50_000,
+                },
+            )
+
+        error = caught.value
+        assert error.held_count == 1
+        assert error.held_bytes == group_bytes(100_000, 16.0, DEFAULT_RESIDUAL_OVERHEAD)
+        assert error.unquantizable_count == 1
+        assert error.unquantizable_bytes == group_bytes(
+            50_000, 32.0, DEFAULT_RESIDUAL_OVERHEAD
+        )
+        message = str(error)
+        assert "1 groups the map does not measure" in message
+        assert "1 groups of a class the quantizer refuses" in message
+        assert format_size(error.unquantizable_bytes) in message
+
+    def test_the_infeasible_message_omits_the_scan_clause_without_a_scannable_hold(
+        self,
+    ) -> None:
+        map_ = load(make_map([("model.layers.0", 1600, CONVEX_CURVE)]))
+
+        with pytest.raises(InfeasibleBudgetError) as caught:
+            solve_simple(
+                map_,
+                2000,
+                runtime="llama.cpp",
+                discovered_bytes={
+                    "model.layers.0": 1600,
+                    "model.layers.0.mixer.conv1d": 50_000,
+                },
+            )
+
+        assert caught.value.held_count == 0
+        assert "Scan them" not in str(caught.value)
+        assert "No scan or pin can spend it" in str(caught.value)

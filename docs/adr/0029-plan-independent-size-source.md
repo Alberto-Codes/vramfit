@@ -99,7 +99,10 @@
   `vramfit.domain.runtime`, 32.0 bits on both llama.cpp classes, and
   16.0 elsewhere. The recipe still records nominal 16. The scan skips
   those classes at discovery (#204), so a new map carries no cell for
-  them and the size source holds them uncovered.
+  them. The size source keys such a tensor by its own name under every
+  granularity, so it holds uncovered. Under `layer` granularity a
+  layer group that absorbed it would hide its bytes behind a covered
+  name.
 
 ## Context
 

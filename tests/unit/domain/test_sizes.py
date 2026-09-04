@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 import pytest
 
 from vramfit.domain.sizes import (
@@ -121,6 +123,38 @@ class TestDiscoveredGroupBytes:
 
         with pytest.raises(SizeSourceError, match="no reference size"):
             discovered_group_bytes(sizes, "layer")
+
+    def test_layer_granularity_keys_an_unquantizable_class_by_tensor(self) -> None:
+        # The Nemotron-H shape under `scan`'s default granularity. The
+        # meter skips the Mamba conv1d and the router at discovery
+        # (#204), so the map's layer group holds no bytes for them.
+        # Folded into that covered group, their bytes would leave the
+        # plan while the pack holds them at F32 (#409).
+        sizes = {
+            "backbone.layers.0.mixer.in_proj.weight": TensorSize("BF16", 8),
+            "backbone.layers.0.mixer.conv1d.weight": TensorSize("BF16", 4),
+            "backbone.layers.1.mixer.gate.weight": TensorSize("BF16", 2),
+            "backbone.layers.1.mixer.experts.0.up_proj.weight": TensorSize("BF16", 16),
+        }
+
+        groups = discovered_group_bytes(sizes, "layer")
+
+        assert groups == {
+            "model.layers.0": 8,
+            "model.layers.0.mixer.conv1d": 4,
+            "model.layers.1": 16,
+            "model.layers.1.mixer.gate": 2,
+        }
+
+    @pytest.mark.parametrize("group_by", ["layer", "tensor", "stack"])
+    def test_an_unquantizable_class_keys_the_same_under_every_granularity(
+        self, group_by: Literal["layer", "tensor", "stack"]
+    ) -> None:
+        sizes = {"backbone.layers.3.mixer.conv1d.weight": TensorSize("F32", 8)}
+
+        groups = discovered_group_bytes(sizes, group_by)
+
+        assert groups == {"model.layers.3.mixer.conv1d": 4}
 
 
 class TestUncoveredGroups:

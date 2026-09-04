@@ -35,6 +35,20 @@ pytestmark = [pytest.mark.integration, pytest.mark.slow]
 runner = CliRunner()
 
 
+class _MambaLike(torch.nn.Module):
+    """One Nemotron-H Mamba layer: conv1d, router, and input projection."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        layer = torch.nn.Module()
+        layer.mixer = torch.nn.Module()
+        layer.mixer.conv1d = torch.nn.Conv1d(8, 8, 4, groups=8)
+        layer.mixer.gate = torch.nn.Linear(4, 2)
+        layer.mixer.in_proj = torch.nn.Linear(4, 4)
+        self.model = torch.nn.Module()
+        self.model.layers = torch.nn.ModuleList([layer])
+
+
 class _MoeLike(torch.nn.Module):
     """One mixture-of-experts layer, named like the Nemotron family.
 
@@ -322,20 +336,21 @@ class TestTorchDamageMeter:
         # either is a cell no recipe can act on (#204).
         from vramfit.adapters.outbound.scan.discovery import discover_groups
 
-        class MambaLike(torch.nn.Module):
-            def __init__(self) -> None:
-                super().__init__()
-                layer = torch.nn.Module()
-                layer.mixer = torch.nn.Module()
-                layer.mixer.conv1d = torch.nn.Conv1d(8, 8, 4, groups=8)
-                layer.mixer.gate = torch.nn.Linear(4, 2)
-                layer.mixer.in_proj = torch.nn.Linear(4, 4)
-                self.model = torch.nn.Module()
-                self.model.layers = torch.nn.ModuleList([layer])
-
-        groups = discover_groups(MambaLike(), "tensor")
+        groups = discover_groups(_MambaLike(), "tensor")
 
         assert set(groups) == {"model.layers.0.mixer.in_proj"}
+
+    def test_layer_discovery_leaves_unquantizable_classes_out_of_the_layer(
+        self,
+    ) -> None:
+        # Under the default granularity the layer group's members and
+        # `bytes_fp16` exclude the skipped classes. The size source
+        # keys those by tensor name, so their bytes stay priced (#409).
+        from vramfit.adapters.outbound.scan.discovery import discover_groups
+
+        groups = discover_groups(_MambaLike(), "layer")
+
+        assert groups == {"model.layers.0": ["model.layers.0.mixer.in_proj.weight"]}
 
     def test_stack_grouping_matches_tensor_grouping_on_a_dense_model(self) -> None:
         # A dense model has no expert index to collapse. A pack

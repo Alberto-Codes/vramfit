@@ -227,7 +227,8 @@ an unquantizable class — the router's `mixer.gate`, the Mamba
 `mixer.conv1d` — packs at the F16 passthrough, and `pack` refuses a
 recipe that assigns it a lower width. `plan` prices such a group at
 the 32 bits the converter wrote it at, not at `F16`'s 16 (#409), and
-`scan` never discovers one (#204).
+`scan` never discovers one (#204). The checkpoint keys such a tensor
+by its own name under every `--group-by`, so it holds uncovered.
 
 Pin semantics: patterns are case-sensitive `fnmatch` globs matched
 against the full group name (`--pin "model.layers.0.*=8"`). With

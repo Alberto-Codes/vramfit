@@ -24,7 +24,9 @@ the table refuses.
 the group the map would name, so the checkpoint's 128 per-expert
 tensors become one stack group (decision 6). Group naming stays
 `vramfit.domain.scan.group_key`, so one rule serves the meter and the
-size source.
+size source. A tensor of an unquantizable class keys by its own name
+under every granularity (#204, #409): the meter skips it, so a layer
+group that absorbed its bytes would hide them behind a covered name.
 
 Attributes:
     REFERENCE_BITS (int): Bits per weight at reference precision. The
@@ -82,7 +84,11 @@ from typing import Final, Literal
 
 from vramfit.domain.errors import VramfitError
 from vramfit.domain.model import Assignment, SensitivityMap
-from vramfit.domain.runtime import RUNTIME_CAPABILITIES, RuntimeCapabilityError
+from vramfit.domain.runtime import (
+    RUNTIME_CAPABILITIES,
+    RuntimeCapabilityError,
+    unquantizable_class,
+)
 from vramfit.domain.scan import group_key, matches_a_layer
 
 REFERENCE_BITS: Final[int] = 16
@@ -279,6 +285,13 @@ def discovered_group_bytes(
     ``stack`` granularity the 128 tensors of one routed-expert
     projection collapse into one group.
 
+    A tensor of a class the quantizer refuses keys by its own name
+    whatever the granularity. The meter skips it at discovery (#204),
+    so under ``layer`` granularity the map's layer group holds no
+    bytes for it. Folding it into that covered group would drop its
+    bytes from the plan. Its own name is uncovered, so the solver
+    holds it at the convert dtype (#409).
+
     Args:
         sizes: Stored size per checkpoint tensor name, from a
             `vramfit.ports.outbound.TensorSizeSource`.
@@ -297,13 +310,22 @@ def discovered_group_bytes(
         ```python
         from vramfit.domain.sizes import TensorSize, discovered_group_bytes
 
-        sizes = {"backbone.layers.0.mlp.up_proj.weight": TensorSize("BF16", 8)}
-        assert discovered_group_bytes(sizes, "layer") == {"model.layers.0": 8}
+        sizes = {
+            "backbone.layers.0.mlp.up_proj.weight": TensorSize("BF16", 8),
+            "backbone.layers.0.mixer.conv1d.weight": TensorSize("BF16", 4),
+        }
+        assert discovered_group_bytes(sizes, "layer") == {
+            "model.layers.0": 8,
+            "model.layers.0.mixer.conv1d": 4,
+        }
         ```
     """
     groups: dict[str, int] = {}
     for tensor, size in sizes.items():
-        group = group_key(reconcile_root(tensor), group_by)
+        name = reconcile_root(tensor)
+        group = group_key(name, "tensor")
+        if unquantizable_class(group) is None:
+            group = group_key(name, group_by)
         groups[group] = groups.get(group, 0) + reference_bytes(tensor, size)
     return groups
 

@@ -21,7 +21,9 @@ ADR-0007 amendment): a pin may name any runtime-servable width and
 land on any checkpoint-discovered group, and an unmeasured width
 records 0.0 damage. The infeasible message counts only the groups
 held at reference, because a scan recovers nothing from a pinned
-group.
+group. A group of an unquantizable class gets its own clause there,
+because a scan skips it (#204) and it reserves the convert dtype's
+bytes (#409).
 The algorithm: start every group at the highest candidate precision
 (or its pin), then repeatedly apply the downgrade with the best
 damage-per-byte-freed ratio until the total fits the weight budget. The
@@ -118,6 +120,7 @@ from vramfit.domain.runtime import (
     passthrough_bits,
     rows_refuse_super_block,
     servable_precisions,
+    unquantizable_class,
 )
 from vramfit.domain.scan import is_expert_stack
 from vramfit.domain.sizes import REFERENCE_BITS, held_assignments
@@ -546,8 +549,14 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
         )
         # The message's held clause reads "at reference precision.
         # Scan them to spend it", so it counts only the unpinned
-        # holds — a pinned uncovered group sits at its pin, and a
-        # scan recovers nothing there.
+        # holds of a class a scan can measure — a pinned uncovered
+        # group sits at its pin, and a scan skips an unquantizable
+        # class (#204). The second set gets its own clause.
+        unquantizable = [a for a in held if unquantizable_class(a.group) is not None]
+        refused = {a.group for a in unquantizable}
+        scannable = [
+            a for a in held if a.bits == REFERENCE_BITS and a.group not in refused
+        ]
         raise InfeasibleBudgetError(
             gap_bytes=floor_total - weight_budget_bytes,
             minimum_bytes=floor_total,
@@ -555,8 +564,10 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
             runtime=runtime,
             dropped_precisions=dropped,
             protected_count=raised,
-            held_count=sum(1 for a in held if a.bits == REFERENCE_BITS),
-            held_bytes=sum(a.bytes for a in held if a.bits == REFERENCE_BITS),
+            held_count=len(scannable),
+            held_bytes=sum(a.bytes for a in scannable),
+            unquantizable_count=len(unquantizable),
+            unquantizable_bytes=sum(a.bytes for a in unquantizable),
         )
 
     trace: list[TraceStep] = []
