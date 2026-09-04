@@ -39,17 +39,18 @@ The pack step drives external tools — none ship with vramfit:
    uv pip install "vramfit[pack]"
    ```
 
+   sentencepiece matters even for BPE models: the Qwen converter
+   probes it first and dies with `ModuleNotFoundError` when it is
+   absent, before it can fall back to the BPE vocab path.
+
    When the base GGUF already exists and another interpreter runs
    the converter, the `gguf` extra is enough. It carries gguf-py and
-   numpy, no torch, and covers every read `pack` does itself:
+   numpy, no torch, and covers every read `pack` does itself. The
+   `pack` extra includes it:
 
    ```bash
    uv pip install "vramfit[gguf]"
    ```
-
-   sentencepiece matters even for BPE models: the Qwen converter
-   probes it first and dies with `ModuleNotFoundError` when it is
-   absent, before it can fall back to the BPE vocab path.
 
 ## Basic invocation
 
@@ -103,8 +104,8 @@ expert the matrix counts zero times quantizes at the unassisted
 fit with no warning from the quantizer, so pack warns instead and
 records the `(stack, expert)` pairs under
 `imatrix_zero_count_experts`. A matrix the reader cannot vouch for
-halts the pack. The read needs gguf-py, which the pack extra
-already provisions.
+halts the pack. The read needs gguf-py, which the gguf extra
+provisions without torch.
 
 ## The smoke test
 

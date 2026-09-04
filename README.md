@@ -106,7 +106,8 @@ all nineteen data points, through 2026-08-22. See
 - Python 3.12+
 - CUDA GPU for `scan` and `validate` (developed against an RTX 4090 /
   24 GiB). `plan`, `budget`, and `capacity` need no GPU. `pack` needs
-  the pack extra and a llama.cpp checkout (ADR-0012).
+  the gguf extra and a llama.cpp checkout (ADR-0012). The pack extra
+  provisions the convert interpreter and includes the gguf extra.
 - [uv](https://docs.astral.sh/uv/) for the development path
 
 ## Installation
@@ -168,7 +169,9 @@ The [first-run tutorial](https://github.com/Alberto-Codes/vramfit/blob/main/docs
 expected output of both commands and explains each line. The
 [getting-started tutorial](https://github.com/Alberto-Codes/vramfit/blob/main/docs/tutorials/getting-started.md) covers
 the scan, validate, and pack steps. Scan and validate need the scan
-extra and a GPU. Pack needs the pack extra and a llama.cpp checkout.
+extra and a GPU. Pack needs the gguf extra and a llama.cpp checkout.
+The pack extra provisions the convert interpreter and includes the
+gguf extra.
 
 ## Development
 

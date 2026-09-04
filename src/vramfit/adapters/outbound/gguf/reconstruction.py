@@ -4,8 +4,8 @@ Implements the `ReconstructionChecker` port for GGUF packs
 (ADR-0022). Each named tensor is dequantized from the packed file
 with gguf-py's numpy dequantizers — no llama.cpp runtime, no GPU,
 seconds of CPU — and compared against the same tensor in the f16
-base. gguf-py rides the scan extra (the pack extra includes it), so
-the import is deferred to the first measurement: the base install
+base. gguf-py rides the gguf extra, which the pack extra includes,
+so the import defers to the first measurement: the base install
 keeps ``vramfit pack --help`` working, and a missing dependency
 names the extra instead of tracebacking.
 

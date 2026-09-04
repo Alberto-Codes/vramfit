@@ -236,7 +236,7 @@ class TestMissingGgufPy:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         # No CI job runs the suite without gguf-py since the test job
-        # gained the group, so this branch needs its own stub. Same
+        # installs the gguf extra, so this branch needs its own stub. Same
         # shape as the imatrix reader's suite.
         import builtins
 
