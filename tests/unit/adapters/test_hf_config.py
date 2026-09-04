@@ -525,6 +525,31 @@ class TestModelShapeFromConfig:
         with pytest.raises(ValueError, match="two per-layer patterns"):
             shape_from_config_json(path)
 
+    def test_hybrid_block_types_beside_shared_kv_layers_raises(self, tmp_path) -> None:
+        config = self._hybrid_config()
+        config["layers_block_type"][3:] = ["mlp", "attention", "attention"]
+        config["num_kv_shared_layers"] = 2
+        path = tmp_path / "config.json"
+        path.write_text(json.dumps(config))
+
+        with pytest.raises(
+            ValueError, match='"layers_block_type" beside "num_kv_shared_layers"'
+        ):
+            shape_from_config_json(path)
+
+    def test_hybrid_block_types_beside_zero_shared_kv_layers_parses(
+        self, tmp_path
+    ) -> None:
+        config = self._hybrid_config()
+        config["num_kv_shared_layers"] = 0
+        path = tmp_path / "config.json"
+        path.write_text(json.dumps(config))
+
+        shape = shape_from_config_json(path)
+
+        assert _kv_heads(shape) == (2,)
+        assert shape.kv_layers[0].shares_kv is False
+
     def test_hybrid_block_types_unknown_type_raises(self, tmp_path) -> None:
         config = self._hybrid_config()
         config["layers_block_type"][0] = "linear"

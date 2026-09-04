@@ -109,9 +109,9 @@ def kv_layers_from_decoder(
     no fresh KV. A hybrid ``layers_block_type`` stack (Nemotron-H,
     #427) keeps a `KVLayer` for each ``attention`` entry alone. A
     ``mamba``, ``moe``, or ``mlp`` block stores no KV, the way the
-    DeciLM path skips a ``no_op`` block. The shared-KV tail counts
-    hidden layers by position, so a non-attention layer in the tail
-    drops and an attention layer in it shares.
+    DeciLM path skips a ``no_op`` block. A hybrid stack beside a
+    shared-KV tail refuses: this reader does not model which
+    attention block a shared tail reuses.
 
     The same class also synthesizes defaults this reader does not
     mirror: an absent ``global_head_dim`` defaults to 512, an absent
@@ -141,8 +141,9 @@ def kv_layers_from_decoder(
             or leaves a shared layer with no earlier layer of its
             type, ``layers_block_type`` is malformed, misses a layer,
             names a block type this reader does not model, lists no
-            ``attention`` block, or comes beside ``layer_types``, or a
-            geometry key carries a type it cannot mean.
+            ``attention`` block, comes beside ``layer_types``, or comes
+            beside a ``num_kv_shared_layers`` above zero, or a geometry
+            key carries a type it cannot mean.
             ``bool`` subclasses ``int``, so a boolean count refuses
             as a non-integer (#348). No message renders a
             publisher-controlled value (#363).
@@ -186,7 +187,14 @@ def kv_layers_from_decoder(
             "a KV-head override its attention_k_eq_v setting disables, "
             "which this reader does not model"
         )
-    fresh = layers - _shared_layers(config, layers, path, prefix)
+    shared = _shared_layers(config, layers, path, prefix)
+    if block_types is not None and shared > 0:
+        raise ValueError(
+            f"{path}: {field_label('layers_block_type', prefix)} beside "
+            f"{field_label('num_kv_shared_layers', prefix)} declares a "
+            "shared-KV tail over a hybrid stack this reader does not model"
+        )
+    fresh = layers - shared
     if not set(types[fresh:]) <= set(types[:fresh]):
         raise HfConfigError(
             f"{path}: {field_label('num_kv_shared_layers', prefix)} leaves a "
