@@ -122,8 +122,8 @@
     #308 amendment below.** The read refuses a base GGUF that
     declares itself one shard of a split file, and the quantizer
     packs a first shard correctly. Read that amendment with this
-    clause. The maintainer has not ratified the exception, and #353
-    carries whether it stands.
+    clause. **The maintainer ratified the exception on 2026-09-04
+    (#353).** It stays bounded to the split-shard input.
 
     The read needs gguf-py, so every pack carrying at least one
     override requires it. A recipe yielding no override skipped the
@@ -317,6 +317,13 @@
     The refusal reports halt stage `quantize`, matching #303 and
     #306. #275 still owns whether a zero-exit refusal earns its own
     stage.
+
+    **Ratified (2026-09-04, issue #353).** The maintainer ratified
+    this exception. The superset clause stands with one exception,
+    and that exception is bounded to the split-shard input above. The
+    same ruling keeps the #307 report a report (#320) and keeps this
+    refusal instead of following the shard chain (#351). #354's two
+    gaps are bugs against this amendment.
 - **Amendment (2026-08-20, issue #183):** decision 2's class mapping
   extends to Nemotron-H. Four rulings from the #183 live exchange.
 

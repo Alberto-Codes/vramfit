@@ -80,6 +80,24 @@ config claims 280 (`vision_soft_tokens_per_image`).
    instrument. #451 priced the mmproj trade on 2026-08-30 — see
    open question 2. Amended 2026-08-31: the swap amendment below
    restates this decision and swaps the published sidecar.**
+- **Note (2026-09-04, issue #456):** decision 4 keeps the flat 256
+  tokens per image, with a stated bound. Maintainer ruling
+  2026-09-04. The measured cost is 49 tokens at 256×256, 121 at
+  512×512, 256 for square inputs at and above 768×768, and 264 at
+  1280×720 (open question 5). So 256 over-counts every square input
+  and under-counts a 1280×720 input by 8 tokens, which is 3.1 %. The
+  caller supplies the cost, and the code carries no default.
+- **Note (2026-09-04, issue #457):** the budget warns and omits the
+  vision line on a vision-capable target with no measured line.
+  Maintainer ruling 2026-09-04. It subtracts nothing and does not
+  refuse. The ledger already states the gap in its `vision` line.
+  The warning on the warning channel is unbuilt, and #457 carries
+  it.
+- **Note (2026-09-04, issue #454):** every sidecar swap returns to
+  the maintainer, measured or not, until a second measured target
+  exists. Maintainer ruling 2026-09-04. The 2026-08-31 amendment
+  covers the Gemma 4 31B artifact alone. A second measured target
+  reopens the default.
 
 3. **The weight budget subtracts the measured vision line when the
    model card claims vision.** The line is 1,600 MiB on this target
@@ -127,17 +145,22 @@ config claims 280 (`vision_soft_tokens_per_image`).
   2026-08-31 — see "Amendment: the sidecar swaps to Q4_K_M" below.
 - **The vision line on an unmeasured target.** The measured line is
   this target's alone (960 MiB with the shipped sidecar, 2026-08-31
-  frame). No clause says whether the budget warns
-  or refuses on a vision-capable target with no measured line.
+  frame). ~~No clause says whether the budget warns
+  or refuses on a vision-capable target with no measured line.~~
+  Answered 2026-09-04 (#457): the budget warns and omits the line.
 - **The swap default on a future measured target.** The 2026-08-31
-  ruling covers this artifact. No clause says whether a future
-  target's measured trade swaps without a ruling.
+  ruling covers this artifact. ~~No clause says whether a future
+  target's measured trade swaps without a ruling.~~ Answered
+  2026-09-04 (#454): every swap returns to the maintainer until a
+  second measured target exists.
 - **The image token cost is resolution-dependent.** Measured
   2026-08-30 on #450. The cost is 49 tokens at 256×256, 121 at
   512×512, and saturates at 256 for square inputs at and above
   768×768. A 1280×720 input costs 264. The measured inputs span
   65,536 to 921,600 pixels, and the server accepted the inputs
-  outside the header's 92,160–645,120 pixel bounds.
+  outside the header's 92,160–645,120 pixel bounds. Decision 4 keeps
+  the flat 256 with this curve as its stated bound (#456, ruled
+  2026-09-04).
 
 ## Consequences
 

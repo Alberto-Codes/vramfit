@@ -17,6 +17,16 @@
   becomes a method to build. #381 measured that assistance re-orders
   the nominal-4 column across the 46 expert stacks. Maintainer ruling
   2026-08-21. See "Amendment: `q0-imx` gets built" below.
+- **Note (2026-09-04, issue #331):** the `q0` method carries the
+  straddling-row scope limit as a recorded limit, not a refusal.
+  Maintainer ruling 2026-09-04. `q0_ref` pads a short tail and
+  flattens, so a row length off the block multiple straddles two
+  rows. `Q2_0` blocks 64 and `Q4_0` and `Q8_0` block 32. Every block
+  size divides the 30B target's expert rows of 2688 and 1856, and no
+  held or planned map hits the gap. The method refuses nothing until
+  a target carries a row 64 does not divide. That target reopens the
+  question, and the refusal, if built, keys on the mapped type's
+  block size, as the 2026-08-17 decision 4 does for `kquant`.
 
 ## Context
 

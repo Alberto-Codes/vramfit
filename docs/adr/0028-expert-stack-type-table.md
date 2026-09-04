@@ -24,6 +24,14 @@
   2026-08-20 amendment to [ADR-0012](0012-gguf-type-mapping.md)
   carries the class table and the F16 pin, and #368 lands the
   build.
+- **Amendment (2026-09-04, issue #232):** decision 1's table gains
+  5- and 6-bit rows (5→`Q5_0` at 5.50, 6→`Q5_1` at 6.00 bits per
+  weight). Maintainer ruling 2026-09-04. Both block 32, so both
+  divide the stack rows of 2688 and 1856. #232 lands the build in the
+  backend's expert-stack table and in the domain's effective-bits
+  table. Until it lands, pack refuses nominal 5 and 6 on a stack with
+  the table-bounds message, and the plan step prices them at the
+  dense rows.
 
 ## Context
 
@@ -77,8 +85,13 @@ Facts verified upstream on 2026-08-14 (#189):
    | Nominal bits | Tensor type | Effective bits/weight | Drift |
    |--------------|-------------|----------------------|-------|
    | 8 | `Q8_0` | 8.50 | +6.25 % |
+   | 6 | `Q5_1` | 6.00 | +0 % |
+   | 5 | `Q5_0` | 5.50 | +10.0 % |
    | 4 | `Q4_0` | 4.50 | +12.5 % |
    | 2 | `Q2_0` | 2.25 | +12.5 % |
+
+   The 6- and 5-bit rows date from the 2026-09-04 amendment (#232).
+   The drift column states each type's cost over its nominal width.
 
    The backend already recognizes a routed-expert-stack group from
    its name (ADR-0012, 2026-08-12 amendment). Every entry's block
@@ -180,8 +193,8 @@ Facts verified upstream on 2026-08-14 (#189):
   bits per weight therefore separates the only width that fits a
   10.5 GiB budget from the cheapest width that holds quality. That
   width packs at 17.600 GiB. #249 carries what the campaign does
-  about the gap. #232 carries the missing 5- and 6-bit rows, and
-  neither falls inside the band.
+  about the gap. The 2026-09-04 amendment (#232) adds the 5- and
+  6-bit rows, and neither falls inside the band.
 - At nominal 2 and 8 the importance matrix does not shape the
   stack quantization. At nominal 4 it does, per expert, through
   `quantize_q4_0`. The imatrix counts keep their provenance role
