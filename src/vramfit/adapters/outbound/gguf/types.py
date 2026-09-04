@@ -9,8 +9,10 @@ map to escaped `blk.<n>.` regex patterns
 across the three naming families the scan produces, routed-expert
 stack groups map to their fused `blk.<n>.ffn_<proj>_exps.` tensor
 (#159, #161) through their own type table — k-quant super-blocks do
-not divide the stack rows, and nominal 3 refuses over the empty
-2.25-4.25 bits-per-weight gap (ADR-0028) — layer-class groups map
+not divide the stack rows, so the rows carry block-32 and block-64
+types (`q8_0`, `q5_1`, `q5_0`, `q4_0`, `q2_0`), and nominal 3 refuses
+over the empty 2.25-4.25 bits-per-weight gap (ADR-0028) — layer-class
+groups map
 through the class table to `blk.<n>.<stem>.` patterns, where an
 unquantizable class instead pins at the F16 passthrough and refuses
 any lower width (the 2026-08-20 amendment), protected tensors map
@@ -92,14 +94,17 @@ GGML_TYPE_BY_BITS: Final[dict[int, str]] = {
 # 256-element super-blocks, and the expert-stack rows (2688, 1856) do
 # not divide by 256 — the quantizer would silently substitute. Every
 # entry here has a block size that divides both row widths. Effective
-# bits per weight: f16 at 16.00, q8_0 at 8.50, q4_0 at 4.50, q2_0 at
-# 2.25. The f16 row is the ADR-0029 passthrough, and it has no block
-# to divide. The table also reaches a layer-class group whose rows
-# refuse the super-block — the Nemotron-H classes qualify at 2688
-# (the 2026-08-20 amendment).
+# bits per weight: f16 at 16.00, q8_0 at 8.50, q5_1 at 6.00, q5_0 at
+# 5.50, q4_0 at 4.50, q2_0 at 2.25. The 6 and 5 rows date from the
+# 2026-09-04 amendment (#232), and both block 32. The f16 row is the
+# ADR-0029 passthrough, and it has no block to divide. The table also
+# reaches a layer-class group whose rows refuse the super-block — the
+# Nemotron-H classes qualify at 2688 (the 2026-08-20 amendment).
 EXPERT_STACK_TYPE_BY_BITS: Final[dict[int, str]] = {
     16: "f16",
     8: "q8_0",
+    6: "q5_1",
+    5: "q5_0",
     4: "q4_0",
     2: "q2_0",
 }
@@ -107,8 +112,8 @@ EXPERT_STACK_TYPE_BY_BITS: Final[dict[int, str]] = {
 # The quantizer's positional type argument speaks ftype names, not
 # tensor-type names. Each entry is the pure-type ftype for the same
 # nominal bits as GGML_TYPE_BY_BITS, and the two tables agree at
-# every key. The expert-stack table above disagrees at 2 and 4 on
-# purpose (ADR-0028): k-quants do not divide the stack rows, and a
+# every key. The expert-stack table above disagrees at 2, 4, 5, and 6
+# on purpose (ADR-0028): k-quants do not divide the stack rows, and a
 # dense tensor no override covers still takes this k-quant floor.
 # The base ftype reaches tensors only. The label the file declares
 # is the modal type by bytes, written after the quantizer runs

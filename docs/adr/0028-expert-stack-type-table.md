@@ -34,11 +34,10 @@
 - **Amendment (2026-09-04, issue #232):** decision 1's table gains
   5- and 6-bit rows (5→`Q5_0` at 5.50, 6→`Q5_1` at 6.00 bits per
   weight). Maintainer ruling 2026-09-04. Both block 32, so both
-  divide the stack rows of 2688 and 1856. #232 lands the build in the
+  divide the stack rows of 2688 and 1856. #232 landed the build in the
   backend's expert-stack table and in the domain's effective-bits
-  table. Until it lands, pack refuses nominal 5 and 6 on a stack with
-  the table-bounds message, and the plan step prices them at the
-  dense rows.
+  table. Pack emits `Q5_1` and `Q5_0` on a stack, and the plan step
+  prices nominal 6 at 6.00 and nominal 5 at 5.50 bits per weight.
 
 ## Context
 
