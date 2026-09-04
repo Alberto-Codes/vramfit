@@ -21,7 +21,9 @@ prefix (ADR-0022, #365), excluded pairs map to the full GGUF
 tensor names ``--exclude-weights`` deletes by substring
 (ADR-0023),
 and the embedding and `lm_head` groups map to the quantizer's
-dedicated embedding and output flags. The embedding name set
+dedicated embedding and output flags. Every mapped group and
+protected tensor hangs from one root, and that root sits in the
+scan name table's `NAME_TABLE_ROOTS` (#208). The embedding name set
 carries four names: `model.embed_tokens`, `backbone.embeddings`,
 its reconciled form `model.embeddings`, and Gemma 4's nested
 `model.language_model.embed_tokens` (#423). The backend's own runtime
@@ -75,6 +77,7 @@ from vramfit.domain.runtime import (
     rows_refuse_super_block,
     unquantizable_filter,
 )
+from vramfit.domain.scan import NAME_TABLE_ROOTS
 from vramfit.domain.sizes import REFERENCE_BITS
 
 # The 16 row is the F16 passthrough (ADR-0029 decision 4). A recipe
@@ -181,7 +184,10 @@ _CLASS_GROUP: Final[re.Pattern[str]] = re.compile(
 # `blk.<n>.` addresses exactly one layer stack, so a recipe that
 # names two of them cannot pack. The target carries `backbone` and
 # `mtp`, and a multimodal checkpoint carries a vision tower that
-# GGUF names `v.blk.<n>.` instead.
+# GGUF names `v.blk.<n>.` instead. A recipe under one such foreign
+# root would map every group to `blk.<n>.` and match nothing, so
+# `_claim_root` also holds the root to the scan name table's
+# `NAME_TABLE_ROOTS` (#208).
 _STACK_ROOT: Final[re.Pattern[str]] = re.compile(
     r"^(.+?)\.(?:layers|h|blocks)\.\d+(?:\.|$)"
 )
@@ -224,8 +230,8 @@ GGUF_SUFFIX_BY_HF: Final[dict[str, str]] = {
 
 # A protection target: a layer tensor under a free prefix, in the
 # family shape `_CLASS_GROUP` holds (#160). ADR-0012's 2026-08-20
-# amendment rules the free prefix — any single root passes, and
-# `_claim_root` refuses a second one. The suffix carries no depth
+# amendment rules the free prefix — the tensor name maps under any
+# root, and `_claim_root` holds a recipe to one supported root. The suffix carries no depth
 # limit, so the three-segment shared-expert rows map too.
 # `GGUF_SUFFIX_BY_HF` still decides what maps.
 _LAYER_TENSOR: Final[re.Pattern[str]] = re.compile(
@@ -670,7 +676,11 @@ def _claim_root(name: str, roots: dict[str, str], kind: str = "group") -> None:
     Raises:
         PackError: If ``name`` hangs from a second root — the first
             matching override would land on the other root's tensor.
-            The refusal names both claimants and both roots.
+            The refusal names both claimants and both roots. Also if
+            the one root is outside the scan name table's
+            ``NAME_TABLE_ROOTS`` — every override would address
+            ``blk.<n>.`` and match nothing (#208). The refusal names
+            the root and the supported roots.
     """
     match = _STACK_ROOT.match(name)
     if match is None:
@@ -684,6 +694,14 @@ def _claim_root(name: str, roots: dict[str, str], kind: str = "group") -> None:
             f'root "{root}" name two layer stacks — a GGUF pack numbers one '
             f'stack "blk.<n>." and the first matching override would land '
             f"on the other root's tensor (#183, #367)"
+        )
+    if root not in NAME_TABLE_ROOTS:
+        raise PackError(
+            f'{kind} "{name}" hangs from root "{root}", which the scan name '
+            f"table does not support — the supported roots are "
+            f"{', '.join(NAME_TABLE_ROOTS)}. A GGUF pack numbers the "
+            f'decoder stack "blk.<n>.", so an override for another root '
+            f"would match nothing (#208)"
         )
 
 
@@ -779,7 +797,10 @@ def tensor_overrides(recipe: Recipe) -> tuple[TypeOverride, ...]:
     parameter-tree root. ``blk.<n>.`` addresses a single layer
     stack, so a recipe naming two of them maps both onto it. The
     first matching override would land on the other root's tensor.
-    A protected tensor claims its root with the groups (#367).
+    A protected tensor claims its root with the groups (#367). The
+    one root must sit in the scan name table's ``NAME_TABLE_ROOTS``.
+    A recipe under a foreign root, such as a vision tower GGUF names
+    ``v.blk.<n>.``, would emit overrides that match nothing (#208).
 
     Args:
         recipe: The recipe to pack.
@@ -797,8 +818,9 @@ def tensor_overrides(recipe: Recipe) -> tuple[TypeOverride, ...]:
             names a precision outside that table (nominal 3 refuses
             over the empty 2.25-4.25 gap), an unquantizable class
             takes a width below the F16 passthrough, the groups and
-            protected tensors hang from two roots, or a precision
-            has no table entry.
+            protected tensors hang from two roots or from a root the
+            scan name table does not support, or a precision has no
+            table entry.
 
     Examples:
         The group ``model.layers.7`` at 4-bit becomes an escaped

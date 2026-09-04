@@ -253,8 +253,10 @@ A **base GGUF** exists only after a pack, and `plan` runs before packing.
    the roots for `plan`.
 
    The wildcard prohibition is not caution. Chart #158 records the
-   failure it prevents, from #177. The imatrix name table supports
-   `model.layers.N.` and `backbone.layers.N.` and no others:
+   failure it prevents, from #177. The imatrix name table supported
+   `model.layers.N.` and `backbone.layers.N.` and no others at the
+   time (the domain's `NAME_TABLE_ROOTS` owns the list today, per
+   ADR-0012's 2026-09-04 amendment, #208):
 
    > A prefix wildcard mapped a vision tower's `layers.5` onto the
    > decoder's `blk.5` and would have priced it against the wrong

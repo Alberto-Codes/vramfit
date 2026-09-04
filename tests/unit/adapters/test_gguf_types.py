@@ -27,6 +27,7 @@ from vramfit.domain.errors import VramfitError
 from vramfit.domain.model import Assignment, PlanMeta, ProtectedTensor, Recipe
 from vramfit.domain.pack import TypeOverride
 from vramfit.domain.runtime import EFFECTIVE_BITS, LLAMA_CPP, RUNTIME_CAPABILITIES
+from vramfit.domain.scan import NAME_TABLE_ROOTS
 
 pytestmark = pytest.mark.unit
 
@@ -257,20 +258,85 @@ def test_tensor_overrides_name_the_group_they_cannot_map() -> None:
     [
         ("model.layers.0", r"blk\.0\."),
         ("backbone.layers.7", r"blk\.7\."),
+        ("model.language_model.layers.3", r"blk\.3\."),
         ("transformer.h.3", r"blk\.3\."),
         ("gpt_neox.blocks.11", r"blk\.11\."),
     ],
-    ids=["llama", "nemotron", "gpt2", "blocks"],
+    ids=["llama", "nemotron", "nested", "gpt2", "blocks"],
 )
 def test_tensor_overrides_derive_the_layer_index_from_any_naming_family(
     group: str, pattern: str
 ) -> None:
     # GGUF numbers every decoder layer `blk.<n>.` whatever the
-    # checkpoint calls it, so the index is derived, not matched
-    # against one fixed prefix (#160, #180).
+    # checkpoint calls it, so the index is derived from any layer
+    # family under a supported root, not matched against one fixed
+    # prefix (#160, #180). The root itself is held to the scan name
+    # table (#208).
     recipe = make_recipe((group, 4))
 
     assert tensor_overrides(recipe) == (TypeOverride(pattern, "q4_k"),)
+
+
+@pytest.mark.parametrize("root", NAME_TABLE_ROOTS, ids=NAME_TABLE_ROOTS)
+def test_tensor_overrides_accept_every_scan_name_table_root(root: str) -> None:
+    # The pack holds the claimed root against the same list the scan
+    # name table supports, so a recipe the scan can produce packs
+    # (#208).
+    recipe = make_recipe(
+        (f"{root}.layers.0", 8),
+        (f"{root}.layers.1.mixer.experts.up_proj", 4),
+        (f"{root}.layers.2.mixer.in_proj", 16),
+    )
+
+    assert len(tensor_overrides(recipe)) == 3
+
+
+@pytest.mark.parametrize(
+    "group",
+    [
+        "model.vision_tower.encoder.layers.0",
+        "vision_tower.transformer.layers.0",
+        "mtp.layers.0",
+        "encoder.layers.3",
+    ],
+    ids=["gemma-tower", "tower", "mtp", "jina"],
+)
+def test_tensor_overrides_refuse_a_recipe_under_one_foreign_root(group: str) -> None:
+    # A recipe whose groups all hang from one root outside the scan
+    # name table used to pack as a silent no-op: every group mapped
+    # to a `blk.<n>.` override, and a vision tower lives under
+    # `v.blk.<n>.` in GGUF, so nothing matched (#208). The refusal
+    # names the root and the supported roots.
+    root = group.rsplit(".", 2)[0]
+    recipe = make_recipe((group, 4), (f"{root}.layers.1", 4))
+
+    with pytest.raises(PackError) as caught:
+        tensor_overrides(recipe)
+
+    message = str(caught.value)
+    assert f'"{group}"' in message
+    assert f'root "{root}"' in message
+    assert "scan name table does not support" in message
+    for supported in NAME_TABLE_ROOTS:
+        assert supported in message
+    assert "two layer stacks" not in message
+
+
+def test_a_foreign_root_protection_refuses_naming_the_root() -> None:
+    # A protected tensor claims its root with the groups (#367), so
+    # the same refusal reaches a protection under a foreign root.
+    recipe = make_protected_recipe(
+        (("mtp.layers.0.self_attn.v_proj.weight", 8),),
+        ("mtp.layers.0", 4),
+    )
+
+    with pytest.raises(PackError) as caught:
+        all_overrides(recipe)
+
+    message = str(caught.value)
+    assert 'protected tensor "mtp.layers.0.self_attn.v_proj.weight"' in message
+    assert 'root "mtp"' in message
+    assert "scan name table does not support" in message
 
 
 @pytest.mark.parametrize(

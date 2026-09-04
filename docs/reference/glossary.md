@@ -394,8 +394,10 @@ change.
     checkpoint. Maps root at `model.`, so a domain table reconciles
     the two before a tensor reaches a group. The table is explicit
     and never a prefix wildcard, which once mapped a vision tower's
-    `layers.5` onto the decoder's `blk.5` (#177). Not "prefix" or
-    "namespace".
+    `layers.5` onto the decoder's `blk.5` (#177). The scan name
+    table supports a closed list of roots, `NAME_TABLE_ROOTS` in
+    the domain, and the pack refuses a recipe rooted outside it
+    (#208). Not "prefix" or "namespace".
 
 **Weight budget**
 :   VRAM available for weights: card total minus KV headroom minus runtime

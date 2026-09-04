@@ -1,7 +1,9 @@
 """Scan orchestration logic: naming, work plan, resume, map assembly.
 
 The scan loop itself lives in the inbound adapter (it drives ports).
-This module holds the pure parts: which group a parameter belongs to
+This module holds the pure parts: the closed list of decoder roots
+the scan name table supports (`NAME_TABLE_ROOTS`, which the GGUF pack
+refuses against — #208), which group a parameter belongs to
 under each granularity (`group_key`, the `layer`/`tensor`/`stack`
 naming rule that the torch meter applies but does not own), which
 group names are routed-expert stacks (`is_expert_stack`, the
@@ -52,7 +54,7 @@ import statistics
 from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import Literal
+from typing import Final, Literal
 
 from vramfit.domain.model import (
     ASSISTED_METHODS as ASSISTED_METHODS,  # noqa: PLC0414 - re-export: method tokens read from this module
@@ -79,6 +81,25 @@ from vramfit.domain.model import (
     SensitivityMap,
 )
 
+# The decoder roots the scan's name table supports. llama-family
+# models root at "model.layers.N.", Nemotron 3.5 Lightning at
+# "backbone.layers.N." (#160), and a composite checkpoint nests its
+# decoder at "model.language_model.layers.N." (Gemma 4 31B, #423).
+# The GPT-2 family roots at "transformer.h.N." and the NeoX family
+# at "gpt_neox.layers.N.", and the GGUF pack numbered both "blk.N."
+# before the root refusal landed, so both stay supported (#208).
+# The list is closed on purpose. A prefix wildcard would map a vision
+# tower's "layers.5" onto the decoder's "blk.5" and price it against
+# the wrong columns (#177). The imatrix name table builds its root
+# alternation from this list, and the GGUF pack refuses a recipe
+# rooted outside it (#208), so the two cannot drift apart.
+NAME_TABLE_ROOTS: Final[tuple[str, ...]] = (
+    "model",
+    "backbone",
+    "model.language_model",
+    "transformer",
+    "gpt_neox",
+)
 # Decoder-layer prefixes across common naming families: llama-style
 # ".layers.N.", GPT-2-style ".h.N.", and ".blocks.N.".
 _LAYER_PREFIX = re.compile(r"^(.*\.(?:layers|h|blocks)\.\d+)\.")
