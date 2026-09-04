@@ -23,6 +23,10 @@
     representability — `json.loads` accepts `NaN` and `Infinity`, and
     a reader that passed them on would poison every later comparison.
     ADR-0011's 2026-08-16 amendment applies the split to integers.
+- **Note (2026-09-04, issue #291):** the unknown-field reporter stays
+  a module-level `ContextVar` locator in `json_common`. Maintainer
+  ruling 2026-09-04. The Consequences section records it as an
+  observed consequence of decision 2.
 
 ## Context
 
@@ -78,3 +82,11 @@ The in-process layers exist to keep each stage's internals swappable.
 - Supporting gate: modules are capped at 300 (soft) / 320 (hard) lines
   of actual code (`scripts/check_loc.py`, pre-commit), which pushes
   toward decomposed adapters instead of grab-bag modules.
+- **Observed 2026-09-04 (#291): one outbound adapter holds a service
+  locator.** The artifact readers report an unknown field through a
+  `ContextVar` in `json_common`, installed by the CLI callback (PR
+  #290, issue #261). The maintainer ruled the locator stays. No port
+  carries the reporter, so no contract suite is owed. The cost is a
+  hidden dependency and the autouse reset fixture in
+  `tests/conftest.py`. A later reader takes the same locator and adds
+  no `report=` parameter.

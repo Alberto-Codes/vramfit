@@ -2,6 +2,10 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-28
+- **Note (2026-09-04, issue #207):** a test that pins a copied
+  external contract stays under `unit`. Maintainer ruling 2026-09-04.
+  The `contract` marker keeps its one meaning: a verified fake over a
+  port. The decision text below records the placement.
 
 ## Context
 
@@ -25,6 +29,9 @@ its tier):
   determinism under permutation, trace replay, pins honored, exact
   infeasibility gaps) and codec round-trips. Profiles: `fast` (25
   examples) by default, `thorough` (200) via `HYPOTHESIS_PROFILE`.
+  A test that pins a copied external contract also lives here, for
+  example `_SUFFIX_TO_GGUF` held against `gguf.TensorNameMap`. No
+  marker names that class (#207, ruled 2026-09-04).
 - **`contract`** — **verified fakes**: one parametrized suite per port
   runs against the real adapter *and* its in-memory fake
   (`tests/fakes.py`), proving identical Protocol behavior including

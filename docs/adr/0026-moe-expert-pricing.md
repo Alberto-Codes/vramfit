@@ -27,6 +27,15 @@
 - **Note:** [ADR-0020](0020-imatrix-assisted-pricing.md) is superseded.
   This record does not amend it. ADR-0021 decision 1 keeps ADR-0020's
   port in the codebase, and decision 3 below cites it on that basis.
+- **Note (2026-09-04, issues #194 and #196):** the two coverage
+  questions resolve through one amendment to this record, in one
+  sitting. Maintainer ruling 2026-09-04. #194 asks whether the map
+  records its assisted-coverage split, and under which field. #196
+  asks whether the pack reports a dense imatrix entry present at a
+  count of zero. Decision 4 names no coverage field, and decision 5
+  fences its report to a routed expert. Neither field is decided
+  here. The amendment that names them lands when the maintainer
+  rules the fields on the two tickets.
 
 - **Amendment (2026-08-12, issue #167):** decision 2 weights an expert's
   damage by routing frequency. It never said whether that weight ranks
