@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Literal
 
 from vramfit.adapters.outbound.gguf.exclusion_match import unmatched_exclusions
+from vramfit.adapters.outbound.gguf.file_type import declared_file_type
 from vramfit.adapters.outbound.gguf.override_match import (
     floored_layers,
     unmatched_flags,
@@ -180,7 +181,11 @@ class MemoryRecipePacker:
     tensor a real file carries. None skips all three, because most
     suites configure no model shape and only care about the sizes.
     ``imatrix_entry_names`` does the same for the exclusion refusal
-    (#309), and None skips it the same way.
+    (#309), and None skips it the same way. ``packed_type_bytes``
+    stands in for the packed file's tensor table, so the fake
+    declares the same modal file type the real adapter stamps
+    (ADR-0012 decision 3 as amended 2026-09-04). None records no
+    label.
     """
 
     base_bytes: int = 1_000
@@ -192,6 +197,7 @@ class MemoryRecipePacker:
     type_fallbacks: tuple[tuple[str, str, str], ...] = ()
     base_tensor_names: tuple[str, ...] | None = None
     imatrix_entry_names: tuple[str, ...] | None = None
+    packed_type_bytes: dict[str, int] | None = None
     packed: list[Recipe] = field(default_factory=list)
 
     def convert(self) -> int:
@@ -280,6 +286,11 @@ class MemoryRecipePacker:
                 )
         if self.type_fallbacks:
             raise TypeFallbackError(self.type_fallbacks, Path("packed.gguf"))
+        declared = (
+            None
+            if self.packed_type_bytes is None
+            else declared_file_type(self.packed_type_bytes)[0]
+        )
         result = PackResult(
             packed_bytes=self.packed_bytes,
             base_type=base,
@@ -294,6 +305,7 @@ class MemoryRecipePacker:
             ),
             imatrix_excluded=excluded,
             floored_layers=layer_gaps,
+            file_type=declared,
         )
         self.packed.append(recipe)
         return result

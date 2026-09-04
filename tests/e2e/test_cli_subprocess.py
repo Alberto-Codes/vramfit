@@ -6,6 +6,7 @@ import importlib.util
 import json
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -280,11 +281,30 @@ def test_pack_flow_with_stub_toolchain_produces_the_packed_file(tmp_path) -> Non
         "writer.write_tensors_to_file()\n"
         "writer.close()\n"
     )
+    # The stub quantizer writes a real GGUF the way llama-quantize
+    # does: the positional ftype stamped as general.file_type, over
+    # a Q8_0 embedding whose bytes outweigh the Q4_K layer. The pack
+    # step then relabels the file with the modal type (#414).
     quantize = checkout / "build" / "bin" / "llama-quantize"
     quantize.write_text(
-        "#!/usr/bin/env python3\n"
+        f"#!{sys.executable}\n"
         "import sys\n"
-        'open(sys.argv[-3], "wb").write(b"Q" * 500)\n'
+        "import numpy as np\n"
+        "from gguf import GGMLQuantizationType, GGUFWriter, LlamaFileType\n"
+        'writer = GGUFWriter(sys.argv[-3], arch="llama")\n'
+        'writer.add_file_type(LlamaFileType[f"MOSTLY_{sys.argv[-2]}"])\n'
+        "writer.add_tensor(\n"
+        '    "token_embd.weight", np.zeros(20 * 34, dtype=np.uint8),\n'
+        "    raw_dtype=GGMLQuantizationType.Q8_0,\n"
+        ")\n"
+        "writer.add_tensor(\n"
+        '    "blk.0.attn_v.weight", np.zeros(144, dtype=np.uint8),\n'
+        "    raw_dtype=GGMLQuantizationType.Q4_K,\n"
+        ")\n"
+        "writer.write_header_to_file()\n"
+        "writer.write_kv_data_to_file()\n"
+        "writer.write_tensors_to_file()\n"
+        "writer.close()\n"
     )
     quantize.chmod(0o700)
     model_dir = tmp_path / "model"
@@ -327,8 +347,18 @@ def test_pack_flow_with_stub_toolchain_produces_the_packed_file(tmp_path) -> Non
     )
 
     assert result.returncode == 0, result.stderr
-    assert out.read_bytes() == b"Q" * 500
     assert "margin" in result.stdout
+    # The floor is nominal 4, so the quantizer stamped Q4_K_S (14).
+    # Q8_0 covers the most bytes, so the file now declares Q8_0 (7).
+    from gguf import GGUFReader
+
+    field = GGUFReader(str(out)).get_field("general.file_type")
+    assert field is not None
+    assert field.contents() == 7
+    log = read_run_log(out.with_name("packed.runlog.jsonl"))
+    packed = next(e for e in log if e["event"] == "model_packed")
+    assert packed["base_type"] == "Q4_K_S"
+    assert packed["file_type"] == "Q8_0"
     events = [e["event"] for e in read_run_log(out.with_name("packed.runlog.jsonl"))]
     assert events[0] == "pack_started"
     assert events[-1] == "pack_finished"

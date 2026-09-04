@@ -44,6 +44,15 @@ BITS_PER_GGML_TYPE = {
 }
 
 
+def test_base_ftype_table_agrees_with_the_dense_table_at_every_key() -> None:
+    # #413 asked the two tables to stop disagreeing at 2 bits. They
+    # never did: both are k-quant tables. The expert-stack table is
+    # the outlier, by design (ADR-0028).
+    assert set(BASE_FTYPE_BY_BITS) == set(GGML_TYPE_BY_BITS)
+    for bits, ftype in BASE_FTYPE_BY_BITS.items():
+        assert ftype.lower().startswith(GGML_TYPE_BY_BITS[bits])
+
+
 def make_recipe(*assignments: tuple[str, int]) -> Recipe:
     return Recipe(
         model_id="test/model",

@@ -43,7 +43,11 @@ erases nothing for such a name and exits 0, so the tensor would keep
 the fit the recipe asked to drop (#309). Every failure — a tool that cannot start, exits
 nonzero, dies to a signal, or leaves no usable file — translates to
 `PackError` at this boundary (ADR-0011), carrying the tool's last
-output lines.
+output lines. After a zero exit the adapter relabels the file: the
+quantizer stamps ``general.file_type`` with the base ftype, and the
+adapter rewrites it to the type covering the most bytes
+([vramfit.adapters.outbound.gguf.file_type][], ADR-0012 decision 3
+as amended 2026-09-04, #413, #414).
 
 Examples:
     Pack a recipe with a local llama.cpp checkout:
@@ -74,6 +78,7 @@ from pathlib import Path
 from typing import Final
 
 from vramfit.adapters.outbound.gguf.exclusion_match import check_exclusion_match
+from vramfit.adapters.outbound.gguf.file_type import stamp_modal_file_type
 from vramfit.adapters.outbound.gguf.override_match import check_base_coverage
 from vramfit.adapters.outbound.gguf.toolrun import run_tool, sized_file
 from vramfit.adapters.outbound.gguf.types import (
@@ -314,7 +319,10 @@ class LlamaCppPacker:
         matrix carries no row for refuses before the quantizer runs,
         because it would erase nothing and report nothing (#309).
         Without an imatrix the exclusions are no-ops and stay
-        unemitted.
+        unemitted. After the quantizer exits 0 and the fallback scan
+        passes, the packed file's ``general.file_type`` becomes the
+        modal type by bytes, and the result records it (ADR-0012
+        decision 3 as amended 2026-09-04).
 
         Args:
             recipe: The recipe to apply.
@@ -330,8 +338,9 @@ class LlamaCppPacker:
                 tensor in the base GGUF (#303), a dedicated flag
                 reaches no target tensor there (#306), an exclusion
                 reaches no imatrix row (#309), the quantizer fails, it writes
-                no usable file, or it names an imatrix-miss tensor
-                the reader could not decode (#252).
+                no usable file, it names an imatrix-miss tensor
+                the reader could not decode (#252), or the packed
+                file cannot take its file type (#414).
             TypeFallbackError: If the quantizer's output carries the
                 type-fallback warning pair — the artifact ignored
                 the recipe on a zero exit (ADR-0028). The file is
@@ -410,8 +419,13 @@ class LlamaCppPacker:
             if self.imatrix is not None
             else ()
         )
+        packed_bytes = sized_file(self.out_path, stage="quantize")
+        # The quantizer stamped the base ftype, which names the floor
+        # and not the file (#413). Relabel with the modal type by
+        # bytes (ADR-0012 decision 3 as amended 2026-09-04).
+        declared = stamp_modal_file_type(self.out_path)
         return PackResult(
-            packed_bytes=sized_file(self.out_path, stage="quantize"),
+            packed_bytes=packed_bytes,
             base_type=base,
             token_embedding_type=embedding,
             output_tensor_type=output,
@@ -420,4 +434,5 @@ class LlamaCppPacker:
             imatrix_uncovered=uncovered,
             imatrix_excluded=excluded,
             floored_layers=floored_layers,
+            file_type=declared,
         )

@@ -46,6 +46,7 @@ and carries no sidecar.
 | Imatrix SHA-256 `fbd36e4f…aac5`, 55,314,688 B | `sha256sum` 2026-08-22, upstream LFS etag at the pinned revision | linked, never carried (see below) |
 | Five publishers' repositories checked, comparator smallest of them | chart #158 Notes: four on #265 (2026-08-15), a fifth on #276 (2026-08-16), ruled the bar on #393 | card prose, comparator section |
 | Eight other full-model GGUFs below 15.76 GiB, Hub query 2026-08-22 | issue #415 evidence table (correction, 2026-08-31) | card prose, comparator section and fit16gib section |
+| `general.file_type` Q4_0 at 74.3 % of bytes | issue #414 composition table, read from the published file at `0c72c8a` on 2026-08-22, ruled 2026-09-04 (ADR-0012 decision 3 amendment) | card prose, recipe section; the packed file's metadata after re-stamp |
 
 ## The upload set (model repo)
 

@@ -7,6 +7,7 @@ from vramfit.domain.pack import (
     PackResult,
     TypeOverride,
     collapsed_tensors,
+    modal_type,
     smoke_passed,
     weight_budget_margin,
     without_protections,
@@ -197,6 +198,62 @@ class TestPackResult:
         )
 
         assert result.floored_layers == ()
+
+    def test_file_type_defaults_to_none(self) -> None:
+        result = PackResult(
+            packed_bytes=1,
+            base_type="Q2_K",
+            token_embedding_type=None,
+            output_tensor_type=None,
+            overrides=(),
+        )
+
+        assert result.file_type is None
+
+    def test_empty_file_type_raises_value_error(self) -> None:
+        with pytest.raises(ValueError, match="file_type"):
+            PackResult(
+                packed_bytes=1,
+                base_type="Q2_K",
+                token_embedding_type=None,
+                output_tensor_type=None,
+                overrides=(),
+                file_type="",
+            )
+
+
+class TestModalType:
+    def test_published_30b_composition_names_q4_0(self) -> None:
+        # The tensor table #413 read from the published file, in tenths
+        # of a percent of bytes: Q4_0 covers 74.3 %, and the quantizer
+        # had stamped Q2_K over no Q2_K tensor.
+        table = {"F32": 2, "Q8_0": 138, "Q4_0": 743, "Q2_0": 117}
+
+        assert modal_type(table) == "Q4_0"
+
+    def test_single_type_names_itself(self) -> None:
+        assert modal_type({"Q8_0": 1}) == "Q8_0"
+
+    def test_tensor_count_does_not_decide(self) -> None:
+        # Many small tensors lose to one large one: bytes, not counts.
+        assert modal_type({"F32": 237, "Q4_0": 1_000}) == "Q4_0"
+
+    def test_tie_goes_to_the_name_that_sorts_first(self) -> None:
+        assert modal_type({"Q8_0": 5, "Q4_0": 5}) == "Q4_0"
+        assert modal_type({"Q4_0": 5, "Q8_0": 5}) == "Q4_0"
+
+    def test_empty_table_raises_value_error(self) -> None:
+        with pytest.raises(ValueError, match="empty"):
+            modal_type({})
+
+    @pytest.mark.parametrize("count", [0, -1])
+    def test_non_positive_count_raises_value_error(self, count: int) -> None:
+        with pytest.raises(ValueError, match="positive"):
+            modal_type({"Q4_0": count})
+
+    def test_empty_name_raises_value_error(self) -> None:
+        with pytest.raises(ValueError, match="name"):
+            modal_type({"": 5})
 
 
 class TestWeightBudgetMargin:
