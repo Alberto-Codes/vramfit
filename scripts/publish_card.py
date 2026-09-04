@@ -155,9 +155,7 @@ def _hub_api() -> HubClient:
 def _files_for(mode: str, directory: Path) -> list[Path]:
     if mode == "card":
         return [directory / "README.md"]
-    files = sorted(
-        p for p in directory.iterdir() if p.is_file() and not p.name.startswith(".")
-    )
+    files = sorted(p for p in directory.iterdir() if p.is_file())
     if not files:
         raise UploadError(f"{directory} holds no files to upload")
     # The #85 pattern: files first, then the card.

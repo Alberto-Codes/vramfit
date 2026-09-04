@@ -66,7 +66,7 @@ uv run --with huggingface_hub python scripts/publish_card.py \
 ```
 
 `--repo` is required. A dataset card carries no field that names its
-repo. Hidden files never upload.
+repo.
 
 ## Record the ledger row
 

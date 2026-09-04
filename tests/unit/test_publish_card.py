@@ -209,7 +209,6 @@ def test_dataset_uploads_files_then_card_and_prints_every_ledger_row(
     directory = _publication(tmp_path, DATASET_CARD)
     (directory / "sensitivity-32k.json").write_bytes(b'{"vramfit_schema": 3}')
     (directory / "imatrix.gguf").write_bytes(b"GGUF\x00\x01")
-    (directory / ".hidden").write_bytes(b"skip")
     hub = FakeHub()
 
     status = publish.run(
@@ -257,7 +256,6 @@ def test_dataset_empty_directory_exits_nonzero_without_uploading(
 ) -> None:
     directory = tmp_path / "maps"
     directory.mkdir()
-    (directory / ".hidden").write_bytes(b"skip")
     (directory / "nested").mkdir()
     hub = FakeHub()
 
