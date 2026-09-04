@@ -180,8 +180,8 @@ def test_a_mapped_suffix_matches_the_gguf_name_map(root: str, suffix: str) -> No
 
 
 def test_the_unbacked_pairs_are_exactly_the_ones_named() -> None:
-    # A skip would hide this. `gguf` confirms 16 of the 48 (root,
-    # suffix) pairs the adapter answers, and the other 32 are named in
+    # A skip would hide this. `gguf` confirms 16 of the 80 (root,
+    # suffix) pairs the adapter answers, and the other 64 are named in
     # UNBACKED_PAIRS. A release that moves a pair either way fails
     # here rather than passing green on part of the table.
     unbacked = {
@@ -192,7 +192,7 @@ def test_the_unbacked_pairs_are_exactly_the_ones_named() -> None:
     }
 
     assert unbacked == UNBACKED_PAIRS
-    assert len(unbacked) == 32
+    assert len(unbacked) == 64
 
 
 @pytest.mark.parametrize("suffix", OMITTED_FAMILY_SUFFIXES)
