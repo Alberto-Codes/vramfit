@@ -20,6 +20,9 @@ status: draft
 > and both cards published byte-verbatim. The
 > [#404 closing comment](https://github.com/Alberto-Codes/vramfit/issues/404#issuecomment-5382801425)
 > carries the ship record, and v0.3.0 released after it.
+>
+> Note 2026-09-04: gate 3 ran unnamed for publication #3, and the
+> #500 record sits in the gate notes below.
 
 ## The honest competitive picture
 
@@ -184,6 +187,20 @@ negative-result branch has no trigger, and publication #2 ships the
 model. Per #164, no tokens-per-second figure from a capped 4090
 publishes. #279 carries the 16 GiB fit claim's open counter, CPU
 offload.
+
+**Publication #3 shipped 2026-08-29 with gate 3 run unnamed**, the
+Gemma 4 31B fit24gib pack on chart #441. The tier-3 slice ran on #423
+before publication: four ties and MMLU +1.15 against the vendor's
+QAT `Q4_0` comparator. The
+[#446 ruling](https://github.com/Alberto-Codes/vramfit/issues/446#issuecomment-5465455247)
+of 2026-08-29 said "publish as packaged" and named no gate. No record
+names a gate-3 ruling for this publication, and this page did not
+carry a note until 2026-09-04. The maintainer ruled on that day that
+the #446 ruling beside the #423 results is the closest record, and
+that this note closes
+[#500](https://github.com/Alberto-Codes/vramfit/issues/500). The
+sidecar swap of 2026-08-31 changed the published projector and not
+the gate.
 
 The naming conventions are settled. #79 ruled the `vramfit` HF
 tag, the budget in the repo name, and publication #1's artifact

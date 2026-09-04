@@ -162,7 +162,9 @@ imatrix exclusions, and the 162-step trace. The
 [#483 checks](https://github.com/Alberto-Codes/vramfit/issues/483#issuecomment-5534333284)
 passed those values back to `plan` as flags. The output matched the
 published file on every field. The rebuilt command runs to 113
-arguments, so this page does not carry it.
+arguments, so this page does not carry it. The
+[fit-to-VRAM how-to](../how-to/fit-to-vram-budget.md#reproduce-the-shipped-49b-recipe)
+carries it in full, as its permanent home since 2026-09-04.
 
 One trap: the glob `--protect "*.self_attn.v_proj.weight=5"` matches
 the same 48 tensors but holds `model.layers.3.self_attn.v_proj.weight`

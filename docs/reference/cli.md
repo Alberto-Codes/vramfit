@@ -16,7 +16,7 @@ Implemented. Prints the installed package version.
 
 ```console
 $ vramfit version
-vramfit 0.1.0
+vramfit 0.4.0
 ```
 
 ## `vramfit budget`
@@ -125,14 +125,19 @@ $ vramfit capacity recipe.json --model-config config.json \
     --context 32768 --tokens-per-image 256
 attention layers      60  (KV grows 81920 bytes/token, fp16, + 1.17 GiB window pool per sequence)
 VRAM total            24.00 GiB
-- weights (recipe)    13.33 GiB
+- weights (recipe)    14.97 GiB
 - runtime overhead    2.00 GiB
 vision                claimed — no --vision-line supplied, nothing subtracted
-= KV headroom         8.67 GiB
-max context           98304 tokens  (1 sequence)
-max sequences         2  (at 32768 tokens)
-image capacity        384 images  (256 tokens per image, 1 sequence)
+= KV headroom         7.03 GiB
+max context           76774 tokens  (1 sequence)
+max sequences         1  (at 32768 tokens)
+image capacity        299 images  (256 tokens per image, 1 sequence)
 ```
+
+The example reproduces from two public files, checked 2026-09-04 with
+`vramfit` 0.4.0 (#493): the `recipe.json` of the published
+[Gemma 4 31B fit24gib pack](https://huggingface.co/Alberto-Codes/gemma-4-31B-it-fit24gib-GGUF)
+and the `config.json` of `google/gemma-4-31B-it`.
 
 The context and image lines print `unbounded` when the KV cache
 stops growing inside the headroom — an all-sliding stack past its
@@ -271,7 +276,7 @@ outside the capability table).
 ## `vramfit scan`
 
 Implemented. Measures per-group damage and writes a sensitivity map.
-Requires the scan extra (`uv pip install "vramfit[scan]"`) — without
+Requires the scan extra (`pip install "vramfit[scan]"`) — without
 it the command exits 1 with the install hint.
 
 ```
@@ -324,6 +329,16 @@ any of those changed refuses the checkpoint instead of mixing numbers.
 The fingerprint identifies provenance, not content: do not swap weights
 or calibration text under an unchanged path between resumes.
 `--no-resume` deletes the checkpoint first and says so.
+
+`--groups` takes literal names and no glob, by maintainer ruling
+(2026-08-18, [#340](https://github.com/Alberto-Codes/vramfit/issues/340#issuecomment-5335499043),
+recorded in chart #158's Notes). The three `plan` globs, `--pin`,
+`--protect`, and `--exclude-imatrix`, act on a map the scan already
+priced, so a pattern that matches too widely spends no compute.
+`--groups` decides what the scan pays to measure. The
+refuse-on-no-match rule catches a selection that matches nothing and
+never one that matches too much. An enumerated list cannot widen, and
+the run log records it verbatim.
 
 `--groups` restricts the run to named groups. A caller that wants 46 of
 210 groups pays for 46. The map then carries the selected groups alone.
