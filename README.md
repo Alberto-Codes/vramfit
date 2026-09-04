@@ -88,8 +88,9 @@ See
 ## Requirements
 
 - Python 3.12+
-- CUDA GPU for `scan`, `validate`, and `pack` (developed against an
-  RTX 4090 / 24 GiB). `plan` and `capacity` need no GPU.
+- CUDA GPU for `scan` and `validate` (developed against an RTX 4090 /
+  24 GiB). `plan` and `capacity` need no GPU. `pack` needs the pack
+  extra and a llama.cpp checkout (ADR-0012).
 - [uv](https://docs.astral.sh/uv/)
 
 ## Installation
@@ -122,7 +123,8 @@ vramfit capacity recipe.json --model-config config.json --kv-dtype fp8 --context
 The [first-run tutorial](docs/tutorials/first-run.md) shows the
 expected output of both commands and explains each line. The
 [getting-started tutorial](docs/tutorials/getting-started.md) covers
-the scan, validate, and pack steps, which need the extras and a GPU.
+the scan, validate, and pack steps. Scan and validate need the scan
+extra and a GPU. Pack needs the pack extra and a llama.cpp checkout.
 
 ## Development
 

@@ -42,9 +42,9 @@ vramfit 0.4.0
 
 The base package installs vramfit, 8 dependencies, and no torch
 ([ADR-0005](../adr/0005-heavy-deps-as-extras.md)). `plan` and
-`capacity` are pure Python. The `scan`, `validate`, and `pack` steps
-need the extras and a GPU. The
-[getting-started tutorial](getting-started.md) covers them.
+`capacity` are pure Python. `scan` and `validate` need the scan extra
+and a GPU. `pack` needs the pack extra and a llama.cpp checkout. The
+[getting-started tutorial](getting-started.md) covers all three.
 
 ## 2. Download the sensitivity map and the model config
 
