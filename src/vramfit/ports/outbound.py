@@ -571,7 +571,8 @@ class RunLogSink(Protocol):
 
         Raises:
             OSError: If the backing store cannot be written.
-            TypeError: If a field is not JSON-representable.
-            ValueError: If a field is NaN or infinite.
+            VramfitError: If a field is not representable in the
+                store. The JSONL sink raises ``RunLogError``, which
+                keeps ``ValueError`` as a base (#475).
         """
         ...
