@@ -333,9 +333,9 @@ or calibration text under an unchanged path between resumes.
 `--groups` takes literal names and no glob, by maintainer ruling
 (2026-08-18, [#340](https://github.com/Alberto-Codes/vramfit/issues/340#issuecomment-5335499043),
 recorded in chart #158's Notes). The three `plan` globs, `--pin`,
-`--protect`, and `--exclude-imatrix`, reassign precision inside a map
-the scan already priced, so a pattern that matches too widely spends
-no compute. `--groups` decides what the scan pays to measure. The
+`--protect`, and `--exclude-imatrix`, act on a map the scan already
+priced, so a pattern that matches too widely spends no compute.
+`--groups` decides what the scan pays to measure. The
 refuse-on-no-match rule catches a selection that matches nothing and
 never one that matches too much. An enumerated list cannot widen, and
 the run log records it verbatim.

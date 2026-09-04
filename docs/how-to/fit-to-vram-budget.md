@@ -93,7 +93,8 @@ field: assignments, protected tensors, the 162-step trace, predicted
 bytes 21,957,337,301, and predicted damage 0.3905
 ([#483 checks](https://github.com/Alberto-Codes/vramfit/issues/483#issuecomment-5534333284)).
 The glob form `--protect "*.self_attn.v_proj.weight=5"` does not
-reproduce it. That glob resolves a different 48-tensor set.
+reproduce it. It matches the same 48 tensors but floors layer 3 at
+5-bit, where the recipe holds 4-bit.
 
 ```bash
 vramfit plan sensitivity-64k-kquant-imx-no2-sized.json \

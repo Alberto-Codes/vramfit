@@ -777,16 +777,17 @@ change.
 
 **Comparator**
 :   The published build a packed model is measured against on one
-    instrument, at a fixed (model, budget) pair. A card states one
-    comparator per tier and names it: bartowski's `Q3_K_S` for the 49B,
-    bartowski's `IQ2_XXS` for the 30B arm, the vendor's QAT `Q4_0` for
-    Gemma 4 31B. "Size-matched" is a property a comparator may have,
-    within a stated margin of the pack's bytes, and no term of its own.
-    A comparator is an outside artifact and never a blind recipe.
-    Not "baseline" for the role. The evals sidecar's `baselines/`
-    directory and its ADR-0025 field names keep that word, and records
-    written before this entry keep it too, on the #213 precedent above.
-    New prose writes "comparator".
+    instrument, at a fixed (model, budget) pair. A card names every
+    comparator it reports against, and tier 3 certifies against one:
+    bartowski's `Q3_K_S` for the 49B, bartowski's `IQ2_XXS` for the
+    30B arm, the vendor's QAT `Q4_0` for Gemma 4 31B. "Size-matched"
+    is a property a comparator may have, within a stated margin of the
+    pack's bytes, and no term of its own. A comparator is an outside
+    artifact and never a blind recipe. Not "baseline" for the role.
+    The evals sidecar's `baselines/` directory and its ADR-0025 field
+    names keep that word, and records written before this entry keep
+    it too (the #213 ruling, under **Harness lane**). New prose writes
+    "comparator".
 
 **Tier-3 slice**
 :   The fixed set of lm-evaluation-harness tasks and few-shot settings

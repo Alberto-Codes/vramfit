@@ -21,14 +21,8 @@ status: draft
 > [#404 closing comment](https://github.com/Alberto-Codes/vramfit/issues/404#issuecomment-5382801425)
 > carries the ship record, and v0.3.0 released after it.
 >
-> Note 2026-09-04: gate 3 ran unnamed for publication #3, the Gemma 4
-> 31B fit24gib pack (chart #441). No record calls it gate 3. The
-> closest record is the
-> [#446 publish ruling](https://github.com/Alberto-Codes/vramfit/issues/446#issuecomment-5465455247)
-> of 2026-08-29 beside the #423 tier-3 results: four ties and MMLU
-> +1.15 against the vendor's QAT `Q4_0` comparator. The maintainer
-> ruled this note the record on 2026-09-04
-> ([#500](https://github.com/Alberto-Codes/vramfit/issues/500)).
+> Note 2026-09-04: gate 3 ran unnamed for publication #3, and the
+> #500 record sits in the gate notes below.
 
 ## The honest competitive picture
 

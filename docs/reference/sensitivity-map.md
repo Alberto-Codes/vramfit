@@ -28,7 +28,7 @@ The sensitivity map is the output of `vramfit scan` and the input to
   },
   "groups": [
     {
-      "name": "model.layers.0.self_attn",
+      "name": "model.layers.0",
       "tensors": [
         "model.layers.0.self_attn.q_proj.weight",
         "model.layers.0.self_attn.k_proj.weight",
