@@ -150,6 +150,83 @@ class TestPlanCommand:
         assert by_group["g1"] == 4
         assert recipe.plan.pins == {"g1": 4}
 
+    def test_glob_pin_sweeping_a_held_group_warns_and_plans(self, tmp_path) -> None:
+        # The #371 shape: a map carrying the router's ``mixer.gate``,
+        # which llama.cpp holds at the F16 passthrough, under ``*=8``.
+        map_path = tmp_path / "map.json"
+        map_path.write_text(
+            json.dumps(
+                make_map(
+                    [
+                        ("model.layers.0.mixer.gate", 1600, CURVE),
+                        ("model.layers.0.mixer.in_proj", 1600, CURVE),
+                    ]
+                )
+            )
+        )
+        out = tmp_path / "recipe.json"
+
+        result = runner.invoke(
+            app,
+            [
+                "plan",
+                str(map_path),
+                "--vram",
+                "500000",
+                "--kv-headroom",
+                "1000",
+                "--pin",
+                "*=8",
+                "--out",
+                str(out),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert (
+            'warning: --pin "*=8" skips group "model.layers.0.mixer.gate"'
+            in result.output
+        )
+        assert "ffn_gate_inp.weight" in result.output
+        recipe = load_recipe(out)
+        by_group = {a.group: a.bits for a in recipe.assignments}
+        assert by_group["model.layers.0.mixer.gate"] == 16
+        assert by_group["model.layers.0.mixer.in_proj"] == 8
+
+    def test_literal_pin_on_a_held_group_exits_one(self, tmp_path) -> None:
+        map_path = tmp_path / "map.json"
+        map_path.write_text(
+            json.dumps(
+                make_map(
+                    [
+                        ("model.layers.0.mixer.gate", 1600, CURVE),
+                        ("model.layers.0.mixer.in_proj", 1600, CURVE),
+                    ]
+                )
+            )
+        )
+
+        result = runner.invoke(
+            app,
+            [
+                "plan",
+                str(map_path),
+                "--vram",
+                "500000",
+                "--kv-headroom",
+                "1000",
+                "--pin",
+                "model.layers.0.mixer.gate=8",
+                "--out",
+                str(tmp_path / "recipe.json"),
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert "error:" in result.output
+        assert "F16 passthrough" in result.output
+        assert "warning: --pin" not in result.output
+
     def test_runtime_vllm_filters_the_candidate_set(self, tmp_path) -> None:
         map_path = self._write_map(tmp_path)
         out = tmp_path / "recipe.json"

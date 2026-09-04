@@ -9,6 +9,7 @@ from tests.unit.conftest import make_map
 from vramfit.adapters.outbound.sensitivity_map_json import map_from_dict
 from vramfit.domain.budget import format_size
 from vramfit.domain.model import SensitivityMap
+from vramfit.domain.pins import held_pin_skips
 from vramfit.domain.runtime import (
     RuntimeCapabilityError,
     effective_bits,
@@ -1074,11 +1075,88 @@ class TestUnquantizableClasses:
 
         assert recipe.assignments[0].bits == 8
 
-    def test_a_glob_pin_sweeping_a_held_group_refuses_too(self) -> None:
-        # Current policy: any pin overlap refuses, loudly. Whether a
-        # wildcard that merely sweeps the group should skip it instead
-        # is an open question raised on #368's build — this pins the
-        # loud behavior until a record answers.
+    def test_a_glob_pin_sweeping_a_held_group_skips_it(self) -> None:
+        # The 2026-09-04 ADR-0007 amendment (#371): a pattern that
+        # resolves to more than one group skips the held group, and
+        # the plan continues. The held group stays at the passthrough.
+        map_ = load(
+            make_map(
+                [
+                    ("model.layers.0.mixer.gate", 1600, CONVEX_CURVE),
+                    ("model.layers.0.mixer.in_proj", 1600, CONVEX_CURVE),
+                ]
+            )
+        )
+
+        recipe = solve_simple(
+            map_, 100_000, pins={"model.layers.0.*": 8}, runtime="llama.cpp"
+        )
+
+        by_group = {a.group: a.bits for a in recipe.assignments}
+        assert by_group["model.layers.0.mixer.gate"] == 16
+        assert by_group["model.layers.0.mixer.in_proj"] == 8
+        assert recipe.plan.pins == {"model.layers.0.*": 8}
+
+    def test_held_pin_skips_names_each_skipped_group_and_its_filter(self) -> None:
+        map_ = load(
+            make_map(
+                [
+                    ("model.layers.0.mixer.gate", 1600, CONVEX_CURVE),
+                    ("model.layers.0.mixer.in_proj", 1600, CONVEX_CURVE),
+                ]
+            )
+        )
+
+        skips = held_pin_skips({"*": 8}, map_, "llama.cpp", None)
+
+        assert len(skips) == 1
+        assert skips[0].group == "model.layers.0.mixer.gate"
+        assert skips[0].pattern == "*"
+        assert skips[0].bits == 8
+        assert skips[0].filter == "ffn_gate_inp.weight"
+
+    def test_a_glob_pin_sweeping_no_held_group_skips_nothing(self) -> None:
+        map_ = load(
+            make_map(
+                [
+                    ("model.layers.0", 1600, CONVEX_CURVE),
+                    ("model.layers.1", 1600, CONVEX_CURVE),
+                ]
+            )
+        )
+
+        recipe = solve_simple(
+            map_, 100_000, pins={"model.layers.*": 8}, runtime="llama.cpp"
+        )
+
+        assert {a.bits for a in recipe.assignments} == {8}
+        assert held_pin_skips({"model.layers.*": 8}, map_, "llama.cpp", None) == ()
+
+    def test_a_glob_pin_sweeping_an_uncovered_held_group_skips_it(self) -> None:
+        # The skip reaches the discovered universe too: a conv1d the
+        # scan skipped (#204) holds, and the sweep leaves it there.
+        map_ = load(make_map([("model.layers.0.mixer.in_proj", 1600, CONVEX_CURVE)]))
+        discovered = {
+            "model.layers.0.mixer.in_proj": 1600,
+            "model.layers.0.mixer.conv1d": 100,
+        }
+
+        recipe = solve_simple(
+            map_,
+            100_000,
+            pins={"model.layers.0.*": 8},
+            runtime="llama.cpp",
+            discovered_bytes=discovered,
+        )
+
+        by_group = {a.group: a.bits for a in recipe.assignments}
+        assert by_group["model.layers.0.mixer.conv1d"] == 16
+        skips = held_pin_skips({"model.layers.0.*": 8}, map_, "llama.cpp", discovered)
+        assert [s.group for s in skips] == ["model.layers.0.mixer.conv1d"]
+
+    def test_a_literal_pin_on_a_held_group_still_refuses(self) -> None:
+        # The ruling keeps the refusal for a pattern that resolves to
+        # exactly one group, even one spelled as a glob.
         map_ = load(
             make_map(
                 [
@@ -1089,9 +1167,7 @@ class TestUnquantizableClasses:
         )
 
         with pytest.raises(PinError, match="F16 passthrough"):
-            solve_simple(
-                map_, 100_000, pins={"model.layers.0.*": 8}, runtime="llama.cpp"
-            )
+            solve_simple(map_, 100_000, pins={"*.mixer.gate": 8}, runtime="llama.cpp")
 
     def test_a_pin_on_an_unquantizable_group_refuses_naming_the_filter(self) -> None:
         map_ = load(make_map([("model.layers.0.mixer.gate", 1600, CONVEX_CURVE)]))

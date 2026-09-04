@@ -51,7 +51,11 @@ extremes before packing:
   practice there plans on a map copy without that column. If a group
   still looks load-bearing for your workload, pin it:
   `--pin "*.layers.0=8"` (patterns match the full group name,
-  `model.layers.0`).
+  `model.layers.0`). A glob that sweeps a group the runtime holds at
+  the F16 passthrough (a router's `mixer.gate`) skips that group and
+  prints a warning naming it. A pin that resolves to that one held
+  group refuses instead. The rule is in the
+  [CLI reference](../reference/cli.md#vramfit-plan).
 - When one tensor class inside otherwise-fine groups is the fragile
   part (the twelfth data point's `attn_v`), protect it instead of
   pinning whole groups:
