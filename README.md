@@ -88,7 +88,9 @@ See
 ## Requirements
 
 - Python 3.12+
-- CUDA GPU (developed against an RTX 4090 / 24 GiB)
+- CUDA GPU for `scan` and `validate` (developed against an RTX 4090 /
+  24 GiB). `plan` and `capacity` need no GPU. `pack` needs the pack
+  extra and a llama.cpp checkout (ADR-0012).
 - [uv](https://docs.astral.sh/uv/)
 
 ## Installation
@@ -101,16 +103,28 @@ uv sync
 
 ## Quick Start
 
-```bash
-# Show the CLI
-uv run vramfit --help
+Run this in an empty directory, not in a clone. It solves the
+published 49B sensitivity map under 24 GiB. It then reads how much
+context the recipe leaves. The run needs no GPU, no torch, and no
+model weights. Two downloads total 108 KB, and both commands finish in
+under one second.
 
-# The pipeline (heavy steps need the extras: uv sync --extra scan --extra pack)
-vramfit scan MODEL --calibration calib.txt --out sensitivity.json
-vramfit plan sensitivity.json --vram 24GiB --out recipe.json
-vramfit validate recipe.json --calibration calib.txt
-vramfit pack recipe.json --llama-cpp ~/llama.cpp --out packed.gguf
+```bash
+python3 -m venv .venv && . .venv/bin/activate
+pip install vramfit
+
+curl -LO https://huggingface.co/datasets/Alberto-Codes/Llama-3_3-Nemotron-Super-49B-v1_5-sensitivity-maps/resolve/main/sensitivity-64k-kquant-imx-no2-sized.json
+curl -LO https://huggingface.co/nvidia/Llama-3_3-Nemotron-Super-49B-v1_5/resolve/main/config.json
+
+vramfit plan sensitivity-64k-kquant-imx-no2-sized.json --vram 24GiB --kv-headroom 3616MiB --out recipe.json
+vramfit capacity recipe.json --model-config config.json --kv-dtype fp8 --context 16384
 ```
+
+The [first-run tutorial](docs/tutorials/first-run.md) shows the
+expected output of both commands and explains each line. The
+[getting-started tutorial](docs/tutorials/getting-started.md) covers
+the scan, validate, and pack steps. Scan and validate need the scan
+extra and a GPU. Pack needs the pack extra and a llama.cpp checkout.
 
 ## Development
 
