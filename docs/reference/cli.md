@@ -230,7 +230,15 @@ layer classes in the
 2026-08-20. It refuses every other `stack` group by name. A group of
 an unquantizable class — the router's `mixer.gate`, the Mamba
 `mixer.conv1d` — packs at the F16 passthrough, and `pack` refuses a
-recipe that assigns it a lower width.
+recipe that assigns it a lower width. `plan` prices such a group at
+the 32 bits the converter wrote it at, not at `F16`'s 16 (#409), and
+`scan` never discovers one (#204). The checkpoint keys such a tensor
+by its own name under every `--group-by`, so it holds uncovered. A
+map of such a family requires `--checkpoint`: `plan` without it
+refuses, because the scan skipped the class and nothing else prices
+it (ADR-0029 decision 3, amended 2026-09-04). `--runtime vllm`
+refuses the map too. The class has no vLLM width until a vLLM pack
+path exists.
 
 Pin semantics: patterns are case-sensitive `fnmatch` globs matched
 against the full group name (`--pin "model.layers.0.*=8"`). With
@@ -367,7 +375,8 @@ A narrowed map measures a subset of the model. `vramfit plan
 --checkpoint` prices the rest: it reads the checkpoint's safetensors
 headers and holds every unmeasured group at reference precision
 (ADR-0029). Without that option the map still defines the model, and
-the command says so.
+the command says so. A map of a family whose class the scan skips
+refuses without it, as [`vramfit plan`](#vramfit-plan) records.
 
 Groups that `auto` sharding offloads to host RAM measure through
 accelerate's weights map (ADR-0015) — `meter_built` reports the count

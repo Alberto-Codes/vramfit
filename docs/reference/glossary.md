@@ -355,8 +355,10 @@ change.
     and packs it as GGUF `F16`
     ([ADR-0029](../adr/0029-plan-independent-size-source.md)
     decision 4). It spends exactly 16.0 effective bits, because
-    `F16` carries no block scale. A recipe assigns it to every
-    **uncovered group** without a pin
+    `F16` carries no block scale, except on a class the quantizer
+    refuses, which holds at the convert dtype and prices there —
+    32 bits on llama.cpp's two classes (#409). A recipe assigns it
+    to every **uncovered group** without a pin
     ([ADR-0007 amendment 2026-08-22](../adr/0007-recipe-solver-strategy.md)).
     Not "no-quant" or "fp16 pin".
 

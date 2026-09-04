@@ -179,16 +179,22 @@ in the same family.
 !!! warning "Plan a narrowed map with `--checkpoint`"
 
     The map carries the selected groups alone. `vramfit plan` without
-    `--checkpoint` sums its budget over the groups the map holds and
-    reads no other size source. So a 46-of-210 map prices 46 groups
-    and counts the other 164 as zero bytes. The recipe then reports a
-    fit the packed model does not honor.
+    `--checkpoint` refuses this map: it names the `mixer` module, and
+    the scan skips that module's `conv1d` and `gate` classes (#204),
+    so only a size source prices them
+    ([ADR-0029](../adr/0029-plan-independent-size-source.md)
+    decision 3, amended 2026-09-04). On a family with no such class
+    the same command sums its budget over the groups the map holds
+    and reads no other size source. A 46-of-210 map then prices 46
+    groups and counts the other 164 as zero bytes, and the recipe
+    reports a fit the packed model does not honor.
 
     `--checkpoint` prices the other 164 from the model's safetensors
-    headers and holds each at reference precision
-    ([ADR-0029](../adr/0029-plan-independent-size-source.md)). Those
+    headers and holds each at reference precision (ADR-0029). Those
     groups are unmeasured, so the plan reserves reference bytes for
-    them rather than spending the measurement it does not have.
+    them rather than spending the measurement it does not have. A
+    skipped class prices at the 32 bits the converter wrote it at
+    (#409).
 
 The selection stays out of the fingerprint, because a group subset is
 not provenance. So a narrow run and a wide run share one checkpoint on

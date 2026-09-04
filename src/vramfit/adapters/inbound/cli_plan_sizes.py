@@ -9,7 +9,9 @@ report what the two inputs cover. It stays out of
 `plan` runs without ``--checkpoint``, and then the map defines the
 model as it did before ADR-0029. That reading is silent no longer:
 the command reports which groups it prices either way, on the same
-channel the runtime filter reports its own narrowing.
+channel the runtime filter reports its own narrowing. The solver
+refuses that reading on a map whose family holds a class the scan
+skips, because only a size source prices it (#409).
 
 A checkpoint that carries none of the map's groups refuses. ADR-0029
 leaves a map-source disagreement unruled, and this is not one — a

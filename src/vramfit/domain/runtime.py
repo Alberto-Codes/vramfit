@@ -10,7 +10,14 @@ the solver predicts sizes from it instead of a scalar overhead.
 Nominal 16 is the F16 passthrough (ADR-0029 decision 4): it holds a
 group at reference precision, so a recipe can name a group the scan
 never measured. It spends exactly 16.0 bits per weight, in both
-tables, because GGUF `F16` carries no block scale.
+tables, because GGUF `F16` carries no block scale. A group of an
+unquantizable class is the exception: the quantizer refuses it, so
+it holds at the dtype the converter wrote, and the passthrough
+prices it from that dtype (#409). `convert_dtype_bits` reads the
+convert dtype table for such a class and nothing else, so every
+other group keeps its table's 16 row. `missing_unquantizable_module`
+reports a map that names such a class's module and not the class,
+which only a size source can price.
 
 Attributes:
     LLAMA_CPP (str): The llama.cpp runtime name. Pack backends and
@@ -40,6 +47,12 @@ Attributes:
         upstream filter that refuses it. A group of such a class
         packs at the F16 passthrough and never lower (ADR-0012,
         2026-08-20 amendment).
+    CONVERT_DTYPE_BITS (Mapping[str, Mapping[str, float]]): Per
+        runtime, the bits per weight the converter stores each
+        unquantizable class at, whatever output type the conversion
+        asked for. The passthrough prices such a class from this
+        table, because the packed file holds it at the convert
+        dtype (#409).
 
 Examples:
     Filter a scanned candidate set for vLLM:
@@ -58,7 +71,7 @@ See Also:
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from types import MappingProxyType
 from typing import Final
 
@@ -159,6 +172,24 @@ UNQUANTIZABLE_CLASS_FILTERS: Final[Mapping[str, Mapping[str, str]]] = MappingPro
     }
 )
 
+# The bits per weight the converter stores each unquantizable class
+# at. `convert_hf_to_gguf.py` writes `FFN_GATE_INP` and `SSM_CONV1D`
+# at float32 whatever `--outtype` asks (the always-float32 list in
+# `ModelBase.prepare_tensors` at the pinned instrument), and the
+# quantizer drops the override, so the packed file holds the class at
+# 32 bits (#409). The keys mirror `UNQUANTIZABLE_CLASS_FILTERS`: a
+# class one table names, the other names too.
+CONVERT_DTYPE_BITS: Final[Mapping[str, Mapping[str, float]]] = MappingProxyType(
+    {
+        LLAMA_CPP: MappingProxyType(
+            {
+                "mixer.gate": 32.0,
+                "mixer.conv1d": 32.0,
+            }
+        ),
+    }
+)
+
 # A layer-class group: a decoder-layer prefix under any naming family,
 # then the class suffix. The capture is what the two class tables key
 # on.
@@ -223,6 +254,135 @@ def unquantizable_filter(group: str, runtime: str | None) -> str | None:
     if runtime is None:
         return None
     table = UNQUANTIZABLE_CLASS_FILTERS.get(runtime)
+    if table is None:
+        return None
+    match = _CLASS_SUFFIX.match(group)
+    if match is None:
+        return None
+    return table.get(match.group(1))
+
+
+def unquantizable_class(group: str) -> str | None:
+    """Name the class suffix a known quantizer refuses.
+
+    The scan carries no target runtime, so discovery skips a class
+    that any runtime's filter table refuses (#204). Such a class
+    holds at the convert dtype whatever the map measured, so a cell
+    the scan prices for it is a cell no recipe can act on. Today one
+    table exists, llama.cpp's.
+
+    Args:
+        group: Group name, as `vramfit.domain.scan.group_key`
+            produces it under ``tensor`` granularity.
+
+    Returns:
+        The class suffix, or None when no table refuses the class.
+
+    Examples:
+        ```python
+        from vramfit.domain.runtime import unquantizable_class
+
+        assert unquantizable_class("model.layers.3.mixer.conv1d") == "mixer.conv1d"
+        assert unquantizable_class("model.layers.3.mixer.in_proj") is None
+        ```
+    """
+    match = _CLASS_SUFFIX.match(group)
+    if match is None:
+        return None
+    suffix = match.group(1)
+    for table in UNQUANTIZABLE_CLASS_FILTERS.values():
+        if suffix in table:
+            return suffix
+    return None
+
+
+def missing_unquantizable_module(tensors: Iterable[str]) -> str | None:
+    """Name the module whose refused class the map does not carry.
+
+    The scan skips a class the quantizer refuses (#204), so a map
+    scanned since then names the class's module through its siblings
+    and never the class itself. Only a size source prices that class,
+    so a plan without one drops its bytes (#409). A map that carries
+    the class predates the skip and prices it itself.
+
+    Args:
+        tensors: Every tensor name the map's groups carry.
+
+    Returns:
+        The module, e.g. ``mixer``, when the map names a tensor under
+        it and none of the module's refused classes. None otherwise.
+
+    Examples:
+        ```python
+        from vramfit.domain.runtime import missing_unquantizable_module
+
+        assert (
+            missing_unquantizable_module(["model.layers.0.mixer.in_proj.weight"])
+            == "mixer"
+        )
+        assert (
+            missing_unquantizable_module(
+                [
+                    "model.layers.0.mixer.in_proj.weight",
+                    "model.layers.0.mixer.conv1d.weight",
+                ]
+            )
+            is None
+        )
+        ```
+    """
+    refused: dict[str, set[str]] = {}
+    for table in UNQUANTIZABLE_CLASS_FILTERS.values():
+        for suffix in table:
+            refused.setdefault(suffix.rpartition(".")[0], set()).add(suffix)
+    named: set[str] = set()
+    carried: set[str] = set()
+    for tensor in tensors:
+        match = _CLASS_SUFFIX.match(tensor.removesuffix(".weight"))
+        if match is None:
+            continue
+        suffix = match.group(1)
+        named.add(suffix.partition(".")[0])
+        if unquantizable_class(match.string) is not None:
+            carried.add(suffix)
+    for module, classes in sorted(refused.items()):
+        if module in named and not classes & carried:
+            return module
+    return None
+
+
+def convert_dtype_bits(group: str, runtime: str | None) -> float | None:
+    """Report the bits per weight the converter stores a refused class at.
+
+    A group of an unquantizable class holds at the dtype the
+    converter wrote, which the packed file then carries: 32.0 bits
+    on both llama.cpp classes (#409). Pricing it at the `f16`
+    override's 16.0 under-priced publication #2's recipe by
+    16,923,492 B against a 16,874,535 B margin. Every other group
+    prices at its effective-bits table, whose 16 row is the
+    passthrough (ADR-0029 decision 4).
+
+    Args:
+        group: Group name, as `vramfit.domain.scan.group_key`
+            produces it.
+        runtime: Target runtime name, or None for an unconstrained
+            plan.
+
+    Returns:
+        The convert dtype's bits per weight, or None when the group
+        is not of a refused class or the runtime carries no table.
+
+    Examples:
+        ```python
+        from vramfit.domain.runtime import convert_dtype_bits
+
+        assert convert_dtype_bits("model.layers.3.mixer.conv1d", "llama.cpp") == 32.0
+        assert convert_dtype_bits("model.layers.3.mixer.in_proj", "llama.cpp") is None
+        ```
+    """
+    if runtime is None:
+        return None
+    table = CONVERT_DTYPE_BITS.get(runtime)
     if table is None:
         return None
     match = _CLASS_SUFFIX.match(group)

@@ -4,7 +4,8 @@
 satisfy. `InfeasibleBudgetError` reports a budget no assignment
 reaches, and it assembles the whole explanation: the gap, the
 precisions a target runtime removed, the protections holding a floor,
-and the groups a size source holds at reference precision (ADR-0029).
+the groups a size source holds at reference precision (ADR-0029), and
+the groups of a class the quantizer refuses (#204, #409).
 
 Both sit under the `VramfitError` root (ADR-0011) and carry messages
 the CLI prints verbatim. [vramfit.domain.solver][] re-exports them, so
@@ -67,8 +68,13 @@ class InfeasibleBudgetError(VramfitError):
             runtime cannot serve — the floor the message reports
             excludes them.
         held_count (int): Groups the map does not measure, held at
-            reference precision (ADR-0029).
+            reference precision (ADR-0029). A group of an
+            unquantizable class stays out of this count.
         held_bytes (int): What those groups reserve.
+        unquantizable_count (int): Groups of a class the quantizer
+            refuses, which a scan skips and a pin cannot move (#204).
+        unquantizable_bytes (int): What those groups reserve at the
+            passthrough, priced at the convert dtype (#409).
 
     Examples:
         Report the gap to the user:
@@ -94,6 +100,8 @@ class InfeasibleBudgetError(VramfitError):
         protected_count: int = 0,
         held_count: int = 0,
         held_bytes: int = 0,
+        unquantizable_count: int = 0,
+        unquantizable_bytes: int = 0,
     ) -> None:
         """Build the error from the budget arithmetic.
 
@@ -102,7 +110,10 @@ class InfeasibleBudgetError(VramfitError):
         filter removed scanned precisions, the message names them —
         the reported floor is higher than the scan alone allows, and
         the user must see why. Protections raise the floor the same
-        way (ADR-0022), so the message counts them too.
+        way (ADR-0022), so the message counts them too. A group the
+        map does not measure gets a "scan them" clause. A group of an
+        unquantizable class gets its own clause, because a scan skips
+        it (#204) and it reserves the convert dtype's bytes (#409).
 
         Args:
             gap_bytes: Overshoot of the smallest achievable total.
@@ -114,8 +125,12 @@ class InfeasibleBudgetError(VramfitError):
                 serve.
             protected_count: Tensors held at a protection floor.
             held_count: Groups the map does not measure, held at
-                reference precision (ADR-0029).
+                reference precision (ADR-0029), unquantizable classes
+                excluded.
             held_bytes: What those groups reserve.
+            unquantizable_count: Groups of a class the quantizer
+                refuses.
+            unquantizable_bytes: What those groups reserve.
         """
         message = (
             f"no recipe fits the {format_size(weight_budget_bytes)} weight "
@@ -139,6 +154,13 @@ class InfeasibleBudgetError(VramfitError):
                 f"not measure, reserving {format_size(held_bytes)} at "
                 "reference precision (ADR-0029). Scan them to spend it"
             )
+        if unquantizable_count:
+            message += (
+                f". The checkpoint holds {unquantizable_count} groups of a "
+                f"class the quantizer refuses, reserving "
+                f"{format_size(unquantizable_bytes)} at the passthrough. "
+                "No scan or pin can spend it (#204, #409)"
+            )
         super().__init__(message)
         self.gap_bytes = gap_bytes
         self.minimum_bytes = minimum_bytes
@@ -148,3 +170,5 @@ class InfeasibleBudgetError(VramfitError):
         self.protected_count = protected_count
         self.held_count = held_count
         self.held_bytes = held_bytes
+        self.unquantizable_count = unquantizable_count
+        self.unquantizable_bytes = unquantizable_bytes

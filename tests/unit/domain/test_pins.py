@@ -217,6 +217,7 @@ class TestWidenedPinSurface:
             runtime="llama.cpp",
             format_overhead=0.0,
             pins={"model.layers.0.mixer.experts.up_proj": 2},
+            discovered_bytes={name: 160_000 for name, _, _ in stacks},
         )
 
         by_group = {a.group: a.bits for a in recipe.assignments}

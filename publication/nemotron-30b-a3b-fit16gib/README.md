@@ -136,7 +136,7 @@ The budget arithmetic:
 | VRAM ceiling | 17,179,869,184 | 16.000 |
 | Runtime reserve | 240,518,169 | 0.224 |
 | Weight budget | 16,939,351,015 | 15.776 |
-| Predicted pack size | 16,929,873,667 | 15.767 |
+| Predicted pack size | 16,946,865,009 | 15.783 |
 | Real packed file | 16,922,476,480 | 15.760 |
 
 The packed file lands 16.09 MiB under the weight budget. The
@@ -144,6 +144,21 @@ reserve rounds up the measured runtime buffers: KV cache,
 recurrent state, and compute, 228.99 MiB in total at one sequence,
 plus 0.39 MiB of rounding. The serve test below ran four server
 slots, so its buffer totals read larger.
+
+The predicted size above is a correction, not the published
+recipe's field. The published recipe priced its 46 passthrough
+groups at 16 bits per weight, 16,929,873,667 B in total, and the
+packed file holds those groups at F32. Priced at the 32 bits the
+file stores, the prediction reads 16,946,865,009 B, which is
+7.17 MiB over the weight budget. The file still fits because
+the recipe's 0.002 overhead over-reserves 32.19 MiB on the
+quantized classes. Two opposite errors, and the second is larger.
+vramfit prices the passthrough from the convert dtype since
+2026-09-04 (issue #409), so a recipe planned today must demote at
+least one more group to close the 7.17 MiB. Which group is a
+question for the re-pack. The published recipe and file stay as
+measured until that re-pack lands with a byte-for-byte check of
+predicted against packed bytes.
 
 The serve test: llama.cpp b10326 (Vulkan), a hard ballast cap
 holding the device to 16,383 MiB visible on an RTX 4090, `-ngl 99`
@@ -271,7 +286,8 @@ dense class at 8-bit. A nominal width names the solver's
 assignment, and each GGUF type spends more in practice: `Q2_0`
 stores 2.25 bits per weight, `Q4_0` stores 4.5, and `Q8_0` stores
 8.5, block scales included. The budget prices every group at
-those real bits. The file's `general.file_type` declares `Q4_0`
+those real bits, and a passthrough group at the 32 bits the
+converter stored it at. The file's `general.file_type` declares `Q4_0`
 because that one field cannot name a mixed recipe, so vramfit
 writes the type covering the most bytes (74.3 % here) and the
 recipe below carries the mix. The allocation:
@@ -285,8 +301,10 @@ recipe below carries the mix. The allocation:
   output head, and every attention, Mamba-2, and shared-expert
   projection. Dense weights are 7 % of the parameters, so the
   8-bit spend is cheap.
-- 46 groups pass through at F16: the Mamba-2 convolutions and the
-  router gates, classes llama.cpp's quantizer never touches.
+- 46 groups pass through unquantized: the Mamba-2 convolutions and
+  the router gates, classes llama.cpp's quantizer never touches. The
+  recipe records them at nominal 16, and the file holds them at F32,
+  the type the converter writes those classes at.
 
 The trace records 11 demotion steps, and every one demotes a
 `down_proj` expert stack from nominal 4 to nominal 2 in
@@ -366,166 +384,166 @@ across scans or across models.
 | `model.layers.51.mixer.experts.down_proj` | 2 | Q2_0 | 179,960,611 |
 | `lm_head` | 8 | Q8_0 | 375,090,316 |
 | `model.embeddings` | 8 | Q8_0 | 375,090,316 |
-| `model.layers.0.mixer.conv1d` | 16 | F16 | 49,251 |
+| `model.layers.0.mixer.conv1d` | 16 | F32 | 98,501 |
 | `model.layers.0.mixer.in_proj` | 8 | Q8_0 | 29,487,081 |
 | `model.layers.0.mixer.out_proj` | 8 | Q8_0 | 11,721,573 |
-| `model.layers.1.mixer.gate` | 16 | F16 | 689,505 |
+| `model.layers.1.mixer.gate` | 16 | F32 | 1,379,009 |
 | `model.layers.1.mixer.shared_experts.down_proj` | 8 | Q8_0 | 10,622,675 |
 | `model.layers.1.mixer.shared_experts.up_proj` | 8 | Q8_0 | 10,622,675 |
-| `model.layers.10.mixer.gate` | 16 | F16 | 689,505 |
+| `model.layers.10.mixer.gate` | 16 | F32 | 1,379,009 |
 | `model.layers.10.mixer.shared_experts.down_proj` | 8 | Q8_0 | 10,622,675 |
 | `model.layers.10.mixer.shared_experts.up_proj` | 8 | Q8_0 | 10,622,675 |
-| `model.layers.11.mixer.conv1d` | 16 | F16 | 49,251 |
+| `model.layers.11.mixer.conv1d` | 16 | F32 | 98,501 |
 | `model.layers.11.mixer.in_proj` | 8 | Q8_0 | 29,487,081 |
 | `model.layers.11.mixer.out_proj` | 8 | Q8_0 | 11,721,573 |
 | `model.layers.12.mixer.k_proj` | 8 | Q8_0 | 732,599 |
 | `model.layers.12.mixer.o_proj` | 8 | Q8_0 | 11,721,573 |
 | `model.layers.12.mixer.q_proj` | 8 | Q8_0 | 11,721,573 |
 | `model.layers.12.mixer.v_proj` | 8 | Q8_0 | 732,599 |
-| `model.layers.13.mixer.gate` | 16 | F16 | 689,505 |
+| `model.layers.13.mixer.gate` | 16 | F32 | 1,379,009 |
 | `model.layers.13.mixer.shared_experts.down_proj` | 8 | Q8_0 | 10,622,675 |
 | `model.layers.13.mixer.shared_experts.up_proj` | 8 | Q8_0 | 10,622,675 |
-| `model.layers.14.mixer.conv1d` | 16 | F16 | 49,251 |
+| `model.layers.14.mixer.conv1d` | 16 | F32 | 98,501 |
 | `model.layers.14.mixer.in_proj` | 8 | Q8_0 | 29,487,081 |
 | `model.layers.14.mixer.out_proj` | 8 | Q8_0 | 11,721,573 |
-| `model.layers.15.mixer.gate` | 16 | F16 | 689,505 |
+| `model.layers.15.mixer.gate` | 16 | F32 | 1,379,009 |
 | `model.layers.15.mixer.shared_experts.down_proj` | 8 | Q8_0 | 10,622,675 |
 | `model.layers.15.mixer.shared_experts.up_proj` | 8 | Q8_0 | 10,622,675 |
-| `model.layers.16.mixer.conv1d` | 16 | F16 | 49,251 |
+| `model.layers.16.mixer.conv1d` | 16 | F32 | 98,501 |
 | `model.layers.16.mixer.in_proj` | 8 | Q8_0 | 29,487,081 |
 | `model.layers.16.mixer.out_proj` | 8 | Q8_0 | 11,721,573 |
-| `model.layers.17.mixer.gate` | 16 | F16 | 689,505 |
+| `model.layers.17.mixer.gate` | 16 | F32 | 1,379,009 |
 | `model.layers.17.mixer.shared_experts.down_proj` | 8 | Q8_0 | 10,622,675 |
 | `model.layers.17.mixer.shared_experts.up_proj` | 8 | Q8_0 | 10,622,675 |
-| `model.layers.18.mixer.conv1d` | 16 | F16 | 49,251 |
+| `model.layers.18.mixer.conv1d` | 16 | F32 | 98,501 |
 | `model.layers.18.mixer.in_proj` | 8 | Q8_0 | 29,487,081 |
 | `model.layers.18.mixer.out_proj` | 8 | Q8_0 | 11,721,573 |
 | `model.layers.19.mixer.k_proj` | 8 | Q8_0 | 732,599 |
 | `model.layers.19.mixer.o_proj` | 8 | Q8_0 | 11,721,573 |
 | `model.layers.19.mixer.q_proj` | 8 | Q8_0 | 11,721,573 |
 | `model.layers.19.mixer.v_proj` | 8 | Q8_0 | 732,599 |
-| `model.layers.2.mixer.conv1d` | 16 | F16 | 49,251 |
+| `model.layers.2.mixer.conv1d` | 16 | F32 | 98,501 |
 | `model.layers.2.mixer.in_proj` | 8 | Q8_0 | 29,487,081 |
 | `model.layers.2.mixer.out_proj` | 8 | Q8_0 | 11,721,573 |
-| `model.layers.20.mixer.gate` | 16 | F16 | 689,505 |
+| `model.layers.20.mixer.gate` | 16 | F32 | 1,379,009 |
 | `model.layers.20.mixer.shared_experts.down_proj` | 8 | Q8_0 | 10,622,675 |
 | `model.layers.20.mixer.shared_experts.up_proj` | 8 | Q8_0 | 10,622,675 |
-| `model.layers.21.mixer.conv1d` | 16 | F16 | 49,251 |
+| `model.layers.21.mixer.conv1d` | 16 | F32 | 98,501 |
 | `model.layers.21.mixer.in_proj` | 8 | Q8_0 | 29,487,081 |
 | `model.layers.21.mixer.out_proj` | 8 | Q8_0 | 11,721,573 |
-| `model.layers.22.mixer.gate` | 16 | F16 | 689,505 |
+| `model.layers.22.mixer.gate` | 16 | F32 | 1,379,009 |
 | `model.layers.22.mixer.shared_experts.down_proj` | 8 | Q8_0 | 10,622,675 |
 | `model.layers.22.mixer.shared_experts.up_proj` | 8 | Q8_0 | 10,622,675 |
-| `model.layers.23.mixer.conv1d` | 16 | F16 | 49,251 |
+| `model.layers.23.mixer.conv1d` | 16 | F32 | 98,501 |
 | `model.layers.23.mixer.in_proj` | 8 | Q8_0 | 29,487,081 |
 | `model.layers.23.mixer.out_proj` | 8 | Q8_0 | 11,721,573 |
-| `model.layers.24.mixer.gate` | 16 | F16 | 689,505 |
+| `model.layers.24.mixer.gate` | 16 | F32 | 1,379,009 |
 | `model.layers.24.mixer.shared_experts.down_proj` | 8 | Q8_0 | 10,622,675 |
 | `model.layers.24.mixer.shared_experts.up_proj` | 8 | Q8_0 | 10,622,675 |
-| `model.layers.25.mixer.conv1d` | 16 | F16 | 49,251 |
+| `model.layers.25.mixer.conv1d` | 16 | F32 | 98,501 |
 | `model.layers.25.mixer.in_proj` | 8 | Q8_0 | 29,487,081 |
 | `model.layers.25.mixer.out_proj` | 8 | Q8_0 | 11,721,573 |
 | `model.layers.26.mixer.k_proj` | 8 | Q8_0 | 732,599 |
 | `model.layers.26.mixer.o_proj` | 8 | Q8_0 | 11,721,573 |
 | `model.layers.26.mixer.q_proj` | 8 | Q8_0 | 11,721,573 |
 | `model.layers.26.mixer.v_proj` | 8 | Q8_0 | 732,599 |
-| `model.layers.27.mixer.gate` | 16 | F16 | 689,505 |
+| `model.layers.27.mixer.gate` | 16 | F32 | 1,379,009 |
 | `model.layers.27.mixer.shared_experts.down_proj` | 8 | Q8_0 | 10,622,675 |
 | `model.layers.27.mixer.shared_experts.up_proj` | 8 | Q8_0 | 10,622,675 |
-| `model.layers.28.mixer.conv1d` | 16 | F16 | 49,251 |
+| `model.layers.28.mixer.conv1d` | 16 | F32 | 98,501 |
 | `model.layers.28.mixer.in_proj` | 8 | Q8_0 | 29,487,081 |
 | `model.layers.28.mixer.out_proj` | 8 | Q8_0 | 11,721,573 |
-| `model.layers.29.mixer.gate` | 16 | F16 | 689,505 |
+| `model.layers.29.mixer.gate` | 16 | F32 | 1,379,009 |
 | `model.layers.29.mixer.shared_experts.down_proj` | 8 | Q8_0 | 10,622,675 |
 | `model.layers.29.mixer.shared_experts.up_proj` | 8 | Q8_0 | 10,622,675 |
-| `model.layers.3.mixer.gate` | 16 | F16 | 689,505 |
+| `model.layers.3.mixer.gate` | 16 | F32 | 1,379,009 |
 | `model.layers.3.mixer.shared_experts.down_proj` | 8 | Q8_0 | 10,622,675 |
 | `model.layers.3.mixer.shared_experts.up_proj` | 8 | Q8_0 | 10,622,675 |
-| `model.layers.30.mixer.conv1d` | 16 | F16 | 49,251 |
+| `model.layers.30.mixer.conv1d` | 16 | F32 | 98,501 |
 | `model.layers.30.mixer.in_proj` | 8 | Q8_0 | 29,487,081 |
 | `model.layers.30.mixer.out_proj` | 8 | Q8_0 | 11,721,573 |
-| `model.layers.31.mixer.gate` | 16 | F16 | 689,505 |
+| `model.layers.31.mixer.gate` | 16 | F32 | 1,379,009 |
 | `model.layers.31.mixer.shared_experts.down_proj` | 8 | Q8_0 | 10,622,675 |
 | `model.layers.31.mixer.shared_experts.up_proj` | 8 | Q8_0 | 10,622,675 |
-| `model.layers.32.mixer.conv1d` | 16 | F16 | 49,251 |
+| `model.layers.32.mixer.conv1d` | 16 | F32 | 98,501 |
 | `model.layers.32.mixer.in_proj` | 8 | Q8_0 | 29,487,081 |
 | `model.layers.32.mixer.out_proj` | 8 | Q8_0 | 11,721,573 |
 | `model.layers.33.mixer.k_proj` | 8 | Q8_0 | 732,599 |
 | `model.layers.33.mixer.o_proj` | 8 | Q8_0 | 11,721,573 |
 | `model.layers.33.mixer.q_proj` | 8 | Q8_0 | 11,721,573 |
 | `model.layers.33.mixer.v_proj` | 8 | Q8_0 | 732,599 |
-| `model.layers.34.mixer.gate` | 16 | F16 | 689,505 |
+| `model.layers.34.mixer.gate` | 16 | F32 | 1,379,009 |
 | `model.layers.34.mixer.shared_experts.down_proj` | 8 | Q8_0 | 10,622,675 |
 | `model.layers.34.mixer.shared_experts.up_proj` | 8 | Q8_0 | 10,622,675 |
-| `model.layers.35.mixer.conv1d` | 16 | F16 | 49,251 |
+| `model.layers.35.mixer.conv1d` | 16 | F32 | 98,501 |
 | `model.layers.35.mixer.in_proj` | 8 | Q8_0 | 29,487,081 |
 | `model.layers.35.mixer.out_proj` | 8 | Q8_0 | 11,721,573 |
-| `model.layers.36.mixer.gate` | 16 | F16 | 689,505 |
+| `model.layers.36.mixer.gate` | 16 | F32 | 1,379,009 |
 | `model.layers.36.mixer.shared_experts.down_proj` | 8 | Q8_0 | 10,622,675 |
 | `model.layers.36.mixer.shared_experts.up_proj` | 8 | Q8_0 | 10,622,675 |
-| `model.layers.37.mixer.conv1d` | 16 | F16 | 49,251 |
+| `model.layers.37.mixer.conv1d` | 16 | F32 | 98,501 |
 | `model.layers.37.mixer.in_proj` | 8 | Q8_0 | 29,487,081 |
 | `model.layers.37.mixer.out_proj` | 8 | Q8_0 | 11,721,573 |
-| `model.layers.38.mixer.gate` | 16 | F16 | 689,505 |
+| `model.layers.38.mixer.gate` | 16 | F32 | 1,379,009 |
 | `model.layers.38.mixer.shared_experts.down_proj` | 8 | Q8_0 | 10,622,675 |
 | `model.layers.38.mixer.shared_experts.up_proj` | 8 | Q8_0 | 10,622,675 |
-| `model.layers.39.mixer.conv1d` | 16 | F16 | 49,251 |
+| `model.layers.39.mixer.conv1d` | 16 | F32 | 98,501 |
 | `model.layers.39.mixer.in_proj` | 8 | Q8_0 | 29,487,081 |
 | `model.layers.39.mixer.out_proj` | 8 | Q8_0 | 11,721,573 |
-| `model.layers.4.mixer.conv1d` | 16 | F16 | 49,251 |
+| `model.layers.4.mixer.conv1d` | 16 | F32 | 98,501 |
 | `model.layers.4.mixer.in_proj` | 8 | Q8_0 | 29,487,081 |
 | `model.layers.4.mixer.out_proj` | 8 | Q8_0 | 11,721,573 |
-| `model.layers.40.mixer.gate` | 16 | F16 | 689,505 |
+| `model.layers.40.mixer.gate` | 16 | F32 | 1,379,009 |
 | `model.layers.40.mixer.shared_experts.down_proj` | 8 | Q8_0 | 10,622,675 |
 | `model.layers.40.mixer.shared_experts.up_proj` | 8 | Q8_0 | 10,622,675 |
-| `model.layers.41.mixer.conv1d` | 16 | F16 | 49,251 |
+| `model.layers.41.mixer.conv1d` | 16 | F32 | 98,501 |
 | `model.layers.41.mixer.in_proj` | 8 | Q8_0 | 29,487,081 |
 | `model.layers.41.mixer.out_proj` | 8 | Q8_0 | 11,721,573 |
 | `model.layers.42.mixer.k_proj` | 8 | Q8_0 | 732,599 |
 | `model.layers.42.mixer.o_proj` | 8 | Q8_0 | 11,721,573 |
 | `model.layers.42.mixer.q_proj` | 8 | Q8_0 | 11,721,573 |
 | `model.layers.42.mixer.v_proj` | 8 | Q8_0 | 732,599 |
-| `model.layers.43.mixer.gate` | 16 | F16 | 689,505 |
+| `model.layers.43.mixer.gate` | 16 | F32 | 1,379,009 |
 | `model.layers.43.mixer.shared_experts.down_proj` | 8 | Q8_0 | 10,622,675 |
 | `model.layers.43.mixer.shared_experts.up_proj` | 8 | Q8_0 | 10,622,675 |
-| `model.layers.44.mixer.conv1d` | 16 | F16 | 49,251 |
+| `model.layers.44.mixer.conv1d` | 16 | F32 | 98,501 |
 | `model.layers.44.mixer.in_proj` | 8 | Q8_0 | 29,487,081 |
 | `model.layers.44.mixer.out_proj` | 8 | Q8_0 | 11,721,573 |
-| `model.layers.45.mixer.gate` | 16 | F16 | 689,505 |
+| `model.layers.45.mixer.gate` | 16 | F32 | 1,379,009 |
 | `model.layers.45.mixer.shared_experts.down_proj` | 8 | Q8_0 | 10,622,675 |
 | `model.layers.45.mixer.shared_experts.up_proj` | 8 | Q8_0 | 10,622,675 |
-| `model.layers.46.mixer.conv1d` | 16 | F16 | 49,251 |
+| `model.layers.46.mixer.conv1d` | 16 | F32 | 98,501 |
 | `model.layers.46.mixer.in_proj` | 8 | Q8_0 | 29,487,081 |
 | `model.layers.46.mixer.out_proj` | 8 | Q8_0 | 11,721,573 |
-| `model.layers.47.mixer.gate` | 16 | F16 | 689,505 |
+| `model.layers.47.mixer.gate` | 16 | F32 | 1,379,009 |
 | `model.layers.47.mixer.shared_experts.down_proj` | 8 | Q8_0 | 10,622,675 |
 | `model.layers.47.mixer.shared_experts.up_proj` | 8 | Q8_0 | 10,622,675 |
-| `model.layers.48.mixer.conv1d` | 16 | F16 | 49,251 |
+| `model.layers.48.mixer.conv1d` | 16 | F32 | 98,501 |
 | `model.layers.48.mixer.in_proj` | 8 | Q8_0 | 29,487,081 |
 | `model.layers.48.mixer.out_proj` | 8 | Q8_0 | 11,721,573 |
-| `model.layers.49.mixer.gate` | 16 | F16 | 689,505 |
+| `model.layers.49.mixer.gate` | 16 | F32 | 1,379,009 |
 | `model.layers.49.mixer.shared_experts.down_proj` | 8 | Q8_0 | 10,622,675 |
 | `model.layers.49.mixer.shared_experts.up_proj` | 8 | Q8_0 | 10,622,675 |
 | `model.layers.5.mixer.k_proj` | 8 | Q8_0 | 732,599 |
 | `model.layers.5.mixer.o_proj` | 8 | Q8_0 | 11,721,573 |
 | `model.layers.5.mixer.q_proj` | 8 | Q8_0 | 11,721,573 |
 | `model.layers.5.mixer.v_proj` | 8 | Q8_0 | 732,599 |
-| `model.layers.50.mixer.conv1d` | 16 | F16 | 49,251 |
+| `model.layers.50.mixer.conv1d` | 16 | F32 | 98,501 |
 | `model.layers.50.mixer.in_proj` | 8 | Q8_0 | 29,487,081 |
 | `model.layers.50.mixer.out_proj` | 8 | Q8_0 | 11,721,573 |
-| `model.layers.51.mixer.gate` | 16 | F16 | 689,505 |
+| `model.layers.51.mixer.gate` | 16 | F32 | 1,379,009 |
 | `model.layers.51.mixer.shared_experts.down_proj` | 8 | Q8_0 | 10,622,675 |
 | `model.layers.51.mixer.shared_experts.up_proj` | 8 | Q8_0 | 10,622,675 |
-| `model.layers.6.mixer.gate` | 16 | F16 | 689,505 |
+| `model.layers.6.mixer.gate` | 16 | F32 | 1,379,009 |
 | `model.layers.6.mixer.shared_experts.down_proj` | 8 | Q8_0 | 10,622,675 |
 | `model.layers.6.mixer.shared_experts.up_proj` | 8 | Q8_0 | 10,622,675 |
-| `model.layers.7.mixer.conv1d` | 16 | F16 | 49,251 |
+| `model.layers.7.mixer.conv1d` | 16 | F32 | 98,501 |
 | `model.layers.7.mixer.in_proj` | 8 | Q8_0 | 29,487,081 |
 | `model.layers.7.mixer.out_proj` | 8 | Q8_0 | 11,721,573 |
-| `model.layers.8.mixer.gate` | 16 | F16 | 689,505 |
+| `model.layers.8.mixer.gate` | 16 | F32 | 1,379,009 |
 | `model.layers.8.mixer.shared_experts.down_proj` | 8 | Q8_0 | 10,622,675 |
 | `model.layers.8.mixer.shared_experts.up_proj` | 8 | Q8_0 | 10,622,675 |
-| `model.layers.9.mixer.conv1d` | 16 | F16 | 49,251 |
+| `model.layers.9.mixer.conv1d` | 16 | F32 | 98,501 |
 | `model.layers.9.mixer.in_proj` | 8 | Q8_0 | 29,487,081 |
 | `model.layers.9.mixer.out_proj` | 8 | Q8_0 | 11,721,573 |
 

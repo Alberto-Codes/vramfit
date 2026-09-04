@@ -11,7 +11,13 @@ from vramfit.domain.budget import format_size
 from vramfit.domain.model import SensitivityMap
 from vramfit.domain.runtime import (
     RuntimeCapabilityError,
+    effective_bits,
     expert_stack_effective_bits,
+)
+from vramfit.domain.sizes import (
+    SizeSourceError,
+    TensorSize,
+    discovered_group_bytes,
 )
 from vramfit.domain.solver import (
     DEFAULT_FORMAT_OVERHEAD,
@@ -946,25 +952,54 @@ class TestUncoveredGroups:
 
         assert [a.bits for a in recipe.assignments] == [8]
 
-    def test_an_uncovered_expert_stack_prices_through_the_stack_table(self) -> None:
+    def test_an_uncovered_expert_stack_prices_through_the_stack_table(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         # The stack table and the dense table both read 16.0 today, so
-        # this pins the routing rather than a difference. A stack group
-        # priced through the dense table would drift the day either
-        # table moves.
+        # the test moves the stack row to prove the routing. A stack
+        # group priced through the dense table, or through a constant,
+        # would ignore the move.
+        table = expert_stack_effective_bits("llama.cpp")
+        assert table is not None
+        monkeypatch.setattr(
+            "vramfit.domain.runtime.EXPERT_STACK_EFFECTIVE_BITS",
+            {"llama.cpp": {**table, 16: 17.0}},
+        )
         map_ = load(make_map([("model.layers.0", 1600, CONVEX_CURVE)]))
         stack = "model.layers.1.mixer.experts.up_proj"
+        dense = "model.layers.1.mlp.up_proj"
 
         recipe = solve_simple(
             map_,
             100_000,
-            discovered_bytes={"model.layers.0": 1600, stack: 1600},
+            discovered_bytes={"model.layers.0": 1600, stack: 1600, dense: 1600},
             runtime="llama.cpp",
         )
 
-        held = next(a for a in recipe.assignments if a.group == stack)
-        table = expert_stack_effective_bits("llama.cpp")
+        by_group = {a.group: a.bytes for a in recipe.assignments}
+        assert by_group[stack] == group_bytes(1600, 17.0, DEFAULT_RESIDUAL_OVERHEAD)
+        assert by_group[dense] == group_bytes(1600, 16.0, DEFAULT_RESIDUAL_OVERHEAD)
+
+    def test_an_uncovered_dense_group_prices_through_the_dense_table(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        table = effective_bits("llama.cpp")
         assert table is not None
-        assert held.bytes == group_bytes(1600, table[16], DEFAULT_RESIDUAL_OVERHEAD)
+        monkeypatch.setattr(
+            "vramfit.domain.runtime.EFFECTIVE_BITS",
+            {"llama.cpp": {**table, 16: 18.0}},
+        )
+        map_ = load(make_map([("model.layers.0", 1600, CONVEX_CURVE)]))
+
+        recipe = solve_simple(
+            map_,
+            100_000,
+            discovered_bytes={"model.layers.0": 1600, "model.layers.1": 1600},
+            runtime="llama.cpp",
+        )
+
+        held = next(a for a in recipe.assignments if a.group == "model.layers.1")
+        assert held.bytes == group_bytes(1600, 18.0, DEFAULT_RESIDUAL_OVERHEAD)
 
     def test_the_infeasible_message_names_the_held_groups(self) -> None:
         map_ = load(make_map([("model.layers.0", 1600, CONVEX_CURVE)]))
@@ -997,13 +1032,16 @@ class TestUnquantizableClasses:
         )
 
         # The budget forces downgrades. Only the plain layer group may
-        # supply them.
-        recipe = solve_simple(map_, 4000, runtime="llama.cpp")
+        # supply them. The hold prices at the convert dtype, 32 bits
+        # per weight, because the packed file holds the router there
+        # (#409).
+        recipe = solve_simple(map_, 6000, runtime="llama.cpp")
 
         gate = next(
             a for a in recipe.assignments if a.group == "model.layers.0.mixer.gate"
         )
         assert gate.bits == 16
+        assert gate.bytes == group_bytes(1600, 32.0, DEFAULT_RESIDUAL_OVERHEAD)
         assert gate.damage == 0.0
         assert all(step.group != gate.group for step in recipe.plan.trace)
 
@@ -1063,8 +1101,254 @@ class TestUnquantizableClasses:
             )
         )
 
-        recipe = solve_simple(map_, 30_000, runtime="llama.cpp")
+        recipe = solve_simple(
+            map_,
+            30_000,
+            runtime="llama.cpp",
+            discovered_bytes={"model.layers.0.mixer.in_proj": 160_000},
+        )
 
         assignment = recipe.assignments[0]
         assert assignment.bits == 2
         assert assignment.bytes == group_bytes(160_000, 2.25, DEFAULT_RESIDUAL_OVERHEAD)
+
+
+@pytest.mark.unit
+class TestPassthroughPricing:
+    """The F16 passthrough prices at what the packed file holds (#409)."""
+
+    # Publication #2's 46 passthrough groups, from the #409 tables:
+    # 23 `mixer.conv1d` at 24,576 weights and 23 `mixer.gate` at
+    # 344,064 weights, all packed at F32.
+    CONV1D_FP16 = 24_576 * 2
+    GATE_FP16 = 344_064 * 2
+    PACKED_BYTES = 33_914_880
+    RECIPE_BYTES_AT_16 = 16_991_388
+    OVERHEAD = 0.002
+
+    @staticmethod
+    def _discovered() -> dict[str, int]:
+        layers = [n for n in range(52) if n % 2 == 0][:23]
+        conv = {f"model.layers.{n}.mixer.conv1d": 49_152 for n in layers}
+        gate = {f"model.layers.{n + 1}.mixer.gate": 688_128 for n in layers}
+        return {"model.layers.0.mixer.in_proj": 1600, **conv, **gate}
+
+    def _held(self, format_overhead: float) -> int:
+        map_ = load(make_map([("model.layers.0.mixer.in_proj", 1600, CONVEX_CURVE)]))
+        recipe = solve_simple(
+            map_,
+            10**9,
+            runtime="llama.cpp",
+            discovered_bytes=self._discovered(),
+            format_overhead=format_overhead,
+        )
+        passthrough = [a for a in recipe.assignments if a.bits == 16]
+        assert len(passthrough) == 46
+        return sum(a.bytes for a in passthrough)
+
+    def test_the_46_groups_price_at_their_packed_bytes(self) -> None:
+        # At zero overhead the prediction equals the packed file's
+        # F32 bytes exactly. The 16.0 row read half of that.
+        assert self._held(0.0) == self.PACKED_BYTES
+
+    def test_the_publication_2_shortfall_no_longer_reproduces(self) -> None:
+        # The published recipe priced these groups at 16,991,388 B
+        # under its 0.002 overhead, 16,923,492 B short of the packed
+        # bytes and past the 16,874,535 B margin. The corrected
+        # prediction covers the packed bytes.
+        shortfall = self.PACKED_BYTES - self.RECIPE_BYTES_AT_16
+        assert shortfall == 16_923_492
+        assert self._held(self.OVERHEAD) >= self.PACKED_BYTES
+
+    def test_a_quantizable_class_still_spends_16_bits(self) -> None:
+        # The `f16` override holds a refused-nothing class at two
+        # bytes per weight, so only the unquantizable classes move.
+        map_ = load(make_map([("model.layers.0", 1600, CONVEX_CURVE)]))
+        recipe = solve_simple(
+            map_,
+            10**6,
+            runtime="llama.cpp",
+            discovered_bytes={
+                "model.layers.0": 1600,
+                "model.layers.1.mixer.in_proj": 1600,
+            },
+        )
+        held = next(a for a in recipe.assignments if a.group.endswith("in_proj"))
+        assert held.bytes == group_bytes(1600, 16.0, DEFAULT_RESIDUAL_OVERHEAD)
+
+    def test_a_layer_map_prices_the_skipped_classes_at_the_convert_dtype(
+        self,
+    ) -> None:
+        # `scan --group-by layer` (the default) measures `model.layers.0`
+        # without its conv1d and router, which discovery skips (#204).
+        # The checkpoint keys each by its own name, so both land
+        # uncovered and price at 32 bits (#409). Folded into the
+        # covered layer group, their bytes left the plan.
+        sizes = {
+            "backbone.layers.0.mixer.in_proj.weight": TensorSize("BF16", 1600),
+            "backbone.layers.0.mixer.conv1d.weight": TensorSize("BF16", 800),
+            "backbone.layers.0.mixer.gate.weight": TensorSize("BF16", 400),
+        }
+        map_ = load(make_map([("model.layers.0", 1600, CONVEX_CURVE)]))
+
+        recipe = solve_simple(
+            map_,
+            10**6,
+            runtime="llama.cpp",
+            discovered_bytes=discovered_group_bytes(sizes, "layer"),
+            format_overhead=0.0,
+        )
+
+        held = {a.group: a for a in recipe.assignments[1:]}
+        assert set(held) == {
+            "model.layers.0.mixer.conv1d",
+            "model.layers.0.mixer.gate",
+        }
+        assert held["model.layers.0.mixer.conv1d"].bytes == 1600
+        assert held["model.layers.0.mixer.gate"].bytes == 800
+        assert {a.bits for a in held.values()} == {16}
+
+    def test_the_infeasible_message_separates_the_unquantizable_holds(self) -> None:
+        # A scan skips the conv1d (#204), so the "scan them" clause
+        # must not count it. Its bytes land in a clause of their own.
+        map_ = load(make_map([("model.layers.0", 1600, CONVEX_CURVE)]))
+
+        with pytest.raises(InfeasibleBudgetError) as caught:
+            solve_simple(
+                map_,
+                2000,
+                runtime="llama.cpp",
+                discovered_bytes={
+                    "model.layers.0": 1600,
+                    "big": 100_000,
+                    "model.layers.0.mixer.conv1d": 50_000,
+                },
+            )
+
+        error = caught.value
+        assert error.held_count == 1
+        assert error.held_bytes == group_bytes(100_000, 16.0, DEFAULT_RESIDUAL_OVERHEAD)
+        assert error.unquantizable_count == 1
+        assert error.unquantizable_bytes == group_bytes(
+            50_000, 32.0, DEFAULT_RESIDUAL_OVERHEAD
+        )
+        message = str(error)
+        assert "1 groups the map does not measure" in message
+        assert "1 groups of a class the quantizer refuses" in message
+        assert format_size(error.unquantizable_bytes) in message
+
+    def test_the_infeasible_message_omits_the_scan_clause_without_a_scannable_hold(
+        self,
+    ) -> None:
+        map_ = load(make_map([("model.layers.0", 1600, CONVEX_CURVE)]))
+
+        with pytest.raises(InfeasibleBudgetError) as caught:
+            solve_simple(
+                map_,
+                2000,
+                runtime="llama.cpp",
+                discovered_bytes={
+                    "model.layers.0": 1600,
+                    "model.layers.0.mixer.conv1d": 50_000,
+                },
+            )
+
+        assert caught.value.held_count == 0
+        assert "Scan them" not in str(caught.value)
+        assert "No scan or pin can spend it" in str(caught.value)
+
+    def test_a_hybrid_map_without_a_size_source_refuses_naming_the_flag(
+        self,
+    ) -> None:
+        # The scan skips the conv1d and the router (#204), so the map
+        # carries no bytes for them. Without a size source the plan
+        # would drop the 46 F32 groups from the prediction (#409).
+        map_ = load(make_map([("model.layers.0.mixer.in_proj", 1600, CONVEX_CURVE)]))
+
+        with pytest.raises(SizeSourceError, match="--checkpoint") as caught:
+            solve_simple(map_, 10**6, runtime="llama.cpp")
+
+        assert '"mixer" module' in str(caught.value)
+
+    def test_a_hybrid_map_without_a_size_source_states_the_vllm_limit(
+        self,
+    ) -> None:
+        # A size source would only reach the reference-precision
+        # refusal, so the sourceless refusal states that limit and
+        # sends nobody to fetch a checkpoint.
+        map_ = load(make_map([("model.layers.0.mixer.in_proj", 1600, CONVEX_CURVE)]))
+
+        with pytest.raises(RuntimeCapabilityError) as caught:
+            solve_simple(map_, 10**6, runtime="vllm")
+
+        message = str(caught.value)
+        assert '"mixer" module' in message
+        assert 'no "vllm" width until a "vllm" pack path exists' in message
+        assert "--checkpoint" not in message
+
+    def test_a_hybrid_map_refuses_without_a_size_source_under_no_runtime(
+        self,
+    ) -> None:
+        map_ = load(make_map([("model.layers.0.mixer.in_proj", 1600, CONVEX_CURVE)]))
+
+        with pytest.raises(SizeSourceError, match="--checkpoint"):
+            solve_simple(map_, 10**6)
+
+    def test_a_map_carrying_the_refused_class_plans_without_a_source(self) -> None:
+        # A map scanned before the skip measured the class itself, so
+        # the hold prices it and no bytes leave the plan.
+        map_ = load(
+            make_map(
+                [
+                    ("model.layers.0.mixer.in_proj", 1600, CONVEX_CURVE),
+                    ("model.layers.0.mixer.conv1d", 800, CONVEX_CURVE),
+                ]
+            )
+        )
+
+        recipe = solve_simple(map_, 10**6, runtime="llama.cpp", format_overhead=0.0)
+
+        held = next(a for a in recipe.assignments if a.group.endswith("conv1d"))
+        assert held.bits == 16
+        assert held.bytes == 1600
+
+    def test_a_runtime_without_reference_precision_refuses_the_class_plainly(
+        self,
+    ) -> None:
+        # vLLM serves no reference precision. The old advice said to
+        # scan the held groups, and the scan skips this class by
+        # design (#204). The refusal names the class and gives no
+        # advice a user cannot follow.
+        map_ = load(make_map([("model.layers.0", 1600, CONVEX_CURVE)]))
+
+        with pytest.raises(RuntimeCapabilityError) as caught:
+            solve_simple(
+                map_,
+                10**6,
+                runtime="vllm",
+                discovered_bytes={
+                    "model.layers.0": 1600,
+                    "model.layers.0.mixer.conv1d": 800,
+                    "model.layers.1.mixer.gate": 400,
+                },
+            )
+
+        message = str(caught.value)
+        assert "cannot serve reference precision 16" in message
+        assert "2 groups of a class the quantizer refuses" in message
+        assert "(mixer.conv1d, mixer.gate)" in message
+        assert 'no "vllm" width until a "vllm" pack path exists' in message
+        assert "scan" not in message
+
+    def test_a_runtime_without_reference_precision_keeps_the_scan_advice_otherwise(
+        self,
+    ) -> None:
+        map_ = load(make_map([("model.layers.0", 1600, CONVEX_CURVE)]))
+
+        with pytest.raises(RuntimeCapabilityError, match="scan those groups"):
+            solve_simple(
+                map_,
+                10**6,
+                runtime="vllm",
+                discovered_bytes={"model.layers.0": 1600, "model.layers.1": 800},
+            )

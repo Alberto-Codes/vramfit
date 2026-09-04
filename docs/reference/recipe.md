@@ -114,7 +114,10 @@ below remain, the sub-4-bit pricing claims do not.
   `bytes` is the predicted size at the runtime's
   effective bits when the runtime has a table
   ([ADR-0014](../adr/0014-per-type-effective-bits.md)), at nominal bits
-  otherwise — format overhead included either way. `damage` is the
+  otherwise — format overhead included either way. At the passthrough a
+  group of an unquantizable class prices at the convert dtype, 32 bits
+  per weight on llama.cpp's `mixer.gate` and `mixer.conv1d`, because the
+  packed file holds it there (#409). `damage` is the
   *measured* value at the assigned precision — an all-8-bit recipe still
   carries the measured 8-bit damage.
 - **`predicted_damage`** — sum of per-group damage at the chosen precisions.

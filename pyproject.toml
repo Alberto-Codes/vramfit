@@ -255,6 +255,7 @@ include = [
     "tests/unit/adapters/test_exclusion_match_gguf.py",
     "tests/unit/adapters/test_gguf_file_type.py",
     "tests/unit/adapters/test_override_match_gguf.py",
+    "tests/unit/adapters/test_predicted_vs_packed.py",
     "tests/unit/adapters/test_scan_offload.py",
 ]
 

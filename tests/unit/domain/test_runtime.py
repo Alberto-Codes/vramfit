@@ -7,15 +7,19 @@ import pytest
 
 from vramfit.domain.errors import VramfitError
 from vramfit.domain.runtime import (
+    CONVERT_DTYPE_BITS,
     EFFECTIVE_BITS,
     EXPERT_STACK_EFFECTIVE_BITS,
     RUNTIME_CAPABILITIES,
     UNQUANTIZABLE_CLASS_FILTERS,
     RuntimeCapabilityError,
+    convert_dtype_bits,
     effective_bits,
     expert_stack_effective_bits,
+    missing_unquantizable_module,
     rows_refuse_super_block,
     servable_precisions,
+    unquantizable_class,
     unquantizable_filter,
 )
 
@@ -218,3 +222,131 @@ class TestUnquantizableClassFilters:
         )
         with pytest.raises(TypeError):
             inner["mixer.norm"] = "x"
+
+
+@pytest.mark.unit
+class TestConvertDtypeBits:
+    """A refused class prices at what the packed file holds (#409)."""
+
+    @pytest.mark.parametrize(
+        "group",
+        ["model.layers.3.mixer.gate", "backbone.layers.9.mixer.conv1d"],
+        ids=["router", "conv1d"],
+    )
+    def test_an_unquantizable_class_prices_at_the_convert_dtype(
+        self, group: str
+    ) -> None:
+        # `convert_hf_to_gguf.py` writes both classes at float32
+        # whatever `--outtype` asks, and the quantizer never touches
+        # them, so the packed file stores four bytes per weight.
+        assert convert_dtype_bits(group, "llama.cpp") == 32.0
+
+    @pytest.mark.parametrize(
+        ("group", "runtime"),
+        [
+            ("model.layers.3.mixer.in_proj", "llama.cpp"),
+            ("model.layers.3.mixer.experts.up_proj", "llama.cpp"),
+            ("model.layers.3", "llama.cpp"),
+            ("model.embeddings", "llama.cpp"),
+            ("model.layers.3.mixer.gate", None),
+            ("model.layers.3.mixer.gate", "vllm"),
+        ],
+        ids=["dense-class", "stack", "layer", "no-layer", "no-runtime", "no-table"],
+    )
+    def test_everything_else_keeps_its_table(
+        self, group: str, runtime: str | None
+    ) -> None:
+        # No convert dtype applies, so the solver reads the group's
+        # effective-bits table, whose 16 row is the passthrough
+        # (ADR-0029 decision 4).
+        assert convert_dtype_bits(group, runtime) is None
+
+    def test_the_convert_dtype_table_names_every_unquantizable_class(self) -> None:
+        # A class one table names, the other names too: a refused
+        # class with no dtype row would price at 16.0 again.
+        for runtime, filters in UNQUANTIZABLE_CLASS_FILTERS.items():
+            assert set(CONVERT_DTYPE_BITS[runtime]) == set(filters)
+
+    def test_the_convert_dtype_table_is_read_only(self) -> None:
+        inner = cast("MutableMapping[str, float]", CONVERT_DTYPE_BITS["llama.cpp"])
+        with pytest.raises(TypeError):
+            inner["mixer.gate"] = 16.0
+
+
+@pytest.mark.unit
+class TestUnquantizableClass:
+    """The scan-side skip, keyed by class under any runtime (#204)."""
+
+    def test_every_30b_conv1d_cell_is_named(self) -> None:
+        # The 23 `mixer.conv1d.weight` parameters the scan discovered
+        # on the 30B target, shaped (6144, 1, 4). Each is 3-D, so the
+        # rank gate admits it, and the class rule is what skips it.
+        names = [f"model.layers.{n}.mixer.conv1d" for n in range(52) if n % 2 == 0][:23]
+        assert len(names) == 23
+        assert {unquantizable_class(name) for name in names} == {"mixer.conv1d"}
+
+    def test_the_router_is_named_too(self) -> None:
+        assert unquantizable_class("backbone.layers.1.mixer.gate") == "mixer.gate"
+
+    @pytest.mark.parametrize(
+        "group",
+        [
+            "model.layers.3.mixer.in_proj",
+            "model.layers.3.mixer.experts.up_proj",
+            "model.layers.3",
+            "model.embeddings",
+            "mixer.conv1d",
+        ],
+    )
+    def test_everything_else_is_kept(self, group: str) -> None:
+        assert unquantizable_class(group) is None
+
+
+@pytest.mark.unit
+class TestMissingUnquantizableModule:
+    """A map naming a refused class's module and not the class (#409)."""
+
+    def test_a_post_skip_hybrid_map_names_the_module(self) -> None:
+        # The 30B target scanned since #204: the Mamba mixer's
+        # in_proj and the MoE mixer's experts reach the map, and the
+        # conv1d and the router never do.
+        tensors = [
+            "model.layers.0.mixer.in_proj.weight",
+            "model.layers.1.mixer.experts.up_proj.weight",
+        ]
+
+        assert missing_unquantizable_module(tensors) == "mixer"
+
+    def test_a_layer_map_names_the_module_through_its_members(self) -> None:
+        tensors = [
+            "model.layers.0.mixer.in_proj.weight",
+            "model.layers.0.mixer.out_proj.weight",
+        ]
+
+        assert missing_unquantizable_module(tensors) == "mixer"
+
+    @pytest.mark.parametrize("carried", ["mixer.conv1d", "mixer.gate"])
+    def test_a_map_carrying_a_refused_class_prices_it_itself(
+        self, carried: str
+    ) -> None:
+        tensors = [
+            "model.layers.0.mixer.in_proj.weight",
+            f"model.layers.0.{carried}.weight",
+        ]
+
+        assert missing_unquantizable_module(tensors) is None
+
+    def test_a_llama_map_names_no_such_module(self) -> None:
+        tensors = [
+            "model.layers.0.self_attn.q_proj.weight",
+            "model.layers.0.mlp.up_proj.weight",
+            "model.embed_tokens.weight",
+        ]
+
+        assert missing_unquantizable_module(tensors) is None
+
+    def test_a_whole_layer_tensor_name_is_not_a_class(self) -> None:
+        assert missing_unquantizable_module(["model.layers.0.weight"]) is None
+
+    def test_an_empty_map_names_none(self) -> None:
+        assert missing_unquantizable_module([]) is None
