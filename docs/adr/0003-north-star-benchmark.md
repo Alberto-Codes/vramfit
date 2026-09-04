@@ -19,9 +19,13 @@
   fp8 by arithmetic, 22,201 MiB of buffers against 21,765 MiB free.
   The largest context that served is 10,240 tokens, at 21,674.82 MiB
   of device buffers. The 16k clause of this benchmark is unmet on the
-  reference box as configured. The evidence page's twentieth data
-  point records the ladder, and whether a headless card serves 16k
-  stays an open question there.
+  reference box as configured. The same day a headless RTX 4090
+  served the pack at 16,384 context. That card was a rented RunPod
+  4090 with 1 MiB resident, on the same llama.cpp release built with
+  CUDA. Device buffers took 22,307.58 MiB, and nvidia-smi peaked at
+  22,762 MiB. The 16k clause is met on a headless card. The evidence
+  page's twentieth data point records the reference-box ladder and
+  the headless serve as its addendum.
 
 ## Context
 

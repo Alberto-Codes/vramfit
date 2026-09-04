@@ -118,8 +118,10 @@ status: stable
 > that served is 10,240 tokens at q8_0 KV, llama.cpp's nearest
 > substitute for the card's fp8, device buffers 21,674.82 MiB
 > ([the twentieth data point](#the-twentieth-data-point-the-published-pack-stops-at-10k-context-on-the-reference-box)).
-> The page stays `stable`, and the record carries one open
-> question: a headless card.
+> The same day a headless RunPod RTX 4090 served the pack at 16,384
+> context, device buffers 22,307.58 MiB, nvidia-smi peak 22,762 MiB
+> ([the addendum](#addendum-2026-09-04-the-headless-card-serves-16k)).
+> The page stays `stable`.
 
 Scanning and planning happen inside vramfit's own frame: damage,
 measured per cell, on our calibration set. The moment a packed model
@@ -2156,6 +2158,56 @@ launcher, and each rung carries its full server console log, a
 samples, a peak file, and the request and response JSON. `RUN-SHEET.md`
 tabulates the rungs, and `SHA256SUMS` hashes every file.
 
+### Addendum, 2026-09-04: the headless card serves 16k
+
+The open question above closed the same day. A rented RunPod RTX 4090
+with no desktop on the card served the published pack at 16,384
+context. The method is the reference-box run with two differences.
+The binary is the same llama.cpp release, b10326 (3653e6d6d), built
+on the pod with CUDA instead of the Vulkan build the reference box
+used. The device flag went away, because the CUDA build sees one
+device. Everything else matched: `-ngl 99 -c 16384 -np 1 -ctk q8_0
+-ctv q8_0`, no ballast cap, the pack's SHA-256 checked against the
+card ledger before launch. The card's "What fit24gib means" section
+states an fp8 KV cache. llama.cpp has no fp8 cache type, and q8_0, at
+8.5 bits per element, is the nearest available substitute. That
+substitution is this run's choice, not the card's.
+
+| n_ctx | outcome | CUDA0 model | KV, q8_0 | CUDA0 compute | device buffers | nvidia-smi peak |
+|---|---|---|---|---|---|---|
+| **16,384** | **served, answered** | 20,409.49 MiB | 1,666.00 MiB | 232.09 MiB | **22,307.58 MiB** | 22,762 MiB |
+
+The card held 1 MiB before load, and llama.cpp's device query read
+23,685 MiB free of 24,080 MiB. The run offloaded 81 of 81 layers,
+host-mapped the 430.55 MiB token embedding, reported healthy 6 s
+after launch, and answered the same 32-token request from a single
+slot. 16k served on the first rung, so the ladder never stepped
+down. The 16,384-cell q8_0 cache measured 1,666.00 MiB, the figure
+the reference-box entry projected from its five allocating rungs.
+
+**The desktop was the difference.** The reference box could not fit
+22,300 MiB of buffers in its 21,765 MiB free. The bare card fit
+22,307.58 MiB in 23,685 MiB with about 1,377 MiB to spare by the
+device query, and nvidia-smi peaked at 22,762 MiB of 24,564 MiB. Two
+frame differences travel with the number and this entry does not
+separate them: the backend changed from Vulkan to CUDA, and the
+driver changed from 610.57.04 to 580.126.20. The weights buffer
+differs by 0.01 MiB across the two backends, and the compute buffer
+by 8 MiB. Neither difference moves the boundary.
+
+So the acceptance clause reads two ways, and both are measured. The
+published pack serves at 16k context on a headless 24 GiB RTX 4090.
+On the reference box as configured, with the desktop's 2,341 MiB
+resident, it serves at 10,240 and stops there.
+
+The pod ran 14 min at $0.74 per hour, about $0.17. Receipts sit in
+the box's run archive under
+`nemotron-49b-v1_5/serve-16k-headless-2026-09-04/`, in the same
+shape as the reference-box archive: `serve-16k.cmd`, the full server
+console log, `buffers-ctx16384.txt`, nvidia-smi samples, a peak file,
+the request and response JSON, the pod's `setup.sh` with its download
+and build logs, `RUN-SHEET.md`, and `SHA256SUMS`.
+
 ## Provenance is not evidence
 
 Hashes answer a different question and must not be confused with
@@ -2471,10 +2523,15 @@ either. Numbers without framing invite the hostile reading.
   lands at roughly half the chord and the inverted arm lands 1.41
   times above it, so a gate price bounds a mixed recipe without
   predicting it.
-- Whether the published 49B pack serves at 16k context on a headless
+- ~~Whether the published 49B pack serves at 16k context on a headless
   RTX 4090 (added 2026-09-04,
   [the twentieth data point](#the-twentieth-data-point-the-published-pack-stops-at-10k-context-on-the-reference-box)).
   The reference box runs a desktop that held 2,341 MiB of the card,
   and the pack stopped at 10,240 tokens there. Arithmetic says about
   22,300 MiB of buffers against a card that reports 24,564 MiB, and
-  arithmetic is not a serve record.
+  arithmetic is not a serve record.~~ **Measured (2026-09-04, issue
+  #501): yes.** A rented RunPod RTX 4090 with 1 MiB resident served
+  the pack at 16,384 context on the same llama.cpp release, built
+  with CUDA: 22,307.58 MiB of device buffers, nvidia-smi peak
+  22,762 MiB, one 32-token request answered
+  ([the addendum](#addendum-2026-09-04-the-headless-card-serves-16k)).

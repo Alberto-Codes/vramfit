@@ -106,8 +106,12 @@ holds 2,341 MiB of the card. llama.cpp has no fp8 cache type, and
 q8_0 is its nearest substitute. llama.cpp b10326 put all 81 layers on
 the device (20,409.48 MiB) and then failed to allocate the KV cache.
 The largest context that served is 10,240 tokens, at 21,674.82 MiB of
-device buffers. The evidence page's twentieth data point records the
-ladder.
+device buffers. The same day a headless RTX 4090 served the pack at
+16,384 context. That card was a rented RunPod 4090 with 1 MiB
+resident, on the same llama.cpp release built with CUDA. Device
+buffers took 22,307.58 MiB, and nvidia-smi peaked at 22,762 MiB. The
+evidence page's twentieth data point records the ladder and the
+headless serve.
 
 ## The recipe
 
