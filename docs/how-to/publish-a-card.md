@@ -6,7 +6,8 @@ status: draft
 
 > **Status: draft** — `scripts/publish_card.py` uploads through
 > `huggingface_hub` and verifies the bytes. Its tests run the upload
-> against a fake Hub client. No card has shipped through it yet.
+> against a fake Hub client. The Gemma 4 31B maps dataset shipped
+> through it on 2026-09-04.
 
 ## Goal
 
@@ -58,7 +59,7 @@ dataset card as `README.md`. Follow the layout of
 uploads every top-level file in the directory, files first and the
 card last (the #85 pattern), and byte-matches each one. The script
 never creates a repo: before the first run, create the dataset repo
-on the Hub with `hf repo create <owner>/<name> --type dataset`.
+on the Hub with `hf repo create <owner>/<name> --repo-type dataset`.
 
 ```bash
 uv run --with huggingface_hub python scripts/publish_card.py \
@@ -104,5 +105,7 @@ the source.
 
 - Issues #492 and #497 track the 2026-09-04 card wording changes that
   wait on a re-upload.
-- Issue #449 decides whether the Gemma 4 31B map and importance matrix
-  publish.
+- Issue #449 ruled on 2026-09-04 that the Gemma 4 31B map and
+  importance matrix publish as
+  `Alberto-Codes/gemma-4-31B-it-sensitivity-maps`. That dataset was
+  the script's first live run.

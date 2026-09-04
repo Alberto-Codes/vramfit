@@ -128,7 +128,7 @@ and this source must match.
 | `analysis/vision-campaign-kv9.json` | `2b705017870668ba248eea36ecb837c91d88ba0e78299ba7af9a7ce2ee709b4d` | 55,286 |
 | `analysis/psai-gui-kv9.json` | `8f25d7e3add46dab0cd95db161323d07c0c0cc5e216018a7778857b72cf96363` | 2,850,490 |
 | `LICENSE` | `cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30` | 11,358 |
-| `README.md` | recorded at ship | — |
+| `README.md` | Uploaded verbatim at ship. On 2026-09-04 the source changed: the #449 publication PR linked the maps dataset repo from the importance-matrix and reproduce sections. The published copy lags until `scripts/publish_card.py` re-uploads it. Record the printed SHA-256 here after the byte-match. | — |
 
 The staged decoder is the ruled kv9 pack (#423 stop-rule verdict,
 2026-08-28) byte-for-byte — the staged copy's `sha256sum` matches
@@ -138,16 +138,43 @@ in the run log. Both weight hashes were computed directly on
 2026-08-29 (#446 checks comment). The maintainer ruled on #446 to
 publish the ruled bytes rather than re-pack for the event.
 
-**The importance matrix is not carried.** The in-frame matrix
-(`gemma-4-31b-bf16-framed.imatrix.gguf`, 13,753,984 B) stays in the
-run archive, following the publication-#2 precedent of not carrying
-matrices in the model repo. The card describes its coverage from
-its own entry names.
+**The model repo does not carry the importance matrix.** The
+in-frame matrix (`gemma-4-31b-bf16-framed.imatrix.gguf`,
+13,753,984 B) follows the publication-#2 precedent of not carrying
+matrices in the model repo. It publishes in the maps dataset repo
+below (#449 ruling, 2026-09-04). The card describes its coverage
+from its own entry names.
 
 The `recipe.json` is `gemma-4-31b-24gib-kv9-decoder.recipe.json`
 byte-for-byte. Its paths record the reference box run root. The run
 log is `gemma-4-31b-24gib-kv9-decoder.runlog.jsonl` byte-for-byte,
 renamed at staging.
+
+## The maps dataset repo (#449, 2026-09-04)
+
+The maintainer ruled on 2026-09-04 (#449) that the sensitivity map
+and the importance matrix publish as a maps dataset repo, the #85
+pattern. Repo:
+[Alberto-Codes/gemma-4-31B-it-sensitivity-maps](https://huggingface.co/datasets/Alberto-Codes/gemma-4-31B-it-sensitivity-maps).
+The card source is
+[`publication/gemma-4-31b-sensitivity-maps/README.md`](../gemma-4-31b-sensitivity-maps/README.md),
+and its hashes table is the dataset's own ledger. Every file staged
+from the run root and uploaded under the name below on 2026-09-04
+through `scripts/publish_card.py`, which byte-matched each one.
+
+| File | Local source | SHA-256 | Bytes |
+|---|---|---|---|
+| `sensitivity-32k-kquant-imx.json` | `gemma-4-31b-sensitivity.json` (rename) | `553e13ab9e3f1b34291beed8acf53c14e04df20e2383921e4b4ae6cad4d931d7` | 77,297 |
+| `sensitivity-32k-kquant-imx.runlog.jsonl` | `gemma-4-31b-sensitivity.runlog.jsonl` (rename) | `7461f0cdbaa72b003f8b4017ced61db85b3070ef1d6aa1dc611c43dd6ca23e22` | 80,129 |
+| `gemma-4-31b-bf16-framed.imatrix.gguf` | same name | `4a168bd7309f787d89f237ff84520980a4b9995975a31c758fd69e8e9d275c3d` | 13,753,984 |
+| `calibration.txt` | same name | `74f2665d6e6925fc2c17dec644bec9e87df478a0f1836822125e8acbb3777806` | 772,386 |
+| `calibration-framed.txt` | same name | `98ab7220cdda1c1c6cd57ccf072daa2a1d0a5890ad82f25e982d5bbc8234c55d` | 791,386 |
+| `README.md` | the dataset card source, uploaded last | `12cb24a6c60909be2b5f481285997d7bd27c9ac0e9289c086b6a376d9b811b5c` | 7,633 |
+
+The map's byte count and its `scan` block match the run archive
+copy. The matrix's byte count matches the figure this ledger
+already recorded. `calibration.txt` matches the earlier two map
+datasets' file by hash.
 
 ## Provenance pins
 
