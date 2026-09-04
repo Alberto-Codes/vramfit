@@ -324,12 +324,12 @@ def pack(
     5). A matrix the reader cannot vouch for halts before the
     quantizer runs, and the report lands in the result only beside
     its matrix path. The read needs gguf-py, which the gguf extra
-    provisions without torch (#310). A recipe priced on an assisted map records
-    its imatrix — the command warns when ``--imatrix`` is absent or
-    names a different file, because the pack would not match the
-    map's frame (ADR-0020). A recipe with imatrix exclusions packs
-    the marked tensors on the unweighted fit, and the command warns
-    when no matrix makes the exclusions inert (ADR-0023). An
+    provisions without torch (#310). A recipe priced on an assisted
+    map records its imatrix — the command warns when ``--imatrix``
+    is absent or names a different file, because the pack would not
+    match the map's frame (ADR-0020). A recipe with imatrix exclusions
+    packs the marked tensors on the unweighted fit, and the command
+    warns when no matrix makes the exclusions inert (ADR-0023). An
     expert-stack group maps through its own type table (ADR-0028):
     8 to Q8_0, 4 to Q4_0, 2 to Q2_0. Nominal 3 refuses there — no
     GGUF type lands between 2.25 and 4.25 bits per weight on the

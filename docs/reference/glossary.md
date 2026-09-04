@@ -852,7 +852,7 @@ change.
 
 **Optional root**
 :   A top-level import name a base install cannot resolve, because an
-    extra or a dependency group provides it
+    extra provides it
     ([ADR-0005](../adr/0005-heavy-deps-as-extras.md)). Six today: gguf,
     numpy, safetensors, tokenizers, torch, transformers. Not "heavy
     dep" or "optional import" — the term names the import root, never
