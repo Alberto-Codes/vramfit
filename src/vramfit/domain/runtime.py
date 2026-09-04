@@ -68,7 +68,7 @@ See Also:
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from types import MappingProxyType
 from typing import Final
 
@@ -294,6 +294,61 @@ def unquantizable_class(group: str) -> str | None:
     for table in UNQUANTIZABLE_CLASS_FILTERS.values():
         if suffix in table:
             return suffix
+    return None
+
+
+def missing_unquantizable_module(tensors: Iterable[str]) -> str | None:
+    """Name the module whose refused class the map does not carry.
+
+    The scan skips a class the quantizer refuses (#204), so a map
+    scanned since then names the class's module through its siblings
+    and never the class itself. Only a size source prices that class,
+    so a plan without one drops its bytes (#409). A map that carries
+    the class predates the skip and prices it itself.
+
+    Args:
+        tensors: Every tensor name the map's groups carry.
+
+    Returns:
+        The module, e.g. ``mixer``, when the map names a tensor under
+        it and none of the module's refused classes. None otherwise.
+
+    Examples:
+        ```python
+        from vramfit.domain.runtime import missing_unquantizable_module
+
+        assert (
+            missing_unquantizable_module(["model.layers.0.mixer.in_proj.weight"])
+            == "mixer"
+        )
+        assert (
+            missing_unquantizable_module(
+                [
+                    "model.layers.0.mixer.in_proj.weight",
+                    "model.layers.0.mixer.conv1d.weight",
+                ]
+            )
+            is None
+        )
+        ```
+    """
+    refused: dict[str, set[str]] = {}
+    for table in UNQUANTIZABLE_CLASS_FILTERS.values():
+        for suffix in table:
+            refused.setdefault(suffix.rpartition(".")[0], set()).add(suffix)
+    named: set[str] = set()
+    carried: set[str] = set()
+    for tensor in tensors:
+        match = _CLASS_SUFFIX.match(tensor.removesuffix(".weight"))
+        if match is None:
+            continue
+        suffix = match.group(1)
+        named.add(suffix.partition(".")[0])
+        if unquantizable_class(match.string) is not None:
+            carried.add(suffix)
+    for module, classes in sorted(refused.items()):
+        if module in named and not classes & carried:
+            return module
     return None
 
 

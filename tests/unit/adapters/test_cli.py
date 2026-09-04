@@ -10,7 +10,11 @@ from tests.unit.conftest import make_map
 from vramfit import __version__
 from vramfit.adapters.inbound.cli import app
 from vramfit.adapters.outbound.recipe_json import load_recipe
-from vramfit.domain.solver import DEFAULT_FORMAT_OVERHEAD, DEFAULT_RESIDUAL_OVERHEAD
+from vramfit.domain.solver import (
+    DEFAULT_FORMAT_OVERHEAD,
+    DEFAULT_RESIDUAL_OVERHEAD,
+    group_bytes,
+)
 
 runner = CliRunner()
 
@@ -1015,8 +1019,9 @@ class TestPlanProtect:
 class TestPlanCheckpointOption:
     """``plan --checkpoint`` reads the size source ADR-0029 rules."""
 
-    def _write_map(self, tmp_path, groups=None):
+    def _write_map(self, tmp_path, groups=None, group_by="layer"):
         raw = make_map(groups or [("model.layers.0", 160_000, CURVE)])
+        raw["scan"]["group_by"] = group_by
         path = tmp_path / "sensitivity.json"
         path.write_text(json.dumps(raw))
         return path
@@ -1186,6 +1191,47 @@ class TestPlanCheckpointOption:
 
         assert result.exit_code == 0, result.output
         assert len(load_recipe(out).assignments) == 2
+
+    def test_a_hybrid_map_without_the_option_exits_one_naming_it(
+        self, tmp_path
+    ) -> None:
+        # The scan skipped the conv1d and the router (#204), so only
+        # a size source prices them. The map defining the model would
+        # drop their F32 bytes from the prediction (#409).
+        map_path = self._write_map(
+            tmp_path, [("model.layers.0.mixer.in_proj", 160_000, CURVE)], "tensor"
+        )
+        out = tmp_path / "recipe.json"
+
+        result = self._plan(map_path, out)
+
+        assert result.exit_code == 1
+        assert "Plan with --checkpoint" in result.stderr
+        assert not out.exists()
+
+    def test_a_hybrid_map_with_the_option_prices_the_skipped_class(
+        self, tmp_path
+    ) -> None:
+        map_path = self._write_map(
+            tmp_path, [("model.layers.0.mixer.in_proj", 160_000, CURVE)], "tensor"
+        )
+        model_dir = self._write_checkpoint(
+            tmp_path,
+            {
+                "model.layers.0.mixer.in_proj.weight": 160_000,
+                "model.layers.0.mixer.conv1d.weight": 8_000,
+            },
+        )
+        out = tmp_path / "recipe.json"
+
+        result = self._plan(map_path, out, "--checkpoint", str(model_dir))
+
+        assert result.exit_code == 0, result.output
+        held = next(
+            a for a in load_recipe(out).assignments if a.group.endswith("conv1d")
+        )
+        assert held.bits == 16
+        assert held.bytes == group_bytes(8_000, 32.0, DEFAULT_RESIDUAL_OVERHEAD)
 
     def test_a_runtime_without_reference_precision_exits_one(self, tmp_path) -> None:
         map_path = self._write_map(tmp_path)

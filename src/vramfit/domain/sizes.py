@@ -60,13 +60,15 @@ Examples:
     }
     ```
 
-`held_assignments` turns the uncovered set into the recipe rows
-decision 3 requires. It lives here rather than in the solver, because
-it states what the size source implies and not how the budget is
-spent. The solver adds its bytes to the total and never ranks a
-downgrade for one. The solver's predictor prices each: an uncovered
-expert stack through the ADR-0028 table, a layer-class group whose
-rows refuse the 256 super-block the same way (the 2026-08-20
+`held_assignments` turns the uncovered set into the recipe rows decision
+3 requires. It lives here rather than in the solver, because it states
+what the size source implies and not how the budget is spent. It also
+refuses a plan with no size source on a map whose family holds a class
+the scan skips, because nothing else prices that class (the 2026-09-04
+decision 3 amendment). The solver adds its bytes to the total and never
+ranks a downgrade for one. The solver's predictor prices each: an
+uncovered expert stack through the ADR-0028 table, a layer-class group
+whose rows refuse the 256 super-block the same way (the 2026-08-20
 amendment), and an unquantizable class at the convert dtype (#409).
 
 See Also:
@@ -87,6 +89,7 @@ from vramfit.domain.model import Assignment, SensitivityMap
 from vramfit.domain.runtime import (
     RUNTIME_CAPABILITIES,
     RuntimeCapabilityError,
+    missing_unquantizable_module,
     unquantizable_class,
 )
 from vramfit.domain.scan import group_key, matches_a_layer
@@ -127,8 +130,10 @@ class SizeSourceError(VramfitError, ValueError):
 
     Raised for a dtype outside `DTYPE_ELEMENT_BYTES`, a stored size
     that is not a whole number of elements, and a layer-bearing
-    tensor name rooted outside `CHECKPOINT_ROOTS`. Under the
-    `VramfitError` root (ADR-0011) with a message the CLI prints
+    tensor name rooted outside `CHECKPOINT_ROOTS`. Also raised for a
+    plan with no size source on a map whose family holds a class the
+    scan skips (#204, #409): nothing else prices that class. Under
+    the `VramfitError` root (ADR-0011) with a message the CLI prints
     verbatim. The safetensors adapter raises it for file-level
     refusals too, so one catch covers the whole source.
 
@@ -361,6 +366,42 @@ def uncovered_groups(
     )
 
 
+def _reference_refusal(
+    runtime: str, capability: frozenset[int], held: list[str]
+) -> RuntimeCapabilityError:
+    """Word the refusal of a runtime that serves no reference precision.
+
+    A group of a class the quantizer refuses gets its own wording:
+    the scan skips it (#204), so no scan supplies a width, and the
+    runtime has none until a pack path for it exists (#409).
+
+    Args:
+        runtime: The target runtime.
+        capability: The precisions it serves.
+        held: The uncovered groups holding at reference precision.
+
+    Returns:
+        The error, message built.
+    """
+    refused = [name for name in held if unquantizable_class(name) is not None]
+    if refused:
+        classes = sorted({unquantizable_class(name) or "" for name in refused})
+        return RuntimeCapabilityError(
+            f'runtime "{runtime}" cannot serve reference precision '
+            f"{REFERENCE_BITS}, so it cannot hold the {len(refused)} groups of "
+            f"a class the quantizer refuses ({', '.join(classes)}). Those "
+            f'classes have no "{runtime}" width until a "{runtime}" pack path '
+            f"exists (ADR-0013). It serves {sorted(capability, reverse=True)}"
+        )
+    return RuntimeCapabilityError(
+        f'runtime "{runtime}" cannot serve reference precision '
+        f"{REFERENCE_BITS}, so it cannot hold the {len(held)} "
+        f"groups the map does not measure (ADR-0029). It serves "
+        f"{sorted(capability, reverse=True)}. Plan without a size "
+        f"source, or scan those groups"
+    )
+
+
 def held_assignments(
     discovered_bytes: Mapping[str, int] | None,
     sensitivity_map: SensitivityMap,
@@ -398,15 +439,31 @@ def held_assignments(
         no size source was given, or the map covers every group.
 
     Raises:
+        SizeSourceError: If no size source was given and the map
+            names the module of a class the scan skips without the
+            class itself (#204, #409). Only a size source prices
+            that class, so the plan would drop its bytes.
         RuntimeCapabilityError: If a group holds at reference
             precision and the target runtime cannot serve it. The
             recipe would record an assignment `recipe_json` refuses
             to read back. A pinned group does not trigger this — the
             solver validated its width against the runtime.
     """
+    if discovered_bytes is None:
+        module = missing_unquantizable_module(
+            tensor for group in sensitivity_map.groups for tensor in group.tensors
+        )
+        if module is not None:
+            raise SizeSourceError(
+                f'the map names the "{module}" module and no tensor of a class '
+                f"the quantizer refuses. The scan skips that class (#204), so "
+                f"only a size source prices it. Plan with --checkpoint "
+                f"(ADR-0029 decision 3)"
+            )
+        return ()
     pins = dict(pins or {})
     uncovered = uncovered_groups(
-        discovered_bytes or {}, [g.name for g in sensitivity_map.groups]
+        discovered_bytes, [g.name for g in sensitivity_map.groups]
     )
     held_at_reference = [name for name, _ in uncovered if name not in pins]
     if held_at_reference and runtime is not None:
@@ -414,14 +471,7 @@ def held_assignments(
         # set, and reference precision was never scanned.
         capability = RUNTIME_CAPABILITIES.get(runtime, frozenset())
         if REFERENCE_BITS not in capability:
-            raise RuntimeCapabilityError(
-                f'runtime "{runtime}" cannot serve reference precision '
-                f"{REFERENCE_BITS}, so it cannot hold the "
-                f"{len(held_at_reference)} "
-                f"groups the map does not measure (ADR-0029). It serves "
-                f"{sorted(capability, reverse=True)}. Plan without a size "
-                f"source, or scan those groups"
-            )
+            raise _reference_refusal(runtime, capability, held_at_reference)
     return tuple(
         Assignment(
             group=name,

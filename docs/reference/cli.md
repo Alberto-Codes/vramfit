@@ -228,7 +228,12 @@ an unquantizable class — the router's `mixer.gate`, the Mamba
 recipe that assigns it a lower width. `plan` prices such a group at
 the 32 bits the converter wrote it at, not at `F16`'s 16 (#409), and
 `scan` never discovers one (#204). The checkpoint keys such a tensor
-by its own name under every `--group-by`, so it holds uncovered.
+by its own name under every `--group-by`, so it holds uncovered. A
+map of such a family requires `--checkpoint`: `plan` without it
+refuses, because the scan skipped the class and nothing else prices
+it (ADR-0029 decision 3, amended 2026-09-04). `--runtime vllm`
+refuses the map too. The class has no vLLM width until a vLLM pack
+path exists.
 
 Pin semantics: patterns are case-sensitive `fnmatch` globs matched
 against the full group name (`--pin "model.layers.0.*=8"`). With

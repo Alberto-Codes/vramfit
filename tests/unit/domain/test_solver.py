@@ -13,7 +13,11 @@ from vramfit.domain.runtime import (
     RuntimeCapabilityError,
     expert_stack_effective_bits,
 )
-from vramfit.domain.sizes import TensorSize, discovered_group_bytes
+from vramfit.domain.sizes import (
+    SizeSourceError,
+    TensorSize,
+    discovered_group_bytes,
+)
 from vramfit.domain.solver import (
     DEFAULT_FORMAT_OVERHEAD,
     DEFAULT_RESIDUAL_OVERHEAD,
@@ -1067,7 +1071,12 @@ class TestUnquantizableClasses:
             )
         )
 
-        recipe = solve_simple(map_, 30_000, runtime="llama.cpp")
+        recipe = solve_simple(
+            map_,
+            30_000,
+            runtime="llama.cpp",
+            discovered_bytes={"model.layers.0.mixer.in_proj": 160_000},
+        )
 
         assignment = recipe.assignments[0]
         assert assignment.bits == 2
@@ -1217,3 +1226,83 @@ class TestPassthroughPricing:
         assert caught.value.held_count == 0
         assert "Scan them" not in str(caught.value)
         assert "No scan or pin can spend it" in str(caught.value)
+
+    def test_a_hybrid_map_without_a_size_source_refuses_naming_the_flag(
+        self,
+    ) -> None:
+        # The scan skips the conv1d and the router (#204), so the map
+        # carries no bytes for them. Without a size source the plan
+        # would drop the 46 F32 groups from the prediction (#409).
+        map_ = load(make_map([("model.layers.0.mixer.in_proj", 1600, CONVEX_CURVE)]))
+
+        with pytest.raises(SizeSourceError, match="--checkpoint") as caught:
+            solve_simple(map_, 10**6, runtime="llama.cpp")
+
+        assert '"mixer" module' in str(caught.value)
+
+    def test_a_hybrid_map_refuses_without_a_size_source_under_no_runtime(
+        self,
+    ) -> None:
+        map_ = load(make_map([("model.layers.0.mixer.in_proj", 1600, CONVEX_CURVE)]))
+
+        with pytest.raises(SizeSourceError, match="--checkpoint"):
+            solve_simple(map_, 10**6)
+
+    def test_a_map_carrying_the_refused_class_plans_without_a_source(self) -> None:
+        # A map scanned before the skip measured the class itself, so
+        # the hold prices it and no bytes leave the plan.
+        map_ = load(
+            make_map(
+                [
+                    ("model.layers.0.mixer.in_proj", 1600, CONVEX_CURVE),
+                    ("model.layers.0.mixer.conv1d", 800, CONVEX_CURVE),
+                ]
+            )
+        )
+
+        recipe = solve_simple(map_, 10**6, runtime="llama.cpp", format_overhead=0.0)
+
+        held = next(a for a in recipe.assignments if a.group.endswith("conv1d"))
+        assert held.bits == 16
+        assert held.bytes == 1600
+
+    def test_a_runtime_without_reference_precision_refuses_the_class_plainly(
+        self,
+    ) -> None:
+        # vLLM serves no reference precision. The old advice said to
+        # scan the held groups, and the scan skips this class by
+        # design (#204). The refusal names the class and gives no
+        # advice a user cannot follow.
+        map_ = load(make_map([("model.layers.0", 1600, CONVEX_CURVE)]))
+
+        with pytest.raises(RuntimeCapabilityError) as caught:
+            solve_simple(
+                map_,
+                10**6,
+                runtime="vllm",
+                discovered_bytes={
+                    "model.layers.0": 1600,
+                    "model.layers.0.mixer.conv1d": 800,
+                    "model.layers.1.mixer.gate": 400,
+                },
+            )
+
+        message = str(caught.value)
+        assert "cannot serve reference precision 16" in message
+        assert "2 groups of a class the quantizer refuses" in message
+        assert "(mixer.conv1d, mixer.gate)" in message
+        assert 'no "vllm" width until a "vllm" pack path exists' in message
+        assert "scan" not in message
+
+    def test_a_runtime_without_reference_precision_keeps_the_scan_advice_otherwise(
+        self,
+    ) -> None:
+        map_ = load(make_map([("model.layers.0", 1600, CONVEX_CURVE)]))
+
+        with pytest.raises(RuntimeCapabilityError, match="scan those groups"):
+            solve_simple(
+                map_,
+                10**6,
+                runtime="vllm",
+                discovered_bytes={"model.layers.0": 1600, "model.layers.1": 800},
+            )

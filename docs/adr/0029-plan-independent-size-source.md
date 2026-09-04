@@ -187,6 +187,18 @@ A **base GGUF** exists only after a pack, and `plan` runs before packing.
    reproduces the #337 failure with the sign reversed. `plan` therefore
    emits an assignment for every group it prices.
 
+   **Amendment (2026-09-04, issue #409):** a target whose family holds
+   a class the quantizer refuses requires a size source. The scan
+   skips that class at discovery (#204), so the map carries no bytes
+   for it, and only the size source prices it. `plan` without
+   `--checkpoint` refuses on such a map and names the flag. The
+   refusal keys on the map naming the class's module (`mixer`) and
+   none of the module's refused classes. A map that carries the class
+   predates the skip and prices it itself. A runtime that serves no
+   reference precision refuses the held class too. The class has no
+   width on that runtime until a pack path for it exists, and no scan
+   supplies one.
+
 4. **The recipe gains an F16 passthrough precision.**
    `EFFECTIVE_BITS[llama.cpp]` carried 8, 6, 5, 4, 3, and 2 before
    this build (`src/vramfit/domain/runtime.py`). No row expressed an

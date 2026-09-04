@@ -16,6 +16,7 @@ from vramfit.domain.runtime import (
     RuntimeCapabilityError,
     effective_bits,
     expert_stack_effective_bits,
+    missing_unquantizable_module,
     passthrough_bits,
     rows_refuse_super_block,
     servable_precisions,
@@ -295,3 +296,53 @@ class TestUnquantizableClass:
     )
     def test_everything_else_is_kept(self, group: str) -> None:
         assert unquantizable_class(group) is None
+
+
+@pytest.mark.unit
+class TestMissingUnquantizableModule:
+    """A map naming a refused class's module and not the class (#409)."""
+
+    def test_a_post_skip_hybrid_map_names_the_module(self) -> None:
+        # The 30B target scanned since #204: the Mamba mixer's
+        # in_proj and the MoE mixer's experts reach the map, and the
+        # conv1d and the router never do.
+        tensors = [
+            "model.layers.0.mixer.in_proj.weight",
+            "model.layers.1.mixer.experts.up_proj.weight",
+        ]
+
+        assert missing_unquantizable_module(tensors) == "mixer"
+
+    def test_a_layer_map_names_the_module_through_its_members(self) -> None:
+        tensors = [
+            "model.layers.0.mixer.in_proj.weight",
+            "model.layers.0.mixer.out_proj.weight",
+        ]
+
+        assert missing_unquantizable_module(tensors) == "mixer"
+
+    @pytest.mark.parametrize("carried", ["mixer.conv1d", "mixer.gate"])
+    def test_a_map_carrying_a_refused_class_prices_it_itself(
+        self, carried: str
+    ) -> None:
+        tensors = [
+            "model.layers.0.mixer.in_proj.weight",
+            f"model.layers.0.{carried}.weight",
+        ]
+
+        assert missing_unquantizable_module(tensors) is None
+
+    def test_a_llama_map_names_no_such_module(self) -> None:
+        tensors = [
+            "model.layers.0.self_attn.q_proj.weight",
+            "model.layers.0.mlp.up_proj.weight",
+            "model.embed_tokens.weight",
+        ]
+
+        assert missing_unquantizable_module(tensors) is None
+
+    def test_a_whole_layer_tensor_name_is_not_a_class(self) -> None:
+        assert missing_unquantizable_module(["model.layers.0.weight"]) is None
+
+    def test_an_empty_map_names_none(self) -> None:
+        assert missing_unquantizable_module([]) is None
