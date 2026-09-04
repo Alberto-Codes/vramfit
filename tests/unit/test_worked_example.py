@@ -1,14 +1,16 @@
-"""Worked examples: real configs reproduce the documented budgets.
+"""Worked examples: real configs and doc examples reproduce the docs.
 
 Checks the stable numbers in ``docs/explanation/vram-budget.md``, the
 arithmetic in ADR-0010, and the #423 gate's measured KV figures
 (corrected by #431) against committed real configs
 (``tests/data/nemotron-super-49b-v1_5``, and ``tests/data/gemma-4-31b``
-— the ``google/gemma-4-31B`` file, fetched verbatim 2026-08-26). If
-these fail, either the budget math regressed or a docs page lies.
+— the ``google/gemma-4-31B`` file, fetched verbatim 2026-08-26). Also
+loads the JSON example on ``docs/reference/sensitivity-map.md``
+through the real map loader and plans against it (#255). If these
+fail, either the code regressed or a docs page lies.
 
-Runs in the hermetic unit tier: the configs are committed in-repo, so no
-external resource is involved.
+Runs in the hermetic unit tier: the configs and the docs page are
+committed in-repo, so no external resource is involved.
 """
 
 from __future__ import annotations
