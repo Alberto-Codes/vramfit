@@ -6,6 +6,11 @@
   external contract stays under `unit`. Maintainer ruling 2026-09-04.
   The `contract` marker keeps its one meaning: a verified fake over a
   port. The decision text below records the placement.
+- **Note (2026-09-04, issues #470 and #364):** pre-push gains two
+  steps. One runs the `integration` tier and skips without the scan
+  extra. One measures `scripts/` at its own coverage floor.
+  Maintainer rulings 2026-09-04. The hook-stage text below records
+  both.
 
 ## Context
 
@@ -50,7 +55,14 @@ its tier):
 `-m` deselection in `addopts`; a CLI `-m` overrides it.
 
 **Hook stages:** pre-commit runs the fast suite; **pre-push** runs the
-thorough profile plus e2e plus the 90% coverage gate. Install both:
+thorough profile plus e2e plus the 90% coverage gate. Pre-push then
+runs two more steps. A second coverage run measures `scripts/` at a
+48% floor, set below the 50% measured on 2026-09-04 (#364). The last
+step runs the `integration` tier without `gpu`. Its modules skip with
+the reason "scan extra not installed" where torch is absent, so the
+step costs nothing there and about 7 seconds where the extra is
+installed (#470). CI mirrors the scripts run and not the integration
+step, because CI installs no torch (ADR-0005). Install both hooks:
 `pre-commit install --hook-type pre-commit --hook-type pre-push`.
 
 **Fakes over mocks** at port boundaries — if a port is hard to fake, the

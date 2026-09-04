@@ -290,6 +290,8 @@ source = ["vramfit"]
 # and its own tests carry the integration/slow markers (CPU is enough).
 omit = ["*/adapters/outbound/scan/*"]
 
+# The gate over `scripts/` is a second run with its own floor. The
+# hook and CI pass `--cov=scripts --cov-fail-under=48` (#364).
 [tool.coverage.report]
 fail_under = 90
 show_missing = true

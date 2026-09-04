@@ -117,6 +117,15 @@ jobs:
         env:
           UV_PYTHON: ${{ matrix.python-version }}
           HYPOTHESIS_PROFILE: thorough
+      # Second coverage run over scripts/ at its own floor (#364).
+      # Mirrors the pre-push hook. The floor sits below the 50 %
+      # measured on 2026-09-04.
+      - run: >-
+          uv run pytest -m "not gpu and not integration"
+          --cov=scripts --cov-fail-under=48 --cov-report=term-missing
+          --tb=short
+        env:
+          UV_PYTHON: ${{ matrix.python-version }}
       - run: uv cache prune --ci
         if: always()
         continue-on-error: true
