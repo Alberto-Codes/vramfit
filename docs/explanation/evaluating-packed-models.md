@@ -111,6 +111,15 @@ status: stable
 > serve-untested. The measured
 > win over `IQ2_XXS` stands unchanged. #416 measures those builds
 > on this page's tier-2 frame. The page stays `stable`.
+> Note 2026-09-04: #501 measured the published 49B pack at the
+> context ADR-0003 names. **It does not load at 16k on the reference
+> box.** The KV cache failed to allocate over 20,409.48 MiB of
+> weights with the desktop's 2,341 MiB resident. The largest rung
+> that served is 10,240 tokens at q8_0 KV, device buffers
+> 21,674.82 MiB
+> ([the twentieth data point](#the-twentieth-data-point-the-published-pack-stops-at-10k-context-on-the-reference-box)).
+> The page stays `stable`, and the record carries one open
+> question: a headless card.
 
 Scanning and planning happen inside vramfit's own frame: damage,
 measured per cell, on our calibration set. The moment a packed model
@@ -2057,6 +2066,89 @@ the served completion. Three things travel with this entry:
   recipe is a scoreboard row and never a published claim
   (issue #265).
 - The `q0-ref` attribution bound above travels with the headline.
+
+## The twentieth data point: the published pack stops at 10k context on the reference box
+
+Issue #501 asked a question no earlier entry had measured. ADR-0003
+names the acceptance test as the 49B serving on a 24 GiB RTX 4090 at
+16k context, and the card's "What fit24gib means" section states the
+solver's target as 16k context at fp8 KV cache. The only recorded
+serve of the published pack before this entry was the 2026-08-11
+probe at an 8,192-token slot
+([the seventeenth data point](#the-seventeenth-data-point-the-probe-that-could-not-tell-them-apart)).
+On 2026-09-04 the reference box measured the target directly, and
+the answer is no. The pack does not load at 16k on this box. It
+serves at 10,240 tokens and stops there.
+
+The method is the nineteenth data point's serve half without the
+ballast cap: llama.cpp b10326 (3653e6d6d), the Vulkan `llama-server`
+build, on the whole 24,564 MiB card. The flags were `-dev Vulkan0
+-ngl 99 -np 1 -ctk q8_0 -ctv q8_0`, with the context stepped down
+from 16,384 in 1,024-token rungs until a rung served. The 30B serve
+records kept the KV at f16. This run set the q8_0 cache the card
+states. The pack's SHA-256 matched the card ledger and the tier-3
+sidecar before the first launch. Nothing else used the card, and the
+desktop held its idle baseline of 2,341 MiB as every earlier
+reference-box serve ran under. Before load, llama.cpp's device query
+read 21,765 MiB free.
+
+| n_ctx | outcome | Vulkan0 model | KV, q8_0 | Vulkan0 compute | device buffers | nvidia-smi peak |
+|---|---|---|---|---|---|---|
+| 16,384 | did not load | 20,409.48 MiB | not allocated | — | — | 22,784 MiB |
+| 12,288 | did not load | 20,409.48 MiB | 1,249.50 MiB | not allocated | — | 22,784 MiB |
+| 11,264 | did not load | 20,409.48 MiB | 1,145.38 MiB | not allocated | — | 22,784 MiB |
+| **10,240** | **served, answered** | 20,409.48 MiB | 1,041.25 MiB | 224.09 MiB | **21,674.82 MiB** | 24,053 MiB |
+| 9,216 | served, answered | 20,409.48 MiB | 937.12 MiB | 223.09 MiB | 21,569.69 MiB | 23,948 MiB |
+| 8,192 | served, answered | 20,409.48 MiB | 833.00 MiB | 222.09 MiB | 21,464.57 MiB | 23,844 MiB |
+
+Every rung offloaded 81 of 81 layers and host-mapped the 430.55 MiB
+token embedding. The nvidia-smi column is device-wide and includes
+the desktop baseline. Each rung that served answered a 32-token
+completion request from a single slot, and the card returned to its
+baseline after every run.
+
+**The failures moved as the context shrank, and that locates the
+boundary.** At 16,384 the weights loaded and the KV cache itself
+failed: a 677,380,096 B chunk hit `ErrorOutOfDeviceMemory`. At 12,288
+and 11,264 the KV cache allocated and the prompt-processing compute
+buffer failed, at 237,070,352 B and 236,021,776 B. The q8_0 cache
+grows by 104.125 MiB per 1,024 cells across the five rungs that
+allocated it, so a 16,384-cell cache reads 1,666 MiB by that line.
+Weights, that cache, and a 224 MiB compute buffer sum to about
+22,300 MiB. The card holds 24,564 MiB. With the desktop's 2,341 MiB
+resident, the device query reads 21,765 MiB free, and 22,300 does not
+fit in 21,765. The 10,240 rung fits its 21,674.82 MiB of buffers
+inside that number with 90 MiB to spare.
+
+**The budget arithmetic did not fail. The headroom went to the
+desktop.** The card reserved 3,791,650,816 B, 3.53 GiB, for KV cache
+and runtime headroom. The measured runtime bill at 16k on this pack
+is about 1,890 MiB: 1,666 MiB of q8_0 cache and 224 MiB of compute.
+That is under the reserve by 1.7 GiB. The desktop baseline is
+2,341 MiB, and it consumes the reserve before the first KV chunk
+allocates. Two other frame differences travel with the number. The
+budget's ceiling is 24 GiB exactly, 24,576 MiB, and the card reports
+24,564 MiB. The device query reads 458 MiB less free than nvidia-smi's
+used-versus-total arithmetic, which is the driver's own reserve.
+
+This changes what the acceptance claim may say. ADR-0003's clause
+reads "serving on a single RTX 4090 at 16k context". On the reference
+box as configured, the pack serves at 10k. The README, the card, and
+the ADR now carry that measured fact, and the 16k target stays a
+target.
+
+**Open question.** Whether the pack serves at 16k on a headless
+4090. The arithmetic above says 22,300 MiB of buffers against a card
+that reports 24,564 MiB, and arithmetic is not a serve record. The
+reference box runs a desktop, and this entry did not measure a bare
+card.
+
+The run cost nothing. Receipts sit in the box's run archive under
+`nemotron-49b-v1_5/serve-16k-2026-09-04/`: `serve-16k.cmd` is the
+launcher, and each rung carries its full server console log, a
+`buffers-ctx<N>.txt` grep of the load and buffer lines, nvidia-smi
+samples, a peak file, and the request and response JSON. `RUN-SHEET.md`
+tabulates the rungs, and `SHA256SUMS` hashes every file.
 
 ## Provenance is not evidence
 

@@ -8,9 +8,17 @@
 - **Note (2026-09-03, issue #482):** the three evaluation tiers of
   this benchmark ran on the reference RTX 4090, tiers 1 and 2 on
   2026-08-09 and tier 3 on 2026-08-10. Publication #1 shipped on
-  2026-08-11. No record shows the pack serving at 16k context (#501).
-  The README section "The result" carries the compact result and
-  links the records.
+  2026-08-11. The README section "The result" carries the compact
+  result and links the records.
+- **Note (2026-09-04, issue #501):** the reference box measured the
+  published pack at 16k context with q8_0 KV cache, all 81 layers on
+  the card, llama.cpp b10326. It did not load: the KV cache failed to
+  allocate over 20,409.48 MiB of weights with the desktop's 2,341 MiB
+  resident. The largest context that served is 10,240 tokens, at
+  21,674.82 MiB of device buffers. The 16k clause of this benchmark is
+  unmet on the reference box as configured. The evidence page's
+  twentieth data point records the ladder, and whether a headless card
+  serves 16k stays an open question there.
 
 ## Context
 
