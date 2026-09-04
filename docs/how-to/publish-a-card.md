@@ -92,8 +92,11 @@ cards' `## Files and hashes` table uses:
 ```
 
 The card's own hashes table is the ledger. Paste each file's row into
-the card, then rerun the `card` command on the staging directory with
-the dataset repo so the published card matches the source.
+the staged `README.md`, then rerun the same `dataset` command with the
+same `--repo`. The rerun uploads the edited card last, and the Hub
+records no new commit for a file whose bytes did not change. The
+script byte-matches every file again, so the published card matches
+the source.
 
 ## Related
 
