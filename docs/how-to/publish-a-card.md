@@ -56,7 +56,9 @@ calibration file, the importance matrix when one publishes, and the
 dataset card as `README.md`. Follow the layout of
 `publication/nemotron-30b-a3b-sensitivity-maps/README.md`. The script
 uploads every top-level file in the directory, files first and the
-card last (the #85 pattern), and byte-matches each one.
+card last (the #85 pattern), and byte-matches each one. The script
+never creates a repo: before the first run, create the dataset repo
+on the Hub with `hf repo create <owner>/<name> --type dataset`.
 
 ```bash
 uv run --with huggingface_hub python scripts/publish_card.py \
