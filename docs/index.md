@@ -5,10 +5,16 @@ sections with four distinct jobs.
 
 | Section | Job | Reader's question |
 |---------|-----|-------------------|
-| [Tutorials](tutorials/getting-started.md) | Learning by doing | "Teach me" |
+| [Tutorials](tutorials/first-run.md) | Learning by doing | "Teach me" |
 | [How-to guides](how-to/scan-a-model.md) | Task recipes | "How do I…?" |
 | [Reference](reference/cli.md) | Facts about the machinery | "What exactly is…?" |
 | [Explanation](explanation/why-selective-quantization.md) | Understanding | "Why is it like this?" |
+
+Two tutorials open the docs. [First run](tutorials/first-run.md)
+solves the published 49B map on a CPU in two commands, from the base
+install. [Getting started](tutorials/getting-started.md) runs the
+full loop on a small model with the GPU extras: scan, plan, validate,
+pack.
 
 Design decisions are recorded separately as [ADRs](adr/index.md). Three
 pages anchor the rest: the [glossary](reference/glossary.md) (the

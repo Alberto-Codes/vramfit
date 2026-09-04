@@ -96,8 +96,12 @@ quality at a fixed model and budget, never by raw damage.
 budget against the sized no-2 map:
 
 ```
-uv run vramfit plan sensitivity-64k-kquant-imx-no2-sized.json --vram 24GiB
+uv run vramfit plan sensitivity-64k-kquant-imx-no2-sized.json --vram 24GiB --kv-headroom 3616MiB
 ```
+
+The headroom is the published solve's 3,791,650,816 B. The default
+headroom of 4 GiB leaves 20.00 GiB for weights, and no recipe on this
+map fits that budget (56.39 MiB short).
 
 The published recipe used this map with explicit protections and
 imatrix exclusions. `recipe.json` in the model repo records that full
