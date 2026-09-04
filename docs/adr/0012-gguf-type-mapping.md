@@ -2,9 +2,14 @@
 
 - **Status:** Accepted, amended by
   [ADR-0013](0013-runtime-capability-in-recipes.md),
-  [ADR-0022](0022-within-layer-protections.md), and
-  [ADR-0028](0028-expert-stack-type-table.md)
+  [ADR-0022](0022-within-layer-protections.md),
+  [ADR-0028](0028-expert-stack-type-table.md), and
+  [ADR-0029](0029-plan-independent-size-source.md)
 - **Date:** 2026-07-28 (accepted 2026-07-28)
+- **Note (2026-09-04, issue #362):**
+  [ADR-0029](0029-plan-independent-size-source.md) decision 4 adds
+  `16 -> f16` to decision 1's type table and `16 -> F16` to the base
+  ftype table. 16 is the F16 passthrough, not a K-quant type.
 - **Amendment (2026-07-28):** the type tables in decisions 1 and 3
   gain 6- and 5-bit rows (6→`Q6_K`, 5→`Q5_K`, base ftype
   5→`Q5_K_S`). Everything else stands.

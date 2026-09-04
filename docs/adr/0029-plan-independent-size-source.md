@@ -4,7 +4,11 @@
 - **Date:** 2026-08-19 (accepted 2026-08-19)
 - **Amends:** [ADR-0007](0007-recipe-solver-strategy.md). The solver
   prices every discovered group, not only the groups its input map
-  carries.
+  carries. Decision 4 also edits tables in
+  [ADR-0012](0012-gguf-type-mapping.md) decision 1,
+  [ADR-0013](0013-runtime-capability-in-recipes.md) decision 1, and
+  [ADR-0028](0028-expert-stack-type-table.md) (listed 2026-09-04,
+  #362).
 - **Origin:** Maintainer ruling 2026-08-18 on #337, recorded in chart
   #158's Notes. #345 carries the source and the port's shape.
 - **Note (2026-08-19, issue #345):** decision 7's closing sentence
@@ -23,6 +27,65 @@
   7 stands on the checkpoint-to-map direction alone**, where the split
   is real: the checkpoint roots at `backbone.` and every map roots at
   `model.`.
+- **Amendment (2026-09-04, issue #362):** a fact-check pass and a
+  peer-review pass ran after the merge, against the build in #358 and
+  PR #360. Neither invalidates a decision. This amendment records what
+  the record omitted.
+
+    **Three gaps the build ruled.** The record lists three open
+    questions and says none gates the build. Three it does not list
+    did. #360 ruled each under a stated assumption.
+
+    1. *Which naming root the emitted recipe carries.* Decision 7 says
+       a utility reconciles the roots and never says in which
+       direction. ADR-0012's 2026-08-12 (#180) amendment refuses a
+       recipe naming two roots. #360 emits `model.` for every group
+       (`MAP_ROOT` in `vramfit.domain.sizes`).
+    2. *Which byte count prices a group both the map and the source
+       carry.* Open question 2 asks whether `plan` warns or refuses
+       on a disagreement. It never asks which number prices the
+       group. #360 keeps the map's `bytes_fp16`.
+    3. *Whether a foreign root refuses or reaches no group.* The
+       Consequence at decision 7 says both. A source that reaches no
+       group returns zero bytes per group, which is #337's failure
+       with a new cause. #360 refuses, with `SizeSourceError` under
+       the `VramfitError` root. The Consequence below is corrected.
+
+    Decision 3 also does not say what `Assignment.damage` carries for
+    an uncovered group. #360 writes 0.0, because a group held at
+    reference is unperturbed. #301 records that an all-zero damage
+    column broke the validation pass once.
+
+    **Two silent table edits.** Decision 4 edits tables in two
+    Accepted ADRs beyond ADR-0013, which #359 carries.
+    ADR-0012 decision 1's type table gains `16 -> f16`, forced by
+    `test_type_table_covers_the_llama_cpp_capability_set`, and
+    `BASE_FTYPE_BY_BITS` gains `16 -> F16` beside it. ADR-0028's
+    expert-stack tables gain a 16 row in `EXPERT_STACK_EFFECTIVE_BITS`
+    and `EXPERT_STACK_TYPE_BY_BITS`. Decision 3 assigns every
+    uncovered group, and `solver.py` routes an expert-stack group
+    through the stack table. No uncovered stack group exists on this
+    target's #328 map, where all 164 uncovered groups are dense. The
+    decision is written as general. Both type names check out against
+    the instrument: `parse_ggml_type` matches `ggml_type_name`
+    case-insensitively, and `F16` is a valid positional ftype
+    (`LLAMA_FTYPE_MOSTLY_F16`). The **Amends** header now lists all
+    three records.
+
+    **Two wrong statements.** Decision 5 says a bare
+    `Mapping[str, int]` would mirror
+    `ImatrixCountSource.expert_stack_counts`. That port returns
+    `Mapping[str, tuple[int, ...]]`. The decision it supports is
+    unaffected. ADR-0007 carried no reciprocal note while the index
+    read "amended by 0029". The note landed 2026-09-04.
+
+    **Smaller corrections**, applied in place: decision 4's "three
+    tickets" names the one it reaches. Decision 7's "third
+    appearance" sentence carries the 2026-08-19 retraction marker.
+    The `validate` Consequence states which of #301's three blockers
+    the passthrough clears. Glossary entries for uncovered group,
+    passthrough precision, size source, and root table landed in
+    PR #360.
 
 ## Context
 
@@ -108,14 +171,16 @@ A **base GGUF** exists only after a pack, and `plan` runs before packing.
    emits an assignment for every group it prices.
 
 4. **The recipe gains an F16 passthrough precision.**
-   `EFFECTIVE_BITS[llama.cpp]` carries 8, 6, 5, 4, 3, and 2
-   (`src/vramfit/domain/runtime.py:64`). No row expresses an unquantized
-   group, so decision 3's assignment clause is unbuildable without one.
-   The passthrough reaches the precision set, the effective-bits table at
-   16.0 bits per weight, and the GGUF type map as `F16`.
+   `EFFECTIVE_BITS[llama.cpp]` carried 8, 6, 5, 4, 3, and 2 before
+   this build (`src/vramfit/domain/runtime.py`). No row expressed an
+   unquantized group, so decision 3's assignment clause was
+   unbuildable without one. The passthrough reaches the precision set,
+   the effective-bits table at 16.0 bits per weight, and the GGUF type
+   map as `F16`. The table now carries 16 as well (#359).
 
-   This closes a gap that reaches three tickets. #301 records the same
-   missing passthrough disabling `vramfit validate`, because
+   This closes a gap that ~~reaches three tickets~~ #301 records
+   (corrected 2026-09-04, #362). #301 records the same missing
+   passthrough disabling `vramfit validate`, because
    `Q0_REF_PRECISIONS` is `(8, 4, 2)` and no candidate holds a group at
    reference.
 
@@ -125,9 +190,10 @@ A **base GGUF** exists only after a pack, and `plan` runs before packing.
    `TensorSize` is a frozen domain dataclass holding `dtype` and
    `bytes`.
 
-   A bare `Mapping[str, int]` would mirror
-   `ImatrixCountSource.expert_stack_counts` and would hardcode the
-   project's bf16 convention into the port.
+   A bare `Mapping[str, int]` ~~would mirror
+   `ImatrixCountSource.expert_stack_counts` and~~ would hardcode the
+   project's bf16 convention into the port. (That port returns
+   `Mapping[str, tuple[int, ...]]`. Corrected 2026-09-04, #362.)
    `scripts/backfill_tensor_sizes.py` states that convention as
    "element counts at 2 bytes per parameter". A checkpoint stored at
    fp8 or at fp32 prices differently, and reference precision is
@@ -169,8 +235,10 @@ A **base GGUF** exists only after a pack, and `plan` runs before packing.
    tower's tensors against a decoder group.
 
    One shared utility serves `plan` and `validate` together. #301
-   records the same mismatch disabling `vramfit validate`, and this ADR
-   is its third appearance.
+   records the same mismatch disabling `vramfit validate`, ~~and this
+   ADR is its third appearance~~ (retracted by the 2026-08-19 note
+   above, marked 2026-09-04, #362). The utility is shared because the
+   checkpoint-to-map split is real for both commands.
 
 ## Open questions
 
@@ -224,7 +292,7 @@ A **base GGUF** exists only after a pack, and `plan` runs before packing.
   `plan` previously read one JSON map. It now also reads the
   checkpoint's shard headers, which requires the checkpoint on the
   machine running `plan`. Chart #158 records that big files stay on the
-  rented pod and only small artifacts pull back. The reference box holds
+  rented pod and only small artifacts return. The reference box holds
   this target's 61.32 GiB checkpoint today, so the constraint binds a
   future target rather than this one. The deferred range-request ticket
   carries the general case.
@@ -236,16 +304,19 @@ A **base GGUF** exists only after a pack, and `plan` runs before packing.
 
 - **The root table becomes a maintained list, and a target it does not
   name refuses.** Decision 7 bars a prefix wildcard, so a checkpoint
-  rooted at neither `model.` nor `backbone.` reaches no group. That is
-  the designed outcome. A silent wildcard match would price a vision
+  rooted at neither `model.` nor `backbone.` ~~reaches no group~~
+  **refuses with `SizeSourceError`** (corrected 2026-09-04, #362,
+  which is what #360 built). That is the designed outcome. A silent wildcard match would price a vision
   tower's tensors against a decoder group, which #177 measured and
   #186 fixed by adding names rather than a wildcard. Each new target
   costs one table entry.
 
-- **The F16 passthrough reaches `vramfit validate`.** #301 records that
-  the validation pass cannot hold a group at reference, so the clean
-  experiment of perturbing the 46 stacks and holding the rest unchanged
-  has no form today. The passthrough gives it one.
+- **The F16 passthrough clears one of `vramfit validate`'s three
+  blockers.** #301 records that the validation pass cannot hold a
+  group at reference, so the clean experiment of perturbing the 46
+  stacks and holding the rest unchanged has no form today. The
+  passthrough gives it one. #301's other two blockers stand
+  (corrected 2026-09-04, #362).
 
 - **#350's frame skew stops being theoretical.** The `q0-ref` map prices
   nominal 4 unassisted, and `pack` applies `Q4_0` assisted through

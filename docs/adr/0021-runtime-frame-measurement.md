@@ -37,6 +37,26 @@
   [ADR-0027](0027-instrument-frame-matching.md) keeps damage
   magnitudes on one instrument. Record:
   [#301 ruling comment](https://github.com/Alberto-Codes/vramfit/issues/301#issuecomment-5377920461).
+- **Amendment (2026-09-04, issue #277):** decision 4's worked example
+  argued from the 10.5 GiB weight budget. #257 superseded that
+  constant on 2026-08-15 with 14.5 GiB. #284 superseded 14.5 GiB on
+  2026-08-16 with **15.776 GiB**, from #266's measured 228.99 MiB
+  runtime overhead. The example is restated in place against
+  15.776 GiB. Its reading holds: uniform `Q4_0` at 17.600 GiB is
+  still unreachable. Its breadth figure changes. A mix at 15.776 GiB
+  relieves 35 of 46 expert stacks to `Q4_0` at dense nominal 8, so
+  24 % of stacks stay cheap, not 82 %. The example also deferred the
+  `Q2_0` price to #249, which is closed. The price arrived on #328
+  (2026-08-19). `sensitivity-32k-q0-ref-stacks.json` prices all 46
+  expert stacks at nominal 2 and 4 on #163's instrument, in the frame
+  `tensor_type_fallback` applies. Median damage reads 0.156083 at
+  nominal 2 and 0.007031 at nominal 4, a median 18.4 times apart.
+  That is the per-stack price the example said no measurement
+  supplied. Every arm #300 packed holds 11 of 46 expert stacks at
+  `Q2_0`, which is the 2026-08-22 (#301) expert-stack lift above.
+  Record:
+  [#284 closing comment](https://github.com/Alberto-Codes/vramfit/issues/284#issuecomment-5308544054),
+  [#328 closing comment](https://github.com/Alberto-Codes/vramfit/issues/328#issuecomment-5336224466).
 - **Correction (2026-08-31, issue #415):** the 2026-08-22 amendment
   above calls the comparator the smallest published build. It was
   not. A 2026-08-22 Hub-wide query found eight other publishers'
@@ -98,8 +118,9 @@ arithmetic.
    Measured 2026-08-14 (#229) on Nemotron 3.5 Lightning 30B-A3B. A
    whole-frontier `Q2_0` pack costs 4.097 times the reference
    perplexity, at 9.906 GiB. `Q4_0` costs 1.009 times at 17.600 GiB,
-   which the chart's 10.5 GiB weight budget cannot reach. So `Q4_0`
-   is not an alternative the bar reads here.
+   which the chart's ~~10.5 GiB~~ **15.776 GiB** weight budget cannot
+   reach (restated 2026-09-04, #277). So `Q4_0` is not an alternative
+   the bar reads here.
 
    Amended 2026-08-22 (#301): the bar lifts for expert-stack
    groups where a runtime-frame campaign priced the width's mixed
@@ -107,14 +128,17 @@ arithmetic.
    placement rule. Dense groups keep the bar, held by pins at
    nominal 8. The header amendment carries the acceptance clause.
 
-   `Q2_0` still fails. Mixed recipes also fit at or below 10.5 GiB,
-   at roughly 82 % of stacks cheap and the rest higher, and the gate
-   measured none of them. ~~No price yet shows `Q2_0` beats those
-   alternatives, so the solver buys no 2-bit on this target. #249
-   carries the measurements that would settle it.~~ **Superseded
-   2026-08-22 (#301) for expert-stack groups.** The #249 campaign
-   priced nine mixed recipes and the falsifier arm won (the
-   nineteenth data point). Dense groups keep the bar.
+   `Q2_0` still fails. Mixed recipes also fit at or below
+   ~~10.5 GiB, at roughly 82 % of stacks cheap~~ **15.776 GiB, at
+   11 of 46 expert stacks cheap** (restated 2026-09-04, #277) and the
+   rest higher, and the gate measured none of them. ~~No price yet
+   shows `Q2_0` beats those alternatives, so the solver buys no 2-bit
+   on this target. #249 carries the measurements that would settle
+   it.~~ **Superseded 2026-08-22 (#301) for expert-stack groups.**
+   The #249 campaign priced nine mixed recipes and the falsifier arm
+   won (the nineteenth data point). Dense groups keep the bar. The
+   per-stack `Q2_0` price against `Q4_0` now sits on #328's
+   stack-keyed map (2026-09-04 amendment, #277).
 
 - **ADR-0018's 2026-08-17 amendment (#319) adds a fourth method,
   whose token is `q0-ref` since #332. Decision 1 above still
