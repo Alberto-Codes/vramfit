@@ -99,7 +99,7 @@ budget (ADR-0021, amended 2026-08-22). Within-layer protections plus
 imatrix exclusions (ADR-0022, ADR-0023) closed the fit-collapse gap.
 
 The [evidence page](https://github.com/Alberto-Codes/vramfit/blob/main/docs/explanation/evaluating-packed-models.md) records
-all nineteen data points, through 2026-08-22. See
+all twenty data points, through 2026-09-04. See
 [Issues](https://github.com/Alberto-Codes/vramfit/issues) for the roadmap.
 
 ## Requirements
