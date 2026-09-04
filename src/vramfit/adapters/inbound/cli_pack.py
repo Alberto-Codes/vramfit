@@ -331,9 +331,9 @@ def pack(
     packs the marked tensors on the unweighted fit, and the command
     warns when no matrix makes the exclusions inert (ADR-0023). An
     expert-stack group maps through its own type table (ADR-0028):
-    8 to Q8_0, 4 to Q4_0, 2 to Q2_0. Nominal 3 refuses there — no
-    GGUF type lands between 2.25 and 4.25 bits per weight on the
-    stack rows. The quantizer's output is scanned for the
+    8 to Q8_0, 6 to Q5_1, 5 to Q5_0, 4 to Q4_0, 2 to Q2_0. Nominal 3
+    refuses there — no GGUF type lands between 2.25 and 4.25 bits per
+    weight on the stack rows. The quantizer's output is scanned for the
     type-fallback warning pair, and a match halts with the file
     kept — a rewritten type breaks the recipe the artifact claims
     to carry (ADR-0028). A layer the base GGUF numbers that no

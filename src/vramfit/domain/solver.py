@@ -293,7 +293,7 @@ def _predictor(
     """Build the per-group size predictor for one solve.
 
     An expert-stack group prices through the ADR-0028 table where it
-    has a row (8, 4, 2), and so does a layer-class group whose rows
+    has a row (8, 6, 5, 4, 2), and so does a layer-class group whose rows
     refuse the 256 super-block (the 2026-08-20 amendment). Nominal 3
     keeps the dense entry: the plan-time refusal is an ADR-0028 open
     question, so pack refuses first and the plan still prices the

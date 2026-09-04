@@ -624,8 +624,8 @@ change.
     fixes the GGUF tensor-type table (8→Q8_0, 4→Q4_K, 3→Q3_K,
     2→Q2_K) and a separate base-ftype table for the quantizer's
     positional argument. A routed-expert stack maps through its own
-    table instead (8→Q8_0, 4→Q4_0, 2→Q2_0), and the backend refuses
-    nominal 3 there
+    table instead (8→Q8_0, 6→Q5_1, 5→Q5_0, 4→Q4_0, 2→Q2_0), and the
+    backend refuses nominal 3 there
     ([ADR-0028](../adr/0028-expert-stack-type-table.md)). The
     solver prices these types at their effective bits (ADR-0014),
     and pack re-checks real sizes.

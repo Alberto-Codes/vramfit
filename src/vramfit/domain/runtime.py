@@ -33,7 +33,8 @@ Attributes:
         Effective bits per weight for a routed-expert-stack group,
         per nominal precision, per runtime. Expert stacks map
         through their own type table (ADR-0028), so their per-weight
-        costs differ from the dense table's. The same table reaches
+        costs differ from the dense table's at 2, 4, 5, and 6. The
+        same table reaches
         a layer-class group whose rows refuse the 256 super-block
         (the 2026-08-20 amendment) — `SUPER_BLOCK_REFUSED_CLASSES`
         names those classes.
@@ -112,7 +113,9 @@ EFFECTIVE_BITS: Final[Mapping[str, Mapping[int, float]]] = MappingProxyType(
 )
 
 # Effective bits per weight for the expert-stack type table (Q8_0,
-# Q4_0, Q2_0 — ADR-0028 decision 1). Exact block-layout constants.
+# Q5_1, Q5_0, Q4_0, Q2_0 — ADR-0028 decision 1). Exact block-layout
+# constants. The 6 and 5 rows date from the 2026-09-04 amendment
+# (#232): Q5_1 at 6.00 and Q5_0 at 5.50, both block 32.
 # The table carries no 3-bit row: no GGUF type lands between 2.25 and
 # 4.25 bits per weight on the stack rows, and pack refuses nominal 3
 # there (ADR-0028 decision 2). The 16 row is the F16 passthrough,
@@ -125,6 +128,8 @@ EXPERT_STACK_EFFECTIVE_BITS: Final[Mapping[str, Mapping[int, float]]] = (
                 {
                     16: 16.0,
                     8: 8.5,
+                    6: 6.0,
+                    5: 5.5,
                     4: 4.5,
                     2: 2.25,
                 }

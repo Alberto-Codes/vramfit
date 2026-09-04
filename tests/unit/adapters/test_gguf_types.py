@@ -336,14 +336,17 @@ def test_tensor_overrides_keep_recipe_order_within_the_stack_bucket() -> None:
 
 
 @pytest.mark.parametrize(
-    ("bits", "quant_type"), [(8, "q8_0"), (4, "q4_0"), (2, "q2_0")]
+    ("bits", "quant_type"),
+    [(8, "q8_0"), (6, "q5_1"), (5, "q5_0"), (4, "q4_0"), (2, "q2_0")],
 )
 def test_expert_stack_type_for_maps_the_adr_0028_table(
     bits: int, quant_type: str
 ) -> None:
     # Every k-quant packs 256-element super-blocks and the stack rows
     # (2688, 1856) do not divide by 256, so the stack table carries
-    # only types whose block size divides both (ADR-0028).
+    # only types whose block size divides both (ADR-0028). The 6 and 5
+    # rows map to q5_1 and q5_0, both block 32 (the 2026-09-04
+    # amendment, #232).
     assert expert_stack_type_for(bits, "model.layers.0.mlp.experts.up_proj") == (
         quant_type
     )
@@ -367,15 +370,14 @@ def test_tensor_overrides_refuse_nominal_3_on_an_expert_stack_naming_the_gap() -
 
 
 def test_expert_stack_type_for_refuses_a_precision_outside_the_table() -> None:
-    # The dense table maps 6-bit to Q6_K, but the stack table has no
-    # 6-bit row — silently keeping the k-quant would let the
-    # quantizer substitute (ADR-0028 decision 1).
+    # The stack table has no 7-bit row — silently keeping a dense
+    # type would let the quantizer substitute (ADR-0028 decision 1).
     with pytest.raises(PackError) as caught:
-        expert_stack_type_for(6, "model.layers.0.mlp.experts.up_proj")
+        expert_stack_type_for(7, "model.layers.0.mlp.experts.up_proj")
 
     message = str(caught.value)
     assert '"model.layers.0.mlp.experts.up_proj"' in message
-    assert "[2, 4, 8, 16]" in message
+    assert "[2, 4, 5, 6, 8, 16]" in message
 
 
 def test_tensor_overrides_reject_an_expert_projection_outside_the_stack_table() -> None:
@@ -512,17 +514,32 @@ def test_tensor_overrides_refuse_nominal_3_on_a_layer_class_naming_the_gap() -> 
     assert "between 2.25 and 4.25" in message
 
 
-@pytest.mark.parametrize("bits", [6, 5])
-def test_tensor_overrides_refuse_5_and_6_bit_on_an_adr_0028_routed_class(
-    bits: int,
+@pytest.mark.parametrize(
+    ("bits", "quant_type"), [(6, "q5_1"), (5, "q5_0")], ids=["6", "5"]
+)
+def test_tensor_overrides_emit_5_and_6_bit_on_an_adr_0028_routed_class(
+    bits: int, quant_type: str
 ) -> None:
-    # The ADR-0028 table carries no 5- or 6-bit row (#232). The class
-    # rows at 2688 would take Q5_0's block of 32, so the gap is the
-    # table's, not the rows' — the refusal names the table.
+    # The 2026-09-04 amendment (#232) added the 5- and 6-bit rows.
+    # The class rows at 2688 take Q5_0's and Q5_1's block of 32.
     recipe = make_recipe(("model.layers.3.mixer.in_proj", bits))
 
-    with pytest.raises(PackError, match="ADR-0028 table covers"):
-        tensor_overrides(recipe)
+    assert tensor_overrides(recipe) == (TypeOverride(r"blk\.3\.ssm_in\.", quant_type),)
+
+
+@pytest.mark.parametrize(
+    ("bits", "quant_type"), [(6, "q5_1"), (5, "q5_0")], ids=["6", "5"]
+)
+def test_tensor_overrides_emit_5_and_6_bit_on_an_expert_stack(
+    bits: int, quant_type: str
+) -> None:
+    # Same rows on a routed-expert stack: the fused tensor takes the
+    # block-32 type the amendment names (#232).
+    recipe = make_recipe(("backbone.layers.3.mixer.experts.up_proj", bits))
+
+    assert tensor_overrides(recipe) == (
+        TypeOverride(r"blk\.3\.ffn_up_exps\.", quant_type),
+    )
 
 
 def test_tensor_overrides_escape_the_class_pattern_so_layer_1_never_matches_11() -> (

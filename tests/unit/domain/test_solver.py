@@ -463,6 +463,26 @@ class TestSolve:
 
         assert recipe.assignments[0].bytes == 225
 
+    @pytest.mark.parametrize(("bits", "expected"), [(6, 600), (5, 550)], ids=["6", "5"])
+    def test_expert_stack_group_at_nominal_5_and_6_prices_at_the_stack_table(
+        self, bits: int, expected: int
+    ) -> None:
+        # The 2026-09-04 amendment (#232) added the 5- and 6-bit rows:
+        # nominal 6 spends Q5_1's 6.00 bits, not Q6_K's 6.5625, and
+        # nominal 5 spends Q5_0's 5.50.
+        stack = "model.layers.0.mlp.experts.up_proj"
+        map_ = load(make_map([(stack, 1600, CONVEX_CURVE)]))
+
+        recipe = solve_simple(
+            map_,
+            budget=10_000,
+            runtime="llama.cpp",
+            format_overhead=0.0,
+            pins={stack: bits},
+        )
+
+        assert recipe.assignments[0].bytes == expected
+
     def test_expert_stack_group_at_nominal_3_keeps_the_dense_entry(self) -> None:
         # The ADR-0028 stack table has no 3-bit row and the plan-time
         # refusal is an open question there — pack refuses first, so

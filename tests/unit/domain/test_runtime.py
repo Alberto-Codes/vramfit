@@ -111,13 +111,17 @@ class TestEffectiveBits:
 
 class TestExpertStackEffectiveBits:
     def test_llama_cpp_table_carries_the_adr_0028_rows(self) -> None:
-        # Q8_0 at 8.50, Q4_0 at 4.50, Q2_0 at 2.25 — exact
-        # block-layout constants for the expert-stack type table. The
+        # Q8_0 at 8.50, Q5_1 at 6.00, Q5_0 at 5.50, Q4_0 at 4.50, Q2_0
+        # at 2.25 — exact block-layout constants for the expert-stack
+        # type table. The 6 and 5 rows date from the 2026-09-04
+        # amendment (#232). The
         # 16 row is the ADR-0029 passthrough, which has no block to
         # divide and so costs the same on a stack row.
         assert expert_stack_effective_bits("llama.cpp") == {
             16: 16.0,
             8: 8.5,
+            6: 6.0,
+            5: 5.5,
             4: 4.5,
             2: 2.25,
         }
