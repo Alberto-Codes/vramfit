@@ -402,7 +402,10 @@
     them at 32 bits against the prediction's 16. The gap measured
     16.17 MiB over the priced weight tensors, inside the drive's
     110.03 MiB margin. The pin clauses stand — only the size
-    equality was optimistic.
+    equality was optimistic. **Priced 2026-09-04 (#409):** the
+    passthrough now spends the convert dtype's 32 bits on both
+    classes, and the scan skips them at discovery (#204). ADR-0029's
+    2026-09-04 note carries the ruling.
 
     This narrows the 2026-08-12 amendment's refusal list —
     `conv1d` and the router now pin rather than refuse. Two

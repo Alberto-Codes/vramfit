@@ -997,13 +997,16 @@ class TestUnquantizableClasses:
         )
 
         # The budget forces downgrades. Only the plain layer group may
-        # supply them.
-        recipe = solve_simple(map_, 4000, runtime="llama.cpp")
+        # supply them. The hold prices at the convert dtype, 32 bits
+        # per weight, because the packed file holds the router there
+        # (#409).
+        recipe = solve_simple(map_, 6000, runtime="llama.cpp")
 
         gate = next(
             a for a in recipe.assignments if a.group == "model.layers.0.mixer.gate"
         )
         assert gate.bits == 16
+        assert gate.bytes == group_bytes(1600, 32.0, DEFAULT_RESIDUAL_OVERHEAD)
         assert gate.damage == 0.0
         assert all(step.group != gate.group for step in recipe.plan.trace)
 
@@ -1068,3 +1071,67 @@ class TestUnquantizableClasses:
         assignment = recipe.assignments[0]
         assert assignment.bits == 2
         assert assignment.bytes == group_bytes(160_000, 2.25, DEFAULT_RESIDUAL_OVERHEAD)
+
+
+@pytest.mark.unit
+class TestPassthroughPricing:
+    """The F16 passthrough prices at what the packed file holds (#409)."""
+
+    # Publication #2's 46 passthrough groups, from the #409 tables:
+    # 23 `mixer.conv1d` at 24,576 weights and 23 `mixer.gate` at
+    # 344,064 weights, all packed at F32.
+    CONV1D_FP16 = 24_576 * 2
+    GATE_FP16 = 344_064 * 2
+    PACKED_BYTES = 33_914_880
+    RECIPE_BYTES_AT_16 = 16_991_388
+    OVERHEAD = 0.002
+
+    @staticmethod
+    def _discovered() -> dict[str, int]:
+        layers = [n for n in range(52) if n % 2 == 0][:23]
+        conv = {f"model.layers.{n}.mixer.conv1d": 49_152 for n in layers}
+        gate = {f"model.layers.{n + 1}.mixer.gate": 688_128 for n in layers}
+        return {"model.layers.0.mixer.in_proj": 1600, **conv, **gate}
+
+    def _held(self, format_overhead: float) -> int:
+        map_ = load(make_map([("model.layers.0.mixer.in_proj", 1600, CONVEX_CURVE)]))
+        recipe = solve_simple(
+            map_,
+            10**9,
+            runtime="llama.cpp",
+            discovered_bytes=self._discovered(),
+            format_overhead=format_overhead,
+        )
+        passthrough = [a for a in recipe.assignments if a.bits == 16]
+        assert len(passthrough) == 46
+        return sum(a.bytes for a in passthrough)
+
+    def test_the_46_groups_price_at_their_packed_bytes(self) -> None:
+        # At zero overhead the prediction equals the packed file's
+        # F32 bytes exactly. The 16.0 row read half of that.
+        assert self._held(0.0) == self.PACKED_BYTES
+
+    def test_the_publication_2_shortfall_no_longer_reproduces(self) -> None:
+        # The published recipe priced these groups at 16,991,388 B
+        # under its 0.002 overhead, 16,923,492 B short of the packed
+        # bytes and past the 16,874,535 B margin. The corrected
+        # prediction covers the packed bytes.
+        shortfall = self.PACKED_BYTES - self.RECIPE_BYTES_AT_16
+        assert shortfall == 16_923_492
+        assert self._held(self.OVERHEAD) >= self.PACKED_BYTES
+
+    def test_a_quantizable_class_still_spends_16_bits(self) -> None:
+        # The `f16` override holds a refused-nothing class at two
+        # bytes per weight, so only the unquantizable classes move.
+        map_ = load(make_map([("model.layers.0", 1600, CONVEX_CURVE)]))
+        recipe = solve_simple(
+            map_,
+            10**6,
+            runtime="llama.cpp",
+            discovered_bytes={
+                "model.layers.0": 1600,
+                "model.layers.1.mixer.in_proj": 1600,
+            },
+        )
+        held = next(a for a in recipe.assignments if a.group.endswith("in_proj"))
+        assert held.bytes == group_bytes(1600, 16.0, DEFAULT_RESIDUAL_OVERHEAD)

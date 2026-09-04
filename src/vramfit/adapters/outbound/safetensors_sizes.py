@@ -24,12 +24,15 @@ torch meter discovers groups. The two must agree, or the source would
 price groups the map can never carry. ADR-0014's residual overhead
 fraction covers the tensors both drop.
 
-The meter's other half diverges on purpose. `discover_groups` also
+The meter's other halves diverge on purpose. `discover_groups` also
 skips a parameter that is not floating point, because it cannot
 perturb one. This source keeps it and lets
 [vramfit.domain.sizes][] refuse the dtype. A 2-D integer tensor is
 still weight bytes on the card, and skipping it would understate the
-budget — the direction ADR-0029 exists to stop.
+budget — the direction ADR-0029 exists to stop. `discover_groups`
+also skips a class the quantizer refuses (#204). This source keeps
+that too: the group reaches the recipe uncovered, and the solver
+prices it at the convert dtype (#409).
 
 The adapter reports each header's dtype verbatim and computes no
 convention of its own (decision 5). Converting a stored size to

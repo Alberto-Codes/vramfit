@@ -86,6 +86,20 @@
     the passthrough clears. Glossary entries for uncovered group,
     passthrough precision, size source, and root table landed in
     PR #360.
+- **Note (2026-09-04, issue #409):** decision 4's 16.0 bits per
+  weight holds for a class the quantizer accepts, which packs through
+  the `f16` override. It does not hold for an unquantizable class.
+  `convert_hf_to_gguf.py` writes `ffn_gate_inp` and `ssm_conv1d` at
+  F32 whatever `--outtype` asks, and the quantizer drops the override,
+  so the packed file holds those classes at 32 bits. Publication #2's
+  recipe priced its 46 passthrough groups 16,923,492 B under the
+  packed bytes, against a 16,874,535 B margin, and fit on the residual
+  overhead's over-reservation of the quantized classes. The passthrough
+  now prices each group from the convert dtype table in
+  `vramfit.domain.runtime`, 32.0 bits on both llama.cpp classes, and
+  16.0 elsewhere. The recipe still records nominal 16. The scan skips
+  those classes at discovery (#204), so a new map carries no cell for
+  them and the size source holds them uncovered.
 
 ## Context
 
@@ -260,10 +274,15 @@ A **base GGUF** exists only after a pack, and `plan` runs before packing.
   the other. The map already carries `bytes_fp16` per group, so a
   disagreement is detectable. Whether it warns or refuses is unruled.
 
-- **Whether the passthrough's 16.0 bits per weight is exact for every
+- ~~**Whether the passthrough's 16.0 bits per weight is exact for every
   writer.** GGUF `F16` stores two bytes per weight with no block
   overhead. A checkpoint stored at bf16 converts to f16 without a size
-  change. No measurement confirms this end to end.
+  change. No measurement confirms this end to end.~~
+  **Answered 2026-09-04 on #409: it is not.** The converter writes an
+  unquantizable class at F32, and the 2026-09-04 note above records
+  the pricing. A per-type check against a synthetic packed layout now
+  holds the prediction at the file's bytes
+  (`tests/unit/adapters/test_predicted_vs_packed.py`).
 
 ## Consequences
 

@@ -225,7 +225,9 @@ layer classes in the
 2026-08-20. It refuses every other `stack` group by name. A group of
 an unquantizable class — the router's `mixer.gate`, the Mamba
 `mixer.conv1d` — packs at the F16 passthrough, and `pack` refuses a
-recipe that assigns it a lower width.
+recipe that assigns it a lower width. `plan` prices such a group at
+the 32 bits the converter wrote it at, not at `F16`'s 16 (#409), and
+`scan` never discovers one (#204).
 
 Pin semantics: patterns are case-sensitive `fnmatch` globs matched
 against the full group name (`--pin "model.layers.0.*=8"`). With

@@ -3,8 +3,10 @@
 Split out of [vramfit.adapters.outbound.scan.meter][] to keep that
 module inside the size cap. Discovery walks the loaded model's
 parameters and filters them. The naming rule itself lives in
-[vramfit.domain.scan][] (`group_key`), so the fast suite covers every
-granularity without torch.
+[vramfit.domain.scan][] (`group_key`), and so does the class rule
+that skips a parameter no quantizer touches
+([vramfit.domain.runtime][], `unquantizable_class`, #204), so the
+fast suite covers every granularity without torch.
 
 Examples:
     Group a loaded model the way the meter does:
@@ -28,6 +30,7 @@ import torch
 
 from vramfit.adapters.outbound.scan.imatrix import expert_stack_count_vectors
 from vramfit.domain.model import ImatrixCountSummary
+from vramfit.domain.runtime import unquantizable_class
 from vramfit.domain.scan import (
     group_key,
     matches_a_layer,
@@ -46,7 +49,12 @@ def discover_groups(
 
     Returns:
         Ordered mapping of group name to member parameter names. Only
-        floating-point tensors with 2+ dimensions are included.
+        floating-point tensors with 2+ dimensions are included, and a
+        tensor of a class the quantizer refuses stays out: the 30B
+        target's 23 ``mixer.conv1d`` weights are 3-D, and the pack
+        holds them at the convert dtype whatever the map says (#204).
+        The class is read off the tensor-granularity group name, so
+        the skip applies under every granularity.
 
     Raises:
         ValueError: If no quantizable parameters are found, or
@@ -57,6 +65,8 @@ def discover_groups(
     layer_matches = 0
     for name, param in model.named_parameters():
         if param.ndim < 2 or not param.is_floating_point():  # noqa: PLR2004
+            continue
+        if unquantizable_class(group_key(name, "tensor")) is not None:
             continue
         layer_matches += group_by == "layer" and matches_a_layer(name)
         groups.setdefault(group_key(name, group_by), []).append(name)
