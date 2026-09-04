@@ -750,7 +750,7 @@ change.
     A blind recipe is a scoreboard row and never a published claim. It
     uses the recipe schema ([recipe format](recipe.md)). Not "uniform
     pack" (the outside field's name for the same role, refused below).
-    Not the "size-matched baseline" (a published build the recipe may
+    Not the size-matched comparator (a published build the recipe may
     beat in public).
 
 > **Ruled 2026-08-15 ([#265](https://github.com/Alberto-Codes/vramfit/issues/265)).**
@@ -774,6 +774,19 @@ change.
 > sits inside the budget rather than over it.
 > [#288](https://github.com/Alberto-Codes/vramfit/issues/288) rules
 > whether the term survives. The ruling above stands until it does.
+
+**Comparator**
+:   The published build a packed model is measured against on one
+    instrument, at a fixed (model, budget) pair. A card states one
+    comparator per tier and names it: bartowski's `Q3_K_S` for the 49B,
+    bartowski's `IQ2_XXS` for the 30B arm, the vendor's QAT `Q4_0` for
+    Gemma 4 31B. "Size-matched" is a property a comparator may have,
+    within a stated margin of the pack's bytes, and no term of its own.
+    A comparator is an outside artifact and never a blind recipe.
+    Not "baseline" for the role. The evals sidecar's `baselines/`
+    directory and its ADR-0025 field names keep that word, and records
+    written before this entry keep it too, on the #213 precedent above.
+    New prose writes "comparator".
 
 **Tier-3 slice**
 :   The fixed set of lm-evaluation-harness tasks and few-shot settings

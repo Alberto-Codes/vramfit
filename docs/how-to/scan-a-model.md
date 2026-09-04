@@ -21,13 +21,13 @@ The scan needs the GPU stack, which the base install does not carry
 (ADR-0005):
 
 ```bash
-uv pip install "vramfit[scan]"
+pip install "vramfit[scan]"
 ```
 
 ## Basic invocation
 
 ```bash
-uv run vramfit scan nvidia/Llama-3_3-Nemotron-Super-49B-v1_5 \
+vramfit scan nvidia/Llama-3_3-Nemotron-Super-49B-v1_5 \
   --calibration calibration.txt \
   --precisions 8,4,3,2 \
   --max-tokens 32768 \
@@ -78,7 +78,7 @@ remains available
 ([ADR-0018](../adr/0018-kquant-within-group-method.md)):
 
 ```bash
-uv run vramfit scan ./model --calibration calibration.txt \
+vramfit scan ./model --calibration calibration.txt \
   --within-group kquant \
   --imatrix model.imatrix.gguf \
   --out sensitivity.json
@@ -120,7 +120,7 @@ quantizers
 amendment, token renamed by the 2026-08-18 amendment):
 
 ```bash
-uv run vramfit scan ./model --calibration calibration.txt \
+vramfit scan ./model --calibration calibration.txt \
   --group-by stack \
   --precisions 4,2 \
   --within-group q0 \
@@ -156,7 +156,7 @@ addresses, so a campaign that needs those alone pays for 420 cells
 without a filter. `--groups` names the subset:
 
 ```bash
-uv run vramfit scan ./model --calibration calibration.txt \
+vramfit scan ./model --calibration calibration.txt \
   --group-by stack \
   --groups backbone.layers.1.mixer.experts.up_proj,backbone.layers.1.mixer.experts.down_proj \
   --precisions 4,2 \

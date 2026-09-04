@@ -29,7 +29,12 @@ The sensitivity map is the output of `vramfit scan` and the input to
   "groups": [
     {
       "name": "model.layers.0.self_attn",
-      "tensors": ["q_proj", "k_proj", "v_proj", "o_proj"],
+      "tensors": [
+        "model.layers.0.self_attn.q_proj.weight",
+        "model.layers.0.self_attn.k_proj.weight",
+        "model.layers.0.self_attn.v_proj.weight",
+        "model.layers.0.self_attn.o_proj.weight"
+      ],
       "bytes_fp16": 100000000,
       "sensitivity": {
         "8": 0.0001,
@@ -38,10 +43,10 @@ The sensitivity map is the output of `vramfit scan` and the input to
         "2": 0.4170
       },
       "tensor_bytes": {
-        "q_proj": 40000000,
-        "k_proj": 10000000,
-        "v_proj": 10000000,
-        "o_proj": 40000000
+        "model.layers.0.self_attn.q_proj.weight": 40000000,
+        "model.layers.0.self_attn.k_proj.weight": 10000000,
+        "model.layers.0.self_attn.v_proj.weight": 10000000,
+        "model.layers.0.self_attn.o_proj.weight": 40000000
       }
     }
   ]
@@ -75,6 +80,47 @@ below remain, the sub-4-bit pricing claims do not.
   calibration, and imatrix paths as the invocation spelled them, so
   a resume must reproduce the original command line. A rename of any
   of those paths invalidates every checkpoint that names them.
+- **`model_id`** — the scanned model as the `vramfit scan` invocation
+  spelled its `MODEL` argument: a Hub id or a local path. The loader
+  requires a non-empty string and reads nothing else from it. The
+  published maps record the reference box's absolute checkpoint path,
+  so the value identifies the scan and does not resolve elsewhere.
+  `vramfit plan` copies it into the recipe.
+- **`scan.metric`** — the damage metric's name. The writer records
+  `kl_divergence`, the mean final-logits KL of
+  [ADR-0006](../adr/0006-sensitivity-metric.md). The loader requires a
+  non-empty string. The checkpoint fingerprint includes it.
+- **`scan.calibration`** — the calibration text's path as the
+  invocation spelled it. Damage is relative to this text, so two maps
+  compare only when the field matches. The loader requires a non-empty
+  string. The published maps record the reference box's absolute path.
+- **`scan.calibration_tokens`** — the count of calibration tokens the
+  meter measured, which the `--max-tokens` budget caps. The loader
+  requires a positive integer. The published dataset's file names
+  carry the same count in short form (`64k` is 65,536).
+- **`scan.precisions`** — the candidate bit-widths the scan measured,
+  as `--precisions` listed them. The loader requires a non-empty list
+  of distinct positive integers in strictly descending order, and it
+  never reorders one. Every group's `sensitivity` keys must equal this
+  list exactly. A hand-made copy that drops a column edits both, and
+  records the edit under `derived`.
+- **`scan.started_at`** — the UTC start of the invocation that wrote
+  the map, as an ISO-8601 timestamp (`2026-08-04T21:07:22Z`). A
+  resumed scan is a new invocation, so the field records the last
+  resume of a halted scan, and the run log carries every earlier
+  attempt. The fingerprint excludes it for that reason. The loader
+  requires a non-empty string and checks no format.
+- **`groups[].name`** — the group's key under `scan.group_by`: a
+  layer prefix such as `model.layers.0` for `layer`, a full tensor
+  name for `tensor`, and a pack-addressable stack for `stack`. Names
+  are unique across the map, and the loader refuses a duplicate.
+  `vramfit plan` keys assignments on this name, and `--pin` matches
+  against it.
+- **`groups[].tensors`** — the full names of the checkpoint tensors
+  the group quantizes together, as the scan discovered them
+  (`model.layers.0.self_attn.v_proj.weight`). The loader requires a
+  list of strings. `tensor_bytes` keys on these names, and
+  `--protect` and `--exclude-imatrix` match against them.
 - **`sensitivity`** — divergence of the perturbed model's output from the
   full-precision reference, measured per
   [ADR-0006](../adr/0006-sensitivity-metric.md) (mean final-logits KL).

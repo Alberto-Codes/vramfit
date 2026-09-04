@@ -36,7 +36,7 @@ The pack step drives external tools — none ship with vramfit:
    provisions it (torch, transformers, sentencepiece):
 
    ```bash
-   uv pip install "vramfit[pack]"
+   pip install "vramfit[pack]"
    ```
 
    sentencepiece matters even for BPE models: the Qwen converter
@@ -49,13 +49,13 @@ The pack step drives external tools — none ship with vramfit:
    `pack` extra includes it:
 
    ```bash
-   uv pip install "vramfit[gguf]"
+   pip install "vramfit[gguf]"
    ```
 
 ## Basic invocation
 
 ```bash
-uv run vramfit pack recipe-4GiB.json \
+vramfit pack recipe-4GiB.json \
   --llama-cpp ~/llama.cpp \
   --out qwen2.5-3b-recipe-4GiB.gguf \
   --threads 14
@@ -80,7 +80,7 @@ matrix once per (base GGUF, calibration text) pair with
 
 ```bash
 llama-imatrix -m model-f16.gguf -f calibration.txt -o model.imatrix.gguf
-uv run vramfit pack recipe.json \
+vramfit pack recipe.json \
   --llama-cpp ~/llama.cpp \
   --imatrix model.imatrix.gguf \
   ...
@@ -117,7 +117,7 @@ exactly that on 2026-07-29
 anything downstream trusts it:
 
 ```bash
-uv run vramfit pack recipe.json \
+vramfit pack recipe.json \
   --llama-cpp ~/llama.cpp \
   --smoke-text calibration.txt \
   ...

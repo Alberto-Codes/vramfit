@@ -8,27 +8,29 @@ status: draft
 > ran end to end on the 49B target on 2026-07-29
 > ([evidence](../explanation/evaluating-packed-models.md)).
 
-This tutorial walks you from a clean checkout to a measured
-mixed-precision recipe, using a small model so the scan finishes in
-minutes.
+This tutorial walks you from an empty virtual environment to a
+measured mixed-precision recipe, using a small model so the scan
+finishes in minutes.
 
 ## Prerequisites
 
 - Linux with an NVIDIA GPU (any modern card works for the tutorial
   model — CPU also works, just slower)
-- Python 3.12+ and [uv](https://docs.astral.sh/uv/)
+- Python 3.12+
 
 ## 1. Install
 
-The scan step needs the GPU stack, which lives behind an extra
-(ADR-0005):
+Install vramfit from PyPI, as the README does. The scan step needs
+the GPU stack, which lives behind an extra (ADR-0005):
 
 ```bash
-git clone https://github.com/Alberto-Codes/vramfit.git
-cd vramfit
-uv sync --extra scan
-uv run vramfit version
+python3 -m venv .venv && . .venv/bin/activate
+pip install "vramfit[scan]"
+vramfit version
 ```
+
+`uv sync --dev` is the development path for a clone. It is not
+needed here.
 
 ## 2. Scan a small model
 
@@ -37,7 +39,7 @@ The scan measures damage on some text — give it a calibration file:
 ```bash
 printf 'The quick brown fox jumps over the lazy dog. %.0s' {1..200} > calibration.txt
 
-uv run vramfit scan HuggingFaceTB/SmolLM2-135M \
+vramfit scan HuggingFaceTB/SmolLM2-135M \
   --calibration calibration.txt \
   --max-tokens 2048 \
   --out sensitivity.json
@@ -56,7 +58,7 @@ interruption and it resumes.
 Pick a deliberately tight VRAM budget so the solver has real work to do:
 
 ```bash
-uv run vramfit plan sensitivity.json --vram 256MiB --kv-headroom 64MiB --out recipe.json
+vramfit plan sensitivity.json --vram 256MiB --kv-headroom 64MiB --out recipe.json
 ```
 
 The output [recipe](../reference/recipe.md) lists every layer group and
@@ -70,7 +72,7 @@ The validation pass replays the whole recipe in one pass and reports
 the measured damage next to the solver's prediction (ADR-0006):
 
 ```bash
-uv run vramfit validate recipe.json --calibration calibration.txt --max-tokens 2048
+vramfit validate recipe.json --calibration calibration.txt --max-tokens 2048
 ```
 
 Compare the measured number against the prediction. Six of seven
@@ -83,11 +85,11 @@ a solve-again signal, not a pack input (ADR-0006).
 The pack step applies the recipe and emits a GGUF that llama.cpp can
 serve ([ADR-0010](../adr/0010-sub-4-bit-serving-path.md)). It needs a
 llama.cpp checkout with built tools and the `pack` extra
-(`uv sync --extra scan --extra pack`). The `pack` extra includes
-the `gguf` extra, which carries the GGUF reader without torch:
+(`pip install "vramfit[pack]"`). The `pack` extra includes the
+`gguf` extra, which carries the GGUF reader without torch:
 
 ```bash
-uv run vramfit pack recipe.json --llama-cpp ~/llama.cpp --out packed.gguf
+vramfit pack recipe.json --llama-cpp ~/llama.cpp --out packed.gguf
 ```
 
 Pack converts the checkpoint to an f16 base GGUF once, drives
