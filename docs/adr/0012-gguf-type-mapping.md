@@ -423,6 +423,59 @@
   of driving `--token-embedding-type`. The scan side has mapped the
   same name since #435. The maintainer ruled the addition in
   session on #423, and PR #438 carries the change.
+- **Amendment (2026-09-04, issues #413 and #414):** decision 3's
+  base ftype no longer reaches the file's label. The packed GGUF
+  declares in `general.file_type` the tensor type that covers the
+  most bytes in the file. Pack writes that value after the
+  quantizer exits 0, and `PackResult.file_type` and the
+  `model_packed` run-log event record it. The maintainer ruled it
+  on 2026-09-04 (Call 6 of the triage report).
+
+    **The base ftype names the floor, not the file.** `--pure`
+    hands the positional ftype to every tensor no override covers,
+    and `llama-quantize` also stamps that ftype as the file type.
+    Decision 3 chose the floor for the first reason. The second was
+    a side effect. On the published 30B pack the floor was nominal
+    2, so the file declared `Q2_K` (ftype 10) while every 2-bit
+    group packed as `Q2_0` through the ADR-0028 stack table. The
+    file held no `Q2_K` tensor (#413). The pack named a
+    quantization it did not contain, which is the defect the
+    publication #2 writeup indicts in its comparator.
+
+    **No ftype describes a measured mixed-precision pack.** The
+    field is one enum for one uniform quantization. #414 laid out
+    four choices. The floor's real tensor type (`Q2_0`, ftype 41)
+    would name 11 of 401 tensors. Keeping the floor and documenting
+    the field as meaningless repeats the comparator's sin knowingly.
+    A project-defined value leaves every reader that parses only the
+    ftype wrong. The modal type by bytes describes the largest share
+    of the file: `Q4_0` at 74.3 % of the 30B pack's bytes. Every
+    choice tells an untruth, and this one is the smallest.
+
+    **The write happens after the quantizer runs.** The base ftype
+    and the modal type differ whenever the floor is not the modal
+    type, so the value cannot ride the positional argument. Pack
+    parses the packed file's header, sums each type's bytes from the
+    data-section offsets, and overwrites the four-byte value in
+    place. The parse is the pack step's own, because gguf-py's
+    reader names tensor types through its enum, and the PyPI release
+    lags llama.cpp's table — 0.19.0 cannot name `Q2_0`. A k-quant
+    maps to its `_S` ftype, as the base table does.
+
+    **The two dense tables agree, and the stack table differs by
+    design.** #413 asked `BASE_FTYPE_BY_BITS[2]` and
+    `GGML_TYPE_BY_BITS[2]` to stop disagreeing. They never did: both
+    hold `Q2_K`. The `Q2_0` came from the ADR-0028 expert-stack
+    table, which differs at 2 and 4 because k-quant super-blocks do
+    not divide the stack rows. A dense tensor no override covers
+    still takes the k-quant floor, so the base table keeps its
+    entries. The tables carry a comment saying so.
+
+    **The card states the label.** A reader who checks the field
+    against the recipe finds `Q4_0` over a mixed file, so the 30B
+    card says what the field means for a vramfit pack. The published
+    30B file still declares `Q2_K` until it is re-packed or
+    re-stamped and re-uploaded, which #413 tracks.
 
 ## Context
 

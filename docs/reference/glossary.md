@@ -632,9 +632,19 @@ change.
     (uncovered tensors, and the exclusions the recipe instructed),
     the zero-count expert report — `(stack, expert)` pairs the
     matrix counts zero times
-    ([ADR-0026](../adr/0026-moe-expert-pricing.md) decision 5) — and
-    the **floored layers**. Code type
+    ([ADR-0026](../adr/0026-moe-expert-pricing.md) decision 5),
+    the **floored layers**, and the **declared file type**. Code type
     `vramfit.domain.pack.PackResult`.
+
+**Declared file type**
+:   The value a packed GGUF carries in `general.file_type`: the
+    tensor type that covers the most bytes in the file, written
+    after the quantizer runs
+    ([ADR-0012](../adr/0012-gguf-type-mapping.md) decision 3, the
+    2026-09-04 amendment). One field cannot name a mixed-precision
+    recipe, so it names the largest share. Distinct from the **base
+    type**, the quantizer's `--pure` floor, which the quantizer
+    would otherwise stamp there. Not "ftype label" or "quant label".
 
 **Floored layer**
 :   A layer the base GGUF numbers that no override in the recipe

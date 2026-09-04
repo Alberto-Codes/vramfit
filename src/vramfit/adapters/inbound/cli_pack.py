@@ -310,7 +310,11 @@ def pack(
     existing file), then drives ``llama-quantize`` with one type
     override per layer group. An ``lm_head`` group drives the output
     head directly. Without one the embedding assignment pins an
-    untied head (ADR-0012). The ``--python-bin`` interpreter
+    untied head (ADR-0012). After the quantizer exits 0 the packed
+    file's ``general.file_type`` becomes the type covering the most
+    bytes, and the ``model_packed`` event records it under
+    ``file_type`` (ADR-0012 decision 3 as amended 2026-09-04). The
+    ``--python-bin`` interpreter
     runs the convert script — the ``pack`` extra provisions its
     dependencies. ``--imatrix`` hands the quantizer an importance
     matrix (ADR-0016). The command then reads that matrix's
@@ -490,6 +494,7 @@ def pack(
                 [stack, expert] for stack, expert in result.imatrix_zero_count_experts
             ],
             "floored_layers": list(result.floored_layers),
+            "file_type": result.file_type,
         },
     )
     _report_pack_effects(result)

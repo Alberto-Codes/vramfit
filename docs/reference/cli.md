@@ -484,7 +484,11 @@ per layer group. The embedding assignment binds
 `--output-tensor-type` with its own assignment — without one, the
 embedding assignment pins an untied head (ADR-0012 as amended). The
 base type is the recipe's precision floor, applied with `--pure`, so
-no heuristic mixing leaks in.
+no heuristic mixing leaks in. After the quantizer exits 0 the command
+rewrites the file's `general.file_type` to the tensor type that
+covers the most bytes in the file (ADR-0012 decision 3, the
+2026-09-04 amendment). The quantizer stamps the floor there, and on
+a mixed pack the floor can name a type the file does not hold.
 
 A routed-expert-stack group maps through its own type table
 ([ADR-0028](../adr/0028-expert-stack-type-table.md)): 8 to `Q8_0`, 4
@@ -655,7 +659,7 @@ packed model is unproven. Every run appends the pack events to the
 run log: pack_started, gguf_converted (with `reused`), model_packed
 (real bytes, base type, embedding and output tensor types, override
 count, imatrix, uncovered tensors, excluded tensors, zero-count
-experts, floored layers), size_checked (margin and
+experts, floored layers, declared file type), size_checked (margin and
 `fits`), reconstruction_checked when the gate ran
 (per-tensor
 protected and reference RMSE, `collapsed`, `passed`),

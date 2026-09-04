@@ -21,6 +21,7 @@ from typing import Literal
 
 import pytest
 
+from tests.contract.conftest import PACKED_TYPE_BYTES
 from tests.fakes import (
     MemoryRecipePacker,
     decoder_imatrix_entry_names,
@@ -371,13 +372,16 @@ def _fake_packer(  # noqa: PLR0913 - mirrors _real_packer's fixture surface
         imatrix_entry_names=_entry_names(
             with_imatrix=with_imatrix, unreached=with_unreached_exclusion
         ),
+        # The composition the `packed_layout` fixture serves the real
+        # adapter, so both sides declare one modal type (#414).
+        packed_type_bytes=dict(PACKED_TYPE_BYTES),
     )
 
 
 @pytest.mark.parametrize(
     "build", [_real_packer, _fake_packer], ids=["real-subprocess", "fake-memory"]
 )
-@pytest.mark.usefixtures("base_gguf_names", "imatrix_entry_names")
+@pytest.mark.usefixtures("base_gguf_names", "imatrix_entry_names", "packed_layout")
 class TestRecipePackerContract:
     def test_convert_returns_the_base_size(self, build, tmp_path) -> None:
         packer: RecipePacker = build(tmp_path)
@@ -405,6 +409,15 @@ class TestRecipePackerContract:
         result = packer.pack(sample_pack_recipe())
 
         assert result.packed_bytes == PACKED_BYTES
+
+    def test_pack_declares_the_modal_type_by_bytes(self, build, tmp_path) -> None:
+        packer = build(tmp_path)
+        packer.convert()
+        result = packer.pack(sample_pack_recipe())
+        # Q4_0 covers 74.3 % of the 30B pack's bytes (#413), and the
+        # base ftype names the floor, not the file.
+        assert result.file_type == "Q4_0"
+        assert result.file_type != result.base_type
 
     def test_pack_carries_the_shared_type_mapping(self, build, tmp_path) -> None:
         packer: RecipePacker = build(tmp_path)
@@ -790,7 +803,7 @@ class TestRecipePackerContract:
             packer.pack(sample_pack_recipe())
 
 
-@pytest.mark.usefixtures("base_gguf_names", "imatrix_entry_names")
+@pytest.mark.usefixtures("base_gguf_names", "imatrix_entry_names", "packed_layout")
 class TestLlamaCppCommandLines:
     """Real-adapter behavior the fake structurally cannot cover.
 

@@ -82,6 +82,12 @@ measured pipeline. The quantizer embeds the matrix's provenance in
 the packed file, and the `model_packed` run-log event records the
 path.
 
+The packed file's `general.file_type` names the tensor type that
+covers the most bytes in it, under `file_type` on the same event.
+One field cannot name a mixed recipe, so it names the largest share
+([ADR-0012](../adr/0012-gguf-type-mapping.md) decision 3, the
+2026-09-04 amendment). Read the recipe for the mix.
+
 The command also reads the matrix's `.counts` tensors against the
 base GGUF before quantizing
 ([ADR-0026](../adr/0026-moe-expert-pricing.md) decision 5). An

@@ -31,6 +31,12 @@ Open before upload (the #404 dry run resolves each):
   run (#82 precedent).
 - The license text and the origin notice files must land in the
   repo before upload. The License section already claims them.
+- The published file at revision 0c72c8a declares
+  `general.file_type` 10 (Q2_K) and holds no Q2_K tensor (#413).
+  The card sentence in the recipe section states the ruled value,
+  Q4_0 (#414, ADR-0012 decision 3 as amended 2026-09-04). Re-pack
+  or re-stamp the file, verify the bytes, and re-upload before this
+  card ships. The packed SHA-256 and byte count below then change.
 -->
 
 # NVIDIA-Nemotron-3.5-Lightning-30B-A3B-fit16gib-GGUF
@@ -171,7 +177,10 @@ dense class at 8-bit. A nominal width names the solver's
 assignment, and each GGUF type spends more in practice: `Q2_0`
 stores 2.25 bits per weight, `Q4_0` stores 4.5, and `Q8_0` stores
 8.5, block scales included. The budget prices every group at
-those real bits. The allocation:
+those real bits. The file's `general.file_type` declares `Q4_0`
+because that one field cannot name a mixed recipe, so vramfit
+writes the type covering the most bytes (74.3 % here) and the
+recipe below carries the mix. The allocation:
 
 - 11 `down_proj` expert stacks at nominal 2 (Q2_0, 2.25 bits per
   weight): layers 22, 24, 27, 29, 31, 34, 43, 45, 47, 49, 51.

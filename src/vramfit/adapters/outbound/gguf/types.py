@@ -26,7 +26,11 @@ its reconciled form `model.embeddings`, and Gemma 4's nested
 name is the domain's `LLAMA_CPP` constant, so the table key and
 the pack check cannot drift apart. A
 recipe recorded for a foreign runtime, or anything the table cannot
-map, raises `PackError` instead of guessing.
+map, raises `PackError` instead of guessing. The base ftype table
+reaches tensors only: the label the packed file declares is the
+modal type by bytes, which
+[vramfit.adapters.outbound.gguf.file_type][] writes after the
+quantizer runs (ADR-0012 decision 3 as amended 2026-09-04).
 
 `all_overrides` composes the protection and group overrides in the
 quantizer's priority order. One function owns that composition, so
@@ -102,7 +106,13 @@ EXPERT_STACK_TYPE_BY_BITS: Final[dict[int, str]] = {
 
 # The quantizer's positional type argument speaks ftype names, not
 # tensor-type names. Each entry is the pure-type ftype for the same
-# nominal bits as GGML_TYPE_BY_BITS.
+# nominal bits as GGML_TYPE_BY_BITS, and the two tables agree at
+# every key. The expert-stack table above disagrees at 2 and 4 on
+# purpose (ADR-0028): k-quants do not divide the stack rows, and a
+# dense tensor no override covers still takes this k-quant floor.
+# The base ftype reaches tensors only. The label the file declares
+# is the modal type by bytes, written after the quantizer runs
+# (ADR-0012 decision 3 as amended 2026-09-04, #413, #414).
 BASE_FTYPE_BY_BITS: Final[dict[int, str]] = {
     16: "F16",
     8: "Q8_0",

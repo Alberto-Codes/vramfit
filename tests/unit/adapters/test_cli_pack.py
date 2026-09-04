@@ -742,6 +742,38 @@ class TestPackCommand:
         packed = next(line for line in log if line["event"] == "model_packed")
         assert packed["floored_layers"] == ["blk.52."]
 
+    def test_model_packed_event_records_the_declared_file_type(
+        self, tmp_path, monkeypatch, llama_cpp_dir, recipe_path
+    ) -> None:
+        # The 30B composition (#413): the label names the modal type
+        # by bytes, and the base type stays the floor (#414).
+        patch_packer(
+            monkeypatch,
+            MemoryRecipePacker(
+                packed_bytes=WEIGHT_BUDGET - 100,
+                packed_type_bytes={"Q4_0": 743, "Q8_0": 138, "Q2_0": 117},
+            ),
+        )
+        out = tmp_path / "packed.gguf"
+
+        result = runner.invoke(
+            app,
+            [
+                "pack",
+                str(recipe_path),
+                "--llama-cpp",
+                str(llama_cpp_dir),
+                "--out",
+                str(out),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        log = read_run_log(out.with_name(out.stem + ".runlog.jsonl"))
+        packed = next(line for line in log if line["event"] == "model_packed")
+        assert packed["file_type"] == "Q4_0"
+        assert packed["base_type"] != "Q4_0"
+
     def test_recipe_reaching_every_layer_warns_nothing(
         self, tmp_path, monkeypatch, llama_cpp_dir, recipe_path
     ) -> None:

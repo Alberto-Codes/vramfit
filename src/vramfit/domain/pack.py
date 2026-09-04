@@ -6,7 +6,9 @@ record of what was driven (`PackResult`), the arithmetic that
 re-checks real bytes against the planned budget (ADR-0012), the
 smoke-test verdict against the perplexity ceiling (ADR-0017), the
 zero-count judgment on the imatrix counts the pack reads
-(`zero_count_experts`, ADR-0026 decision 5), and
+(`zero_count_experts`, ADR-0026 decision 5), the modal-type rule
+that names a mixed-precision file (`modal_type`, ADR-0012 decision 3
+as amended 2026-09-04), and
 the reconstruction-check verdict on protected packs — the stripped
 reference recipe and the collapsed-tensor judgment (ADR-0022). Type
 tables and subprocess details live in
@@ -111,6 +113,14 @@ class PackResult:
             warning, so only this record names the case. A report,
             never a gate. Separate from ``imatrix_uncovered``, which
             names whole tensors. Empty without an imatrix.
+        file_type (str | None): The ftype name the packed file
+            declares in ``general.file_type``: the type covering the
+            most bytes, written after the quantizer ran (ADR-0012
+            decision 3 as amended 2026-09-04). The quantizer's own
+            stamp is ``base_type``, which on a mixed pack can name a
+            type the file does not hold (#413). None when the packer
+            wrote no label. The token is the runtime's own ftype
+            name, so the backend owns the vocabulary.
         floored_layers (tuple[str, ...]): Layers the base model
             carries that no override reached, in layer order. They
             took the ``base_type`` floor, which ADR-0012 decision 3
@@ -138,6 +148,7 @@ class PackResult:
     imatrix_excluded: tuple[str, ...] = ()
     imatrix_zero_count_experts: tuple[tuple[str, int], ...] = ()
     floored_layers: tuple[str, ...] = ()
+    file_type: str | None = None
 
     def __post_init__(self) -> None:
         """Enforce the result invariants.
@@ -145,7 +156,8 @@ class PackResult:
         Raises:
             ValueError: If ``packed_bytes`` is not positive,
                 ``base_type`` is empty, ``token_embedding_type``,
-                ``output_tensor_type``, or ``imatrix_path`` is empty,
+                ``output_tensor_type``, ``imatrix_path``, or
+                ``file_type`` is empty,
                 ``imatrix_uncovered``, ``imatrix_excluded``, or
                 ``imatrix_zero_count_experts`` is set without an
                 ``imatrix_path``, a zero-count pair names an empty
@@ -162,6 +174,8 @@ class PackResult:
             raise ValueError("output_tensor_type must not be empty")
         if self.imatrix_path is not None and not self.imatrix_path:
             raise ValueError("imatrix_path must not be empty")
+        if self.file_type is not None and not self.file_type:
+            raise ValueError("file_type must not be empty")
         if self.imatrix_uncovered and self.imatrix_path is None:
             raise ValueError("imatrix_uncovered requires an imatrix_path")
         if self.imatrix_excluded and self.imatrix_path is None:
@@ -232,6 +246,47 @@ def zero_count_experts(
             if count == 0
         )
     )
+
+
+def modal_type(bytes_by_type: Mapping[str, int]) -> str:
+    """Name the type that covers the most bytes in a packed file.
+
+    The rule behind ADR-0012 decision 3 as amended 2026-09-04. One
+    file-type field cannot name a mixed-precision recipe, so the
+    field declares the type most of the file is. On the published
+    30B pack that is ``Q4_0`` at 74.3 % of the bytes, where the
+    quantizer had stamped ``Q2_K`` over no ``Q2_K`` tensor (#413).
+
+    Args:
+        bytes_by_type: Bytes each type covers, keyed by type name.
+            Every count must be positive.
+
+    Returns:
+        The type name with the largest byte count. A tie goes to the
+        name that sorts first, so the answer never depends on the
+        table's order.
+
+    Raises:
+        ValueError: If the table is empty, a name is empty, or a
+            count is not positive — none can come from a real read.
+
+    Examples:
+        The 30B pack's composition, in tenths of a percent:
+
+        ```python
+        from vramfit.domain.pack import modal_type
+
+        assert modal_type({"Q4_0": 743, "Q8_0": 138, "Q2_0": 117}) == "Q4_0"
+        ```
+    """
+    if not bytes_by_type:
+        raise ValueError("bytes_by_type must not be empty")
+    for name, count in bytes_by_type.items():
+        if not name:
+            raise ValueError("a type name must not be empty")
+        if count <= 0:
+            raise ValueError(f"bytes for {name} must be positive")
+    return max(sorted(bytes_by_type), key=lambda name: bytes_by_type[name])
 
 
 def weight_budget_margin(recipe: Recipe, packed_bytes: int) -> int:
