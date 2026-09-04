@@ -122,6 +122,21 @@
   solves. Record:
   [#301 ruling comment](https://github.com/Alberto-Codes/vramfit/issues/301#issuecomment-5377920461).
 
+- **Amendment (2026-09-04, issue #371):** a pin pattern resolves
+  against a group of an unquantizable class by its match count. Such
+  a group holds at the F16 passthrough
+  ([ADR-0012](0012-gguf-type-mapping.md), 2026-08-20 amendment), so
+  no pin can move it. A pattern that resolves to exactly one held
+  group refuses, as before. A pattern that resolves to more than one
+  group skips each held group it sweeps, and `plan` prints one
+  warning per skipped group naming the pattern, the group, and the
+  filter. The maintainer ruled this 2026-09-04 on #371: skip the held
+  group under a multi-group pattern and warn. A silent skip was ruled
+  out by the no-op-warning precedent (issue #59). Before this
+  amendment `--pin "*=8"` refused the whole plan on any map carrying
+  the class, and no pattern could say "pin everything the quantizer
+  accepts". Record: [#371](https://github.com/Alberto-Codes/vramfit/issues/371).
+
 ## Context
 
 The plan step chooses one precision per group to minimize total predicted

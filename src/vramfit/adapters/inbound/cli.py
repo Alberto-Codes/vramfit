@@ -23,7 +23,9 @@ usage errors, rejected before any work starts. ``plan`` records
 its ``--runtime`` in the recipe and reports what the runtime
 filter drops (ADR-0013), its ``--protect`` rules resolve to
 per-tensor floors with a warning for a dead rule and for each
-dropped no-op pair (ADR-0022, issue #59), and its
+dropped no-op pair (ADR-0022, issue #59), its ``--pin`` globs skip
+a held unquantizable-class group with a warning naming it (ADR-0007,
+2026-09-04 amendment, #371), and its
 ``--exclude-imatrix`` globs mark protected tensors with a warning
 when a glob overreaches the protected set (ADR-0023). Its
 ``--checkpoint`` reads the model's safetensors headers for a size
@@ -83,6 +85,7 @@ from vramfit.domain.budget import (
     kv_cache_bytes,
 )
 from vramfit.domain.errors import VramfitError
+from vramfit.domain.pins import held_pin_skips
 from vramfit.domain.runtime import LLAMA_CPP, RUNTIME_CAPABILITIES
 from vramfit.domain.solver import (
     DEFAULT_FORMAT_OVERHEAD,
@@ -357,6 +360,11 @@ def plan(
     no-op pair, which would otherwise falsely fail the
     reconstruction check (issue #59).
 
+    A ``--pin`` pattern that resolves to more than one group skips
+    each unquantizable-class group it sweeps and draws a warning
+    naming the group and its filter (ADR-0007, 2026-09-04 amendment,
+    #371). A pattern that resolves to that one held group refuses.
+
     ``--checkpoint`` reads the model's safetensors headers for a size
     source independent of the map (ADR-0029). A group the checkpoint
     holds and the map does not measure holds at reference precision,
@@ -454,6 +462,14 @@ def plan(
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
+    for skip in held_pin_skips(pins, map_, runtime, sizes):
+        typer.echo(
+            f'warning: --pin "{skip.pattern}={skip.bits}" skips group '
+            f'"{skip.group}" — it holds at the F16 passthrough, because '
+            f'runtime "{runtime}" refuses its tensors through the '
+            f'"{skip.filter}" filter (ADR-0012, 2026-08-20 amendment)',
+            err=True,
+        )
     if protections:
         state = {a.group: a.bits for a in recipe.assignments}
         warn_protection_gaps(protections, exclusions, map_, state, runtime)

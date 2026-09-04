@@ -7,8 +7,11 @@ checkpoint-discovered group, beyond the map's groups. A pinned
 group never enters the downgrade loop, so a pin orders no groups
 the map did not measure. At a width the map never measured the
 assignment records 0.0 damage, the way an uncovered held group
-does. An unquantizable-class group refuses every pin and holds at
-the F16 passthrough (ADR-0012, 2026-08-20 amendment).
+does. An unquantizable-class group holds at the F16 passthrough
+(ADR-0012, 2026-08-20 amendment). A pattern that resolves to that
+one group refuses. A pattern that resolves to more than one group
+skips the held group instead, and `held_pin_skips` names each skip
+for the caller to warn about (ADR-0007, 2026-09-04 amendment, #371).
 
 Examples:
     Resolve dense pins at nominal 8 beside a stack-keyed map:
@@ -35,9 +38,9 @@ See Also:
 from __future__ import annotations
 
 from collections.abc import Mapping
-from fnmatch import fnmatchcase
 
 from vramfit.domain.model import LayerGroup, SensitivityMap
+from vramfit.domain.pin_skips import HeldPinSkip, match_pattern
 from vramfit.domain.runtime import RUNTIME_CAPABILITIES, unquantizable_filter
 from vramfit.domain.sizes import REFERENCE_BITS
 from vramfit.domain.solver_errors import PinError
@@ -56,7 +59,9 @@ def _expand_pins(
     map's candidate set, and it may land on any checkpoint-discovered
     group (the 2026-08-22 ADR-0007 amendment). Without a runtime the
     candidate set still bounds the width, and without a size source
-    the map's groups still bound the match.
+    the map's groups still bound the match. A pattern that resolves
+    to more than one group skips the unquantizable-class groups it
+    sweeps (ADR-0007, 2026-09-04 amendment, #371).
 
     Args:
         pins: Ordered mapping of glob pattern to forced precision.
@@ -95,8 +100,8 @@ def _expand_pins(
                 f"set {sorted(set(candidates), reverse=True)}"
                 + (f' and runtime "{runtime}" does not serve it' if runtime else "")
             )
-        matched = [name for name in names if fnmatchcase(name, pattern)]
-        if not matched:
+        matched, _skipped = match_pattern(pattern, names, runtime)
+        if not matched and not _skipped:
             raise PinError(f'pin "{pattern}={bits}" matches no group')
         for name in matched:
             pinned[name] = bits
@@ -233,6 +238,45 @@ def resolve_pins(
         runtime,
     )
     return pinned, uncovered_pins, frozenset(expanded)
+
+
+def held_pin_skips(
+    pins: Mapping[str, int],
+    sensitivity_map: SensitivityMap,
+    runtime: str | None,
+    discovered_bytes: Mapping[str, int] | None,
+) -> tuple[HeldPinSkip, ...]:
+    """List the held groups the caller's multi-group pins skipped.
+
+    A pattern that resolves to more than one group skips every
+    unquantizable-class group it sweeps, because the group holds at
+    the F16 passthrough and no pin can move it (ADR-0007, 2026-09-04
+    amendment, #371). The caller prints one warning per skip. A
+    pattern that resolves to exactly one group never skips: it
+    refuses through `resolve_pins` instead.
+
+    Args:
+        pins: Ordered glob-pattern pins, as given to `resolve_pins`.
+        sensitivity_map: Damage curves for every measured group.
+        runtime: Target runtime name, or None.
+        discovered_bytes: Bytes per checkpoint-discovered group, or
+            None.
+
+    Returns:
+        One entry per skipped group, in pattern order and then name
+        order. A group two patterns sweep appears once per pattern.
+    """
+    names = sorted(
+        {g.name for g in sensitivity_map.groups} | set(discovered_bytes or {})
+    )
+    skips: list[HeldPinSkip] = []
+    for pattern, bits in pins.items():
+        _matched, skipped = match_pattern(pattern, names, runtime)
+        skips.extend(
+            HeldPinSkip(group=name, pattern=pattern, bits=bits, filter=filter_name)
+            for name, filter_name in skipped
+        )
+    return tuple(skips)
 
 
 def assignment_damage(

@@ -251,6 +251,18 @@ pins override earlier ones for overlapping groups — repeating a
 pattern moves it to the last position. Pins are recorded in the
 recipe in their effective order.
 
+A pin on a group of an unquantizable class (the router's
+`mixer.gate`, the Mamba `mixer.conv1d`) resolves by how many groups
+the pattern matches (the 2026-09-04 ADR-0007 amendment, #371). A
+pattern that resolves to exactly one held group refuses, whether
+spelled literally or as a glob. A pattern that resolves to more than
+one group skips each held group it sweeps, and the command prints one
+`warning:` line per skipped group naming the pattern, the group, and
+the filter that holds it. The held group stays at the F16
+passthrough. So `--pin "*=8"` pins every group the quantizer accepts
+and warns about the rest. A multi-group pattern that sweeps only held
+groups pins nothing and warns for each.
+
 Protection semantics
 ([ADR-0022](../adr/0022-within-layer-protections.md)): patterns are
 the same `fnmatch` language, matched against full *tensor* names
