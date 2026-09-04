@@ -187,14 +187,15 @@ is not a clean refusal. No flag works around it, and no current
 update carries type 42. The same holds for any runtime without
 ggml type 42.
 
-A verified single-user invocation:
+A single-user invocation:
 
 ```
 llama-server -m NVIDIA-Nemotron-3.5-Lightning-30B-A3B-fit16gib.gguf \
   -ngl 99 -c 16384 -np 1 --reasoning-format none --reasoning-budget 512
 ```
 
-Each flag answers one measured failure:
+The verification runs did not start this command as one. Each flag
+was verified on its own, and each answers one measured failure:
 
 - `--reasoning-format none`. By default llama.cpp streams the
   thoughts as `reasoning_content` and holds `content` at null. Open
@@ -204,8 +205,10 @@ Each flag answers one measured failure:
   non-streaming path.
 - `--reasoning-budget 512`. This model reasons before it answers,
   and the reasoning length tracks the problem. Twenty trivial
-  prompts drew a median of 285 generated tokens, and one tail reply
-  reached 2,631. When a reply exceeds `max_tokens` inside the
+  prompts drew a median of 285 generated tokens, with a maximum of
+  1,207 and none past 2,000. A separate single-prompt measurement,
+  "why is the sky blue", drew 2,631 tokens for a one-sentence
+  answer. When a reply exceeds `max_tokens` inside the
   thoughts, `content` comes back empty with `finish_reason`
   "length". It renders blank, not truncated, and no fixed cap covers
   the tail. The server flag closes the thought and yields an answer.

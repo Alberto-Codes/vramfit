@@ -47,7 +47,7 @@ and carries no sidecar.
 | Five publishers' repositories checked, comparator smallest of them | chart #158 Notes: four on #265 (2026-08-15), a fifth on #276 (2026-08-16), ruled the bar on #393 | card prose, comparator section |
 | Eight other full-model GGUFs below 15.76 GiB, Hub query 2026-08-22 | issue #415 evidence table (correction, 2026-08-31) | card prose, comparator section and fit16gib section |
 | `general.file_type` Q4_0 at 74.3 % of bytes | issue #414 composition table, read from the published file at `0c72c8a` on 2026-08-22, ruled 2026-09-04 (ADR-0012 decision 3 amendment) | card prose, recipe section; the packed file's metadata after re-stamp |
-| Usage section: Ollama type table (41 on `main`, 39 in 0.18.0), 11 type-42 tensors, reasoning-format rendering, token-length table (285 median, 2,631 tail), GSM8K budget rows (923/463/140 tokens, 96.7/98.3/90.0 %, 2/0/0 truncated, 3.3×), GPQA Diamond (5,819 mean, 57 % over 8,000), KV pool (16,384 cells, 426 log lines at 4 concurrency, 19,209 → 19,340 MiB) | issue #410 body and comments, measured 2026-08-22 on llama.cpp b10573, RTX 4090, Open WebUI 0.11.0 | card prose, Usage section |
+| Usage section: Ollama type table (41 on `main`, 39 in 0.18.0), 11 type-42 tensors, reasoning-format rendering, token-length figures (20 trivial prompts at 285 median and 1,207 maximum, one-prompt "why is the sky blue" reply at 2,631), GSM8K budget rows (923/463/140 tokens, 96.7/98.3/90.0 %, 2/0/0 truncated, 3.3×), GPQA Diamond (5,819 mean, 57 % over 8,000), KV pool (16,384 cells, 426 log lines at 4 concurrency, 19,209 → 19,340 MiB) | issue #410 body and comments, measured 2026-08-22 on llama.cpp b10573, RTX 4090, Open WebUI 0.11.0 | card prose, Usage section |
 
 ## The upload set (model repo)
 
