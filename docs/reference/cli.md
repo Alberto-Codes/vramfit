@@ -29,9 +29,13 @@ skipped-attention blocks and composite configs that nest the decoder
 under `text_config`. It prices declared per-layer KV geometry (#421).
 That covers a `layer_types` sliding/global pattern with its window,
 split local/global head geometry, the `attention_k_eq_v` KV-head
-override (#431), and shared-KV layers that allocate no cache. An active window without
-`layer_types`, an unknown layer type, or a llama-geometry key beside
-`block_configs` refuses rather than guessing.
+override (#431), shared-KV layers that allocate no cache, and a hybrid
+`layers_block_type` stack whose `mamba`, `moe`, and `mlp` blocks store
+no KV (#427). An active window without `layer_types`, an unknown layer
+or block type, or a llama-geometry key beside `block_configs` refuses
+rather than guessing. So does `layers_block_type` beside `layer_types`
+or beside a `num_kv_shared_layers` above zero, and a
+`hybrid_override_pattern` with no `layers_block_type` list.
 
 ```
 vramfit budget

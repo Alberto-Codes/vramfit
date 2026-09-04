@@ -4,11 +4,15 @@ Builds the `KVLayer` tuple a llama-style decoder config declares
 (#421): a ``layer_types`` list of global and sliding layers, an active
 ``sliding_window``, split local/global head widths and KV-head counts
 (``attention_k_eq_v`` gates the KV-head override, #431), and a
-shared-KV tail (``num_kv_shared_layers``). The module also carries
-the field-label and integer-bound helpers the whole adapter shares,
-and the refusal that keeps these keys off the DeciLM path (#426).
-It also defines `HfConfigError`, the refusal class both modules
-raise under the `VramfitError` root (#474).
+shared-KV tail (``num_kv_shared_layers``), and a hybrid
+``layers_block_type`` stack whose non-attention blocks store no KV
+(#427). A ``hybrid_override_pattern`` string with no such list
+refuses, since this module does not expand the pattern (#427). The
+module also carries the field-label and integer-bound
+helpers the whole adapter shares, and the refusal that keeps these
+keys off the DeciLM path (#426). It also defines `HfConfigError`,
+the refusal class both modules raise under the `VramfitError` root
+(#474).
 
 Split from [vramfit.adapters.outbound.hf_config][] to hold the
 300-code-line cap. That module owns dispatch and the container rules.
@@ -104,7 +108,16 @@ def kv_layers_from_decoder(
     layer's price: the ruled runtime allocates the K and V caches
     even where it fills V with K, so every layer prices two KV
     tensors (#431). The last ``num_kv_shared_layers`` layers allocate
-    no fresh KV.
+    no fresh KV. A hybrid ``layers_block_type`` stack (Nemotron-H,
+    #427) keeps a `KVLayer` for each ``attention`` entry alone. A
+    ``mamba``, ``moe``, or ``mlp`` block stores no KV, the way the
+    DeciLM path skips a ``no_op`` block. A hybrid stack beside a
+    shared-KV tail refuses: this reader does not model which
+    attention block a shared tail reuses. Published Nemotron-H files
+    declare the same stack as a ``hybrid_override_pattern`` string
+    and omit the list. This reader does not parse the pattern, so
+    the string refuses when no ``layers_block_type`` list comes
+    beside it.
 
     The same class also synthesizes defaults this reader does not
     mirror: an absent ``global_head_dim`` defaults to 512, an absent
@@ -132,15 +145,34 @@ def kv_layers_from_decoder(
             the base count while ``attention_k_eq_v`` disables it,
             ``num_kv_shared_layers`` leaves no layer that stores KV
             or leaves a shared layer with no earlier layer of its
-            type, or a geometry key carries a type it cannot mean.
+            type, ``layers_block_type`` is malformed, misses a layer,
+            names a block type this reader does not model, lists no
+            ``attention`` block, comes beside ``layer_types``, or comes
+            beside a ``num_kv_shared_layers`` above zero, a
+            ``hybrid_override_pattern`` comes with no
+            ``layers_block_type`` list, or a geometry key carries a
+            type it cannot mean.
             ``bool`` subclasses ``int``, so a boolean count refuses
             as a non-integer (#348). No message renders a
             publisher-controlled value (#363).
 
     Returns:
-        One `KVLayer` per hidden layer.
+        One `KVLayer` per hidden layer that stores KV.
     """
     layer_types = _layer_types(config, layers, path, prefix)
+    block_types = _block_types(config, layers, path, prefix)
+    if layer_types is not None and block_types is not None:
+        raise HfConfigError(
+            f"{path}: {field_label('layers_block_type', prefix)} beside "
+            f"{field_label('layer_types', prefix)} declares two per-layer "
+            "patterns this reader does not combine"
+        )
+    if block_types is None and _override_pattern(config, path, prefix) is not None:
+        raise HfConfigError(
+            f"{path}: {field_label('hybrid_override_pattern', prefix)} declares "
+            f"a hybrid stack with no {field_label('layers_block_type', prefix)} "
+            "list, which this reader does not model"
+        )
     window = _active_window(config, path, prefix)
     if window is not None and layer_types is None:
         raise HfConfigError(
@@ -169,12 +201,20 @@ def kv_layers_from_decoder(
             "a KV-head override its attention_k_eq_v setting disables, "
             "which this reader does not model"
         )
-    fresh = layers - _shared_layers(config, layers, path, prefix)
+    shared = _shared_layers(config, layers, path, prefix)
+    if block_types is not None and shared > 0:
+        raise HfConfigError(
+            f"{path}: {field_label('layers_block_type', prefix)} beside "
+            f"{field_label('num_kv_shared_layers', prefix)} declares a "
+            "shared-KV tail over a hybrid stack this reader does not model"
+        )
+    fresh = layers - shared
     if not set(types[fresh:]) <= set(types[:fresh]):
         raise HfConfigError(
             f"{path}: {field_label('num_kv_shared_layers', prefix)} leaves a "
             "shared layer with no earlier layer of its type"
         )
+    stores_kv = block_types or ("attention",) * layers
     return tuple(
         KVLayer(
             kv_heads=kv_heads if t == "sliding_attention" else global_heads,
@@ -183,6 +223,7 @@ def kv_layers_from_decoder(
             shares_kv=i >= fresh,
         )
         for i, t in enumerate(types)
+        if stores_kv[i] == "attention"
     )
 
 
@@ -227,6 +268,82 @@ def _layer_types(
             "a layer type this reader does not model"
         )
     return tuple(layer_types)
+
+
+def _block_types(
+    config: dict[str, Any], layers: int, path: Path, prefix: str
+) -> tuple[str, ...] | None:
+    """Read and validate a declared ``layers_block_type`` list (#427).
+
+    Nemotron-H configs mark each hidden layer as ``attention``,
+    ``mamba``, ``moe``, or ``mlp``. Only an ``attention`` block stores
+    KV. The Nemotron 3.5 Lightning 30B-A3B file lists 52 entries with
+    6 ``attention`` blocks, so a uniform read over-counts its KV cache
+    by 8.7x. An unknown block type refuses, since it could carry a
+    cache this reader does not price.
+
+    Args:
+        config: Parsed ``config.json``, or a nested decoder object.
+        layers: The decoder's hidden layer count, already parsed.
+        path: Source path, for error messages.
+        prefix: JSON path of ``config`` inside the file, empty at the
+            top level.
+
+    Returns:
+        One block type per hidden layer, or ``None`` when the file
+        declares none.
+
+    Raises:
+        HfConfigError: If the list is not a list of strings, misses a
+            layer, names a block type outside the four above, or
+            lists no ``attention`` block.
+    """
+    block_types = config.get("layers_block_type")
+    if block_types is None:
+        return None
+    label = field_label("layers_block_type", prefix)
+    if not isinstance(block_types, list) or not all(
+        isinstance(t, str) for t in block_types
+    ):
+        raise HfConfigError(f"{path}: {label} must be a list of strings")
+    if len(block_types) != layers:
+        raise HfConfigError(f"{path}: {label} does not list one type per hidden layer")
+    if any(t not in ("attention", "mamba", "moe", "mlp") for t in block_types):
+        raise HfConfigError(
+            f"{path}: {label} declares a block type this reader does not model"
+        )
+    if "attention" not in block_types:
+        raise HfConfigError(f"{path}: {label} lists no attention block")
+    return tuple(block_types)
+
+
+def _override_pattern(config: dict[str, Any], path: Path, prefix: str) -> str | None:
+    """Read a declared ``hybrid_override_pattern`` string.
+
+    The transformers Nemotron-H config class expands the string into
+    ``layers_block_type``. This reader does not, so the caller
+    refuses the string when the list is absent (#427).
+
+    Args:
+        config: Parsed ``config.json``, or a nested decoder object.
+        path: Source path, for error messages.
+        prefix: JSON path of ``config`` inside the file, empty at the
+            top level.
+
+    Returns:
+        The pattern as declared, or ``None`` when absent or null. An
+        empty string is a declared pattern of zero blocks.
+
+    Raises:
+        HfConfigError: If the value is not a string or null.
+    """
+    pattern = config.get("hybrid_override_pattern")
+    if pattern is not None and not isinstance(pattern, str):
+        raise HfConfigError(
+            f"{path}: {field_label('hybrid_override_pattern', prefix)} "
+            "must be a string or null"
+        )
+    return pattern
 
 
 def _active_window(config: dict[str, Any], path: Path, prefix: str) -> int | None:
@@ -394,11 +511,13 @@ def refuse_decilm_geometry(config: dict[str, Any], path: Path) -> None:
     """Refuse llama-geometry keys beside ``block_configs`` (#426).
 
     The DeciLM parse prices every kept block as a global K and V
-    pair. A window, KV sharing, a split local/global key, or a
-    ``layer_types`` list beside ``block_configs`` would silently
-    misprice that read. ``attention_k_eq_v`` no longer changes a
-    price (#431), but it marks a geometry family this parse does
-    not model. Each key refuses.
+    pair. A window, KV sharing, a split local/global key, a
+    ``layer_types`` or ``layers_block_type`` list, or a
+    ``hybrid_override_pattern`` string beside ``block_configs``
+    would silently misprice that read.
+    ``attention_k_eq_v`` no longer changes a price (#431), but it
+    marks a geometry family this parse does not model. Each key
+    refuses.
 
     Args:
         config: Parsed ``config.json`` containing ``block_configs``.
@@ -408,11 +527,12 @@ def refuse_decilm_geometry(config: dict[str, Any], path: Path) -> None:
         HfConfigError: If a geometry key above carries an active value,
             or carries a type it cannot mean.
     """
-    if config.get("layer_types") is not None:
-        raise HfConfigError(
-            f'{path}: "layer_types" beside "block_configs" declares '
-            "per-layer attention this reader does not model"
-        )
+    for key in ("layer_types", "layers_block_type", "hybrid_override_pattern"):
+        if config.get(key) is not None:
+            raise HfConfigError(
+                f'{path}: "{key}" beside "block_configs" declares '
+                "per-layer attention this reader does not model"
+            )
     if _active_window(config, path, "") is not None:
         raise HfConfigError(
             f'{path}: "sliding_window" declares windowed attention '

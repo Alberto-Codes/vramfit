@@ -441,6 +441,21 @@ change.
     keys name its geometry "local" (`head_dim` beside
     `global_head_dim`). Not "local layer" or "windowed layer".
 
+**Block type**
+:   The role a `layers_block_type` entry gives one hidden layer of a
+    **hybrid stack**: `attention`, `mamba`, `moe`, or `mlp`. Only an
+    `attention` block keeps a **KV layer**. The other three store no
+    KV, the way the DeciLM path skips a `no_op` block (#427). An
+    entry outside the four refuses. Not "layer kind" or "layer role".
+
+**Hybrid stack**
+:   A decoder whose `layers_block_type` list mixes attention blocks
+    with `mamba`, `moe`, or `mlp` blocks (Nemotron-H, #427). The
+    reader prices its attention blocks alone. The Nemotron 3.5
+    Lightning 30B-A3B stack lists 52 blocks, 6 of them attention, so
+    a uniform read over-counts its KV cache by 8.7x. Not "mixed
+    stack" or "hybrid model".
+
 **KV growth**
 :   Bytes each context token adds across the global layers
     (`kv_growth_bytes_per_token`). Sliding layers stop at their
