@@ -38,6 +38,12 @@ NEMOTRON_CONFIG = (
     Path(__file__).parents[1] / "data" / "nemotron-super-49b-v1_5" / "config.json"
 )
 GEMMA_31B_CONFIG = Path(__file__).parents[1] / "data" / "gemma-4-31b" / "config.json"
+LIGHTNING_CONFIG = (
+    Path(__file__).parents[1]
+    / "data"
+    / "nemotron-3.5-lightning-30b-a3b"
+    / "config.json"
+)
 
 runner = CliRunner()
 
@@ -74,6 +80,19 @@ def test_nemotron_shape_from_real_config_matches_documented_geometry() -> None:
     assert {layer.head_dim for layer in shape.kv_layers} == {128}
     assert kv_growth_bytes_per_token(shape, "fp16") == 200_704
     assert kv_growth_bytes_per_token(shape, "fp8") == 100_352
+    assert kv_window_pool_bytes(shape) == 0
+
+
+def test_lightning_shape_from_real_config_prices_attention_layers_only() -> None:
+    # The hybrid `layers_block_type` stack (#427): 52 layers, 23 mamba,
+    # 23 moe, 6 attention. Only the 6 attention layers store KV, each
+    # 2 KV heads x head_dim 128, so 6 * 2 * 2 * 128 * 2 B = 6,144 B per
+    # token at fp16. The uniform read priced all 52, an 8.7x over-count.
+    shape = shape_from_config_json(LIGHTNING_CONFIG)
+
+    assert len(shape.kv_layers) == 6
+    assert {(layer.kv_heads, layer.head_dim) for layer in shape.kv_layers} == {(2, 128)}
+    assert kv_growth_bytes_per_token(shape, "fp16") == 6_144
     assert kv_window_pool_bytes(shape) == 0
 
 

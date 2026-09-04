@@ -467,9 +467,9 @@ class TestModelShapeFromConfig:
             shape_from_config_json(path)
 
     def test_unknown_layer_type_raises(self, tmp_path) -> None:
-        # `layers_block_type` hybrids stay separately ticketed (#427);
-        # an unknown `layer_types` entry refuses rather than pricing
-        # a mechanism this reader does not model.
+        # An unknown `layer_types` entry refuses rather than pricing
+        # a mechanism this reader does not model. `layers_block_type`
+        # hybrids parse through their own reader (#427).
         config = self._text_config()
         config["text_config"]["layer_types"] = ["full_attention"] * 3 + [
             "linear_attention"
@@ -479,6 +479,98 @@ class TestModelShapeFromConfig:
 
         with pytest.raises(
             ValueError, match="declares a layer type this reader does not model"
+        ):
+            shape_from_config_json(path)
+
+    def _hybrid_config(self) -> dict:
+        # The Nemotron-H hybrid pattern (#427), shrunk: one attention
+        # block among mamba and moe blocks, no `layer_types` list.
+        return {
+            "num_hidden_layers": 6,
+            "num_key_value_heads": 2,
+            "num_attention_heads": 8,
+            "head_dim": 128,
+            "hidden_size": 1024,
+            "sliding_window": None,
+            "layers_block_type": ["mamba", "moe", "mamba", "attention", "moe", "mlp"],
+        }
+
+    def test_hybrid_block_types_price_attention_blocks_only(self, tmp_path) -> None:
+        path = tmp_path / "config.json"
+        path.write_text(json.dumps(self._hybrid_config()))
+
+        shape = shape_from_config_json(path)
+
+        assert _kv_heads(shape) == (2,)
+        assert shape.kv_layers[0].head_dim == 128
+        assert shape.kv_layers[0].window is None
+
+    def test_hybrid_block_types_inside_text_config_parse(self, tmp_path) -> None:
+        config = self._text_config()
+        del config["text_config"]["layer_types"]
+        config["text_config"]["layers_block_type"] = ["mamba", "attention"] * 2
+        path = tmp_path / "config.json"
+        path.write_text(json.dumps(config))
+
+        shape = shape_from_config_json(path)
+
+        assert _kv_heads(shape) == (2, 2)
+
+    def test_hybrid_block_types_beside_layer_types_raises(self, tmp_path) -> None:
+        config = self._hybrid_config()
+        config["layer_types"] = ["full_attention"] * 6
+        path = tmp_path / "config.json"
+        path.write_text(json.dumps(config))
+
+        with pytest.raises(ValueError, match="two per-layer patterns"):
+            shape_from_config_json(path)
+
+    def test_hybrid_block_types_unknown_type_raises(self, tmp_path) -> None:
+        config = self._hybrid_config()
+        config["layers_block_type"][0] = "linear"
+        path = tmp_path / "config.json"
+        path.write_text(json.dumps(config))
+
+        with pytest.raises(
+            ValueError, match="declares a block type this reader does not model"
+        ):
+            shape_from_config_json(path)
+
+    def test_hybrid_block_types_without_attention_raises(self, tmp_path) -> None:
+        config = self._hybrid_config()
+        config["layers_block_type"][3] = "mamba"
+        path = tmp_path / "config.json"
+        path.write_text(json.dumps(config))
+
+        with pytest.raises(ValueError, match="lists no attention block"):
+            shape_from_config_json(path)
+
+    def test_hybrid_block_types_short_list_raises(self, tmp_path) -> None:
+        config = self._hybrid_config()
+        config["layers_block_type"] = ["attention"]
+        path = tmp_path / "config.json"
+        path.write_text(json.dumps(config))
+
+        with pytest.raises(ValueError, match="one type per hidden layer"):
+            shape_from_config_json(path)
+
+    def test_hybrid_block_types_non_list_raises(self, tmp_path) -> None:
+        config = self._hybrid_config()
+        config["layers_block_type"] = "attention"
+        path = tmp_path / "config.json"
+        path.write_text(json.dumps(config))
+
+        with pytest.raises(ValueError, match="must be a list of strings"):
+            shape_from_config_json(path)
+
+    def test_hybrid_block_types_beside_block_configs_raises(self, tmp_path) -> None:
+        config = self._decilm_config()
+        config["layers_block_type"] = ["attention"] * 4
+        path = tmp_path / "config.json"
+        path.write_text(json.dumps(config))
+
+        with pytest.raises(
+            ValueError, match='"layers_block_type" beside "block_configs"'
         ):
             shape_from_config_json(path)
 
