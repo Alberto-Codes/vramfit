@@ -1,0 +1,32 @@
+---
+name: Question or proposal
+description: Ask how the tool works, or propose a change.
+title: ""
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Read the support section of CONTRIBUTING.md first. It states what
+        the maintainer answers. Check docs/ and the glossary before you ask.
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind
+      options:
+        - Question
+        - Proposal
+    validations:
+      required: true
+  - type: textarea
+    id: body
+    attributes:
+      label: Question or problem statement
+      description: For a proposal, state the problem before the solution. Name the ADR or docs page it touches.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: Proposals only. What would change, and how a reader would tell it worked.
