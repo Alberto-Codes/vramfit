@@ -205,7 +205,8 @@ def read_run_log(path: Path) -> list[dict[str, Any]]:
         OSError: If the file cannot be read.
         RunLogError: If a non-final line is not valid JSON. If any line
             defines the same key twice. If any line carries a number
-            literal the parser refuses.
+            literal the parser refuses. If any line nests past the
+            recursion limit (#478).
     """
     # Each line keeps its file number, because the blank-line filter
     # would otherwise make the refusal below name the wrong line. A hand
@@ -227,6 +228,14 @@ def read_run_log(path: Path) -> list[dict[str, Any]]:
                 break
             raise RunLogError(
                 f"{path}: line {number}: invalid JSON: {exc.msg}: column {exc.colno}"
+            ) from exc
+        except RecursionError as exc:
+            # Deep nesting exhausts the decoder's stack. `RecursionError`
+            # is no `ValueError`, so it escaped every caller (#478). A
+            # crash cannot write a line nested past the limit, so the
+            # #315 rule applies and the final line earns no drop.
+            raise RunLogError(
+                f"{path}: line {number}: JSON nests too deeply: {exc}"
             ) from exc
         except ValueError as exc:
             # The syntax parsed and the value conversion failed. An

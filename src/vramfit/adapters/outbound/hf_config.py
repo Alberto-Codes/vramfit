@@ -168,8 +168,9 @@ def _load_config(path: Path) -> dict[str, Any]:
     Raises:
         HfConfigError: If the file is not UTF-8, is not valid JSON,
             defines the same key twice (#283), declares an integer
-            past the parser's digit bound (#287), or is not a JSON
-            object. Every message names ``path``.
+            past the parser's digit bound (#287), nests past the
+            recursion limit (#478), or is not a JSON object. Every
+            message names ``path``.
     """
     try:
         config = json.loads(
@@ -181,6 +182,10 @@ def _load_config(path: Path) -> dict[str, Any]:
         raise HfConfigError(f"{path}: invalid JSON: {exc}") from exc
     except UnicodeDecodeError as exc:
         raise HfConfigError(f"{path}: not valid UTF-8: {exc}") from exc
+    except RecursionError as exc:
+        # Deep nesting exhausts the decoder's stack. `RecursionError`
+        # is no `ValueError`, so it escaped every caller (#478).
+        raise HfConfigError(f"{path}: JSON nests too deeply: {exc}") from exc
     except ValueError as exc:
         # An integer literal past `sys.get_int_max_str_digits` (4300 by
         # default) fails here, before any extractor sees it (#287). The

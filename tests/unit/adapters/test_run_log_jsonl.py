@@ -218,6 +218,18 @@ def test_reader_refuses_an_unparsable_number_past_a_blank_line(
         read_run_log(path)
 
 
+def test_reader_refuses_a_line_nested_past_the_recursion_limit(tmp_path) -> None:
+    # Deep nesting exhausts the decoder's stack. `RecursionError` is no
+    # `ValueError`, so it escaped every caller (#478). A crash cannot
+    # write one, so the final line earns no drop under the #315 rule.
+    deep = '{"event": "a", "n": ' + "[" * 100_000 + "]" * 100_000 + "}"
+    path = tmp_path / "x.jsonl"
+    path.write_text(f'{{"event": "scan_started"}}\n{deep}\n', encoding="utf-8")
+
+    with pytest.raises(RunLogError, match="line 2: JSON nests too deeply"):
+        read_run_log(path)
+
+
 def test_reader_drops_a_final_line_torn_mid_float(tmp_path) -> None:
     # ADR-0011 decision 2. Narrowing the catch by kind must not reach
     # the crash signature the rule protects.
