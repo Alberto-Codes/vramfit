@@ -168,7 +168,7 @@ def kv_layers_from_decoder(
             "patterns this reader does not combine"
         )
     if block_types is None and _override_pattern(config, path, prefix) is not None:
-        raise ValueError(
+        raise HfConfigError(
             f"{path}: {field_label('hybrid_override_pattern', prefix)} declares "
             f"a hybrid stack with no {field_label('layers_block_type', prefix)} "
             "list, which this reader does not model"
@@ -203,7 +203,7 @@ def kv_layers_from_decoder(
         )
     shared = _shared_layers(config, layers, path, prefix)
     if block_types is not None and shared > 0:
-        raise ValueError(
+        raise HfConfigError(
             f"{path}: {field_label('layers_block_type', prefix)} beside "
             f"{field_label('num_kv_shared_layers', prefix)} declares a "
             "shared-KV tail over a hybrid stack this reader does not model"
@@ -335,11 +335,11 @@ def _override_pattern(config: dict[str, Any], path: Path, prefix: str) -> str | 
         empty string is a declared pattern of zero blocks.
 
     Raises:
-        ValueError: If the value is not a string or null.
+        HfConfigError: If the value is not a string or null.
     """
     pattern = config.get("hybrid_override_pattern")
     if pattern is not None and not isinstance(pattern, str):
-        raise ValueError(
+        raise HfConfigError(
             f"{path}: {field_label('hybrid_override_pattern', prefix)} "
             "must be a string or null"
         )
