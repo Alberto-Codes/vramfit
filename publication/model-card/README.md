@@ -267,7 +267,8 @@ pack from the base checkpoint:
 
 ```
 uv run vramfit pack recipe.json --llama-cpp <llama.cpp checkout> \
-  --imatrix imatrix.gguf --out Llama-3_3-Nemotron-Super-49B-v1_5-fit24gib.gguf
+  --model <checkpoint dir> --imatrix imatrix.gguf \
+  --out Llama-3_3-Nemotron-Super-49B-v1_5-fit24gib.gguf
 ```
 
 <!-- File names final per the #82 dry run. Local source artifacts:
