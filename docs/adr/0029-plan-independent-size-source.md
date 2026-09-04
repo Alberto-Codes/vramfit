@@ -278,10 +278,12 @@ A **base GGUF** exists only after a pack, and `plan` runs before packing.
   **Ruled 2026-08-22 by ADR-0007's #301 amendment: it does.** A pin
   reaches any checkpoint-discovered group, and a pinned uncovered
   group prices at the pinned width. The build lives in
-  `vramfit.domain.pins`. One caveat stands: a broad pattern such as
+  `vramfit.domain.pins`. ~~One caveat stands: a broad pattern such as
   `--pin "*=8"` also lands on unquantizable-class groups, which
   refuse every pin, so the ruled MoE mix pins its dense classes by
-  name.
+  name.~~ **Ruled 2026-09-04 by ADR-0007's #371 amendment:** a
+  multi-group pattern skips each held group it sweeps and `plan`
+  warns, so `--pin "*=8"` pins every group the quantizer accepts.
 
 - **Whether a map and the source may disagree, and what `plan` does when
   they do.** The map records what the scan discovered. The source reports

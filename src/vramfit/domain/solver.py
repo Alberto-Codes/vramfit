@@ -42,8 +42,10 @@ stack group prices through the expert-stack table instead (ADR-0028)
 — 2.25 bits at nominal 2, not Q2_K's 2.625 — and so does a
 layer-class group whose rows refuse the 256 super-block. A group of
 a class the runtime's quantizer refuses holds at the F16 passthrough
-whatever the map measured, and a pin on one refuses (both from the
-2026-08-20 ADR-0012 amendment). Such a group prices at the dtype the
+whatever the map measured (the 2026-08-20 ADR-0012 amendment). A
+pin pattern that resolves to that one group refuses, and a pattern
+that resolves to more than one group skips it (ADR-0007, 2026-09-04
+amendment, #371). Such a group prices at the dtype the
 converter wrote it at, 32 bits per weight on llama.cpp, because the
 packed file holds it there and not at `F16`'s 16 (#409). Protections
 (ADR-0022) enter through the size model only: a protected tensor
@@ -385,8 +387,10 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
     whose rows refuse the 256 super-block prices through the same
     table, and a group of a class the runtime's quantizer refuses
     holds at the F16 passthrough whatever the map measured — a pin
-    on one refuses, and the hold records 0.0 damage unless the map
-    scanned reference precision (the 2026-08-20 ADR-0012 amendment).
+    pattern that resolves to that one group refuses, a multi-group
+    pattern skips it (ADR-0007, 2026-09-04 amendment, #371), and
+    the hold records 0.0 damage unless the map scanned reference
+    precision (the 2026-08-20 ADR-0012 amendment).
     The hold prices at the convert dtype, 32 bits per weight, because
     the packed file stores the class there (#409). Every
     group starts at the highest candidate precision (or its pin).
