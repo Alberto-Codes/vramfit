@@ -58,9 +58,12 @@ The first file is the published
 pack solved from. Its name records the scan: 64k calibration tokens,
 k-quant precisions, an importance matrix, no 2-bit column
 ([ADR-0021](../adr/0021-runtime-frame-measurement.md)), and per-tensor
-sizes. The sizes let `plan` price every group without a checkpoint
-([ADR-0029](../adr/0029-plan-independent-size-source.md)). Its SHA-256
-is `3f0a914cc3b0889aa94fe2621f195fd398758c913d221eb4f5af19a7a08b6c36`.
+sizes for protection rules
+([ADR-0022](../adr/0022-within-layer-protections.md)). The map carries
+each group's bytes, so `plan` prices the 82 groups it holds without a
+checkpoint ([ADR-0029](../adr/0029-plan-independent-size-source.md)).
+Its SHA-256 is
+`3f0a914cc3b0889aa94fe2621f195fd398758c913d221eb4f5af19a7a08b6c36`.
 
 The second file is the base model's `config.json`. Only `capacity`
 reads it, for the attention shape.
@@ -128,13 +131,14 @@ map, so they compare under
 [ADR-0027](../adr/0027-instrument-frame-matching.md). Do not read the
 lower number as the better pack.
 
-The two solves differ by one step. The shipped solve holds 48
-`attn_v` tensors at a 5-bit floor inside their 3-bit groups
-([ADR-0022](../adr/0022-within-layer-protections.md)). Those floors
-cost about 97 MiB, so the solver downgraded `model.layers.3` from
-4-bit to 3-bit as a 162nd step, at a predicted damage of 0.113.
-Protections price by size only, and predicted damage stays the
-group-level sum. Their benefit shows in measurement. The protected
+The shipped solve ends one step further. It holds 47 `attn_v`
+tensors at a 5-bit floor and one at a 4-bit floor, all inside 3-bit
+groups ([ADR-0022](../adr/0022-within-layer-protections.md)). The 47
+floors cost about 97 MiB. To pay for them, the solver downgraded
+`model.layers.3` from 4-bit to 3-bit as a 162nd step, at a predicted
+damage of 0.113.
+The two recipes agree on every other group. Protections price by size
+only, and predicted damage stays the group-level sum. Their benefit shows in measurement. The protected
 recipe won the runtime-frame head-to-head against the size-matched
 community quant, 7.8σ paired
 ([evidence](../explanation/evaluating-packed-models.md#the-fifteenth-data-point-the-pipeline-packs-its-own-winner)).
@@ -149,10 +153,10 @@ imatrix exclusions, and the 162-step trace. Passing those values
 back to `plan` as
 flags rebuilt the file on every field during the
 [#483 checks](https://github.com/Alberto-Codes/vramfit/issues/483#issuecomment-5534333284).
-The rebuilt command runs to 113 flags, so this page does not carry
-it. One trap: the glob `--protect "*.self_attn.v_proj.weight=5"`
+The rebuilt command runs to 113 arguments, so this page does not
+carry it. One trap: the glob `--protect "*.self_attn.v_proj.weight=5"`
 resolves a different 48-tensor set and does not reproduce the file.
-Name the 47 tensors one by one, as the recipe does.
+Name the 48 tensors one by one, as the recipe does.
 
 ## Where next
 

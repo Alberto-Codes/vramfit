@@ -107,6 +107,7 @@ model weights. Two downloads total 108 KB, and both commands finish in
 under one second.
 
 ```bash
+python3 -m venv .venv && . .venv/bin/activate
 pip install vramfit
 
 curl -LO https://huggingface.co/datasets/Alberto-Codes/Llama-3_3-Nemotron-Super-49B-v1_5-sensitivity-maps/resolve/main/sensitivity-64k-kquant-imx-no2-sized.json
