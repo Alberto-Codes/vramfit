@@ -17,8 +17,8 @@ from pathlib import Path
 
 import pytest
 
-np = pytest.importorskip("numpy", reason="pack extra not installed")
-pytest.importorskip("gguf", reason="pack extra not installed")
+np = pytest.importorskip("numpy", reason="gguf extra not installed")
+pytest.importorskip("gguf", reason="gguf extra not installed")
 
 from gguf import GGUFWriter
 
@@ -285,7 +285,7 @@ class TestRealReaderReads:
         with pytest.raises(PackError, match="base GGUF"):
             GgufImatrixCounts(imatrix=matrix, base_gguf=bogus).expert_stack_counts()
 
-    def test_missing_gguf_names_the_pack_extra(self, tmp_path, monkeypatch) -> None:
+    def test_missing_gguf_names_the_gguf_extra(self, tmp_path, monkeypatch) -> None:
         import builtins
 
         real_import = builtins.__import__
@@ -300,5 +300,5 @@ class TestRealReaderReads:
             imatrix=tmp_path / "m.gguf", base_gguf=tmp_path / "b.gguf"
         )
 
-        with pytest.raises(PackError, match="pack"):
+        with pytest.raises(PackError, match="gguf extra"):
             source.expert_stack_counts()

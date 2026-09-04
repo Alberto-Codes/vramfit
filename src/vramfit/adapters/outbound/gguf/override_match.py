@@ -115,9 +115,9 @@ reports the recipe as wrong. That refusal is the superset bias's one
 exception, recorded in ADR-0012's 2026-08-18 amendment.
 `base_tensor_names` records what it costs.
 
-gguf-py rides the scan extra and the pack extra includes it, so the
-import defers to the first read. ``vramfit pack --help`` keeps working
-on a base install (ADR-0005).
+gguf-py rides the gguf extra, which needs no torch (#310), and the
+scan and pack extras include it. The import defers to the first read,
+so ``vramfit pack --help`` keeps working on a base install (ADR-0005).
 
 Examples:
     Hold a recipe's overrides against the file the quantizer reads:
@@ -188,7 +188,7 @@ OUTPUT_TARGETS: Final[tuple[str, ...]] = ("output.weight",)
 
 
 def _load_gguf() -> Any:
-    """Import gguf-py on first use, naming the extra when absent.
+    """Import gguf-py on first use, naming the gguf extra when absent.
 
     Returns:
         The imported ``gguf`` module.
@@ -201,7 +201,7 @@ def _load_gguf() -> Any:
     except ImportError as exc:
         raise PackError(
             "holding a recipe's overrides against the base GGUF needs "
-            "gguf-py — install the pack extra: uv sync --extra pack "
+            "gguf-py — install the gguf extra: uv sync --extra gguf "
             "(ADR-0012)"
         ) from exc
     return gguf

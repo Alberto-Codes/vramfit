@@ -83,7 +83,8 @@ a solve-again signal, not a pack input (ADR-0006).
 The pack step applies the recipe and emits a GGUF that llama.cpp can
 serve ([ADR-0010](../adr/0010-sub-4-bit-serving-path.md)). It needs a
 llama.cpp checkout with built tools and the `pack` extra
-(`uv sync --extra scan --extra pack`):
+(`uv sync --extra scan --extra pack`). The `pack` extra includes
+the `gguf` extra, which carries the GGUF reader without torch:
 
 ```bash
 uv run vramfit pack recipe.json --llama-cpp ~/llama.cpp --out packed.gguf

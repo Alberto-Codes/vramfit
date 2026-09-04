@@ -130,8 +130,9 @@
     read until 2026-08-17. The #306 amendment below widened that:
     such a recipe now reads whenever it emits a dedicated flag. An
     `--imatrix` pack already required gguf-py (ADR-0026, the #198
-    amendment), and #310 carries giving pack a thin extra that does
-    not also install torch.
+    amendment). **Since 2026-09-04 (#310) the `gguf` extra carries
+    gguf-py and numpy without torch.** The refusal names that extra:
+    `uv sync --extra gguf`. The `pack` extra includes it.
 
     The refusal reports halt stage `quantize`. Decision 5 lists
     `convert`, `quantize`, and `size_check`, and `convert` does run
@@ -570,7 +571,8 @@ scan does not produce one today. K-quants need no extra input.
   package — the adapter drives them as subprocesses, and the base
   install stays torch-free (ADR-0005). The `pack` extra provisions
   the convert interpreter (torch, transformers, sentencepiece)
-  without adding a single import to vramfit.
+  without adding a single import to vramfit. The `gguf` extra
+  covers the reads the pack step does itself, with no torch (#310).
 
 ## Open questions
 

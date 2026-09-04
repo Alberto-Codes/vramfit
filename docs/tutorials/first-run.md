@@ -44,7 +44,8 @@ The base install declares two dependencies, typer and structlog. It
 resolves to vramfit plus 8 packages and no torch
 ([ADR-0005](../adr/0005-heavy-deps-as-extras.md)). `plan` and
 `capacity` are pure Python. `scan` and `validate` need the scan extra
-and a GPU. `pack` needs the pack extra and a llama.cpp checkout. The
+and a GPU. `pack` needs the gguf extra for its GGUF reads, the pack
+extra for the convert interpreter, and a llama.cpp checkout. The
 [getting-started tutorial](getting-started.md) covers all three.
 
 ## 2. Download the sensitivity map and the model config

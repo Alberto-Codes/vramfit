@@ -323,8 +323,8 @@ def pack(
     an expert unassisted and prints no warning (ADR-0026 decision
     5). A matrix the reader cannot vouch for halts before the
     quantizer runs, and the report lands in the result only beside
-    its matrix path. The read needs gguf-py, which the pack extra
-    provisions. A recipe priced on an assisted map records
+    its matrix path. The read needs gguf-py, which the gguf extra
+    provisions without torch (#310). A recipe priced on an assisted map records
     its imatrix — the command warns when ``--imatrix`` is absent or
     names a different file, because the pack would not match the
     map's frame (ADR-0020). A recipe with imatrix exclusions packs

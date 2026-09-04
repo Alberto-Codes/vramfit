@@ -232,7 +232,7 @@ class TestFlooredLayers:
 
 
 class TestMissingGgufPy:
-    def test_missing_gguf_names_the_pack_extra(
+    def test_missing_gguf_names_the_gguf_extra(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         # No CI job runs the suite without gguf-py since the test job
@@ -249,7 +249,7 @@ class TestMissingGgufPy:
 
         monkeypatch.setattr(builtins, "__import__", no_gguf)
 
-        with pytest.raises(PackError, match="pack extra"):
+        with pytest.raises(PackError, match="gguf extra"):
             override_match.base_tensor_names(Path("base.gguf"))
 
 

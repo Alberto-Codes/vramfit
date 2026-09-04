@@ -258,8 +258,8 @@ def test_pack_flow_with_stub_toolchain_produces_the_packed_file(tmp_path) -> Non
     # the stub convert script needs gguf-py. A dev box synced with
     # `uv sync --dev` alone does not carry it, and the pre-push
     # gate collects this test — skip rather than fail (ADR-0009).
-    pytest.importorskip("gguf", reason="pack extra not installed")
-    pytest.importorskip("numpy", reason="pack extra not installed")
+    pytest.importorskip("gguf", reason="gguf extra not installed")
+    pytest.importorskip("numpy", reason="gguf extra not installed")
     from vramfit.adapters.outbound.recipe_json import save_recipe
     from vramfit.adapters.outbound.run_log_jsonl import read_run_log
     from vramfit.domain.model import Assignment, PlanMeta, Recipe
@@ -368,8 +368,8 @@ def test_pack_refuses_an_override_the_base_gguf_cannot_match(tmp_path) -> None:
     # The whole path through the console script: a real base GGUF, the
     # real adapter, and a recipe naming a layer the file does not
     # carry. The quantizer would apply nothing and exit 0 (#303).
-    pytest.importorskip("gguf", reason="pack extra not installed")
-    pytest.importorskip("numpy", reason="pack extra not installed")
+    pytest.importorskip("gguf", reason="gguf extra not installed")
+    pytest.importorskip("numpy", reason="gguf extra not installed")
     from vramfit.adapters.outbound.recipe_json import save_recipe
     from vramfit.adapters.outbound.run_log_jsonl import read_run_log
     from vramfit.domain.model import Assignment, PlanMeta, Recipe
@@ -450,8 +450,8 @@ def test_pack_refuses_a_scanned_head_the_base_gguf_cannot_match(tmp_path) -> Non
     # a checkpoint that tied its head, the real adapter, and a recipe
     # carrying an lm_head group. `--output-tensor-type` binds nothing
     # and the quantizer exits 0 (#306).
-    pytest.importorskip("gguf", reason="pack extra not installed")
-    pytest.importorskip("numpy", reason="pack extra not installed")
+    pytest.importorskip("gguf", reason="gguf extra not installed")
+    pytest.importorskip("numpy", reason="gguf extra not installed")
     from vramfit.adapters.outbound.recipe_json import save_recipe
     from vramfit.adapters.outbound.run_log_jsonl import read_run_log
     from vramfit.domain.model import Assignment, PlanMeta, Recipe
@@ -540,8 +540,8 @@ def test_pack_refuses_an_exclusion_the_imatrix_cannot_match(tmp_path) -> None:
     # real imatrix, the real reader, and a recipe excluding a tensor
     # the matrix never priced. The quantizer would erase no row and
     # exit 0 (#309).
-    pytest.importorskip("gguf", reason="pack extra not installed")
-    np = pytest.importorskip("numpy", reason="pack extra not installed")
+    pytest.importorskip("gguf", reason="gguf extra not installed")
+    np = pytest.importorskip("numpy", reason="gguf extra not installed")
     from gguf import GGUFWriter
 
     from vramfit.adapters.outbound.recipe_json import save_recipe

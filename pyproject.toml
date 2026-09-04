@@ -55,12 +55,22 @@ scan = [
     # versions ignore it silently and load fp32 at twice the memory.
     "transformers>=4.56",
 ]
+# The gguf extra carries gguf-py and numpy without torch (#310). It
+# covers every GGUF read the pack step does itself: the base-GGUF
+# header (ADR-0012), the imatrix counts (ADR-0026), and the
+# reconstruction check (ADR-0022). CI installs it to run the gguf-py
+# suites.
+gguf = [
+    "gguf>=0.10",
+    "numpy>=1.26",
+]
 # The pack extra provisions the interpreter for llama.cpp's
 # convert_hf_to_gguf.py — vramfit never imports these itself
 # (ADR-0012). sentencepiece is load-bearing: some converters (Qwen)
 # probe it first and only fall back to BPE on FileNotFoundError.
 pack = [
     "vramfit[scan]",
+    "vramfit[gguf]",
     "sentencepiece>=0.2",
 ]
 docs = [
@@ -341,13 +351,6 @@ ignore_imports = [
 # Dev dependencies
 # --------------------------------------------------------------------------- #
 [dependency-groups]
-# CI installs this group to run the gguf-py contract suites (#197).
-# It carries gguf-py and numpy without torch, so the job stays small.
-# Dependency groups never reach the published package metadata.
-gguf = [
-    "gguf>=0.10",
-    "numpy>=1.26",
-]
 dev = [
     "docvet>=1.15",
     "hypothesis>=6.100",

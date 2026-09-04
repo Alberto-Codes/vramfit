@@ -39,6 +39,14 @@ The pack step drives external tools — none ship with vramfit:
    uv pip install "vramfit[pack]"
    ```
 
+   When the base GGUF already exists and another interpreter runs
+   the converter, the `gguf` extra is enough. It carries gguf-py and
+   numpy, no torch, and covers every read `pack` does itself:
+
+   ```bash
+   uv pip install "vramfit[gguf]"
+   ```
+
    sentencepiece matters even for BPE models: the Qwen converter
    probes it first and dies with `ModuleNotFoundError` when it is
    absent, before it can fall back to the BPE vocab path.
