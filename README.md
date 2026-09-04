@@ -1,6 +1,6 @@
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![docs vetted](https://img.shields.io/badge/docs%20vetted-docvet-purple)](https://github.com/Alberto-Codes/docvet)
-[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-blue)](https://github.com/Alberto-Codes/vramfit/blob/main/LICENSE)
 
 # vramfit
 
@@ -30,10 +30,10 @@ VRAM budget:
    crush where it says they don't. Bits are cost, quality is value.
 3. **Validate** — replay the whole recipe in one pass and measure real
    recipe damage against the solver's prediction
-   ([ADR-0006](docs/adr/0006-sensitivity-metric.md)).
+   ([ADR-0006](https://github.com/Alberto-Codes/vramfit/blob/main/docs/adr/0006-sensitivity-metric.md)).
 4. **Pack** — apply the recipe and emit a checkpoint the target runtime can
    actually serve. GGUF covers the sub-4-bit benchmark path, per
-   [ADR-0010](docs/adr/0010-sub-4-bit-serving-path.md). A vLLM backend for
+   [ADR-0010](https://github.com/Alberto-Codes/vramfit/blob/main/docs/adr/0010-sub-4-bit-serving-path.md). A vLLM backend for
    ≥4-bit recipes is planned.
 
 **The goal:** NVIDIA **Nemotron Super 49B running on a 24 GiB RTX 4090** — a
@@ -45,8 +45,8 @@ Philosophy borrowed from [antirez/ds4](https://github.com/antirez/ds4): depth
 over breadth. One model profiled properly beats a generic recipe applied to a
 hundred.
 
-Docs live in [`docs/`](docs/index.md) (Diátaxis layout, every page carries a
-maturity status). Design decisions are recorded as [ADRs](docs/adr/index.md).
+Docs live in [`docs/`](https://github.com/Alberto-Codes/vramfit/blob/main/docs/index.md) (Diátaxis layout, every page carries a
+maturity status). Design decisions are recorded as [ADRs](https://github.com/Alberto-Codes/vramfit/blob/main/docs/adr/index.md).
 
 ## Status
 
@@ -65,7 +65,7 @@ in the lane (8.517 vs 8.532) at 112 MiB under budget. The baseline
 keeps a half-point lead on full-window top-token agreement. On
 2026-08-10 tier 3 certified the pack: five task benchmarks, five
 statistical ties against the baseline, none past 0.8σ (ADR-0024).
-The [publication gate](docs/explanation/artifact-ecosystem.md) ruled GO
+The [publication gate](https://github.com/Alberto-Codes/vramfit/blob/main/docs/explanation/artifact-ecosystem.md) ruled GO
 on this evidence.
 
 The road there ran through measured eliminations. Importance-weighted
@@ -77,7 +77,7 @@ practice plans on a map copy without the 2-bit column (ADR-0021).
 Within-layer protections plus imatrix exclusions (ADR-0022,
 ADR-0023) closed the fit-collapse gap.
 
-The [evidence page](docs/explanation/evaluating-packed-models.md) records
+The [evidence page](https://github.com/Alberto-Codes/vramfit/blob/main/docs/explanation/evaluating-packed-models.md) records
 all seventeen data points. Publication #1 is live on Hugging Face: the
 [packed model](https://huggingface.co/Alberto-Codes/Llama-3_3-Nemotron-Super-49B-v1_5-fit24gib-GGUF)
 and the
@@ -89,25 +89,49 @@ See
 
 - Python 3.12+
 - CUDA GPU for `scan` and `validate` (developed against an RTX 4090 /
-  24 GiB). `plan` and `capacity` need no GPU. `pack` needs the pack
-  extra and a llama.cpp checkout (ADR-0012).
-- [uv](https://docs.astral.sh/uv/)
+  24 GiB). `plan`, `budget`, and `capacity` need no GPU. `pack` needs
+  the pack extra and a llama.cpp checkout (ADR-0012).
+- [uv](https://docs.astral.sh/uv/) for the development path
 
 ## Installation
 
+Install vramfit from [PyPI](https://pypi.org/project/vramfit/). The
+base install declares two dependencies, typer and structlog, and no
+torch. `plan`, `budget`, and `capacity` run without a GPU
+([ADR-0005](https://github.com/Alberto-Codes/vramfit/blob/main/docs/adr/0005-heavy-deps-as-extras.md)).
+
 ```bash
-git clone https://github.com/Alberto-Codes/vramfit.git
-cd vramfit
-uv sync
+python3 -m venv .venv && . .venv/bin/activate
+pip install vramfit
+vramfit version
 ```
+
+That is the whole install for the
+[first-run tutorial](https://github.com/Alberto-Codes/vramfit/blob/main/docs/tutorials/first-run.md). Two extras add the
+remaining commands:
+
+```bash
+pip install "vramfit[scan]"  # adds the torch stack for scan and validate
+pip install "vramfit[pack]"  # the scan stack plus the GGUF converter deps
+```
+
+`vramfit validate` builds the same torch-backed meter as `vramfit scan`,
+so both need the scan extra and a CUDA GPU. `vramfit pack` needs the
+pack extra and a llama.cpp checkout with built tools, which you pass
+with `--llama-cpp` ([ADR-0012](https://github.com/Alberto-Codes/vramfit/blob/main/docs/adr/0012-gguf-type-mapping.md)).
+The pack extra does not install llama.cpp. The
+[pack how-to](https://github.com/Alberto-Codes/vramfit/blob/main/docs/how-to/pack-a-recipe.md) shows the build.
+
+To develop vramfit itself, clone the repository instead. See
+[Development](#development).
 
 ## Quick Start
 
-Run this in an empty directory, not in a clone. It solves the
-published 49B sensitivity map under 24 GiB. It then reads how much
-context the recipe leaves. The run needs no GPU, no torch, and no
-model weights. Two downloads total 108 KB, and both commands finish in
-under one second.
+Run this in an empty directory, not in a clone. Skip the first two
+lines if you installed above. It solves the published 49B sensitivity
+map under 24 GiB. It then reads how much context the recipe leaves.
+The run needs no GPU, no torch, and no model weights. Two downloads
+total 108 KB, and both commands finish in under one second.
 
 ```bash
 python3 -m venv .venv && . .venv/bin/activate
@@ -120,15 +144,17 @@ vramfit plan sensitivity-64k-kquant-imx-no2-sized.json --vram 24GiB --kv-headroo
 vramfit capacity recipe.json --model-config config.json --kv-dtype fp8 --context 16384
 ```
 
-The [first-run tutorial](docs/tutorials/first-run.md) shows the
+The [first-run tutorial](https://github.com/Alberto-Codes/vramfit/blob/main/docs/tutorials/first-run.md) shows the
 expected output of both commands and explains each line. The
-[getting-started tutorial](docs/tutorials/getting-started.md) covers
+[getting-started tutorial](https://github.com/Alberto-Codes/vramfit/blob/main/docs/tutorials/getting-started.md) covers
 the scan, validate, and pack steps. Scan and validate need the scan
 extra and a GPU. Pack needs the pack extra and a llama.cpp checkout.
 
 ## Development
 
 ```bash
+git clone https://github.com/Alberto-Codes/vramfit.git
+cd vramfit
 uv sync --dev
 uv run ruff check .     # Lint
 uv run ty check         # Types
@@ -136,8 +162,8 @@ uv run pytest           # Tests
 uv run docvet check --all  # Docstring quality
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the full workflow.
+See [CONTRIBUTING.md](https://github.com/Alberto-Codes/vramfit/blob/main/CONTRIBUTING.md) for the full workflow.
 
 ## License
 
-[MIT](LICENSE)
+[MIT](https://github.com/Alberto-Codes/vramfit/blob/main/LICENSE)
