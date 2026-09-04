@@ -140,9 +140,10 @@ _DIRECT_TO_GGUF = {
     "model.language_model.embed_tokens.weight": "token_embd.weight",
 }
 # The decoder roots this table supports, from the domain's
-# `NAME_TABLE_ROOTS`: "model", "backbone", and Gemma 4's nested
-# "model.language_model" (#160, #423). The alternation stays closed
-# on purpose. A prefix wildcard would map a vision tower's "layers.5"
+# `NAME_TABLE_ROOTS`: "model", "backbone", Gemma 4's nested
+# "model.language_model", and the GPT-2 and NeoX family roots
+# "transformer" and "gpt_neox" (#160, #423, #208). The alternation
+# stays closed on purpose. A prefix wildcard would map a vision tower's "layers.5"
 # onto the decoder's "blk.5" and price it against the wrong columns.
 # Gemma 4's tower roots at "model.vision_tower.encoder.layers.N.",
 # which every root here rejects. `gguf.TensorNameMap` carries no
@@ -155,9 +156,13 @@ _DIRECT_TO_GGUF = {
 # "transformer.h.N." and jina at "encoder.layers.N.", and both read
 # "mixer.out_proj" as the attention output. plamo2 roots at a doubled
 # "model.layers.layers.N." and reads "mixer.in_proj" as the SSM input.
-# All three of those roots fail this pattern, so no name here maps
+# All three of those names fail this pattern, so no name here maps
 # to two meanings. Check that again before adding a root. The #423
-# root addition re-ran the check, and all three still fail.
+# root addition re-ran the check, and all three still fail. The #208
+# addition re-ran it for "transformer": phi2 spells the ".h." layer
+# family, and this pattern accepts ".layers." alone, so phi2 still
+# fails. `gguf` 0.19.0 carries no mapped suffix under
+# "transformer.layers.N." or "gpt_neox.layers.N." either.
 _ROOTS = "(?:" + "|".join(re.escape(root) for root in NAME_TABLE_ROOTS) + ")"
 _LAYER_PARAM = re.compile(rf"^{_ROOTS}\.layers\.(\d+)\.(.+)\.weight$")
 # The routed-expert index, spelled between ".experts." and the

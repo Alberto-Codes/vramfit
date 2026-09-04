@@ -259,10 +259,10 @@ def test_tensor_overrides_name_the_group_they_cannot_map() -> None:
         ("model.layers.0", r"blk\.0\."),
         ("backbone.layers.7", r"blk\.7\."),
         ("model.language_model.layers.3", r"blk\.3\."),
-        ("model.h.3", r"blk\.3\."),
-        ("backbone.blocks.11", r"blk\.11\."),
+        ("transformer.h.3", r"blk\.3\."),
+        ("gpt_neox.blocks.11", r"blk\.11\."),
     ],
-    ids=["llama", "nemotron", "nested", "gpt2-family", "blocks-family"],
+    ids=["llama", "nemotron", "nested", "gpt2", "blocks"],
 )
 def test_tensor_overrides_derive_the_layer_index_from_any_naming_family(
     group: str, pattern: str
@@ -297,10 +297,9 @@ def test_tensor_overrides_accept_every_scan_name_table_root(root: str) -> None:
         "model.vision_tower.encoder.layers.0",
         "vision_tower.transformer.layers.0",
         "mtp.layers.0",
-        "transformer.h.3",
-        "gpt_neox.blocks.11",
+        "encoder.layers.3",
     ],
-    ids=["gemma-tower", "tower", "mtp", "gpt2", "blocks"],
+    ids=["gemma-tower", "tower", "mtp", "jina"],
 )
 def test_tensor_overrides_refuse_a_recipe_under_one_foreign_root(group: str) -> None:
     # A recipe whose groups all hang from one root outside the scan

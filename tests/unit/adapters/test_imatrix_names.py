@@ -50,12 +50,15 @@ from vramfit.domain.scan import NAME_TABLE_ROOTS
 pytestmark = pytest.mark.unit
 
 LAYER = 3
-# The decoder roots the adapter supports (#177, #423). The table keys
-# on the module suffix, so each suffix is checked under every root.
-# `gguf` carries no "model.language_model" template: its converter
-# strips the nesting before it maps. So every pair under that root
-# is unbacked by construction.
-ROOTS = ("model", "backbone", "model.language_model")
+# The decoder roots the adapter supports (#177, #423, #208). The
+# table keys on the module suffix, so each suffix is checked under
+# every root. `gguf` carries no "model.language_model" template: its
+# converter strips the nesting before it maps. So every pair under
+# that root is unbacked by construction. GPT-2 spells the ".h."
+# family and NeoX spells no llama suffix, so `gguf` carries no
+# mapped suffix under "transformer.layers." or "gpt_neox.layers."
+# and every pair under those roots is unbacked too.
+ROOTS = ("model", "backbone", "model.language_model", "transformer", "gpt_neox")
 # Every module suffix the adapter's table carries, and the GGUF stem
 # it claims. Restated here rather than imported: a test that reads the
 # table under test would pass whatever the table says.
@@ -86,14 +89,16 @@ LLAMA_SUFFIXES = tuple(s for s in MAPPED_SUFFIXES if not s.startswith("mixer."))
 # under every root, while `gguf` carries each family's names under the
 # one root that family uses. Under the nested "model.language_model"
 # root `gguf` carries nothing, because its converter flattens the
-# nesting away. So the adapter reaches 32 names no checkpoint spells,
-# 16 of them under the nested root. Naming them here rather than
-# skipping them keeps the suite honest: a pair that leaves this set
-# fails, and a pair that joins it fails too.
+# nesting away. So the adapter reaches 64 names no checkpoint spells,
+# 16 under each of the nested, GPT-2, and NeoX roots. Naming them
+# here rather than skipping them keeps the suite honest: a pair that
+# leaves this set fails, and a pair that joins it fails too.
 UNBACKED_PAIRS = frozenset(
     [("model", suffix) for suffix in MIXER_SUFFIXES]
     + [("backbone", suffix) for suffix in LLAMA_SUFFIXES]
     + [("model.language_model", suffix) for suffix in MAPPED_SUFFIXES]
+    + [("transformer", suffix) for suffix in MAPPED_SUFFIXES]
+    + [("gpt_neox", suffix) for suffix in MAPPED_SUFFIXES]
 )
 # Names in this same family that the table omits, and the stem `gguf`
 # gives each. A dense-MLP Nemotron-H spells its MLP the first two
@@ -312,9 +317,23 @@ def test_the_name_table_accepts_every_domain_root(root: str) -> None:
 
 @pytest.mark.parametrize(
     "root",
-    ["mtp", "model.vision_tower.encoder", "transformer"],
-    ids=["mtp", "tower", "gpt2"],
+    ["mtp", "model.vision_tower.encoder", "encoder"],
+    ids=["mtp", "tower", "jina"],
 )
 def test_the_name_table_rejects_a_root_outside_the_domain_list(root: str) -> None:
     assert root not in NAME_TABLE_ROOTS
     assert _LAYER_PARAM.match(f"{root}.layers.4.self_attn.q_proj.weight") is None
+
+
+@pytest.mark.parametrize("root", ["transformer", "gpt_neox"], ids=["gpt2", "neox"])
+def test_the_gpt2_and_neox_roots_map_the_layers_family_only(root: str) -> None:
+    # The two roots join the domain list so a GPT-2 or NeoX family
+    # recipe keeps packing (#208). The name table still maps the
+    # ".layers." family alone: phi2 spells "transformer.h.N." and
+    # reads "mixer.out_proj" as its attention output, so that name
+    # must stay uncovered rather than price against "ssm_out".
+    assert gguf_tensor_name(f"{root}.layers.4.self_attn.q_proj.weight") == (
+        "blk.4.attn_q.weight"
+    )
+    assert gguf_tensor_name(f"{root}.h.4.self_attn.q_proj.weight") is None
+    assert gguf_tensor_name(f"{root}.h.4.mixer.out_proj.weight") is None

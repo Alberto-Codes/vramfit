@@ -503,18 +503,25 @@
 
     **The pack holds the one root to the scan name table's list.**
     The domain's `NAME_TABLE_ROOTS` owns that list: `model`,
-    `backbone`, and Gemma 4's nested `model.language_model` (#160,
-    #423). The imatrix name table builds its root alternation from
-    the same list, so the scan and the pack share one source of
+    `backbone`, Gemma 4's nested `model.language_model` (#160,
+    #423), and the GPT-2 and NeoX family roots `transformer` and
+    `gpt_neox`. The pack numbered both family roots `blk.<n>.`
+    before this amendment, and the refusal must not remove a pack
+    that worked. The imatrix name table builds its root alternation
+    from the same list, so the scan and the pack share one source of
     truth and cannot drift apart. The refusal names the claimed
     root and the supported roots. The two-root refusal stands and
     fires first. The layer family under the root stays free —
     `.layers.`, `.h.`, and `.blocks.` all derive the layer index.
 
-    **The fix is a refusal, not a mapping.** No scan produces a
-    recipe under a foreign root today, so the refusal rejects only
-    a hand-edited recipe. A new root joins the domain list with a
-    scan change, never in the pack alone.
+    **The fix is a refusal, not a mapping.** The scan groups a
+    parameter by its layer prefix under any root, and `plan` runs
+    without a checkpoint, so a scan of a checkpoint under a foreign
+    root reaches the pack. A recipe under `mtp`, a vision tower, or
+    any other root outside the list now refuses at pack instead of
+    emitting overrides that match nothing. A hand-edited recipe
+    under such a root refuses the same way. A new root joins the
+    domain list with a scan change, never in the pack alone.
 
 ## Context
 
