@@ -360,7 +360,8 @@ A narrowed map measures a subset of the model. `vramfit plan
 --checkpoint` prices the rest: it reads the checkpoint's safetensors
 headers and holds every unmeasured group at reference precision
 (ADR-0029). Without that option the map still defines the model, and
-the command says so.
+the command says so. A map of a family whose class the scan skips
+refuses without it, as [`vramfit plan`](#vramfit-plan) records.
 
 Groups that `auto` sharding offloads to host RAM measure through
 accelerate's weights map (ADR-0015) — `meter_built` reports the count
