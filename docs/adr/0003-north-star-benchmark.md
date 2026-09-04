@@ -5,9 +5,9 @@
 - **Date:** 2026-07-27
 - **Amendment (2026-07-28):** the serving-runtime clause changes — the
   benchmark serves through llama.cpp, not vLLM. Everything else stands.
-- **Note (2026-09-03, issue #482):** the evaluation tiers of this
-  benchmark ran. Tiers 1 and 2 ran on 2026-08-09 and tier 3 on
-  2026-08-10, on the reference RTX 4090. Publication #1 shipped on
+- **Note (2026-09-03, issue #482):** the three evaluation tiers of
+  this benchmark ran on the reference RTX 4090, tiers 1 and 2 on
+  2026-08-09 and tier 3 on 2026-08-10. Publication #1 shipped on
   2026-08-11. No record shows the pack serving at 16k context (#501).
   The README section "The result" carries the compact result and
   links the records.

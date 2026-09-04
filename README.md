@@ -69,9 +69,9 @@ The published pack passed its three evaluation tiers on 2026-08-10.
 
 Every measured number above comes from one instrument: llama.cpp
 b10172 on the RTX 4090. Perplexity and KL divergence ran on held-out
-WikiText-2, with KL against the f16 reference. Damage and KL values
-from other models, maps, calibration sets, or instruments do not
-compare with these
+WikiText-2, with KL against the f16 reference. Damage, perplexity,
+and KL values from other models, maps, calibration sets, or
+instruments do not compare with these
 ([ADR-0027](https://github.com/Alberto-Codes/vramfit/blob/main/docs/adr/0027-instrument-frame-matching.md)).
 
 Two later publications carry their own cards, comparators, and ledgers.
