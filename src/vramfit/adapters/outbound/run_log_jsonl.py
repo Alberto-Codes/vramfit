@@ -56,12 +56,12 @@ RUNLOG_VERSION: Final[int] = 2
 class RunLogError(VramfitError, ValueError):
     """A run-log line the reader or the writer refuses.
 
-    `read_run_log` raises it for a repeated key, a non-final line that
-    is not valid JSON, and a number literal the parser refuses. The
-    message names the file and the line. `emit` raises it for a field
-    the renderer refuses: a value that is not JSON-serializable, a
-    NaN or infinite number, or a key that collides with the envelope
-    (#475). That message names the file and the event.
+    `read_run_log` raises it for every refusal its Raises section
+    lists. The message names the file and the line. `emit` raises it
+    for a field the renderer refuses: a value that is not
+    JSON-serializable, a NaN or infinite number, or a key that
+    collides with the envelope (#475). That message names the file
+    and the event.
 
     The class sits under the `VramfitError` root per ADR-0011 decision
     5. It keeps `ValueError` as a base, so a caller that catches the

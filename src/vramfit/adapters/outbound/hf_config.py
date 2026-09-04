@@ -98,9 +98,9 @@ def shape_from_config_json(path: Path) -> ModelShape:
         The parsed shape.
 
     Raises:
-        HfConfigError: If the file is not UTF-8, is not valid JSON, defines
-            the same key twice, declares an integer outside the signed
-            64-bit range, required fields are missing, the attention
+        HfConfigError: For every refusal `_load_config` raises. Also if
+            the file declares an integer outside the signed 64-bit
+            range, required fields are missing, the attention
             geometry is inconsistent, the decoder container is
             ambiguous, or the decoder declares KV geometry this
             reader does not model (#420, #421). Every message names
@@ -141,10 +141,9 @@ def config_claims_vision(path: Path) -> bool:
         object.
 
     Raises:
-        HfConfigError: If the file is not UTF-8, is not valid JSON,
-            defines the same key twice, or is not a JSON object. The
-            same refusals as `shape_from_config_json`, so the two
-            reads of one file cannot disagree on validity.
+        HfConfigError: For every refusal `_load_config` raises. The
+            same load as `shape_from_config_json`, so the two reads of
+            one file cannot disagree on validity.
 
     Examples:
         A text-only config claims no vision:

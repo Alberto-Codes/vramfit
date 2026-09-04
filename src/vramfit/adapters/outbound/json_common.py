@@ -596,9 +596,9 @@ def _load_json(path: Path, root: str) -> dict[str, Any]:
         ArtifactError: If the file cannot be read, is not UTF-8, is not
             valid JSON, carries a number literal the parser refuses,
             nests past the recursion limit (#478), repeats a key inside
-            one object, or its top level is not an
-            object. The duplicate-key message names the key, which is
-            all `object_from_pairs` can report.
+            one object, or its top level is not an object. The
+            duplicate-key message names the key, which is all
+            `object_from_pairs` can report.
     """
     try:
         data = json.loads(
