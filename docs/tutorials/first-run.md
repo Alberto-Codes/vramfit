@@ -25,7 +25,7 @@ total 108 KB.
 - Python 3.12 or newer
 - `curl`, or a browser, for two downloads
 
-## 1. Install the base package
+## 1. Install vramfit with no extras
 
 ```bash
 python3 -m venv .venv
@@ -40,7 +40,7 @@ Expected:
 vramfit 0.4.0
 ```
 
-The base package installs vramfit, 8 dependencies, and no torch
+The base install holds vramfit, 8 dependencies, and no torch
 ([ADR-0005](../adr/0005-heavy-deps-as-extras.md)). `plan` and
 `capacity` are pure Python. `scan` and `validate` need the scan extra
 and a GPU. `pack` needs the pack extra and a llama.cpp checkout. The

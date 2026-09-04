@@ -89,25 +89,49 @@ See
 
 - Python 3.12+
 - CUDA GPU for `scan` and `validate` (developed against an RTX 4090 /
-  24 GiB). `plan` and `capacity` need no GPU. `pack` needs the pack
-  extra and a llama.cpp checkout (ADR-0012).
-- [uv](https://docs.astral.sh/uv/)
+  24 GiB). `plan`, `budget`, and `capacity` need no GPU. `pack` needs
+  the pack extra and a llama.cpp checkout (ADR-0012).
+- [uv](https://docs.astral.sh/uv/) for the development path
 
 ## Installation
 
+Install vramfit from [PyPI](https://pypi.org/project/vramfit/). The
+base install carries typer and structlog only, and no torch
+([ADR-0005](docs/adr/0005-heavy-deps-as-extras.md)). `plan`, `budget`,
+and `capacity` run without a GPU.
+
 ```bash
-git clone https://github.com/Alberto-Codes/vramfit.git
-cd vramfit
-uv sync
+python3 -m venv .venv && . .venv/bin/activate
+pip install vramfit
+vramfit version
 ```
+
+That is the whole install for the
+[first-run tutorial](docs/tutorials/first-run.md). Two extras add the
+remaining commands:
+
+```bash
+pip install "vramfit[scan]"  # adds the torch stack for scan and validate
+pip install "vramfit[pack]"  # the scan stack plus the GGUF converter deps
+```
+
+`vramfit validate` builds the same torch-backed meter as `vramfit scan`,
+so both need the scan extra and a CUDA GPU. `vramfit pack` needs the
+pack extra and a llama.cpp checkout with built tools, which you pass
+with `--llama-cpp` ([ADR-0012](docs/adr/0012-gguf-type-mapping.md)).
+The pack extra does not install llama.cpp. The
+[pack how-to](docs/how-to/pack-a-recipe.md) shows the build.
+
+To develop vramfit itself, clone the repository instead. See
+[Development](#development).
 
 ## Quick Start
 
-Run this in an empty directory, not in a clone. It solves the
-published 49B sensitivity map under 24 GiB. It then reads how much
-context the recipe leaves. The run needs no GPU, no torch, and no
-model weights. Two downloads total 108 KB, and both commands finish in
-under one second.
+Run this in an empty directory, not in a clone. Skip the first two
+lines if you installed above. It solves the published 49B sensitivity
+map under 24 GiB. It then reads how much context the recipe leaves.
+The run needs no GPU, no torch, and no model weights. Two downloads
+total 108 KB, and both commands finish in under one second.
 
 ```bash
 python3 -m venv .venv && . .venv/bin/activate
@@ -129,6 +153,8 @@ extra and a GPU. Pack needs the pack extra and a llama.cpp checkout.
 ## Development
 
 ```bash
+git clone https://github.com/Alberto-Codes/vramfit.git
+cd vramfit
 uv sync --dev
 uv run ruff check .     # Lint
 uv run ty check         # Types
