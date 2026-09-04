@@ -2192,8 +2192,12 @@ device query, and nvidia-smi peaked at 22,762 MiB of 24,564 MiB. Two
 frame differences travel with the number and this entry does not
 separate them: the backend changed from Vulkan to CUDA, and the
 driver changed from 610.57.04 to 580.126.20. The weights buffer
-differs by 0.01 MiB across the two backends, and the compute buffer
-by 8 MiB. Neither difference moves the boundary.
+differs by 0.01 MiB across the two backends. The compute buffer
+grows with context, not only with the backend: the reference box's
+Vulkan buffer rose 1 MiB per 1,024 cells across its rungs, which
+projects about 230 MiB at 16,384 cells. The pod's CUDA buffer
+measured 232.09 MiB, so about 2 MiB is attributable to the backend.
+Neither difference moves the boundary.
 
 So the acceptance clause reads two ways, and both are measured. The
 published pack serves at 16k context on a headless 24 GiB RTX 4090.
