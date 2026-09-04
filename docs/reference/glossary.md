@@ -642,7 +642,9 @@ change.
     after the quantizer runs
     ([ADR-0012](../adr/0012-gguf-type-mapping.md) decision 3, the
     2026-09-04 amendment). One field cannot name a mixed-precision
-    recipe, so it names the largest share. Distinct from the **base
+    recipe, so it names the largest share. The rule that picks it is
+    the **modal type** by bytes, code `vramfit.domain.pack.modal_type`,
+    and the pack step stamps that type. Distinct from the **base
     type**, the quantizer's `--pure` floor, which the quantizer
     would otherwise stamp there. Not "ftype label" or "quant label".
 
