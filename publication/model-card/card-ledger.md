@@ -108,7 +108,7 @@ copy lags until the next re-upload.
 
 | Card numbers | Source record |
 |---|---|
-| Does not load at 16k, q8_0 KV, 81/81 layers, 20,409.48 MiB weights, KV cache allocation failed | `serve-16k-2026-09-04/serve-16k-ctx16384.console.log`, `serve-16k-2026-09-04/buffers-ctx16384.txt` |
+| Does not load at 16k, q8_0 KV as llama.cpp's nearest substitute for fp8, 81/81 layers, 20,409.48 MiB weights, KV cache allocation failed | `serve-16k-2026-09-04/serve-16k-ctx16384.console.log`, `serve-16k-2026-09-04/buffers-ctx16384.txt` |
 | Largest served context 10,240, device buffers 21,674.82 MiB (20,409.48 + 1,041.25 KV + 224.09 compute), nvidia-smi peak 24,053 MiB | `serve-16k-2026-09-04/buffers-ctx10240.txt`, `serve-16k-2026-09-04/peak-ctx10240.env`, `serve-16k-2026-09-04/response-ctx10240.json` |
 | Desktop baseline 2,341 MiB, 21,765 MiB free before load | `serve-16k-2026-09-04/peak-ctx16384.env`, `serve-16k-2026-09-04/list-devices.txt` |
 | Build b10326 (3653e6d6d), flags, pack SHA-256 match | `serve-16k-2026-09-04/serve-16k.cmd`, `serve-16k-2026-09-04/pack.sha256`, `serve-16k-2026-09-04/RUN-SHEET.md` |

@@ -64,7 +64,7 @@ The published pack passed its three evaluation tiers on 2026-08-10.
 | Perplexity | 8.517 ± 0.063 against 8.532 ± 0.064. A tie by the interval |
 | Top-token agreement | 82.9 % against 83.4 %. The comparator leads |
 | Task slice, five tasks | Five ties, largest delta 0.8σ ([ADR-0024](https://github.com/Alberto-Codes/vramfit/blob/main/docs/adr/0024-tier3-task-slice.md)) |
-| Serve, measured 2026-09-04 | All 81 layers on the RTX 4090, q8_0 KV. Serves at 10,240 context, 21,674.82 MiB of device buffers. Does not load at 16k with the desktop's 2,341 MiB resident |
+| Serve, measured 2026-09-04 | All 81 layers on the RTX 4090, q8_0 KV as llama.cpp's nearest substitute for fp8. Serves at 10,240 context, 21,674.82 MiB of device buffers. Does not load at 16k with the desktop's 2,341 MiB resident |
 | Artifacts | [Packed model](https://huggingface.co/Alberto-Codes/Llama-3_3-Nemotron-Super-49B-v1_5-fit24gib-GGUF), [sensitivity maps](https://huggingface.co/datasets/Alberto-Codes/Llama-3_3-Nemotron-Super-49B-v1_5-sensitivity-maps) |
 | Evidence | [Evidence ledger](https://github.com/Alberto-Codes/vramfit/blob/main/docs/explanation/evaluating-packed-models.md), data points fifteen, sixteen, and twenty. [Card ledger](https://github.com/Alberto-Codes/vramfit/blob/main/publication/model-card/card-ledger.md) |
 

@@ -12,13 +12,16 @@
   result and links the records.
 - **Note (2026-09-04, issue #501):** the reference box measured the
   published pack at 16k context with q8_0 KV cache, all 81 layers on
-  the card, llama.cpp b10326. It did not load: the KV cache failed to
-  allocate over 20,409.48 MiB of weights with the desktop's 2,341 MiB
-  resident. The largest context that served is 10,240 tokens, at
-  21,674.82 MiB of device buffers. The 16k clause of this benchmark is
-  unmet on the reference box as configured. The evidence page's
-  twentieth data point records the ladder, and whether a headless card
-  serves 16k stays an open question there.
+  the card, llama.cpp b10326. llama.cpp has no fp8 cache type, and
+  q8_0 is its nearest substitute for the card's fp8 target. It did
+  not load: the KV cache failed to allocate over 20,409.48 MiB of
+  weights with the desktop's 2,341 MiB resident. The result holds at
+  fp8 by arithmetic, 22,201 MiB of buffers against 21,765 MiB free.
+  The largest context that served is 10,240 tokens, at 21,674.82 MiB
+  of device buffers. The 16k clause of this benchmark is unmet on the
+  reference box as configured. The evidence page's twentieth data
+  point records the ladder, and whether a headless card serves 16k
+  stays an open question there.
 
 ## Context
 

@@ -102,7 +102,8 @@ file metadata.
 
 Measured 2026-09-04 on the reference RTX 4090 (issue #501): the pack
 does not load at 16k context with q8_0 KV cache while the desktop
-holds 2,341 MiB of the card. llama.cpp b10326 put all 81 layers on
+holds 2,341 MiB of the card. llama.cpp has no fp8 cache type, and
+q8_0 is its nearest substitute. llama.cpp b10326 put all 81 layers on
 the device (20,409.48 MiB) and then failed to allocate the KV cache.
 The largest context that served is 10,240 tokens, at 21,674.82 MiB of
 device buffers. The evidence page's twentieth data point records the

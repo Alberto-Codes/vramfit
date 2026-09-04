@@ -115,8 +115,8 @@ status: stable
 > context ADR-0003 names. **It does not load at 16k on the reference
 > box.** The KV cache failed to allocate over 20,409.48 MiB of
 > weights with the desktop's 2,341 MiB resident. The largest rung
-> that served is 10,240 tokens at q8_0 KV, device buffers
-> 21,674.82 MiB
+> that served is 10,240 tokens at q8_0 KV, llama.cpp's nearest
+> substitute for the card's fp8, device buffers 21,674.82 MiB
 > ([the twentieth data point](#the-twentieth-data-point-the-published-pack-stops-at-10k-context-on-the-reference-box)).
 > The page stays `stable`, and the record carries one open
 > question: a headless card.
@@ -2085,12 +2085,14 @@ ballast cap: llama.cpp b10326 (3653e6d6d), the Vulkan `llama-server`
 build, on the whole 24,564 MiB card. The flags were `-dev Vulkan0
 -ngl 99 -np 1 -ctk q8_0 -ctv q8_0`, with the context stepped down
 from 16,384 in 1,024-token rungs until a rung served. The 30B serve
-records kept the KV at f16. This run set the q8_0 cache the card
-states. The pack's SHA-256 matched the card ledger and the tier-3
-sidecar before the first launch. Nothing else used the card, and the
-desktop held its idle baseline of 2,341 MiB as every earlier
-reference-box serve ran under. Before load, llama.cpp's device query
-read 21,765 MiB free.
+records kept the KV at f16. The card states an fp8 KV cache, and
+llama.cpp has no fp8 cache type. Its cache types are f32, f16, bf16,
+q8_0, q4_0, q4_1, q5_0, q5_1, and iq4_nl. This run set q8_0, the
+nearest available substitute at 8.5 bits per element: 32 values
+plus an f16 scale. The pack's SHA-256 matched the card ledger and
+the tier-3 sidecar before the first launch. Nothing else used the
+card, and the desktop held 2,341 MiB resident for this run. Before
+load, llama.cpp's device query read 21,765 MiB free.
 
 | n_ctx | outcome | Vulkan0 model | KV, q8_0 | Vulkan0 compute | device buffers | nvidia-smi peak |
 |---|---|---|---|---|---|---|
@@ -2118,7 +2120,11 @@ Weights, that cache, and a 224 MiB compute buffer sum to about
 22,300 MiB. The card holds 24,564 MiB. With the desktop's 2,341 MiB
 resident, the device query reads 21,765 MiB free, and 22,300 does not
 fit in 21,765. The 10,240 rung fits its 21,674.82 MiB of buffers
-inside that number with 90 MiB to spare.
+inside that number with 90 MiB to spare. The conclusion holds at the
+card's fp8. An 8-bit cache scales the q8_0 slope by 8/8.5 to
+98.0 MiB per 1,024 cells, so a 16,384-cell fp8 cache reads
+1,568 MiB. Weights, that cache, and the 224 MiB compute buffer sum to
+22,201 MiB, and 22,201 does not fit in 21,765 either.
 
 **The budget arithmetic did not fail. The headroom went to the
 desktop.** The card reserved 3,791,650,816 B, 3.53 GiB, for KV cache
