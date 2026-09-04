@@ -49,9 +49,6 @@ uv run --with huggingface_hub python scripts/publish_card.py \
   card publication/model-card --dry-run
 ```
 
-Pass `--repo <owner>/<name>` when the card names a different repo than
-the one you intend.
-
 ## Publish a maps dataset
 
 Stage the files in one directory: the maps, their run logs, the
@@ -66,25 +63,37 @@ uv run --with huggingface_hub python scripts/publish_card.py \
   dataset <staging dir> --repo Alberto-Codes/<model>-sensitivity-maps
 ```
 
-`--repo` is optional when the staging directory holds a card whose
-header comment names `<owner>/<title>`. Hidden files never upload.
+`--repo` is required. A dataset card carries no field that names its
+repo. Hidden files never upload.
 
 ## Record the ledger row
 
-After a byte-match the script prints one row per file:
+After a byte-match the script prints one row per file, in the shape
+of the target table.
+
+A model card prints the `| File | SHA-256 | Bytes |` row that the
+30B and Gemma ledgers use:
 
 ```
 | `README.md` | `<sha256>` | <bytes> |
 ```
 
-Append it to the publication's record:
+Replace the `README.md` row in the upload table of that publication's
+`card-ledger.md`. The 49B ledger keeps a `Local source` column in
+place of `Bytes`: paste the hash into the existing row's SHA-256 cell
+and keep the source note. Note the date and the commit that changed
+the source.
 
-- A model card: add the row to the upload table in that publication's
-  `card-ledger.md`, in the columns that table uses. Note the date and
-  the commit that changed the source.
-- A maps dataset: the card's own hashes table is the ledger. Copy each
-  row into the card, then republish the card so the published copy
-  matches the source.
+A maps dataset prints the `| File | SHA-256 |` row that the dataset
+cards' `## Files and hashes` table uses:
+
+```
+| `<file>` | `<sha256>` |
+```
+
+The card's own hashes table is the ledger. Paste each file's row into
+the card, then rerun the `card` command on the staging directory with
+the dataset repo so the published card matches the source.
 
 ## Related
 

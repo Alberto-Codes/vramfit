@@ -583,13 +583,14 @@ tier 3 certifies (four leads and a tie on task benchmarks).
 The repository ships the recipe, the evals sidecar, and the run
 log beside the weights. The importance matrix is bartowski's and
 stays in bartowski's repository — the paragraph below the commands
-says where. Two commands reproduce the pack from the base
-checkpoint:
+says where. Install the pack extra, then two commands reproduce the
+pack from the base checkpoint:
 
 ```
+pip install "vramfit[pack]"
 python convert_hf_to_gguf.py <checkpoint dir> \
   --outfile nemotron-30b-a3b-f16.gguf --outtype f16 --no-mtp
-uv run vramfit pack recipe.json --llama-cpp <llama.cpp checkout> \
+vramfit pack recipe.json --llama-cpp <llama.cpp checkout> \
   --model <checkpoint dir> --base-gguf nemotron-30b-a3b-f16.gguf \
   --imatrix NVIDIA-Nemotron-3.5-Lightning-30B-A3B-imatrix.gguf \
   --out NVIDIA-Nemotron-3.5-Lightning-30B-A3B-fit16gib.gguf

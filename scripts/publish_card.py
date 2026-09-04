@@ -5,17 +5,15 @@ records the SHA-256 of the published copy. This script does the
 upload, downloads the published copy back, and compares the bytes.
 A mismatch exits nonzero. Two modes exist:
 
-- ``card <publication dir>`` uploads ``README.md`` to the repo the
-  card names. The model repo is ``<quantized_by>/<H1 title>``. A
-  dataset card names its repo as ``<owner>/<H1 title>`` in its
-  header comment.
+- ``card <publication dir>`` uploads ``README.md`` to the model repo
+  the card names: ``<quantized_by>/<H1 title>``.
 - ``dataset <dir> --repo <owner/name>`` uploads every top-level file
-  in the directory to a dataset repo (the #85 pattern: files first,
-  then the card). ``--repo`` is optional when the directory holds a
-  card that names the repo.
+  in the directory to that dataset repo (the #85 pattern: files
+  first, then the card).
 
-Both modes print one ledger row per file. ``--dry-run`` prints the
-target repo and the hashes and uploads nothing.
+Both modes print one ledger row per file, in the shape of the target
+table. ``--dry-run`` prints the target repo and the hashes and
+uploads nothing.
 
 The script never prints the token. ``huggingface_hub`` reads it from
 the local login (``hf auth login``) or ``HF_TOKEN``.
@@ -42,7 +40,6 @@ from typing import Any, Protocol
 
 _TITLE = re.compile(r"^# (\S+)\s*$", re.MULTILINE)
 _QUANTIZED_BY = re.compile(r"^quantized_by:\s*(\S+)\s*$", re.MULTILINE)
-_REPO_SLUG = r"[A-Za-z0-9][A-Za-z0-9._-]*"
 
 
 class UploadError(RuntimeError):
@@ -87,30 +84,29 @@ def sha256_of(path: Path) -> str:
     return digest.hexdigest()
 
 
-def resolve_repo(card_text: str) -> tuple[str, str]:
-    """Return ``(repo_id, repo_type)`` from a card's own text.
+def resolve_repo(card_text: str) -> str:
+    """Return the model repo id from a card's own text.
 
-    The H1 title is the repo name. A model card carries
-    ``quantized_by`` in its front matter, which is the owner. A
-    dataset card names ``<owner>/<title>`` in its header comment.
+    The H1 title is the repo name. The ``quantized_by`` front-matter
+    field is the owner.
     """
     title_match = _TITLE.search(card_text)
     if title_match is None:
         raise UploadError("the card has no H1 title to name the repo")
-    title = title_match.group(1)
     owner_match = _QUANTIZED_BY.search(card_text)
-    if owner_match is not None:
-        return f"{owner_match.group(1)}/{title}", "model"
-    mention = re.search(rf"({_REPO_SLUG})/{re.escape(title)}\b", card_text)
-    if mention is None:
-        raise UploadError(
-            f"the card names no owner for {title!r}: add quantized_by or pass --repo"
-        )
-    return f"{mention.group(1)}/{title}", "dataset"
+    if owner_match is None:
+        raise UploadError("the card has no quantized_by field to name the owner")
+    return f"{owner_match.group(1)}/{title_match.group(1)}"
 
 
-def ledger_row(name: str, digest: str, size: int) -> str:
-    """Format the ledger row for one published file."""
+def ledger_row(name: str, digest: str, size: int, repo_type: str) -> str:
+    """Format the ledger row for one published file.
+
+    A dataset card's hashes table is ``| File | SHA-256 |``. A model
+    ledger's upload table adds a byte-count column.
+    """
+    if repo_type == "dataset":
+        return f"| `{name}` | `{digest}` |"
     return f"| `{name}` | `{digest}` | {size:,} |"
 
 
@@ -158,10 +154,7 @@ def _hub_api() -> HubClient:
 
 def _files_for(mode: str, directory: Path) -> list[Path]:
     if mode == "card":
-        card = directory / "README.md"
-        if not card.is_file():
-            raise UploadError(f"{directory} holds no README.md")
-        return [card]
+        return [directory / "README.md"]
     files = sorted(
         p for p in directory.iterdir() if p.is_file() and not p.name.startswith(".")
     )
@@ -171,16 +164,11 @@ def _files_for(mode: str, directory: Path) -> list[Path]:
     ]
 
 
-def _target(mode: str, directory: Path, repo: str | None) -> tuple[str, str]:
+def _card_repo(directory: Path) -> str:
     card = directory / "README.md"
-    if repo is not None:
-        return repo, "model" if mode == "card" else "dataset"
     if not card.is_file():
-        raise UploadError(f"{directory} holds no README.md: pass --repo <owner/name>")
-    repo_id, repo_type = resolve_repo(card.read_text(encoding="utf-8"))
-    if mode == "dataset":
-        repo_type = "dataset"
-    return repo_id, repo_type
+        raise UploadError(f"{directory} holds no README.md")
+    return resolve_repo(card.read_text(encoding="utf-8"))
 
 
 def run(argv: Sequence[str], api_factory: Callable[[], HubClient] = _hub_api) -> int:
@@ -191,7 +179,10 @@ def run(argv: Sequence[str], api_factory: Callable[[], HubClient] = _hub_api) ->
         print(f"error: {directory} is not a directory", file=sys.stderr)
         return 2
     try:
-        repo_id, repo_type = _target(args.mode, directory, args.repo)
+        if args.mode == "dataset":
+            repo_id, repo_type = args.repo, "dataset"
+        else:
+            repo_id, repo_type = _card_repo(directory), "model"
         files = _files_for(args.mode, directory)
         print(f"target: {repo_type} repo {repo_id}")
         for path in files:
@@ -205,7 +196,8 @@ def run(argv: Sequence[str], api_factory: Callable[[], HubClient] = _hub_api) ->
         for path in files:
             digest = upload_and_verify(api, path, repo_id, repo_type)
             print(f"verified: {path.name} matches the Hub byte for byte")
-            print(f"ledger: {ledger_row(path.name, digest, path.stat().st_size)}")
+            size = path.stat().st_size
+            print(f"ledger: {ledger_row(path.name, digest, size, repo_type)}")
     except UploadError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
@@ -224,9 +216,11 @@ def _parse(argv: Sequence[str]) -> argparse.Namespace:
     dataset = sub.add_parser(
         "dataset", help="upload every top-level file in a directory to a dataset repo"
     )
+    dataset.add_argument(
+        "--repo", required=True, help="the target dataset repo id (<owner>/<name>)"
+    )
     for p in (card, dataset):
         p.add_argument("directory", help="the publication directory")
-        p.add_argument("--repo", help="override the target repo id (<owner>/<name>)")
         p.add_argument(
             "--dry-run",
             action="store_true",

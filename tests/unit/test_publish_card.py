@@ -50,11 +50,6 @@ tags:
   - vramfit
 ---
 
-<!--
-This file is the card of the dataset repo
-Alberto-Codes/gemma-4-31B-it-sensitivity-maps.
--->
-
 # gemma-4-31B-it-sensitivity-maps
 
 Body text.
@@ -111,16 +106,9 @@ def _publication(tmp_path: Path, card: str = MODEL_CARD) -> Path:
 
 
 def test_resolve_repo_model_card_uses_quantized_by_and_title() -> None:
-    assert publish.resolve_repo(MODEL_CARD) == (
-        "Alberto-Codes/Llama-3_3-Nemotron-Super-49B-v1_5-fit24gib-GGUF",
-        "model",
-    )
-
-
-def test_resolve_repo_dataset_card_reads_owner_from_comment() -> None:
-    assert publish.resolve_repo(DATASET_CARD) == (
-        "Alberto-Codes/gemma-4-31B-it-sensitivity-maps",
-        "dataset",
+    assert (
+        publish.resolve_repo(MODEL_CARD)
+        == "Alberto-Codes/Llama-3_3-Nemotron-Super-49B-v1_5-fit24gib-GGUF"
     )
 
 
@@ -129,9 +117,9 @@ def test_resolve_repo_without_title_raises() -> None:
         publish.resolve_repo("no heading here\n")
 
 
-def test_resolve_repo_without_owner_raises() -> None:
-    with pytest.raises(publish.UploadError, match="--repo"):
-        publish.resolve_repo("# lonely-title\n")
+def test_resolve_repo_without_quantized_by_raises() -> None:
+    with pytest.raises(publish.UploadError, match="quantized_by"):
+        publish.resolve_repo(DATASET_CARD)
 
 
 def test_card_dry_run_prints_target_and_hash_without_uploading(
@@ -173,7 +161,10 @@ def test_card_upload_verifies_bytes_and_prints_ledger_row(
         )
     ]
     assert hub.revisions == ["sha-1"]
-    assert f"| `README.md` | `{expected}` | {len(MODEL_CARD.encode()):,} |" in out
+    assert (
+        f"ledger: | `README.md` | `{expected}` | {len(MODEL_CARD.encode()):,} |\n"
+        in out
+    )
 
 
 def test_card_upload_mismatch_exits_nonzero(
@@ -189,13 +180,23 @@ def test_card_upload_mismatch_exits_nonzero(
     assert "published bytes differ" in err
 
 
-def test_card_missing_readme_exits_nonzero(tmp_path: Path) -> None:
+def test_card_missing_readme_exits_nonzero(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     directory = tmp_path / "empty"
     directory.mkdir()
 
-    status = publish.run(["card", str(directory), "--repo", "o/n"], api_factory=FakeHub)
+    status = publish.run(["card", str(directory)], api_factory=FakeHub)
 
     assert status == 1
+    assert "holds no README.md" in capsys.readouterr().err
+
+
+def test_card_rejects_repo_flag(tmp_path: Path) -> None:
+    directory = _publication(tmp_path)
+
+    with pytest.raises(SystemExit):
+        publish.run(["card", str(directory), "--repo", "o/n"], api_factory=FakeHub)
 
 
 def test_missing_directory_exits_two(tmp_path: Path) -> None:
@@ -211,7 +212,15 @@ def test_dataset_uploads_files_then_card_and_prints_every_ledger_row(
     (directory / ".hidden").write_bytes(b"skip")
     hub = FakeHub()
 
-    status = publish.run(["dataset", str(directory)], api_factory=lambda: hub)
+    status = publish.run(
+        [
+            "dataset",
+            str(directory),
+            "--repo",
+            "Alberto-Codes/gemma-4-31B-it-sensitivity-maps",
+        ],
+        api_factory=lambda: hub,
+    )
 
     out = capsys.readouterr().out
     assert status == 0
@@ -226,24 +235,27 @@ def test_dataset_uploads_files_then_card_and_prints_every_ledger_row(
     }
     for name in ("imatrix.gguf", "sensitivity-32k.json", "README.md"):
         digest = hashlib.sha256((directory / name).read_bytes()).hexdigest()
-        assert f"| `{name}` | `{digest}` |" in out
+        assert f"ledger: | `{name}` | `{digest}` |\n" in out
 
 
-def test_dataset_without_card_needs_repo_flag(
+def test_dataset_without_repo_flag_exits_two(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     directory = tmp_path / "maps"
     directory.mkdir()
     (directory / "map.json").write_bytes(b"{}")
 
-    status = publish.run(["dataset", str(directory)], api_factory=FakeHub)
+    with pytest.raises(SystemExit) as exc:
+        publish.run(["dataset", str(directory)], api_factory=FakeHub)
 
-    assert status == 1
+    assert exc.value.code == 2
     assert "--repo" in capsys.readouterr().err
 
 
-def test_dataset_repo_flag_overrides_card(tmp_path: Path) -> None:
-    directory = _publication(tmp_path, DATASET_CARD)
+def test_dataset_without_card_uploads_the_files(tmp_path: Path) -> None:
+    directory = tmp_path / "maps"
+    directory.mkdir()
+    (directory / "map.json").write_bytes(b"{}")
     hub = FakeHub()
 
     status = publish.run(
@@ -251,7 +263,7 @@ def test_dataset_repo_flag_overrides_card(tmp_path: Path) -> None:
     )
 
     assert status == 0
-    assert hub.uploads == [("someone/maps", "dataset", "README.md")]
+    assert hub.uploads == [("someone/maps", "dataset", "map.json")]
 
 
 def test_dataset_mismatch_on_one_file_exits_nonzero(tmp_path: Path) -> None:
@@ -259,7 +271,9 @@ def test_dataset_mismatch_on_one_file_exits_nonzero(tmp_path: Path) -> None:
     (directory / "map.json").write_bytes(b"{}")
     hub = FakeHub(corrupt="map.json")
 
-    status = publish.run(["dataset", str(directory)], api_factory=lambda: hub)
+    status = publish.run(
+        ["dataset", str(directory), "--repo", "someone/maps"], api_factory=lambda: hub
+    )
 
     assert status == 1
 
