@@ -98,9 +98,9 @@ def shape_from_config_json(path: Path) -> ModelShape:
         The parsed shape.
 
     Raises:
-        HfConfigError: If the file is not UTF-8, is not valid JSON, defines
-            the same key twice, declares an integer outside the signed
-            64-bit range, required fields are missing, the attention
+        HfConfigError: For every refusal `_load_config` raises. Also if
+            the file declares an integer outside the signed 64-bit
+            range, required fields are missing, the attention
             geometry is inconsistent, the decoder container is
             ambiguous, or the decoder declares KV geometry this
             reader does not model (#420, #421). Every message names
@@ -141,10 +141,9 @@ def config_claims_vision(path: Path) -> bool:
         object.
 
     Raises:
-        HfConfigError: If the file is not UTF-8, is not valid JSON,
-            defines the same key twice, or is not a JSON object. The
-            same refusals as `shape_from_config_json`, so the two
-            reads of one file cannot disagree on validity.
+        HfConfigError: For every refusal `_load_config` raises. The
+            same load as `shape_from_config_json`, so the two reads of
+            one file cannot disagree on validity.
 
     Examples:
         A text-only config claims no vision:
@@ -168,8 +167,9 @@ def _load_config(path: Path) -> dict[str, Any]:
     Raises:
         HfConfigError: If the file is not UTF-8, is not valid JSON,
             defines the same key twice (#283), declares an integer
-            past the parser's digit bound (#287), or is not a JSON
-            object. Every message names ``path``.
+            past the parser's digit bound (#287), nests past the
+            recursion limit (#478), or is not a JSON object. Every
+            message names ``path``.
     """
     try:
         config = json.loads(
@@ -181,6 +181,10 @@ def _load_config(path: Path) -> dict[str, Any]:
         raise HfConfigError(f"{path}: invalid JSON: {exc}") from exc
     except UnicodeDecodeError as exc:
         raise HfConfigError(f"{path}: not valid UTF-8: {exc}") from exc
+    except RecursionError as exc:
+        # Deep nesting exhausts the decoder's stack. `RecursionError`
+        # is no `ValueError`, so it escaped every caller (#478).
+        raise HfConfigError(f"{path}: JSON nests too deeply: {exc}") from exc
     except ValueError as exc:
         # An integer literal past `sys.get_int_max_str_digits` (4300 by
         # default) fails here, before any extractor sees it (#287). The

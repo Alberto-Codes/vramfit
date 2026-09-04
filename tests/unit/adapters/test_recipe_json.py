@@ -66,6 +66,19 @@ class TestRecipe:
         with pytest.raises(ArtifactError, match='duplicate key "vram_budget_bytes"'):
             load_recipe(path)
 
+    def test_recipe_nested_past_the_recursion_limit_raises_artifact_error(
+        self, tmp_path
+    ) -> None:
+        # Deep nesting exhausts the decoder's stack. `RecursionError` is
+        # no `ValueError`, so it escaped every caller (#478).
+        path = tmp_path / "recipe.json"
+        path.write_text('{"a": ' + "[" * 100_000 + "]" * 100_000 + "}")
+
+        with pytest.raises(ArtifactError, match="JSON nests too deeply") as caught:
+            load_recipe(path)
+
+        assert caught.value.json_path == "$"
+
     def test_absent_within_group_defaults_to_none(self) -> None:
         raw = make_recipe_dict()
         assert "within_group" not in raw

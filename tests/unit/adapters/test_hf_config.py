@@ -1005,6 +1005,17 @@ class TestModelShapeFromConfig:
         with pytest.raises(ValueError, match=r"config\.json: cannot parse JSON"):
             shape_from_config_json(path)
 
+    def test_config_nested_past_the_recursion_limit_names_the_file(
+        self, tmp_path
+    ) -> None:
+        # Deep nesting exhausts the decoder's stack. `RecursionError` is
+        # no `ValueError`, so it escaped every caller (#478).
+        path = tmp_path / "config.json"
+        path.write_text('{"a": ' + "[" * 100_000 + "]" * 100_000 + "}")
+
+        with pytest.raises(ValueError, match=r"config\.json: JSON nests too deeply"):
+            shape_from_config_json(path)
+
 
 @pytest.mark.unit
 class TestConfigClaimsVision:
@@ -1055,6 +1066,16 @@ class TestConfigClaimsVision:
         path.write_text('{"vision_config": {}, "vision_config": {}}')
 
         with pytest.raises(ValueError, match="twice"):
+            config_claims_vision(path)
+
+    def test_config_nested_past_the_recursion_limit_names_the_file(
+        self, tmp_path
+    ) -> None:
+        # The claim read shares the shape read's nesting refusal (#478).
+        path = tmp_path / "config.json"
+        path.write_text('{"a": ' + "[" * 100_000 + "]" * 100_000 + "}")
+
+        with pytest.raises(ValueError, match=r"config\.json: JSON nests too deeply"):
             config_claims_vision(path)
 
     def test_null_vision_config_claims_no_vision(self, tmp_path) -> None:

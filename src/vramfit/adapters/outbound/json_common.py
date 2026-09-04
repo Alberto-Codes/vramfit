@@ -595,9 +595,10 @@ def _load_json(path: Path, root: str) -> dict[str, Any]:
     Raises:
         ArtifactError: If the file cannot be read, is not UTF-8, is not
             valid JSON, carries a number literal the parser refuses,
-            repeats a key inside one object, or its top level is not an
-            object. The duplicate-key message names the key, which is
-            all `object_from_pairs` can report.
+            nests past the recursion limit (#478), repeats a key inside
+            one object, or its top level is not an object. The
+            duplicate-key message names the key, which is all
+            `object_from_pairs` can report.
     """
     try:
         data = json.loads(
@@ -609,6 +610,10 @@ def _load_json(path: Path, root: str) -> dict[str, Any]:
         raise ArtifactError(root, f"invalid JSON: {exc}") from exc
     except UnicodeDecodeError as exc:
         raise ArtifactError(root, f"not valid UTF-8: {exc}") from exc
+    except RecursionError as exc:
+        # Deep nesting exhausts the decoder's stack. `RecursionError`
+        # is no `ValueError`, so it escaped every caller (#478).
+        raise ArtifactError(root, f"JSON nests too deeply: {exc}") from exc
     except ValueError as exc:
         # An integer literal past `sys.get_int_max_str_digits` (4300 by
         # default) fails here, before any extractor sees it (#260). The

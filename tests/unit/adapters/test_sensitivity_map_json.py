@@ -375,6 +375,19 @@ class TestSensitivityMap:
         with pytest.raises(ArtifactError, match="invalid JSON"):
             load_sensitivity_map(path)
 
+    def test_map_nested_past_the_recursion_limit_raises_artifact_error(
+        self, tmp_path
+    ) -> None:
+        # Deep nesting exhausts the decoder's stack. `RecursionError` is
+        # no `ValueError`, so it escaped every caller (#478).
+        path = tmp_path / "deep.json"
+        path.write_text('{"a": ' + "[" * 100_000 + "]" * 100_000 + "}")
+
+        with pytest.raises(ArtifactError, match="JSON nests too deeply") as caught:
+            load_sensitivity_map(path)
+
+        assert caught.value.json_path == "$"
+
     def test_duplicate_key_in_a_list_element_raises_artifact_error(
         self, tmp_path
     ) -> None:

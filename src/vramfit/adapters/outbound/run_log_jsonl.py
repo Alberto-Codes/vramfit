@@ -56,12 +56,12 @@ RUNLOG_VERSION: Final[int] = 2
 class RunLogError(VramfitError, ValueError):
     """A run-log line the reader or the writer refuses.
 
-    `read_run_log` raises it for a repeated key, a non-final line that
-    is not valid JSON, and a number literal the parser refuses. The
-    message names the file and the line. `emit` raises it for a field
-    the renderer refuses: a value that is not JSON-serializable, a
-    NaN or infinite number, or a key that collides with the envelope
-    (#475). That message names the file and the event.
+    `read_run_log` raises it for every refusal its Raises section
+    lists. The message names the file and the line. `emit` raises it
+    for a field the renderer refuses: a value that is not
+    JSON-serializable, a NaN or infinite number, or a key that
+    collides with the envelope (#475). That message names the file
+    and the event.
 
     The class sits under the `VramfitError` root per ADR-0011 decision
     5. It keeps `ValueError` as a base, so a caller that catches the
@@ -205,7 +205,8 @@ def read_run_log(path: Path) -> list[dict[str, Any]]:
         OSError: If the file cannot be read.
         RunLogError: If a non-final line is not valid JSON. If any line
             defines the same key twice. If any line carries a number
-            literal the parser refuses.
+            literal the parser refuses. If any line nests past the
+            recursion limit (#478).
     """
     # Each line keeps its file number, because the blank-line filter
     # would otherwise make the refusal below name the wrong line. A hand
@@ -227,6 +228,14 @@ def read_run_log(path: Path) -> list[dict[str, Any]]:
                 break
             raise RunLogError(
                 f"{path}: line {number}: invalid JSON: {exc.msg}: column {exc.colno}"
+            ) from exc
+        except RecursionError as exc:
+            # Deep nesting exhausts the decoder's stack. `RecursionError`
+            # is no `ValueError`, so it escaped every caller (#478). A
+            # crash cannot write a line nested past the limit, so the
+            # #315 rule applies and the final line earns no drop.
+            raise RunLogError(
+                f"{path}: line {number}: JSON nests too deeply: {exc}"
             ) from exc
         except ValueError as exc:
             # The syntax parsed and the value conversion failed. An
