@@ -32,9 +32,10 @@ split local/global head geometry, the `attention_k_eq_v` KV-head
 override (#431), shared-KV layers that allocate no cache, and a hybrid
 `layers_block_type` stack whose `mamba`, `moe`, and `mlp` blocks store
 no KV (#427). An active window without `layer_types`, an unknown layer
-or block type, `layers_block_type` beside `layer_types`, a
-`hybrid_override_pattern` with no `layers_block_type` list, or a
-llama-geometry key beside `block_configs` refuses rather than guessing.
+or block type, or a llama-geometry key beside `block_configs` refuses
+rather than guessing. So does `layers_block_type` beside `layer_types`
+or beside a `num_kv_shared_layers` above zero, and a
+`hybrid_override_pattern` with no `layers_block_type` list.
 
 ```
 vramfit budget
