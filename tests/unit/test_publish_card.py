@@ -252,6 +252,24 @@ def test_dataset_without_repo_flag_exits_two(
     assert "--repo" in capsys.readouterr().err
 
 
+def test_dataset_empty_directory_exits_nonzero_without_uploading(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    directory = tmp_path / "maps"
+    directory.mkdir()
+    (directory / ".hidden").write_bytes(b"skip")
+    (directory / "nested").mkdir()
+    hub = FakeHub()
+
+    status = publish.run(
+        ["dataset", str(directory), "--repo", "someone/maps"], api_factory=lambda: hub
+    )
+
+    assert status == 1
+    assert "holds no files to upload" in capsys.readouterr().err
+    assert hub.uploads == []
+
+
 def test_dataset_without_card_uploads_the_files(tmp_path: Path) -> None:
     directory = tmp_path / "maps"
     directory.mkdir()
