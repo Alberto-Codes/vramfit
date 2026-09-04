@@ -11,6 +11,7 @@ from vramfit.domain.budget import format_size
 from vramfit.domain.model import SensitivityMap
 from vramfit.domain.runtime import (
     RuntimeCapabilityError,
+    effective_bits,
     expert_stack_effective_bits,
 )
 from vramfit.domain.sizes import (
@@ -951,25 +952,54 @@ class TestUncoveredGroups:
 
         assert [a.bits for a in recipe.assignments] == [8]
 
-    def test_an_uncovered_expert_stack_prices_through_the_stack_table(self) -> None:
+    def test_an_uncovered_expert_stack_prices_through_the_stack_table(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         # The stack table and the dense table both read 16.0 today, so
-        # this pins the routing rather than a difference. A stack group
-        # priced through the dense table would drift the day either
-        # table moves.
+        # the test moves the stack row to prove the routing. A stack
+        # group priced through the dense table, or through a constant,
+        # would ignore the move.
+        table = expert_stack_effective_bits("llama.cpp")
+        assert table is not None
+        monkeypatch.setattr(
+            "vramfit.domain.runtime.EXPERT_STACK_EFFECTIVE_BITS",
+            {"llama.cpp": {**table, 16: 17.0}},
+        )
         map_ = load(make_map([("model.layers.0", 1600, CONVEX_CURVE)]))
         stack = "model.layers.1.mixer.experts.up_proj"
+        dense = "model.layers.1.mlp.up_proj"
 
         recipe = solve_simple(
             map_,
             100_000,
-            discovered_bytes={"model.layers.0": 1600, stack: 1600},
+            discovered_bytes={"model.layers.0": 1600, stack: 1600, dense: 1600},
             runtime="llama.cpp",
         )
 
-        held = next(a for a in recipe.assignments if a.group == stack)
-        table = expert_stack_effective_bits("llama.cpp")
+        by_group = {a.group: a.bytes for a in recipe.assignments}
+        assert by_group[stack] == group_bytes(1600, 17.0, DEFAULT_RESIDUAL_OVERHEAD)
+        assert by_group[dense] == group_bytes(1600, 16.0, DEFAULT_RESIDUAL_OVERHEAD)
+
+    def test_an_uncovered_dense_group_prices_through_the_dense_table(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        table = effective_bits("llama.cpp")
         assert table is not None
-        assert held.bytes == group_bytes(1600, table[16], DEFAULT_RESIDUAL_OVERHEAD)
+        monkeypatch.setattr(
+            "vramfit.domain.runtime.EFFECTIVE_BITS",
+            {"llama.cpp": {**table, 16: 18.0}},
+        )
+        map_ = load(make_map([("model.layers.0", 1600, CONVEX_CURVE)]))
+
+        recipe = solve_simple(
+            map_,
+            100_000,
+            discovered_bytes={"model.layers.0": 1600, "model.layers.1": 1600},
+            runtime="llama.cpp",
+        )
+
+        held = next(a for a in recipe.assignments if a.group == "model.layers.1")
+        assert held.bytes == group_bytes(1600, 18.0, DEFAULT_RESIDUAL_OVERHEAD)
 
     def test_the_infeasible_message_names_the_held_groups(self) -> None:
         map_ = load(make_map([("model.layers.0", 1600, CONVEX_CURVE)]))
@@ -1239,6 +1269,22 @@ class TestPassthroughPricing:
             solve_simple(map_, 10**6, runtime="llama.cpp")
 
         assert '"mixer" module' in str(caught.value)
+
+    def test_a_hybrid_map_without_a_size_source_states_the_vllm_limit(
+        self,
+    ) -> None:
+        # A size source would only reach the reference-precision
+        # refusal, so the sourceless refusal states that limit and
+        # sends nobody to fetch a checkpoint.
+        map_ = load(make_map([("model.layers.0.mixer.in_proj", 1600, CONVEX_CURVE)]))
+
+        with pytest.raises(RuntimeCapabilityError) as caught:
+            solve_simple(map_, 10**6, runtime="vllm")
+
+        message = str(caught.value)
+        assert '"mixer" module' in message
+        assert 'no "vllm" width until a "vllm" pack path exists' in message
+        assert "--checkpoint" not in message
 
     def test_a_hybrid_map_refuses_without_a_size_source_under_no_runtime(
         self,

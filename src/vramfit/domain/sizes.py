@@ -447,20 +447,33 @@ def held_assignments(
             precision and the target runtime cannot serve it. The
             recipe would record an assignment `recipe_json` refuses
             to read back. A pinned group does not trigger this — the
-            solver validated its width against the runtime.
+            solver validated its width against the runtime. Also if
+            the map names such a module with no size source and the
+            runtime serves no reference precision: a size source
+            would only reach the same refusal, so this one states
+            the runtime's limit instead of naming the flag.
     """
     if discovered_bytes is None:
         module = missing_unquantizable_module(
             tensor for group in sensitivity_map.groups for tensor in group.tensors
         )
-        if module is not None:
-            raise SizeSourceError(
-                f'the map names the "{module}" module and no tensor of a class '
-                f"the quantizer refuses. The scan skips that class (#204), so "
-                f"only a size source prices it. Plan with --checkpoint "
-                f"(ADR-0029 decision 3)"
+        if module is None:
+            return ()
+        named = (
+            f'the map names the "{module}" module and no tensor of a class '
+            f"the quantizer refuses. The scan skips that class (#204)"
+        )
+        if runtime is not None and REFERENCE_BITS not in RUNTIME_CAPABILITIES.get(
+            runtime, frozenset()
+        ):
+            raise RuntimeCapabilityError(
+                f'{named}, and it has no "{runtime}" width until a "{runtime}" '
+                f"pack path exists (ADR-0013)"
             )
-        return ()
+        raise SizeSourceError(
+            f"{named}, so only a size source prices it. Plan with --checkpoint "
+            f"(ADR-0029 decision 3)"
+        )
     pins = dict(pins or {})
     uncovered = uncovered_groups(
         discovered_bytes, [g.name for g in sensitivity_map.groups]

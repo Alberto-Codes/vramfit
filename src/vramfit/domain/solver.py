@@ -115,9 +115,9 @@ from vramfit.domain.protection import (
     resolve_protected,
 )
 from vramfit.domain.runtime import (
+    convert_dtype_bits,
     effective_bits,
     expert_stack_effective_bits,
-    passthrough_bits,
     rows_refuse_super_block,
     servable_precisions,
     unquantizable_class,
@@ -297,9 +297,10 @@ def _predictor(
     refuse the 256 super-block (the 2026-08-20 amendment). Nominal 3
     keeps the dense entry: the plan-time refusal is an ADR-0028 open
     question, so pack refuses first and the plan still prices the
-    assignment. At the passthrough every group prices at what the
-    packed file holds: `F16`'s 16.0 bits for a class the quantizer
-    accepts, the convert dtype for a class it refuses (#409).
+    assignment. At the passthrough a group prices at its table's 16
+    row, `F16`'s 16.0 bits (ADR-0029 decision 4). A group of a class
+    the quantizer refuses prices at the convert dtype instead, which
+    is what the packed file holds (#409).
 
     Args:
         runtime: Target runtime name, or None to price at nominal
@@ -341,8 +342,11 @@ def _predictor(
             Returns:
                 Predicted bytes, rounded up.
             """
-            if bits == REFERENCE_BITS:
-                spent: float = passthrough_bits(name, runtime)
+            converted = (
+                convert_dtype_bits(name, runtime) if bits == REFERENCE_BITS else None
+            )
+            if converted is not None:
+                spent: float = converted
             elif spent_table is not None:
                 spent = spent_table[bits]
             else:

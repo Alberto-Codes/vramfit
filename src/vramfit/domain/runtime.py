@@ -13,8 +13,11 @@ never measured. It spends exactly 16.0 bits per weight, in both
 tables, because GGUF `F16` carries no block scale. A group of an
 unquantizable class is the exception: the quantizer refuses it, so
 it holds at the dtype the converter wrote, and the passthrough
-prices it from that dtype (#409). `passthrough_bits` reads the
-convert dtype table.
+prices it from that dtype (#409). `convert_dtype_bits` reads the
+convert dtype table for such a class and nothing else, so every
+other group keeps its table's 16 row. `missing_unquantizable_module`
+reports a map that names such a class's module and not the class,
+which only a size source can price.
 
 Attributes:
     LLAMA_CPP (str): The llama.cpp runtime name. Pack backends and
@@ -187,10 +190,6 @@ CONVERT_DTYPE_BITS: Final[Mapping[str, Mapping[str, float]]] = MappingProxyType(
     }
 )
 
-# What the passthrough spends on a class the quantizer accepts: the
-# `f16` override, two bytes per weight and no block scale.
-PASSTHROUGH_BITS: Final[float] = 16.0
-
 # A layer-class group: a decoder-layer prefix under any naming family,
 # then the class suffix. The capture is what the two class tables key
 # on.
@@ -352,42 +351,44 @@ def missing_unquantizable_module(tensors: Iterable[str]) -> str | None:
     return None
 
 
-def passthrough_bits(group: str, runtime: str | None) -> float:
-    """Report the bits per weight the passthrough spends on a group.
+def convert_dtype_bits(group: str, runtime: str | None) -> float | None:
+    """Report the bits per weight the converter stores a refused class at.
 
-    A group the quantizer accepts holds at the `f16` override, 16.0
-    bits. A group of an unquantizable class holds at the dtype the
+    A group of an unquantizable class holds at the dtype the
     converter wrote, which the packed file then carries: 32.0 bits
-    on both llama.cpp classes (#409). Pricing the second at 16.0
-    under-priced publication #2's recipe by 16,923,492 B against a
-    16,874,535 B margin.
+    on both llama.cpp classes (#409). Pricing it at the `f16`
+    override's 16.0 under-priced publication #2's recipe by
+    16,923,492 B against a 16,874,535 B margin. Every other group
+    prices at its effective-bits table, whose 16 row is the
+    passthrough (ADR-0029 decision 4).
 
     Args:
         group: Group name, as `vramfit.domain.scan.group_key`
             produces it.
         runtime: Target runtime name, or None for an unconstrained
-            plan, which holds every group at 16.0.
+            plan.
 
     Returns:
-        Effective bits per weight at the passthrough.
+        The convert dtype's bits per weight, or None when the group
+        is not of a refused class or the runtime carries no table.
 
     Examples:
         ```python
-        from vramfit.domain.runtime import passthrough_bits
+        from vramfit.domain.runtime import convert_dtype_bits
 
-        assert passthrough_bits("model.layers.3.mixer.conv1d", "llama.cpp") == 32.0
-        assert passthrough_bits("model.layers.3.mixer.in_proj", "llama.cpp") == 16.0
+        assert convert_dtype_bits("model.layers.3.mixer.conv1d", "llama.cpp") == 32.0
+        assert convert_dtype_bits("model.layers.3.mixer.in_proj", "llama.cpp") is None
         ```
     """
     if runtime is None:
-        return PASSTHROUGH_BITS
+        return None
     table = CONVERT_DTYPE_BITS.get(runtime)
     if table is None:
-        return PASSTHROUGH_BITS
+        return None
     match = _CLASS_SUFFIX.match(group)
     if match is None:
-        return PASSTHROUGH_BITS
-    return table.get(match.group(1), PASSTHROUGH_BITS)
+        return None
+    return table.get(match.group(1))
 
 
 class RuntimeCapabilityError(VramfitError, ValueError):

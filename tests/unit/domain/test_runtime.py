@@ -10,14 +10,13 @@ from vramfit.domain.runtime import (
     CONVERT_DTYPE_BITS,
     EFFECTIVE_BITS,
     EXPERT_STACK_EFFECTIVE_BITS,
-    PASSTHROUGH_BITS,
     RUNTIME_CAPABILITIES,
     UNQUANTIZABLE_CLASS_FILTERS,
     RuntimeCapabilityError,
+    convert_dtype_bits,
     effective_bits,
     expert_stack_effective_bits,
     missing_unquantizable_module,
-    passthrough_bits,
     rows_refuse_super_block,
     servable_precisions,
     unquantizable_class,
@@ -226,8 +225,8 @@ class TestUnquantizableClassFilters:
 
 
 @pytest.mark.unit
-class TestPassthroughBits:
-    """The passthrough prices at what the packed file holds (#409)."""
+class TestConvertDtypeBits:
+    """A refused class prices at what the packed file holds (#409)."""
 
     @pytest.mark.parametrize(
         "group",
@@ -240,7 +239,7 @@ class TestPassthroughBits:
         # `convert_hf_to_gguf.py` writes both classes at float32
         # whatever `--outtype` asks, and the quantizer never touches
         # them, so the packed file stores four bytes per weight.
-        assert passthrough_bits(group, "llama.cpp") == 32.0
+        assert convert_dtype_bits(group, "llama.cpp") == 32.0
 
     @pytest.mark.parametrize(
         ("group", "runtime"),
@@ -254,8 +253,13 @@ class TestPassthroughBits:
         ],
         ids=["dense-class", "stack", "layer", "no-layer", "no-runtime", "no-table"],
     )
-    def test_everything_else_spends_f16(self, group: str, runtime: str | None) -> None:
-        assert passthrough_bits(group, runtime) == PASSTHROUGH_BITS == 16.0
+    def test_everything_else_keeps_its_table(
+        self, group: str, runtime: str | None
+    ) -> None:
+        # No convert dtype applies, so the solver reads the group's
+        # effective-bits table, whose 16 row is the passthrough
+        # (ADR-0029 decision 4).
+        assert convert_dtype_bits(group, runtime) is None
 
     def test_the_convert_dtype_table_names_every_unquantizable_class(self) -> None:
         # A class one table names, the other names too: a refused

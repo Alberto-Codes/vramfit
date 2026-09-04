@@ -151,10 +151,11 @@ file stores, the prediction reads 16,946,865,009 B, which is
 the recipe's 0.002 overhead over-reserves 32.19 MiB on the
 quantized classes. Two opposite errors, and the second is larger.
 vramfit prices the passthrough from the convert dtype since
-2026-09-04 (issue #409), so a recipe planned today demotes one more
-`down_proj` stack to reach the budget. The published recipe and
-file stay as measured until a re-pack lands with a byte-for-byte
-check of predicted against packed bytes.
+2026-09-04 (issue #409), so a recipe planned today must demote at
+least one more group to close the 7.17 MiB. Which group is a
+question for the re-pack. The published recipe and file stay as
+measured until that re-pack lands with a byte-for-byte check of
+predicted against packed bytes.
 
 The serve test: llama.cpp b10326 (Vulkan), a hard ballast cap
 holding the device to 16,383 MiB visible on an RTX 4090, `-ngl 99`
