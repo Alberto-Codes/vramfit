@@ -66,7 +66,7 @@ card and the source must match.
 | `NVIDIA-Nemotron-3.5-Lightning-30B-A3B-fit16gib.gguf.evals.json` | `bbaf8e76888f0e521896b91de1f39c359e8bc6f376d8186c4ca1f02179efdaf5` | 2,365 |
 | `baselines/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-IQ2_XXS.gguf.evals.json` | `f928e8d0ef05bfe6ea8298e06b2a48f812acfcd6c03efb432f2c18f137245912` | 2,366 |
 | `LICENSE` | `d7c8a9e5d1896d0a9588319cc7b1433e64645ad6d9e55632c30b78d8c038c23b` | 2,693 |
-| `README.md` | recorded at ship | — |
+| `README.md` | Uploaded verbatim at ship. On 2026-09-04 the source changed: #527 corrected the `file_type` sentence, #530 added the Usage section, #533 corrected the pricing figures, and the PR that added `scripts/publish_card.py` moved the reproduce block to `pip install "vramfit[pack]"`. The published copy lags until `scripts/publish_card.py` re-uploads it. Record the printed SHA-256 here after the byte-match. | — |
 
 The staged pack came from `vramfit pack` on `recipe.json` with the
 #300 box toolchain on 2026-08-22, and its bytes equal the evaluated
