@@ -378,9 +378,8 @@ def plan(
     layer-class or routed-expert-stack group then refuses, because no
     name supplies its row width. That refusal reaches only a runtime
     carrying both type tables the width routes between, which is
-    ``llama.cpp`` today. A ``vllm`` plan and a plan with no
-    ``--runtime`` price at nominal bits, so the same map solves. A
-    ``layer`` map
+    ``llama.cpp`` today. A ``vllm`` plan prices at nominal bits, so
+    the same map solves with no ``--checkpoint``. A ``layer`` map
     scanned before the discovery skip (#204) folds a class the
     quantizer refuses into its layer group, which the checkpoint
     holds by its own name. The plan prices it twice and draws a

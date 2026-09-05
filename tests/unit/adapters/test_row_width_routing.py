@@ -28,7 +28,7 @@ from vramfit.adapters.outbound.gguf.types import (
     PackError,
     tensor_overrides,
 )
-from vramfit.adapters.outbound.recipe_json import save_recipe
+from vramfit.adapters.outbound.recipe_json import load_recipe, save_recipe
 from vramfit.adapters.outbound.sensitivity_map_json import map_from_dict
 from vramfit.domain.model import Assignment, PlanMeta, Recipe
 from vramfit.domain.runtime import (
@@ -527,6 +527,40 @@ def make_routed_recipe(model_id: str, groups: dict[str, int]) -> Recipe:
         imatrix=None,
         protected_tensors=(),
     )
+
+
+class TestPlanCommandWithoutACheckpoint:
+    """The CLI half of the exemption, which `plan --help` states."""
+
+    def test_a_vllm_plan_of_a_stack_map_needs_no_checkpoint(self, tmp_path) -> None:
+        # vLLM carries neither effective-bits table, so the width
+        # routes nothing and the refusal never fires. `--runtime` is
+        # the only CLI path to that exemption, because the option
+        # defaults to llama.cpp.
+        map_path = tmp_path / "sensitivity.json"
+        map_path.write_text(
+            json.dumps(make_map([(QWEN_UP, 160_000, CURVE)], precisions=PRECISIONS))
+        )
+        out = tmp_path / "recipe.json"
+
+        result = runner.invoke(
+            app,
+            [
+                "plan",
+                str(map_path),
+                "--vram",
+                "200000",
+                "--kv-headroom",
+                "50000",
+                "--runtime",
+                VLLM,
+                "--out",
+                str(out),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert load_recipe(out).assignments[0].group == QWEN_UP
 
 
 class TestPackPreflight:
