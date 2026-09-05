@@ -103,6 +103,11 @@
   granularity, so it holds uncovered. Under `layer` granularity a
   layer group that absorbed it would hide its bytes behind a covered
   name.
+  The pack now prints the packed bytes against
+  `plan.predicted_total_bytes` beside the budget margin, and warns
+  past a 1.0 % tolerance
+  ([ADR-0012](0012-gguf-type-mapping.md) decision 4, amended
+  2026-09-04).
 
 ## Context
 

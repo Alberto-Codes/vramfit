@@ -160,10 +160,28 @@ packed 37 groups -> qwen2.5-3b-recipe-4GiB.gguf (1.99 GiB),
 weight budget 2.00 GiB, margin 5.26 MiB under
 ```
 
+A prediction line follows it. That pack predates the line, so the
+shape below comes from a synthetic 1.98 GiB prediction against a
+file 8.58 MiB larger, not from that run:
+
+```
+predicted 1.98 GiB, delta +8.58 MiB (+0.42%), tolerance ±1.0% — within (ADR-0012)
+```
+
+The delta is `packed - predicted`. A delta past the 1.0 %
+predicted-bytes tolerance warns on stderr and never refuses. The
+budget line alone decides the pack (ADR-0012 decision 4, amended
+2026-09-04). Publication #2's pack fit its budget on two cancelling
+pricing errors and showed only its margin (#409) — this line is what
+now names a miss.
+
 The run log (`<stem>.runlog.jsonl`) carries the same run as machine
 events — `size_checked` records `packed_bytes`,
-`weight_budget_bytes`, `margin_bytes`, and `fits`. An over-budget
-pack exits 1 and keeps the file, so you can inspect what overflowed.
+`weight_budget_bytes`, `margin_bytes`, `fits`,
+`predicted_total_bytes`, `predicted_delta_bytes`,
+`predicted_delta_fraction`, and `predicted_within_tolerance`. An
+over-budget pack exits 1 and keeps the file, so you can inspect what
+overflowed.
 
 ## Sizes at plan time
 

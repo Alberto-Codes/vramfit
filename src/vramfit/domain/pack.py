@@ -3,7 +3,8 @@
 The pack step hands a recipe to a runtime's quantizer and gets a file
 back. The domain owns what survives that exchange without IO: the
 record of what was driven (`PackResult`), the arithmetic that
-re-checks real bytes against the planned budget (ADR-0012), the
+re-checks real bytes against the planned budget and against the
+recipe's own prediction (ADR-0012), the
 smoke-test verdict against the perplexity ceiling (ADR-0017), the
 zero-count judgment on the imatrix counts the pack reads
 (`zero_count_experts`, ADR-0026 decision 5), the modal-type rule
@@ -34,8 +35,13 @@ from __future__ import annotations
 import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
+from typing import Final
 
 from vramfit.domain.model import Recipe
+
+# The predicted-bytes tolerance (ADR-0012 decision 4, amended
+# 2026-09-04). A delta past this fraction of the prediction warns.
+PREDICTED_BYTES_TOLERANCE: Final[float] = 0.01
 
 
 @dataclass(frozen=True, slots=True)
@@ -318,6 +324,72 @@ def weight_budget_margin(recipe: Recipe, packed_bytes: int) -> int:
     if packed_bytes <= 0:
         raise ValueError("packed_bytes must be positive")
     return recipe.plan.weight_budget_bytes - packed_bytes
+
+
+def predicted_bytes_delta(predicted_total_bytes: int, packed_bytes: int) -> int:
+    """Compute how far the packed file lands from the recipe's prediction.
+
+    The budget margin alone cannot see a wrong prediction: publication
+    #2 fit its budget on two cancelling pricing errors and reported
+    only its margin (#409). The pack step prints this delta beside the
+    margin, so the size model's miss is on record (ADR-0012 decision
+    4, amended 2026-09-04).
+
+    Args:
+        predicted_total_bytes: The recipe's ``plan.predicted_total_bytes``.
+        packed_bytes: Real size of the packed model file.
+
+    Returns:
+        ``packed_bytes - predicted_total_bytes``. Positive means the
+        file outgrew the prediction.
+
+    Raises:
+        ValueError: If either count is not positive.
+
+    Examples:
+        A packed file 100 bytes over its prediction:
+
+        ```python
+        assert predicted_bytes_delta(2_000, 2_100) == 100
+        ```
+    """
+    if predicted_total_bytes <= 0:
+        raise ValueError("predicted_total_bytes must be positive")
+    if packed_bytes <= 0:
+        raise ValueError("packed_bytes must be positive")
+    return packed_bytes - predicted_total_bytes
+
+
+def predicted_bytes_within_tolerance(
+    predicted_total_bytes: int, packed_bytes: int
+) -> bool:
+    """Judge the prediction delta against the predicted-bytes tolerance.
+
+    ``PREDICTED_BYTES_TOLERANCE`` is a fraction of the prediction,
+    applied in both directions. The judgment never refuses a pack: the
+    weight budget stays the only size gate (ADR-0012 decision 4).
+
+    Args:
+        predicted_total_bytes: The recipe's ``plan.predicted_total_bytes``.
+        packed_bytes: Real size of the packed model file.
+
+    Returns:
+        True when ``|delta| <= PREDICTED_BYTES_TOLERANCE *
+        predicted_total_bytes``.
+
+    Raises:
+        ValueError: If either count is not positive.
+
+    Examples:
+        One percent over a 10,000-byte prediction sits on the edge:
+
+        ```python
+        assert predicted_bytes_within_tolerance(10_000, 10_100) is True
+        assert predicted_bytes_within_tolerance(10_000, 10_101) is False
+        ```
+    """
+    delta = predicted_bytes_delta(predicted_total_bytes, packed_bytes)
+    return abs(delta) <= PREDICTED_BYTES_TOLERANCE * predicted_total_bytes
 
 
 def without_protections(recipe: Recipe) -> Recipe:
