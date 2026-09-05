@@ -369,7 +369,12 @@ def plan(
     source independent of the map (ADR-0029). A group the checkpoint
     holds and the map does not measure holds at reference precision,
     and the recipe assigns it there. Without the option the map
-    defines the model, and the command says so.
+    defines the model, and the command says so. A ``layer`` map
+    scanned before the discovery skip (#204) folds a class the
+    quantizer refuses into its layer group, which the checkpoint
+    holds by its own name. The plan prices it twice and draws a
+    warning naming the map, the group, and the tensors (ADR-0029
+    open question 2, ruled 2026-09-04).
 
     A map field the reader does not know draws a warning too, and the
     plan continues (#261). The warning names the JSON path and states
@@ -441,7 +446,7 @@ def plan(
             f"{list(map_.scan.precisions)} — candidates {dropped} dropped"
         )
 
-    sizes = discovered_bytes(checkpoint, map_)
+    sizes = discovered_bytes(checkpoint, map_, sensitivity_map)
 
     try:
         recipe = solve(

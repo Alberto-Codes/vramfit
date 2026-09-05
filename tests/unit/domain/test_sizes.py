@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import ClassVar, Literal
 
 import pytest
 
+from vramfit.domain.model import LayerGroup, ScanMeta, SensitivityMap
 from vramfit.domain.sizes import (
     CHECKPOINT_ROOTS,
     SizeSourceError,
     TensorSize,
     discovered_group_bytes,
+    held_class_overlaps,
     reconcile_root,
     reference_bytes,
     uncovered_groups,
@@ -168,3 +170,124 @@ class TestUncoveredGroups:
 
     def test_a_map_group_the_source_lacks_is_not_invented(self) -> None:
         assert uncovered_groups({}, ["a"]) == ()
+
+
+def _map(
+    groups: list[tuple[str, tuple[str, ...]]],
+    group_by: Literal["layer", "tensor", "stack"],
+) -> SensitivityMap:
+    return SensitivityMap(
+        model_id="test/model",
+        scan=ScanMeta("kl_divergence", "wikitext", 1, (8,), group_by, "t"),
+        groups=tuple(
+            LayerGroup(name=name, tensors=tensors, bytes_fp16=8, sensitivity={8: 0.0})
+            for name, tensors in groups
+        ),
+    )
+
+
+class TestHeldClassOverlaps:
+    """A pre-#204 layer map folds a tensor the source holds by itself."""
+
+    HYBRID: ClassVar[dict[str, TensorSize]] = {
+        "backbone.layers.0.mixer.in_proj.weight": TensorSize("BF16", 8),
+        "backbone.layers.0.mixer.conv1d.weight": TensorSize("BF16", 4),
+        "backbone.layers.0.mixer.gate.weight": TensorSize("BF16", 2),
+    }
+
+    def test_a_layer_group_folding_refused_classes_is_reported(self) -> None:
+        map_ = _map(
+            [
+                (
+                    "model.layers.0",
+                    (
+                        "model.layers.0.mixer.in_proj.weight",
+                        "model.layers.0.mixer.conv1d.weight",
+                        "model.layers.0.mixer.gate.weight",
+                    ),
+                )
+            ],
+            "layer",
+        )
+        discovered = discovered_group_bytes(self.HYBRID, "layer")
+
+        assert held_class_overlaps(discovered, map_) == (
+            (
+                "model.layers.0",
+                (
+                    "model.layers.0.mixer.conv1d.weight",
+                    "model.layers.0.mixer.gate.weight",
+                ),
+            ),
+        )
+
+    def test_a_layer_group_scanned_after_the_skip_is_clean(self) -> None:
+        map_ = _map(
+            [("model.layers.0", ("model.layers.0.mixer.in_proj.weight",))], "layer"
+        )
+        discovered = discovered_group_bytes(self.HYBRID, "layer")
+
+        assert held_class_overlaps(discovered, map_) == ()
+
+    def test_a_tensor_map_carrying_the_class_covers_it(self) -> None:
+        # The class is its own covered group, so the source's group
+        # is not uncovered and nothing prices twice.
+        map_ = _map(
+            [
+                (
+                    "model.layers.0.mixer.in_proj",
+                    ("model.layers.0.mixer.in_proj.weight",),
+                ),
+                (
+                    "model.layers.0.mixer.conv1d",
+                    ("model.layers.0.mixer.conv1d.weight",),
+                ),
+            ],
+            "tensor",
+        )
+        discovered = discovered_group_bytes(self.HYBRID, "tensor")
+
+        assert held_class_overlaps(discovered, map_) == ()
+
+    def test_a_stack_map_is_unaffected(self) -> None:
+        # The checked-in maps use stack granularity: a stack group
+        # lists only its own projection's experts.
+        sizes = {
+            "backbone.layers.1.mixer.experts.0.up_proj.weight": TensorSize("BF16", 8),
+            "backbone.layers.1.mixer.experts.1.up_proj.weight": TensorSize("BF16", 8),
+            "backbone.layers.1.mixer.conv1d.weight": TensorSize("BF16", 4),
+        }
+        map_ = _map(
+            [
+                (
+                    "model.layers.1.mixer.experts.up_proj",
+                    (
+                        "model.layers.1.mixer.experts.0.up_proj.weight",
+                        "model.layers.1.mixer.experts.1.up_proj.weight",
+                    ),
+                )
+            ],
+            "stack",
+        )
+        discovered = discovered_group_bytes(sizes, "stack")
+
+        assert held_class_overlaps(discovered, map_) == ()
+
+    def test_a_folded_tensor_the_checkpoint_lacks_is_not_reported(self) -> None:
+        # No source group exists to price it a second time.
+        map_ = _map(
+            [
+                (
+                    "model.layers.0",
+                    (
+                        "model.layers.0.mixer.in_proj.weight",
+                        "model.layers.0.mixer.conv1d.weight",
+                    ),
+                )
+            ],
+            "layer",
+        )
+        sizes = {"backbone.layers.0.mixer.in_proj.weight": TensorSize("BF16", 8)}
+        discovered = discovered_group_bytes(sizes, "layer")
+
+        assert held_class_overlaps(discovered, map_) == ()

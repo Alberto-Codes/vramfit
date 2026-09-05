@@ -18,6 +18,14 @@ leaves a map-source disagreement unruled, and this is not one — a
 total miss is the wrong directory. Continuing would price both views
 of the model and roughly double it.
 
+One disagreement is ruled (ADR-0029 open question 2, 2026-09-04). A
+map scanned before the discovery skip (#204) under ``layer``
+granularity folds an unquantizable-class tensor into its layer group,
+and the source holds that tensor by its own name. The plan prices it
+twice, and the command warns naming the map, the group, and the
+tensors. The prices stand: the direction is conservative, and the
+remedy is a re-scan.
+
 Examples:
     Read the checkpoint the map was scanned from:
 
@@ -26,7 +34,7 @@ Examples:
 
     from vramfit.adapters.inbound.cli_plan_sizes import discovered_bytes
 
-    groups = discovered_bytes(Path("/models/nemotron-30b"), map_)
+    groups = discovered_bytes(Path("/models/nemotron-30b"), map_, map_path)
     ```
 
 See Also:
@@ -44,12 +52,16 @@ import typer
 from vramfit.adapters.outbound.safetensors_sizes import SafetensorsSizes
 from vramfit.domain.errors import VramfitError
 from vramfit.domain.model import SensitivityMap
-from vramfit.domain.sizes import discovered_group_bytes, uncovered_groups
+from vramfit.domain.sizes import (
+    discovered_group_bytes,
+    held_class_overlaps,
+    uncovered_groups,
+)
 from vramfit.ports.outbound import TensorSizeSource
 
 
 def discovered_bytes(
-    checkpoint: Path | None, map_: SensitivityMap
+    checkpoint: Path | None, map_: SensitivityMap, map_path: Path
 ) -> Mapping[str, int] | None:
     """Read the checkpoint's group sizes and report the coverage.
 
@@ -58,6 +70,8 @@ def discovered_bytes(
             caller passed no ``--checkpoint``.
         map_: The loaded sensitivity map, whose ``scan.group_by``
             fixes the grouping granularity.
+        map_path: Where the map was read from, named in the double
+            count warning.
 
     Returns:
         Bytes at reference precision per discovered group, or None
@@ -114,6 +128,16 @@ def discovered_bytes(
             f"warning: the checkpoint does not carry {len(missing)} of the "
             f'map\'s groups, the first being "{missing[0]}" — is this the '
             f"checkpoint the scan measured?",
+            err=True,
+        )
+    for group, tensors in held_class_overlaps(groups, map_):
+        typer.echo(
+            f'warning: {map_path}: group "{group}" folds {len(tensors)} tensors '
+            f"of a class the quantizer refuses ({', '.join(tensors)}), and the "
+            f"checkpoint holds each by its own name. The plan prices them "
+            f"twice: inside the group at its assigned width, and held at the "
+            f"convert dtype. The map predates the discovery skip (#204). "
+            f"Re-scan to remove the double count (ADR-0029)",
             err=True,
         )
     return groups
