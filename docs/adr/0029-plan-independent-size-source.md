@@ -255,8 +255,8 @@ A **base GGUF** exists only after a pack, and `plan` runs before packing.
    something must sum 128 entries per stack group.
 
    That summation reads model structure, and structure is already a
-   domain concept. `is_expert_stack` sits at
-   `src/vramfit/domain/scan.py:126`. ADR-0008 keeps the domain pure, and
+   domain concept. `is_expert_stack` sits in
+   `src/vramfit/domain/scan.py`. ADR-0008 keeps the domain pure, and
    an adapter that grouped tensors would become an authority on model
    structure. The adapter therefore stays a reader of bytes.
 
