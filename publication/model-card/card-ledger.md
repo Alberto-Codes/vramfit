@@ -101,10 +101,11 @@ to the published sidecar aggregates.
 
 ## Serve record (#501, 2026-09-04)
 
-The "What fit24gib means" section carries one measured sentence
-from the 16k serve attempt. No sidecar field holds a serve result,
-so these numbers bind to the run archive only. The published card
-copy lags until the next re-upload.
+The "What fit24gib means" section carries the measured sentences
+from the two 16k serve attempts: the reference box as configured, and
+a headless card. No sidecar field holds a serve result, so these
+numbers bind to the run archives only. The published card copy lags
+until the next re-upload.
 
 | Card numbers | Source record |
 |---|---|
@@ -112,6 +113,9 @@ copy lags until the next re-upload.
 | Largest served context 10,240, device buffers 21,674.82 MiB (20,409.48 + 1,041.25 KV + 224.09 compute), nvidia-smi peak 24,053 MiB | `serve-16k-2026-09-04/buffers-ctx10240.txt`, `serve-16k-2026-09-04/peak-ctx10240.env`, `serve-16k-2026-09-04/response-ctx10240.json` |
 | Desktop baseline 2,341 MiB, 21,765 MiB free before load | `serve-16k-2026-09-04/peak-ctx16384.env`, `serve-16k-2026-09-04/list-devices.txt` |
 | Build b10326 (3653e6d6d), flags, pack SHA-256 match | `serve-16k-2026-09-04/serve-16k.cmd`, `serve-16k-2026-09-04/pack.sha256`, `serve-16k-2026-09-04/RUN-SHEET.md` |
+| Headless card serves at 16,384, q8_0 KV, 81/81 layers, device buffers 22,307.58 MiB (20,409.49 + 1,666.00 KV + 232.09 compute), nvidia-smi peak 22,762 MiB, 32-token request answered | `serve-16k-headless-2026-09-04/buffers-ctx16384.txt`, `serve-16k-headless-2026-09-04/peak-ctx16384.env`, `serve-16k-headless-2026-09-04/response-ctx16384.json` |
+| Headless baseline 1 MiB, 23,685 MiB free of 24,080 MiB before load, RunPod secure-cloud 4090, driver 580.126.20 | `serve-16k-headless-2026-09-04/peak-ctx16384.env`, `serve-16k-headless-2026-09-04/list-devices.txt`, `serve-16k-headless-2026-09-04/gpu-info.txt` |
+| Headless build b10326 (3653e6d6d) CUDA, flags, pack SHA-256 match against this ledger | `serve-16k-headless-2026-09-04/build.log`, `serve-16k-headless-2026-09-04/serve-16k.cmd`, `serve-16k-headless-2026-09-04/pack.sha256`, `serve-16k-headless-2026-09-04/RUN-SHEET.md` |
 
 ## Upload file list (#82 dry run, 2026-08-10)
 

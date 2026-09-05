@@ -122,12 +122,17 @@ from measurement.
   the budgets move if llama.cpp allocates differently. The 2026-07-29
   loop packed 20.30 GiB against the 20.47 GiB budget, but a measured
   llama.cpp overhead figure at 16k context still does not exist.
-  **Measured in part (2026-09-04, issue #501):** llama.cpp b10326
+  **Measured (2026-09-04, issue #501):** llama.cpp b10326
   allocated 1,041.25 MiB of q8_0 KV cache and 224.09 MiB of compute
   buffer at 10,240 context on the published pack. The cache grows
   104.125 MiB per 1,024 cells, so the 16k bill reads about 1,890 MiB
   by that line, under the 3.53 GiB reserve. The pack did not load at
   16k on the reference box, because the desktop held 2,341 MiB of the
-  card. The evidence page's
+  card. The same day a headless RunPod RTX 4090 measured the 16k bill
+  directly on the CUDA build: 1,666.00 MiB of q8_0 KV cache and
+  232.09 MiB of compute buffer, 1,898.09 MiB in total. The budgets
+  stand. The evidence page's
   [twentieth data point](../explanation/evaluating-packed-models.md#the-twentieth-data-point-the-published-pack-stops-at-10k-context-on-the-reference-box)
-  records the ladder.
+  records the ladder, and
+  [its addendum](../explanation/evaluating-packed-models.md#addendum-2026-09-04-the-headless-card-serves-16k)
+  records the headless serve.
