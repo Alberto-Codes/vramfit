@@ -31,7 +31,9 @@ under every granularity (#204, #409): the meter skips it, so a layer
 group that absorbed its bytes would hide them behind a covered name.
 `discovered_group_rows` measures the same groups' row widths, and
 `refuse_unmeasured_rows` refuses a solve that would route a group no
-width describes.
+width describes. That refusal reaches only a runtime carrying the
+two type tables the width routes between — a runtime without them
+prices at nominal bits, where the width moves no byte.
 
 Attributes:
     REFERENCE_BITS (int): Bits per weight at reference precision. The
@@ -104,6 +106,8 @@ from vramfit.domain.model import Assignment, SensitivityMap
 from vramfit.domain.runtime import (
     RUNTIME_CAPABILITIES,
     RuntimeCapabilityError,
+    effective_bits,
+    expert_stack_effective_bits,
     missing_unquantizable_module,
     routes_by_row_width,
     unquantizable_class,
@@ -297,6 +301,26 @@ def reconcile_root(tensor: str) -> str:
             f"(ADR-0029). Add the root rather than a prefix wildcard (#177)"
         )
     return tensor
+
+
+def _reconciles(group: str) -> bool:
+    """Report whether the size source can key this group's tensors.
+
+    `reconcile_root` owns the root table, so this asks it rather
+    than reading `CHECKPOINT_ROOTS` a second time.
+
+    Args:
+        group: A group name, as `vramfit.domain.scan.group_key`
+            produces it.
+
+    Returns:
+        True when the name reconciles onto `MAP_ROOT`.
+    """
+    try:
+        reconcile_root(group)
+    except SizeSourceError:
+        return False
+    return True
 
 
 def discovered_group_bytes(
@@ -550,7 +574,9 @@ def _reference_refusal(
 
 
 def refuse_unmeasured_rows(
-    row_widths: Mapping[str, int] | None, groups: Sequence[str]
+    row_widths: Mapping[str, int] | None,
+    groups: Sequence[str],
+    runtime: str | None,
 ) -> None:
     """Refuse a solve that would route a group without measuring it.
 
@@ -560,10 +586,17 @@ def refuse_unmeasured_rows(
     take the k-quant table by omission, which is the silent misprice
     option A removes. So the solve refuses.
 
-    Two causes reach this refusal, and the advice differs. A solve
-    with no size source needs one, so the message names the flag. A
-    solve that read a checkpoint already has the flag, and the named
-    group is missing from that checkpoint instead.
+    A runtime without an expert-stack table has nothing to route
+    into. It prices every group at nominal bits, so the width moves
+    no byte and the refusal would block a solve it cannot improve.
+
+    Three advices reach this refusal. A group rooted outside
+    `CHECKPOINT_ROOTS` cannot be measured at all, so the message
+    states that limitation rather than naming a flag that would
+    refuse again. A solve with no size source needs one, so the
+    message names the flag. A solve that read a checkpoint already
+    has the flag, and the named group is missing from that
+    checkpoint instead.
 
     A group of a class the quantizer refuses is exempt. It holds at
     the convert dtype and takes neither type table (#409).
@@ -572,11 +605,16 @@ def refuse_unmeasured_rows(
         row_widths: Elements per row per group, or None when the
             caller read no size source.
         groups: Every group name the solve prices.
+        runtime: Target runtime name, or None. The refusal applies
+            only where the runtime carries the tables the width
+            routes between.
 
     Raises:
         SizeSourceError: If a group the decision reaches has no
             measured width.
     """
+    if effective_bits(runtime) is None or expert_stack_effective_bits(runtime) is None:
+        return
     measured = row_widths or {}
     unmeasured = sorted(
         {
@@ -596,12 +634,21 @@ def refuse_unmeasured_rows(
         else f"{count} groups have no measured row width, starting with "
         f'"{unmeasured[0]}"'
     )
-    advice = (
-        "Plan with --checkpoint (ADR-0029 decision 1)"
-        if row_widths is None
-        else "The checkpoint states no width for it. Name the checkpoint "
-        "the scan measured"
-    )
+    unrooted = sorted(name for name in unmeasured if not _reconciles(name))
+    if unrooted:
+        advice = (
+            f'No checkpoint can supply it: group "{unrooted[0]}" hangs from '
+            f"a root the size source does not read, which covers "
+            f"{sorted(CHECKPOINT_ROOTS)} (ADR-0029 decision 7). Add the root "
+            f"there, or plan this map for a runtime with no type table"
+        )
+    elif row_widths is None:
+        advice = "Plan with --checkpoint (ADR-0029 decision 1)"
+    else:
+        advice = (
+            "The checkpoint states no width for it. Name the checkpoint "
+            "the scan measured"
+        )
     raise SizeSourceError(
         f"{subject}. The 256 super-block decision reads the row width "
         f"the checkpoint states, and no class name supplies it (ADR-0028, "

@@ -183,11 +183,13 @@ in the same family.
     the scan skips that module's `conv1d` and `gate` classes (#204),
     so only a size source prices them
     ([ADR-0029](../adr/0029-plan-independent-size-source.md)
-    decision 3, amended 2026-09-04). On a family with no such class
-    the same command sums its budget over the groups the map holds
-    and reads no other size source. A 46-of-210 map then prices 46
-    groups and counts the other 164 as zero bytes, and the recipe
-    reports a fit the packed model does not honor.
+    decision 3, amended 2026-09-04). A family with no such class
+    refuses too: every group a `stack` or `tensor` selection names
+    routes by its measured row width, and only a size source states
+    that width (ADR-0028, issue #515). Were the plan to proceed, a
+    46-of-210 map would price 46 groups and count the other 164 as
+    zero bytes, and the recipe would report a fit the packed model
+    does not honor.
 
     `--checkpoint` prices the other 164 from the model's safetensors
     headers and holds each at reference precision (ADR-0029). Those

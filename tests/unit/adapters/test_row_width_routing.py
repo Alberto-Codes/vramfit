@@ -10,9 +10,14 @@ holds the plan's price against the pack's emitted type.
 
 from __future__ import annotations
 
+import json
+import struct
+from pathlib import Path
+
 import pytest
 
 from tests.unit.conftest import make_map
+from vramfit.adapters.outbound.gguf.pack import checkpoint_row_widths
 from vramfit.adapters.outbound.gguf.types import (
     EXPERT_STACK_TYPE_BY_BITS,
     GGML_TYPE_BY_BITS,
@@ -25,6 +30,7 @@ from vramfit.domain.runtime import (
     EFFECTIVE_BITS,
     EXPERT_STACK_EFFECTIVE_BITS,
     LLAMA_CPP,
+    VLLM,
 )
 from vramfit.domain.sizes import SizeSourceError
 from vramfit.domain.solver import group_bytes, solve
@@ -276,6 +282,26 @@ class TestUnmeasuredRows:
                 runtime=LLAMA_CPP,
             )
 
+    def test_a_group_no_checkpoint_can_reach_states_the_root_limit(self) -> None:
+        # `transformer.` sits in the scan name table and outside the
+        # ADR-0029 root table, so --checkpoint would refuse again
+        # (#551). The refusal must not send the operator there.
+        map_ = map_from_dict(
+            make_map([(FOREIGN_ROOT_CLASS, 160_000, CURVE)], precisions=PRECISIONS)
+        )
+
+        with pytest.raises(SizeSourceError) as caught:
+            solve(
+                map_,
+                weight_budget_bytes=10**9,
+                vram_budget_bytes=10**9 + 1000,
+                kv_headroom_bytes=1000,
+                runtime=LLAMA_CPP,
+            )
+
+        assert "No checkpoint can supply it" in str(caught.value)
+        assert "Plan with --checkpoint" not in str(caught.value)
+
     def test_a_whole_layer_group_needs_no_width(self) -> None:
         # A layer group holds classes of several widths and keeps the
         # ADR-0012 k-quant table, as it did before the width reached
@@ -295,3 +321,126 @@ class TestUnmeasuredRows:
 
         (override,) = tensor_overrides(recipe, {})
         assert override.quant_type == GGML_TYPE_BY_BITS[8]
+
+
+class TestRuntimesWithNoTypeTable:
+    """The width routes between two tables, so a runtime without them is exempt."""
+
+    @pytest.mark.parametrize("runtime", [VLLM, None], ids=["vllm", "no-runtime"])
+    def test_a_stack_map_plans_without_a_size_source(self, runtime: str | None) -> None:
+        # vLLM carries neither effective-bits table, so every group
+        # prices at nominal bits and no width moves a byte. Refusing
+        # would block a solve the width cannot improve.
+        map_ = map_from_dict(
+            make_map([(QWEN_UP, 160_000, CURVE)], precisions=PRECISIONS)
+        )
+
+        recipe = solve(
+            map_,
+            weight_budget_bytes=10**9,
+            vram_budget_bytes=10**9 + 1000,
+            kv_headroom_bytes=1000,
+            runtime=runtime,
+            format_overhead=0.0,
+        )
+
+        assert recipe.assignments[0].bytes == group_bytes(160_000, 8, 0.0)
+
+    @pytest.mark.parametrize("runtime", [VLLM, None], ids=["vllm", "no-runtime"])
+    def test_a_foreign_rooted_stack_map_plans_too(self, runtime: str | None) -> None:
+        map_ = map_from_dict(
+            make_map([(FOREIGN_ROOT_CLASS, 160_000, CURVE)], precisions=PRECISIONS)
+        )
+
+        recipe = solve(
+            map_,
+            weight_budget_bytes=10**9,
+            vram_budget_bytes=10**9 + 1000,
+            kv_headroom_bytes=1000,
+            runtime=runtime,
+            format_overhead=0.0,
+        )
+
+        assert recipe.assignments[0].group == FOREIGN_ROOT_CLASS
+
+
+def write_checkpoint(model_dir: Path, shapes: dict[str, list[int]]) -> Path:
+    """Write one bf16 safetensors shard stating each tensor's shape.
+
+    The header is the safetensors byte contract: an 8-byte
+    little-endian length, then the JSON header the reader parses.
+
+    Args:
+        model_dir: Directory to write the shard into.
+        shapes: Shape per checkpoint tensor name. The last dimension
+            is the row width the super-block decision reads.
+
+    Returns:
+        The checkpoint directory.
+    """
+    model_dir.mkdir(parents=True, exist_ok=True)
+    header: dict[str, dict[str, object]] = {}
+    offset = 0
+    for name, shape in shapes.items():
+        span = 2
+        for dim in shape:
+            span *= dim
+        header[name] = {
+            "dtype": "BF16",
+            "shape": shape,
+            "data_offsets": [offset, offset + span],
+        }
+        offset += span
+    blob = json.dumps(header).encode("utf-8")
+    (model_dir / "model.safetensors").write_bytes(struct.pack("<Q", len(blob)) + blob)
+    return model_dir
+
+
+class TestCheckpointRowWidths:
+    """The pack measures the widths from the same headers the plan read."""
+
+    def test_it_keys_stack_widths_under_the_map_root(self, tmp_path) -> None:
+        model_dir = write_checkpoint(
+            tmp_path / "ckpt",
+            {
+                "backbone.layers.0.mixer.experts.0.up_proj.weight": [4, 2688],
+                "backbone.layers.0.mixer.experts.1.up_proj.weight": [4, 2688],
+                "backbone.layers.0.mlp.down_proj.weight": [4, 768],
+            },
+        )
+
+        assert checkpoint_row_widths(model_dir) == {
+            "model.layers.0.mixer.experts.up_proj": 2688,
+            "model.layers.0.mlp.down_proj": 768,
+        }
+
+    def test_a_refusal_from_the_source_names_the_checkpoint(self, tmp_path) -> None:
+        # An empty directory refuses inside the size source. The pack
+        # re-words it so the operator learns which directory failed.
+        empty = tmp_path / "empty"
+        empty.mkdir()
+
+        with pytest.raises(PackError, match="cannot measure the checkpoint"):
+            checkpoint_row_widths(empty)
+
+    def test_two_widths_in_one_group_refuse_through_the_pack(self, tmp_path) -> None:
+        model_dir = write_checkpoint(
+            tmp_path / "ckpt",
+            {
+                "backbone.layers.0.mixer.experts.0.up_proj.weight": [4, 2688],
+                "backbone.layers.0.mixer.experts.1.up_proj.weight": [4, 2048],
+            },
+        )
+
+        with pytest.raises(PackError, match="rows of 2688 and 2048"):
+            checkpoint_row_widths(model_dir)
+
+    def test_an_unreadable_shard_names_the_checkpoint(self, tmp_path) -> None:
+        # A directory under the shard glob raises IsADirectoryError,
+        # which is an OSError and no refusal the source words itself.
+        model_dir = tmp_path / "ckpt"
+        model_dir.mkdir()
+        (model_dir / "model.safetensors").mkdir()
+
+        with pytest.raises(PackError, match="cannot read the checkpoint"):
+            checkpoint_row_widths(model_dir)

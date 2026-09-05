@@ -547,14 +547,25 @@ covers the most bytes in the file (ADR-0012 decision 3, the
 2026-09-04 amendment). The quantizer stamps the floor there, and on
 a mixed pack the floor can name a type the file does not hold.
 
-A routed-expert-stack group maps through its own type table
+A group whose measured rows the 256 super-block does not divide maps
+through the expert-stack type table
 ([ADR-0028](../adr/0028-expert-stack-type-table.md)): 8 to `Q8_0`, 6
-to `Q5_1`, 5 to `Q5_0`, 4 to `Q4_0`, 2 to `Q2_0`. K-quant
-super-blocks do not divide the stack rows, so the dense table cannot
-reach them. The backend refuses every stack precision without a
-table row. Nominal 3 draws the dedicated refusal: it names the
-group, the empty 2.25–4.25 bits-per-weight gap, and both neighboring
-table entries.
+to `Q5_1`, 5 to `Q5_0`, 4 to `Q4_0`, 2 to `Q2_0`. Every k-quant packs
+256-element super-blocks, so the dense table cannot reach such a row.
+The measured width decides, and no class name does (issue #515). A
+2048-wide or 768-wide routed-expert stack keeps the k-quant table and
+takes nominal 3. The backend refuses a precision without a row in the
+table the width selected. Nominal 3 on refused rows draws the
+dedicated refusal: it names the group, the empty 2.25–4.25
+bits-per-weight gap, and both neighboring table entries.
+
+`pack` reads those widths itself, from the checkpoint's safetensors
+shard headers under `--model`. The read is a JSON parse of each
+header and runs before the convert stage. A recipe holding any
+layer-class or routed-expert-stack group therefore needs readable
+shards, even when `--base-gguf` names a base the command reuses. A
+group the read states no width for exits 1, and the message names
+the group.
 
 ```
 vramfit pack RECIPE

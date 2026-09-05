@@ -779,9 +779,9 @@ def _class_override(
         The Nemotron-H Mamba input projection at the passthrough:
 
         ```python
-        assert _class_override("model.layers.3.mixer.in_proj", 16) == (
-            TypeOverride(r"blk\.3\.ssm_in\.", "f16"),
-        )
+        assert _class_override(
+            "model.layers.3.mixer.in_proj", 16, {"model.layers.3.mixer.in_proj": 2688}
+        ) == (TypeOverride(r"blk\.3\.ssm_in\.", "f16"),)
         ```
     """
     match = _CLASS_GROUP.match(group)
@@ -877,7 +877,7 @@ def tensor_overrides(
         pattern:
 
         ```python
-        assert TypeOverride(r"blk\.7\.", "q4_k") in tensor_overrides(recipe)
+        assert TypeOverride(r"blk\.7\.", "q4_k") in tensor_overrides(recipe, {})
         ```
     """
     stacks: list[TypeOverride] = []

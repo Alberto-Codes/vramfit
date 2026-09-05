@@ -482,10 +482,13 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
         ValueError: If ``format_overhead`` is negative, NaN, or
             infinite.
         SizeSourceError: If a layer-class or routed-expert-stack
-            group has no measured row width. The ADR-0028 routing
-            reads that width, and no name supplies it (issue #515).
-            The message names the flag when ``row_widths`` is None,
-            and the missing group when a size source was read.
+            group has no measured row width, under a runtime that
+            carries the two type tables the width routes between.
+            The ADR-0028 routing reads that width, and no name
+            supplies it (issue #515). The message names the flag
+            when ``row_widths`` is None, the missing group when a
+            size source was read, and the root table's limit when
+            no checkpoint could carry the group.
         RuntimeCapabilityError: If the runtime is unknown, serves
             none of the scanned precisions, or cannot serve reference
             precision while ``discovered_bytes`` leaves a group
@@ -543,6 +546,7 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
         row_widths,
         [group.name for group in sensitivity_map.groups]
         + sorted(discovered_bytes or {}),
+        runtime,
     )
     widths = dict(row_widths or {})
 

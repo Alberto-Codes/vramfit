@@ -12,6 +12,7 @@ from vramfit.domain.sizes import (
     SizeSourceError,
     TensorSize,
     discovered_group_bytes,
+    discovered_group_rows,
     held_class_overlaps,
     reconcile_root,
     reference_bytes,
@@ -159,6 +160,65 @@ class TestDiscoveredGroupBytes:
         groups = discovered_group_bytes(sizes, group_by)
 
         assert groups == {"model.layers.3.mixer.conv1d": 4}
+
+
+class TestDiscoveredGroupRows:
+    def test_a_stack_reports_the_width_its_experts_share(self) -> None:
+        sizes = {
+            f"backbone.layers.1.mixer.experts.{i}.up_proj.weight": TensorSize(
+                dtype="BF16", bytes=EXPERT_BYTES, rows=2688
+            )
+            for i in range(128)
+        }
+
+        assert discovered_group_rows(sizes, "stack") == {
+            "model.layers.1.mixer.experts.up_proj": 2688
+        }
+
+    def test_a_whole_layer_group_reports_no_width(self) -> None:
+        # A layer group holds classes of several widths, so no single
+        # width describes it and it keeps the ADR-0012 k-quant table.
+        sizes = {
+            "backbone.layers.0.mlp.up_proj.weight": TensorSize("BF16", 8, 2048),
+            "backbone.layers.0.mlp.down_proj.weight": TensorSize("BF16", 16, 768),
+        }
+
+        assert discovered_group_rows(sizes, "layer") == {}
+
+    def test_two_widths_in_one_group_refuse_rather_than_pick_one(self) -> None:
+        # One group packs under one type. Keeping the first width
+        # would misprice the second silently, which is the class #515
+        # exists to remove.
+        sizes = {
+            "backbone.layers.1.mixer.experts.0.up_proj.weight": TensorSize(
+                "BF16", 8, 2048
+            ),
+            "backbone.layers.1.mixer.experts.1.up_proj.weight": TensorSize(
+                "BF16", 8, 2688
+            ),
+        }
+
+        with pytest.raises(SizeSourceError, match="rows of 2048 and 2688"):
+            discovered_group_rows(sizes, "stack")
+
+    def test_a_foreign_root_refuses_naming_the_table(self) -> None:
+        sizes = {"vision_tower.layers.0.attn.q_proj.weight": TensorSize("BF16", 8, 256)}
+
+        with pytest.raises(SizeSourceError, match="root the table does not carry"):
+            discovered_group_rows(sizes, "tensor")
+
+    def test_an_unquantizable_class_keys_by_its_own_name_under_layer(self) -> None:
+        # `discovered_group_bytes` holds such a tensor by its own name
+        # under every granularity (#409, #204), and the width read
+        # mirrors that grouping so the two agree on one name set.
+        sizes = {"backbone.layers.0.mixer.conv1d.weight": TensorSize("F32", 16, 4)}
+
+        assert discovered_group_rows(sizes, "layer") == {
+            "model.layers.0.mixer.conv1d": 4
+        }
+
+    def test_an_empty_source_measures_no_width(self) -> None:
+        assert discovered_group_rows({}, "stack") == {}
 
 
 class TestUncoveredGroups:
