@@ -452,13 +452,24 @@ change.
     KV, the way the DeciLM path skips a `no_op` block (#427). An
     entry outside the four refuses. Not "layer kind" or "layer role".
 
+**Block letter**
+:   One character of a `hybrid_override_pattern` string, naming the
+    **block type** of one hidden layer: `M` mamba, `E` moe, `*`
+    attention, `-` mlp. The letters follow the transformers
+    Nemotron-H config class. Published Nemotron-H files declare the
+    string and omit `layers_block_type`, so the reader expands the
+    string into the same **hybrid stack**. A letter outside the four
+    refuses. Not "pattern character" or "layer code".
+
 **Hybrid stack**
-:   A decoder whose `layers_block_type` list mixes attention blocks
-    with `mamba`, `moe`, or `mlp` blocks (Nemotron-H, #427). The
-    reader prices its attention blocks alone. The Nemotron 3.5
-    Lightning 30B-A3B stack lists 52 blocks, 6 of them attention, so
-    a uniform read over-counts its KV cache by 8.7x. Not "mixed
-    stack" or "hybrid model".
+:   A decoder whose `layers_block_type` list or
+    `hybrid_override_pattern` string mixes attention blocks with
+    `mamba`, `moe`, or `mlp` blocks (Nemotron-H, #427). The list is
+    authoritative when both keys come. The reader prices its
+    attention blocks alone. The Nemotron 3.5 Lightning 30B-A3B stack
+    lists 52 blocks, 6 of them attention, so a uniform read
+    over-counts its KV cache by 8.7x. Not "mixed stack" or "hybrid
+    model".
 
 **KV growth**
 :   Bytes each context token adds across the global layers

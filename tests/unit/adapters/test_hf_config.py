@@ -553,20 +553,72 @@ class TestModelShapeFromConfig:
             ),
         }
 
-    def test_override_pattern_without_block_types_raises(self, tmp_path) -> None:
+    def _base_8k_config(self) -> dict:
+        # nvidia/Nemotron-H-8B-Base-8K declares its hybrid stack as a
+        # pattern string alone: 4 `*` attention blocks and 24 `-` mlp
+        # blocks among 52 layers, and no `layers_block_type` list.
+        return {
+            "num_hidden_layers": 52,
+            "num_key_value_heads": 8,
+            "num_attention_heads": 32,
+            "head_dim": 128,
+            "hidden_size": 4096,
+            "sliding_window": None,
+            "hybrid_override_pattern": (
+                "M-M-M-M*-M-M-M-M-M*-M-M-M-M-M*-M-M-M-M-M*-M-M-M-M-M-"
+            ),
+        }
+
+    def test_nano_override_pattern_prices_attention_blocks_only(self, tmp_path) -> None:
         path = tmp_path / "config.json"
         path.write_text(json.dumps(self._nano_config()))
 
-        with pytest.raises(
-            ValueError,
-            match=r'"hybrid_override_pattern" declares a hybrid stack with no '
-            r'"layers_block_type" list',
-        ):
-            shape_from_config_json(path)
+        shape = shape_from_config_json(path)
+
+        assert _kv_heads(shape) == (2,) * 6
+        assert {layer.head_dim for layer in shape.kv_layers} == {128}
+        assert {layer.window for layer in shape.kv_layers} == {None}
+
+    def test_base_8k_override_pattern_prices_attention_blocks_only(
+        self, tmp_path
+    ) -> None:
+        path = tmp_path / "config.json"
+        path.write_text(json.dumps(self._base_8k_config()))
+
+        shape = shape_from_config_json(path)
+
+        assert _kv_heads(shape) == (8,) * 4
+        assert not any(layer.shares_kv for layer in shape.kv_layers)
+
+    def test_override_pattern_matches_expanded_block_types(self, tmp_path) -> None:
+        # The string and its expanded list price the same stack.
+        expanded = self._nano_config()
+        expanded["layers_block_type"] = [
+            {"M": "mamba", "E": "moe", "*": "attention"}[c]
+            for c in expanded.pop("hybrid_override_pattern")
+        ]
+        pattern_path = tmp_path / "pattern.json"
+        pattern_path.write_text(json.dumps(self._nano_config()))
+        list_path = tmp_path / "list.json"
+        list_path.write_text(json.dumps(expanded))
+
+        assert shape_from_config_json(pattern_path) == shape_from_config_json(list_path)
+
+    def test_override_pattern_inside_text_config_parses(self, tmp_path) -> None:
+        config = self._text_config()
+        del config["text_config"]["layer_types"]
+        config["text_config"]["hybrid_override_pattern"] = "M*M*"
+        path = tmp_path / "config.json"
+        path.write_text(json.dumps(config))
+
+        shape = shape_from_config_json(path)
+
+        assert _kv_heads(shape) == (2, 2)
 
     def test_override_pattern_beside_block_types_prices_the_list(
         self, tmp_path
     ) -> None:
+        # The disagreeing string is not read: the list is authoritative.
         config = self._hybrid_config()
         config["hybrid_override_pattern"] = "ME-*ME"
         path = tmp_path / "config.json"
@@ -576,7 +628,7 @@ class TestModelShapeFromConfig:
 
         assert _kv_heads(shape) == (2,)
 
-    def test_empty_override_pattern_without_block_types_raises(self, tmp_path) -> None:
+    def test_empty_override_pattern_raises(self, tmp_path) -> None:
         config = self._nano_config()
         config["hybrid_override_pattern"] = ""
         path = tmp_path / "config.json"
@@ -584,8 +636,79 @@ class TestModelShapeFromConfig:
 
         with pytest.raises(
             ValueError,
-            match=r'"hybrid_override_pattern" declares a hybrid stack with no '
-            r'"layers_block_type" list',
+            match=r'"hybrid_override_pattern" does not list one type per hidden layer',
+        ):
+            shape_from_config_json(path)
+
+    def test_short_override_pattern_raises(self, tmp_path) -> None:
+        config = self._nano_config()
+        config["hybrid_override_pattern"] = config["hybrid_override_pattern"][:-1]
+        path = tmp_path / "config.json"
+        path.write_text(json.dumps(config))
+
+        with pytest.raises(
+            ValueError,
+            match=r'"hybrid_override_pattern" does not list one type per hidden layer',
+        ):
+            shape_from_config_json(path)
+
+    def test_unknown_override_pattern_letter_raises(self, tmp_path) -> None:
+        # A letter outside `M`, `E`, `*`, and `-` could mark a block
+        # with a cache this reader does not price, so it refuses.
+        config = self._nano_config()
+        config["hybrid_override_pattern"] = "X" + config["hybrid_override_pattern"][1:]
+        path = tmp_path / "config.json"
+        path.write_text(json.dumps(config))
+
+        with pytest.raises(
+            ValueError,
+            match=r'"hybrid_override_pattern" declares a block letter this reader '
+            r"does not model",
+        ):
+            shape_from_config_json(path)
+
+    def test_lowercase_override_pattern_letter_raises(self, tmp_path) -> None:
+        config = self._nano_config()
+        config["hybrid_override_pattern"] = config["hybrid_override_pattern"].lower()
+        path = tmp_path / "config.json"
+        path.write_text(json.dumps(config))
+
+        with pytest.raises(ValueError, match="declares a block letter"):
+            shape_from_config_json(path)
+
+    def test_override_pattern_without_attention_raises(self, tmp_path) -> None:
+        config = self._nano_config()
+        config["hybrid_override_pattern"] = "ME" * 26
+        path = tmp_path / "config.json"
+        path.write_text(json.dumps(config))
+
+        with pytest.raises(
+            ValueError, match=r'"hybrid_override_pattern" lists no attention block'
+        ):
+            shape_from_config_json(path)
+
+    def test_override_pattern_beside_layer_types_raises(self, tmp_path) -> None:
+        config = self._nano_config()
+        config["layer_types"] = ["full_attention"] * 52
+        path = tmp_path / "config.json"
+        path.write_text(json.dumps(config))
+
+        with pytest.raises(
+            ValueError,
+            match=r'"hybrid_override_pattern" beside "layer_types" declares two '
+            r"per-layer patterns",
+        ):
+            shape_from_config_json(path)
+
+    def test_override_pattern_beside_shared_kv_layers_raises(self, tmp_path) -> None:
+        config = self._nano_config()
+        config["num_kv_shared_layers"] = 1
+        path = tmp_path / "config.json"
+        path.write_text(json.dumps(config))
+
+        with pytest.raises(
+            ValueError,
+            match=r'"hybrid_override_pattern" beside "num_kv_shared_layers"',
         ):
             shape_from_config_json(path)
 
@@ -599,6 +722,16 @@ class TestModelShapeFromConfig:
             ValueError, match=r'"hybrid_override_pattern" must be a string or null'
         ):
             shape_from_config_json(path)
+
+    def test_null_override_pattern_means_uniform_stack(self, tmp_path) -> None:
+        config = self._nano_config()
+        config["hybrid_override_pattern"] = None
+        path = tmp_path / "config.json"
+        path.write_text(json.dumps(config))
+
+        shape = shape_from_config_json(path)
+
+        assert _kv_heads(shape) == (2,) * 52
 
     def test_hybrid_block_types_beside_zero_shared_kv_layers_parses(
         self, tmp_path
