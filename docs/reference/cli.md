@@ -31,11 +31,14 @@ That covers a `layer_types` sliding/global pattern with its window,
 split local/global head geometry, the `attention_k_eq_v` KV-head
 override (#431), shared-KV layers that allocate no cache, and a hybrid
 `layers_block_type` stack whose `mamba`, `moe`, and `mlp` blocks store
-no KV (#427). An active window without `layer_types`, an unknown layer
-or block type, or a llama-geometry key beside `block_configs` refuses
-rather than guessing. So does `layers_block_type` beside `layer_types`
-or beside a `num_kv_shared_layers` above zero, and a
-`hybrid_override_pattern` with no `layers_block_type` list.
+no KV (#427). A `hybrid_override_pattern` string expands to the same
+stack, one block per letter: `M` mamba, `E` moe, `*` attention, `-`
+mlp. An active window without `layer_types`, an unknown layer or block
+type, an unknown pattern letter, or a llama-geometry key beside
+`block_configs` refuses rather than guessing. So does a hybrid stack
+beside `layer_types` or beside a `num_kv_shared_layers` above zero,
+and a `hybrid_override_pattern` that disagrees with the
+`layers_block_type` list beside it.
 
 ```
 vramfit budget
