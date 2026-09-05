@@ -36,9 +36,8 @@ stack, one block per letter: `M` mamba, `E` moe, `*` attention, `-`
 mlp. An active window without `layer_types`, an unknown layer or block
 type, an unknown pattern letter, or a llama-geometry key beside
 `block_configs` refuses rather than guessing. So does a hybrid stack
-beside `layer_types` or beside a `num_kv_shared_layers` above zero,
-and a `hybrid_override_pattern` that disagrees with the
-`layers_block_type` list beside it.
+beside `layer_types` or beside a `num_kv_shared_layers` above zero.
+A `layers_block_type` list is authoritative when both keys come.
 
 ```
 vramfit budget

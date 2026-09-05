@@ -555,7 +555,7 @@ class TestModelShapeFromConfig:
 
     def _base_8k_config(self) -> dict:
         # nvidia/Nemotron-H-8B-Base-8K declares its hybrid stack as a
-        # pattern string alone: 4 `*` attention blocks and 23 `-` mlp
+        # pattern string alone: 4 `*` attention blocks and 24 `-` mlp
         # blocks among 52 layers, and no `layers_block_type` list.
         return {
             "num_hidden_layers": 52,
@@ -615,31 +615,18 @@ class TestModelShapeFromConfig:
 
         assert _kv_heads(shape) == (2, 2)
 
-    def test_override_pattern_beside_agreeing_block_types_parses(
+    def test_override_pattern_beside_block_types_prices_the_list(
         self, tmp_path
     ) -> None:
+        # The disagreeing string is not read: the list is authoritative.
         config = self._hybrid_config()
-        config["hybrid_override_pattern"] = "MEM*E-"
+        config["hybrid_override_pattern"] = "ME-*ME"
         path = tmp_path / "config.json"
         path.write_text(json.dumps(config))
 
         shape = shape_from_config_json(path)
 
         assert _kv_heads(shape) == (2,)
-
-    def test_override_pattern_beside_disagreeing_block_types_raises(
-        self, tmp_path
-    ) -> None:
-        config = self._hybrid_config()
-        config["hybrid_override_pattern"] = "ME-*ME"
-        path = tmp_path / "config.json"
-        path.write_text(json.dumps(config))
-
-        with pytest.raises(
-            ValueError,
-            match=r'"hybrid_override_pattern" disagrees with "layers_block_type"',
-        ):
-            shape_from_config_json(path)
 
     def test_empty_override_pattern_raises(self, tmp_path) -> None:
         config = self._nano_config()

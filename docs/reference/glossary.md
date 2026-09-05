@@ -465,7 +465,7 @@ change.
 :   A decoder whose `layers_block_type` list or
     `hybrid_override_pattern` string mixes attention blocks with
     `mamba`, `moe`, or `mlp` blocks (Nemotron-H, #427). The list is
-    authoritative when both keys come, and a disagreement refuses.
+    authoritative when both keys come.
     The reader prices its attention blocks alone. The Nemotron 3.5
     Lightning 30B-A3B stack lists 52 blocks, 6 of them attention, so
     a uniform read over-counts its KV cache by 8.7x. Not "mixed

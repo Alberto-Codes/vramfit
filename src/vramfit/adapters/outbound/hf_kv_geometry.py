@@ -129,7 +129,7 @@ def kv_layers_from_decoder(
     transformers ``_pattern_to_list`` helper does: ``M`` is
     ``mamba``, ``E`` is ``moe``, ``*`` is ``attention``, and ``-``
     is ``mlp``. When both keys come, the list is authoritative and
-    the two must agree.
+    the string is not read.
 
     The same class also synthesizes defaults this reader does not
     mirror: an absent ``global_head_dim`` defaults to 512, an absent
@@ -161,10 +161,10 @@ def kv_layers_from_decoder(
             names a block type this reader does not model, lists no
             ``attention`` block, comes beside ``layer_types``, or comes
             beside a ``num_kv_shared_layers`` above zero, a
-            ``hybrid_override_pattern`` carries a letter outside the
-            four above, misses a layer, lists no ``attention`` block,
-            or disagrees with a ``layers_block_type`` list beside it,
-            or a geometry key carries a type it cannot mean.
+            ``hybrid_override_pattern`` with no ``layers_block_type``
+            list carries a letter outside the four above, misses a
+            layer, or lists no ``attention`` block, or a geometry key
+            carries a type it cannot mean.
             ``bool`` subclasses ``int``, so a boolean count refuses
             as a non-integer (#348). No message renders a
             publisher-controlled value (#363).
@@ -282,9 +282,8 @@ def _hybrid_stack(
 ) -> tuple[str, tuple[str, ...] | None]:
     """Read the hybrid stack from either key that declares it (#427).
 
-    ``layers_block_type`` is authoritative when both keys come. A
-    ``hybrid_override_pattern`` beside it must expand to the same
-    stack, since a disagreement means one key mislabels a layer.
+    ``layers_block_type`` is authoritative when both keys come, and
+    the ``hybrid_override_pattern`` beside it is not read.
 
     Args:
         config: Parsed ``config.json``, or a nested decoder object.
@@ -299,22 +298,15 @@ def _hybrid_stack(
         declares neither key.
 
     Raises:
-        HfConfigError: If either key is malformed, or the two
-            disagree.
+        HfConfigError: If the key that supplies the stack is malformed.
     """
     block_types = _block_types(config, layers, path, prefix)
-    pattern_types = _pattern_block_types(config, layers, path, prefix)
-    if block_types is not None and pattern_types is not None:
-        if block_types != pattern_types:
-            raise HfConfigError(
-                f"{path}: {field_label('hybrid_override_pattern', prefix)} "
-                f"disagrees with {field_label('layers_block_type', prefix)} "
-                "on the block type of a hidden layer"
-            )
+    if block_types is not None:
         return "layers_block_type", block_types
+    pattern_types = _pattern_block_types(config, layers, path, prefix)
     if pattern_types is not None:
         return "hybrid_override_pattern", pattern_types
-    return "layers_block_type", block_types
+    return "layers_block_type", None
 
 
 def _block_types(
