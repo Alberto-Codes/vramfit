@@ -39,8 +39,8 @@ and carries no sidecar.
 | Card numbers | Source record | Ships as |
 |---|---|---|
 | Budget table: 17,179,869,184 / 240,518,169 / 16,939,351,015 B | `recipe.json` `plan` block, the #284 ruling (228.99 MiB) | recipe, in this repo |
-| Predicted pack size 16,946,865,009 B, 7.17 MiB over budget, 32.19 MiB over-reservation | issue #409 tables re-priced at 32 bits under the recipe's 0.002 overhead (2026-09-04); the published `recipe.json` still reads 16,929,873,667 B | card prose, pending the re-pack and re-upload |
-| 46 passthrough rows at F32: 98,501 B per `mixer.conv1d`, 1,379,009 B per `mixer.gate` | the same re-pricing; the published recipe reads 49,251 and 689,505 at F16 | card allocation table, pending the re-upload |
+| Predicted pack size 16,946,865,009 B, 7.17 MiB over budget, 32.19 MiB over-reservation | issue #409 tables re-priced at 32 bits under the recipe's 0.002 overhead (2026-09-04); the published `recipe.json` still reads 16,929,873,667 B | card prose (re-uploaded 2026-09-05), pending the re-pack and the recipe re-upload |
+| 46 passthrough rows at F32: 98,501 B per `mixer.conv1d`, 1,379,009 B per `mixer.gate` | the same re-pricing; the published recipe reads 49,251 and 689,505 at F16 | card allocation table (re-uploaded 2026-09-05), pending the recipe re-upload |
 | Margin 16.09 MiB | `publication-upload/pack-upload.log` | pack log line, run log |
 | 210-group allocation table, 11/35/118/46 split, nine pins, 0.002 overhead, 11-step trace | recipe `assignments` and `plan` | recipe |
 | Serve numbers (16,383 MiB visible, 53/53, 15,774.00, 357.00, 96.00, 190.47, 97.41, 16,157.88 MiB) | `falsifier-q0-imx/` serve logs (#389) | card prose, nineteenth data point |
