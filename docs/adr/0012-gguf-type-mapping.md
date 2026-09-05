@@ -548,10 +548,13 @@
     **The predicted-bytes tolerance is 1.0 % of the prediction, in
     either direction.** ADR-0014 decision 3 sets the residual
     overhead at 0.5 %, so a prediction that tracks the file to the
-    residual lands inside 1.0 %. A miss past 1.0 % means the size
-    model mispriced a class, which is what an F32 passthrough on a
-    16-bit price does at scale. The constant is
-    `PREDICTED_BYTES_TOLERANCE` in `vramfit.domain.pack`.
+    residual lands inside 1.0 %. A miss past 1.0 % means the
+    prediction does not describe the file. Two recorded causes
+    produce it: the size model mispriced a class, which is what an
+    F32 passthrough on a 16-bit price does at scale, or the base
+    GGUF carries floored layers the prediction never counted
+    (#307, above). The warning names both and asserts neither. The
+    constant is `PREDICTED_BYTES_TOLERANCE` in `vramfit.domain.pack`.
 
     **A delta past the tolerance warns and never refuses.** The
     weight budget stays the only size gate. A recipe that fits its

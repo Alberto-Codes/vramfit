@@ -69,25 +69,21 @@ class PredictedReport:
     event: dict[str, object]
 
 
-def _predicted_report(
-    predicted_total_bytes: int | None, packed_bytes: int
-) -> PredictedReport:
+def _predicted_report(predicted_total_bytes: int, packed_bytes: int) -> PredictedReport:
     """Compare the packed bytes against the recipe's prediction.
 
     A recipe that records no positive prediction gets a line that
-    says so, never a crash. The loader requires the field today, so
-    the absent case reaches this stage only from a zero prediction
-    or a future schema that drops the field.
+    says so, never a crash. The loader requires the field, so the
+    absent case reaches this stage only from a zero prediction.
 
     Args:
-        predicted_total_bytes: ``plan.predicted_total_bytes``, or None
-            when the recipe carries none.
+        predicted_total_bytes: ``plan.predicted_total_bytes``.
         packed_bytes: Real size of the packed model file.
 
     Returns:
         The report: line, warning flag, and event fields.
     """
-    if predicted_total_bytes is None or predicted_total_bytes <= 0:
+    if predicted_total_bytes <= 0:
         return PredictedReport(
             line=(
                 "predicted bytes absent: the recipe records no positive "
@@ -115,10 +111,11 @@ def _predicted_report(
         line = f"{verdict} — within (ADR-0012)"
     else:
         line = (
-            f"warning: {verdict} — OUTSIDE. The size model mispriced a "
-            "class, so the recipe's plan.predicted_total_bytes does not "
-            "describe this file. The budget line alone decides the pack "
-            "(ADR-0012 decision 4)"
+            f"warning: {verdict} — OUTSIDE. The recipe's "
+            "plan.predicted_total_bytes does not describe this file: the "
+            "size model mispriced a class, or the base GGUF carries "
+            "floored layers the prediction never counted (#307). The "
+            "budget line alone decides the pack (ADR-0012 decision 4)"
         )
     return PredictedReport(
         line=line,

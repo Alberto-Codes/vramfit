@@ -94,9 +94,8 @@ class TestPredictedReport:
         assert "-200 B (-2.00%)" in report.line
         assert report.event["predicted_delta_bytes"] == -200
 
-    @pytest.mark.parametrize("predicted", [None, 0], ids=["missing", "zero"])
-    def test_absent_prediction_reports_the_absence(self, predicted) -> None:
-        report = _predicted_report(predicted, 10_000)
+    def test_zero_prediction_reports_the_absence(self) -> None:
+        report = _predicted_report(0, 10_000)
 
         assert report.warns is False
         assert "predicted bytes absent" in report.line
