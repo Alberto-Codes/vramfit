@@ -128,8 +128,8 @@ vramfit scan ./model --calibration calibration.txt \
 ```
 
 The method covers nominal 8, 4, and 2. It refuses nominal 3, which
-[ADR-0028](../adr/0028-expert-stack-type-table.md) refuses at pack,
-and 5 and 6 until ports exist.
+[ADR-0028](../adr/0028-expert-stack-type-table.md) refuses at pack
+on these rows, and 5 and 6 until ports exist.
 `--imatrix` pairs with it (ADR-0018's 2026-08-21 amendment). The
 map then records the `q0-imx` token. Nominal 4 fits with imatrix
 weights through the ported `quantize_row_q4_0_impl`. Nominal 2 and

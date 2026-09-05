@@ -559,8 +559,9 @@ The measured width decides, and no class name does (issue #515). A
 2048-wide or 768-wide routed-expert stack keeps the k-quant table and
 takes nominal 3. The backend refuses a precision without a row in the
 table the width selected. Nominal 3 on refused rows draws the
-dedicated refusal: it names the group, the empty 2.25–4.25
-bits-per-weight gap, and both neighboring table entries.
+dedicated refusal: it names the group, its measured row width, the
+empty 2.25–4.25 bits-per-weight gap, and both neighboring table
+entries.
 
 `pack` reads those widths itself, from the checkpoint's safetensors
 shard headers under `--model`. The read is a JSON parse of each
