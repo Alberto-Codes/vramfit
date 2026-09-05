@@ -160,7 +160,7 @@ class TestPlanCommand:
                 make_map(
                     [
                         ("model.layers.0.mixer.gate", 1600, CURVE),
-                        ("model.layers.0.mixer.in_proj", 1600, CURVE),
+                        ("model.layers.1", 1600, CURVE),
                     ]
                 )
             )
@@ -192,7 +192,7 @@ class TestPlanCommand:
         recipe = load_recipe(out)
         by_group = {a.group: a.bits for a in recipe.assignments}
         assert by_group["model.layers.0.mixer.gate"] == 16
-        assert by_group["model.layers.0.mixer.in_proj"] == 8
+        assert by_group["model.layers.1"] == 8
 
     def test_literal_pin_on_a_held_group_exits_one(self, tmp_path) -> None:
         map_path = tmp_path / "map.json"
@@ -1221,6 +1221,32 @@ class TestPlanCheckpointOption:
 
         assert result.exit_code == 0, result.output
         assert "the checkpoint does not carry 1 of the map's groups" in result.stderr
+
+    def test_a_class_group_the_checkpoint_lacks_refuses_without_repeating_the_flag(
+        self, tmp_path
+    ) -> None:
+        # The operator passed --checkpoint, and the checkpoint carries
+        # only one of the two class groups. The width refusal must say
+        # so rather than tell them to pass the flag again (#515).
+        map_path = self._write_map(
+            tmp_path,
+            [
+                ("model.layers.0.mlp.up_proj", 160_000, CURVE),
+                ("model.layers.9.mlp.up_proj", 160_000, CURVE),
+            ],
+            "tensor",
+        )
+        model_dir = self._write_checkpoint(
+            tmp_path, {"model.layers.0.mlp.up_proj.weight": 160_000}
+        )
+        out = tmp_path / "recipe.json"
+
+        result = self._plan(map_path, out, "--checkpoint", str(model_dir))
+
+        assert result.exit_code == 1
+        assert "model.layers.9.mlp.up_proj" in result.stderr
+        assert "Plan with --checkpoint" not in result.stderr
+        assert not out.exists()
 
     def test_an_unreadable_shard_exits_one(self, tmp_path) -> None:
         map_path = self._write_map(tmp_path)

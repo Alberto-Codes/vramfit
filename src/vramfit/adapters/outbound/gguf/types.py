@@ -8,14 +8,18 @@ holds an unmeasured group at (ADR-0029 decision 4), layer groups
 map to escaped `blk.<n>.` regex patterns
 across the three naming families the scan produces, routed-expert
 stack groups map to their fused `blk.<n>.ffn_<proj>_exps.` tensor
-(#159, #161) through their own type table — k-quant super-blocks do
-not divide the stack rows, so the rows carry block-32 and block-64
-types (`q8_0`, `q5_1`, `q5_0`, `q4_0`, `q2_0`), and nominal 3 refuses
-over the empty 2.25-4.25 bits-per-weight gap (ADR-0028) — layer-class
+(#159, #161) — a group whose measured rows the 256 super-block does
+not divide takes the ADR-0028 table's block-32 and block-64 types
+(`q8_0`, `q5_1`, `q5_0`, `q4_0`, `q2_0`), where nominal 3 refuses
+over the empty 2.25-4.25 bits-per-weight gap, and every other group
+keeps the k-quant table above (ADR-0028 as amended 2026-09-05,
+#515) — layer-class
 groups map
 through the class table to `blk.<n>.<stem>.` patterns, where an
 unquantizable class instead pins at the F16 passthrough and refuses
-any lower width (the 2026-08-20 amendment), protected tensors map
+any lower width (the 2026-08-20 amendment) and `consults_row_width`
+names the groups whose width the mapping reads at all, protected
+tensors map
 through the same class table to per-tensor patterns under a free
 prefix (ADR-0022, #365), excluded pairs map to the full GGUF
 tensor names ``--exclude-weights`` deletes by substring
@@ -56,7 +60,7 @@ Examples:
 
     base = types.base_type(recipe)
     embed = types.token_embedding_type(recipe)
-    overrides = types.all_overrides(recipe)
+    overrides = types.all_overrides(recipe, row_widths)
     ```
 
 See Also:
@@ -67,6 +71,7 @@ See Also:
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from typing import Final
 
 from vramfit.domain.errors import VramfitError
@@ -78,7 +83,7 @@ from vramfit.domain.runtime import (
     unquantizable_filter,
 )
 from vramfit.domain.scan import NAME_TABLE_ROOTS
-from vramfit.domain.sizes import REFERENCE_BITS
+from vramfit.domain.sizes import REFERENCE_BITS, measured_width
 
 # The 16 row is the F16 passthrough (ADR-0029 decision 4). A recipe
 # holds an unmeasured group at reference precision, and `f16` is what
@@ -94,15 +99,16 @@ GGML_TYPE_BY_BITS: Final[dict[int, str]] = {
 }
 
 # The expert-stack type table (ADR-0028). Every k-quant packs
-# 256-element super-blocks, and the expert-stack rows (2688, 1856) do
-# not divide by 256 — the quantizer would silently substitute. Every
-# entry here has a block size that divides both row widths. Effective
-# bits per weight: f16 at 16.00, q8_0 at 8.50, q5_1 at 6.00, q5_0 at
-# 5.50, q4_0 at 4.50, q2_0 at 2.25. The 6 and 5 rows date from the
-# 2026-09-04 amendment (#232), and both block 32. The f16 row is the
-# ADR-0029 passthrough, and it has no block to divide. The table also
-# reaches a layer-class group whose rows refuse the super-block — the
-# Nemotron-H classes qualify at 2688 (the 2026-08-20 amendment).
+# 256-element super-blocks, and the 49B target's expert-stack rows
+# (2688, 1856) do not divide by 256 — the quantizer would silently
+# substitute. Every entry here has a block size that divides both row
+# widths. Effective bits per weight: f16 at 16.00, q8_0 at 8.50, q5_1
+# at 6.00, q5_0 at 5.50, q4_0 at 4.50, q2_0 at 2.25. The 6 and 5 rows
+# date from the 2026-09-04 amendment (#232), and both block 32. The
+# f16 row is the ADR-0029 passthrough, and it has no block to divide.
+# The table also reaches a layer-class group whose measured rows
+# refuse the super-block — the Nemotron-H classes qualify at 2688
+# (the 2026-08-20 amendment).
 EXPERT_STACK_TYPE_BY_BITS: Final[dict[int, str]] = {
     16: "f16",
     8: "q8_0",
@@ -116,8 +122,9 @@ EXPERT_STACK_TYPE_BY_BITS: Final[dict[int, str]] = {
 # tensor-type names. Each entry is the pure-type ftype for the same
 # nominal bits as GGML_TYPE_BY_BITS, and the two tables agree at
 # every key. The expert-stack table above disagrees at 2, 4, 5, and 6
-# on purpose (ADR-0028): k-quants do not divide the stack rows, and a
-# dense tensor no override covers still takes this k-quant floor.
+# on purpose (ADR-0028): a group whose measured rows the 256
+# super-block does not divide takes that table instead, and a dense
+# tensor no override covers still takes this k-quant floor.
 # The base ftype reaches tensors only. The label the file declares
 # is the modal type by bytes, written after the quantizer runs
 # (ADR-0012 decision 3 as amended 2026-09-04, #413, #414).
@@ -313,15 +320,21 @@ def ggml_type_for(bits: int) -> str:
         ) from None
 
 
-def expert_stack_type_for(bits: int, group: str, kind: str = "expert stack") -> str:
+def expert_stack_type_for(
+    bits: int, group: str, row_width: int, kind: str = "expert stack"
+) -> str:
     """Map one ADR-0028-routed precision to its tensor type.
 
-    Routed-expert stacks map here, and so does a layer-class group
-    whose rows refuse the 256 super-block (the 2026-08-20 amendment).
+    A group reaches this table when the 256 super-block does not
+    divide its measured rows, whatever its class name (issue #515).
+    Every refusal states that width, because the width is what
+    selected the table.
 
     Args:
         bits: Nominal precision from a recipe assignment.
         group: The group, named in every refusal.
+        row_width: The group's measured elements per row, from
+            `measured_row_width`.
         kind: What the refusal calls the group — ``expert stack`` or
             ``layer-class group``.
 
@@ -329,23 +342,23 @@ def expert_stack_type_for(bits: int, group: str, kind: str = "expert stack") -> 
         The GGUF tensor-type name, e.g. ``q2_0``.
 
     Raises:
-        PackError: If ``bits`` is 3 — no GGUF type lands between 2.25
-            and 4.25 bits per weight on the stack rows (ADR-0028
-            decision 2). Also if the table has no entry for ``bits``.
+        PackError: If ``bits`` is 3. No type in this table lands
+            between 2.25 and 4.25 bits per weight (ADR-0028 decision
+            2). Also if the table has no entry for ``bits``.
 
     Examples:
         The 2-bit entry of the table:
 
         ```python
-        assert expert_stack_type_for(2, "m.layers.0.experts.up_proj") == "q2_0"
+        assert expert_stack_type_for(2, "m.layers.0.experts.up_proj", 2688) == "q2_0"
         ```
     """
     if bits == 3:  # noqa: PLR2004 - the ADR-0028 decision 2 refusal is about exactly nominal 3
         raise PackError(
-            f'{kind} "{group}" cannot pack at nominal 3 — no GGUF type '
-            f"lands between 2.25 and 4.25 bits per weight on the stack rows "
-            f"(ADR-0028). The neighboring table entries are 2 -> q2_0 "
-            f"(2.25 bits/weight) and 4 -> q4_0 (4.50 bits/weight)"
+            f'{kind} "{group}" cannot pack at nominal 3. Its {row_width}-wide rows '
+            f"refuse the 256 super-block, so it takes the ADR-0028 table. No type "
+            f"there lands between 2.25 and 4.25 bits per weight (decision 2). The "
+            f"gap's neighbors are 2 -> q2_0 at 2.25 and 4 -> q4_0 at 4.50"
         )
     try:
         return EXPERT_STACK_TYPE_BY_BITS[bits]
@@ -705,14 +718,122 @@ def _claim_root(name: str, roots: dict[str, str], kind: str = "group") -> None:
         )
 
 
-def _class_override(group: str, bits: int) -> tuple[TypeOverride, ...] | None:
+def consults_row_width(group: str) -> bool:
+    """Report whether the override mapping reads this group's row width.
+
+    `tensor_overrides` asks `measured_row_width` for a routed-expert
+    stack and for a layer-class group the class table maps. Every
+    other group maps without a width, or refuses for a reason the
+    width cannot explain. The pack pre-flight reads the checkpoint
+    for this set alone, so an unmappable group keeps its own refusal
+    rather than one blaming the checkpoint (issue #515).
+
+    A group of a class the quantizer refuses is not in the set. It
+    holds at the F16 passthrough and takes neither type table
+    (#409).
+
+    Args:
+        group: Recipe group name, under any supported root.
+
+    Returns:
+        True when the mapping routes this group by its measured row
+        width.
+
+    Examples:
+        ```python
+        assert consults_row_width("model.layers.1.mlp.experts.up_proj")
+        assert not consults_row_width("model.layers.1")
+        ```
+    """
+    if gguf_stack_prefix(group) is not None:
+        return True
+    match = _CLASS_GROUP.match(group)
+    if match is None or unquantizable_filter(group, LLAMA_CPP) is not None:
+        return False
+    return match.group(2) in GGUF_SUFFIX_BY_HF
+
+
+def measured_row_width(group: str, row_widths: Mapping[str, int]) -> int:
+    """State one group's measured row width, which selects its type table.
+
+    The pack reads the same widths the plan priced from, so the
+    predicted type and the emitted type cannot disagree (issue #515).
+    `vramfit.domain.sizes.measured_width` owns the lookup, so the
+    two sides accept one set of group spellings.
+    `vramfit.domain.runtime.rows_refuse_super_block` reads the
+    returned width and names the table.
+
+    The pack pre-flight calls this for its refusal, before the
+    convert stage writes a full-size base GGUF (ADR-0022, #367).
+
+    Args:
+        group: Recipe group name, under either naming root.
+        row_widths: Elements per row per group, from
+            `vramfit.domain.sizes.discovered_group_rows`.
+
+    Returns:
+        The group's measured elements per row.
+
+    Raises:
+        PackError: If the group has no measured row width. A name
+            cannot supply one, and a default would misprice the
+            group silently.
+        SizeSourceError: If the group hangs from a root the
+            reconcile table does not carry. That refusal names the
+            root, and the missing-width message would hide it.
+    """
+    width = measured_width(row_widths, group)
+    if width is None:
+        raise PackError(
+            f'group "{group}" has no measured row width, and the 256 super-block '
+            f"decision reads that width rather than a class name (ADR-0028, issue "
+            f"#515). The checkpoint the pack reads states it — check that --model "
+            f"names the checkpoint the recipe was planned from (ADR-0029 decision 1)"
+        )
+    return width
+
+
+def _routed_type(
+    bits: int, group: str, row_widths: Mapping[str, int], kind: str = "expert stack"
+) -> str:
+    """Select one group's type table by its measured row width.
+
+    A group whose rows the 256 super-block divides takes the ADR-0012
+    k-quant table. Every other group takes the ADR-0028 table,
+    whatever its class name (issue #515). A stack of 2048-wide rows
+    therefore takes the k-quant table, like any other group.
+
+    Args:
+        bits: Nominal precision from the group's assignment.
+        group: Recipe group name, under either naming root.
+        row_widths: Elements per row per group, from
+            `vramfit.domain.sizes.discovered_group_rows`.
+        kind: What a refusal calls the group — ``expert stack`` or
+            ``layer-class group``.
+
+    Returns:
+        The GGUF tensor-type name, e.g. ``q4_0``.
+
+    Raises:
+        PackError: If the group has no measured row width, or the
+            selected table has no entry for ``bits``.
+    """
+    width = measured_row_width(group, row_widths)
+    if rows_refuse_super_block(width):
+        return expert_stack_type_for(bits, group, width, kind)
+    return ggml_type_for(bits)
+
+
+def _class_override(
+    group: str, bits: int, row_widths: Mapping[str, int]
+) -> tuple[TypeOverride, ...] | None:
     r"""Map one layer-class group to its override, or hold it at F16.
 
     The class table keys on the tensor suffix under a free prefix,
     at two or three dot-separated segments (the 2026-08-20
-    amendment). A class whose rows refuse the 256 super-block routes
-    through the ADR-0028 table, and the rest keep the ADR-0012
-    k-quant table. An unquantizable class emits no override — the
+    amendment). A class whose measured rows refuse the 256
+    super-block routes through the ADR-0028 table, and the rest keep
+    the ADR-0012 k-quant table. An unquantizable class emits no override — the
     quantizer refuses its tensors and holds them at the convert
     dtype, so the F16 passthrough is what packing already does.
 
@@ -720,6 +841,8 @@ def _class_override(group: str, bits: int) -> tuple[TypeOverride, ...] | None:
         group: Recipe group name, e.g.
             ``model.layers.3.mixer.in_proj``.
         bits: Nominal precision from the group's assignment.
+        row_widths: Elements per row per group, from
+            `vramfit.domain.sizes.discovered_group_rows`.
 
     Returns:
         A one-override tuple for a mapped class, an empty tuple for
@@ -736,9 +859,9 @@ def _class_override(group: str, bits: int) -> tuple[TypeOverride, ...] | None:
         The Nemotron-H Mamba input projection at the passthrough:
 
         ```python
-        assert _class_override("model.layers.3.mixer.in_proj", 16) == (
-            TypeOverride(r"blk\.3\.ssm_in\.", "f16"),
-        )
+        assert _class_override(
+            "model.layers.3.mixer.in_proj", 16, {"model.layers.3.mixer.in_proj": 2688}
+        ) == (TypeOverride(r"blk\.3\.ssm_in\.", "f16"),)
         ```
     """
     match = _CLASS_GROUP.match(group)
@@ -758,15 +881,13 @@ def _class_override(group: str, bits: int) -> tuple[TypeOverride, ...] | None:
     stem = GGUF_SUFFIX_BY_HF.get(match.group(2))
     if stem is None:
         return None
-    quant = (
-        expert_stack_type_for(bits, group, kind="layer-class group")
-        if rows_refuse_super_block(group)
-        else ggml_type_for(bits)
-    )
+    quant = _routed_type(bits, group, row_widths, "layer-class group")
     return (TypeOverride(re.escape(f"blk.{match.group(1)}.{stem}."), quant),)
 
 
-def tensor_overrides(recipe: Recipe) -> tuple[TypeOverride, ...]:
+def tensor_overrides(
+    recipe: Recipe, row_widths: Mapping[str, int]
+) -> tuple[TypeOverride, ...]:
     r"""Translate recipe groups into quantizer tensor-type overrides.
 
     Three group shapes map. A layer group under any of the three
@@ -804,6 +925,10 @@ def tensor_overrides(recipe: Recipe) -> tuple[TypeOverride, ...]:
 
     Args:
         recipe: The recipe to pack.
+        row_widths: Elements per row per group, from
+            `vramfit.domain.sizes.discovered_group_rows` over the
+            checkpoint the recipe was planned from. The ADR-0028
+            routing reads this width (issue #515).
 
     Returns:
         Expert-stack overrides in recipe order, then layer-class
@@ -817,7 +942,8 @@ def tensor_overrides(recipe: Recipe) -> tuple[TypeOverride, ...]:
             outside the fused-stack table, an ADR-0028-routed group
             names a precision outside that table (nominal 3 refuses
             over the empty 2.25-4.25 gap), an unquantizable class
-            takes a width below the F16 passthrough, the groups and
+            takes a width below the F16 passthrough, a group the
+            routing reaches has no measured row width, the groups and
             protected tensors hang from two roots or from a root the
             scan name table does not support, or a precision has no
             table entry.
@@ -827,7 +953,7 @@ def tensor_overrides(recipe: Recipe) -> tuple[TypeOverride, ...]:
         pattern:
 
         ```python
-        assert TypeOverride(r"blk\.7\.", "q4_k") in tensor_overrides(recipe)
+        assert TypeOverride(r"blk\.7\.", "q4_k") in tensor_overrides(recipe, {})
         ```
     """
     stacks: list[TypeOverride] = []
@@ -842,10 +968,10 @@ def tensor_overrides(recipe: Recipe) -> tuple[TypeOverride, ...]:
         _claim_root(assignment.group, roots)
         prefix = gguf_stack_prefix(assignment.group)
         if prefix is not None:
-            bits = expert_stack_type_for(assignment.bits, assignment.group)
+            bits = _routed_type(assignment.bits, assignment.group, row_widths)
             stacks.append(TypeOverride(re.escape(prefix), bits))
             continue
-        mapped = _class_override(assignment.group, assignment.bits)
+        mapped = _class_override(assignment.group, assignment.bits, row_widths)
         if mapped is not None:
             classes.extend(mapped)
             continue
@@ -862,7 +988,9 @@ def tensor_overrides(recipe: Recipe) -> tuple[TypeOverride, ...]:
     return tuple(stacks) + tuple(classes) + tuple(layers)
 
 
-def all_overrides(recipe: Recipe) -> tuple[TypeOverride, ...]:
+def all_overrides(
+    recipe: Recipe, row_widths: Mapping[str, int]
+) -> tuple[TypeOverride, ...]:
     """Compose every override the quantizer receives, in priority order.
 
     Protection overrides lead, because the quantizer applies the
@@ -876,19 +1004,22 @@ def all_overrides(recipe: Recipe) -> tuple[TypeOverride, ...]:
 
     Args:
         recipe: The recipe to pack.
+        row_widths: Elements per row per group, from
+            `vramfit.domain.sizes.discovered_group_rows`.
 
     Returns:
         Protection overrides, then expert-stack and layer overrides.
 
     Raises:
-        PackError: If any group or precision has no mapping. See
-            `protection_overrides` and `tensor_overrides`.
+        PackError: If any group or precision has no mapping, or a
+            group the ADR-0028 routing reaches has no measured row
+            width. See `protection_overrides` and `tensor_overrides`.
 
     Examples:
         The pack step and its pre-run check read one list:
 
         ```python
-        overrides = all_overrides(recipe)
+        overrides = all_overrides(recipe, row_widths)
         ```
     """
-    return protection_overrides(recipe) + tensor_overrides(recipe)
+    return protection_overrides(recipe) + tensor_overrides(recipe, row_widths)

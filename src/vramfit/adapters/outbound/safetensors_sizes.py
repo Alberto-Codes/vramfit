@@ -254,8 +254,11 @@ def _record_size(shard: Path, name: str, record: object) -> TensorSize | None:
         record: The header's entry for it.
 
     Returns:
-        The tensor's stored size, or None when the entry has fewer
-        than `MIN_QUANTIZABLE_DIMENSIONS` dimensions. A dtype outside
+        The tensor's stored size and row width, or None when the entry
+        has fewer than `MIN_QUANTIZABLE_DIMENSIONS` dimensions. The
+        row width is the shape's last dimension, which GGUF calls
+        ``ne[0]`` and the super-block decision reads (issue #515). A
+        dtype outside
         the domain's table is not skipped — the domain refuses it, so
         an unpriceable checkpoint never reads as a smaller one.
 
@@ -289,7 +292,7 @@ def _record_size(shard: Path, name: str, record: object) -> TensorSize | None:
             f'{shard}: entry "{bounded(name)}" spans {stored} bytes, and its shape '
             f"{dims} at {dtype} needs {math.prod(dims) * element}"
         )
-    return TensorSize(dtype=dtype, bytes=stored)
+    return TensorSize(dtype=dtype, bytes=stored, rows=dims[-1])
 
 
 @dataclass(frozen=True, slots=True)

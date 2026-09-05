@@ -3,7 +3,9 @@
 The composition root for the pack step (ADR-0010, ADR-0012). It
 validates the toolchain paths and the recipe's protection mapping
 up front — an unpackable protection fails in milliseconds, not
-after the convert stage — loads the recipe, wires the
+after the convert stage — measures each group's row width from the
+checkpoint's shard headers, which routes the 256 super-block
+decision (#515), loads the recipe, wires the
 `RecipePacker` port to the llama.cpp adapter, and drives the two
 stages — convert, then quantize (imatrix-assisted when ``--imatrix``
 is given, ADR-0016, with the recipe's imatrix exclusions applied,
@@ -49,6 +51,7 @@ from __future__ import annotations
 
 import sys
 import time
+from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
 from typing import Annotated
@@ -56,8 +59,8 @@ from typing import Annotated
 import typer
 
 from vramfit.adapters.inbound.cli_pack_check import (
-    _check_protected_mappable,
     _reconstruction_stage,
+    _resolve_row_widths,
 )
 from vramfit.adapters.inbound.cli_pack_imatrix import (
     _read_zero_count_experts,
@@ -93,6 +96,7 @@ def _build_packer(
     python_bin: Path,
     threads: int,
     imatrix: Path | None,
+    row_widths: Mapping[str, int],
 ) -> RecipePacker:
     """Wire the llama.cpp adapter for one pack run.
 
@@ -108,6 +112,9 @@ def _build_packer(
         python_bin: Interpreter for the convert script.
         threads: Quantizer thread count.
         imatrix: Importance matrix file, or None (ADR-0016).
+        row_widths: Elements per row per group, measured from the
+            checkpoint. The 256 super-block decision reads them
+            (issue #515).
 
     Returns:
         The wired packer.
@@ -121,6 +128,7 @@ def _build_packer(
         python_bin=python_bin,
         threads=threads,
         imatrix=imatrix,
+        row_widths=row_widths,
     )
 
 
@@ -264,6 +272,11 @@ def pack(
 ) -> None:
     """Pack a recipe into a GGUF model llama.cpp can serve.
 
+    The command measures each group's row width from the checkpoint
+    before it converts anything. The 256 super-block decision reads
+    that width (issue #515), and a recipe of whole-layer groups
+    alone reads no checkpoint at all.
+
     Converts the checkpoint to an f16 base GGUF once (reusing an
     existing file), then drives ``llama-quantize`` with one type
     override per layer group. An ``lm_head`` group drives the output
@@ -287,11 +300,15 @@ def pack(
     is absent or names a different file, because the pack would not
     match the map's frame (ADR-0020). A recipe with imatrix exclusions
     packs the marked tensors on the unweighted fit, and the command
-    warns when no matrix makes the exclusions inert (ADR-0023). An
-    expert-stack group maps through its own type table (ADR-0028):
-    8 to Q8_0, 6 to Q5_1, 5 to Q5_0, 4 to Q4_0, 2 to Q2_0. Nominal 3
-    refuses there — no GGUF type lands between 2.25 and 4.25 bits per
-    weight on the stack rows. The quantizer's output is scanned for the
+    warns when no matrix makes the exclusions inert (ADR-0023). A
+    group whose measured rows the 256 super-block does not divide
+    maps through the ADR-0028 type table: 8 to Q8_0, 6 to Q5_1, 5 to
+    Q5_0, 4 to Q4_0, 2 to Q2_0. That table refuses nominal 3 — no
+    GGUF type lands between 2.25 and 4.25 bits per weight on a row
+    the super-block does not divide. The width decides, and no class
+    name does (#515), so a 2048-wide routed-expert stack keeps the
+    ADR-0012 k-quant table and takes nominal 3. The
+    quantizer's output is scanned for the
     type-fallback warning pair, and a match halts with the file
     kept — a rewritten type breaks the recipe the artifact claims
     to carry (ADR-0028). A layer the base GGUF numbers that no
@@ -348,10 +365,6 @@ def pack(
     _check_inputs(llama_cpp, out, imatrix, mmproj, smoke_text, smoke_threshold)
 
     recipe = _load_recipe(recipe_path)
-    # A protected recipe's override composition must fail here, in
-    # milliseconds — not after the convert stage writes a full-size
-    # base GGUF (ADR-0022, #367).
-    _check_protected_mappable(recipe)
     _warn_imatrix_provenance(recipe, imatrix)
     model_dir = model if model is not None else Path(recipe.model_id)
     if not model_dir.is_dir():
@@ -361,6 +374,12 @@ def pack(
             err=True,
         )
         raise typer.Exit(code=1)
+    # A protected recipe's override composition must fail here, in
+    # milliseconds — not after the convert stage writes a full-size
+    # base GGUF (ADR-0022, #367). The composition reads the
+    # checkpoint's row widths, so it runs once the model directory
+    # resolves (issue #515). The read is a shard-header parse.
+    row_widths = _resolve_row_widths(recipe, model_dir)
     base_path = (
         base_gguf
         if base_gguf is not None
@@ -395,6 +414,7 @@ def pack(
         python_bin if python_bin is not None else Path(sys.executable),
         threads,
         imatrix,
+        row_widths,
     )
 
     reused = base_path.exists()
@@ -475,6 +495,7 @@ def pack(
             python_bin if python_bin is not None else Path(sys.executable),
             threads,
             imatrix,
+            row_widths,
         ),
     )
 

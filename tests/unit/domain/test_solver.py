@@ -5,6 +5,7 @@ from typing import Any
 
 import pytest
 
+from tests.fakes import stack_row_widths
 from tests.unit.conftest import make_map
 from vramfit.adapters.outbound.sensitivity_map_json import map_from_dict
 from vramfit.domain.budget import format_size
@@ -38,6 +39,16 @@ def load(raw: dict[str, Any]) -> SensitivityMap:
 
 
 def solve_simple(map_: SensitivityMap, budget: int, **kwargs: Any):
+    # The ADR-0028 routing reads each group's measured row width
+    # (#515). These suites model the 30B target, so a stack carries
+    # 2688-wide rows and every other class divides the super-block.
+    kwargs.setdefault(
+        "row_widths",
+        stack_row_widths(
+            [group.name for group in map_.groups]
+            + sorted(kwargs.get("discovered_bytes") or {})
+        ),
+    )
     return solve(
         map_,
         weight_budget_bytes=budget,
@@ -1189,7 +1200,8 @@ class TestUnquantizableClasses:
     ) -> None:
         # A Nemotron-H dense class routes through the ADR-0028 table
         # (the 2026-08-20 amendment): nominal 2 spends q2_0's 2.25
-        # bits per weight, not q2_k's 2.625.
+        # bits per weight, not q2_k's 2.625. Its measured rows are
+        # 2688 wide, which is what routes it (#515).
         map_ = load(
             make_map(
                 [("model.layers.0.mixer.in_proj", 160_000, {8: 0.001, 2: 1.0})],
@@ -1202,6 +1214,7 @@ class TestUnquantizableClasses:
             30_000,
             runtime="llama.cpp",
             discovered_bytes={"model.layers.0.mixer.in_proj": 160_000},
+            row_widths={"model.layers.0.mixer.in_proj": 2688},
         )
 
         assignment = recipe.assignments[0]
@@ -1281,9 +1294,9 @@ class TestPassthroughPricing:
         # uncovered and price at 32 bits (#409). Folded into the
         # covered layer group, their bytes left the plan.
         sizes = {
-            "backbone.layers.0.mixer.in_proj.weight": TensorSize("BF16", 1600),
-            "backbone.layers.0.mixer.conv1d.weight": TensorSize("BF16", 800),
-            "backbone.layers.0.mixer.gate.weight": TensorSize("BF16", 400),
+            "backbone.layers.0.mixer.in_proj.weight": TensorSize("BF16", 1600, 256),
+            "backbone.layers.0.mixer.conv1d.weight": TensorSize("BF16", 800, 256),
+            "backbone.layers.0.mixer.gate.weight": TensorSize("BF16", 400, 256),
         }
         map_ = load(make_map([("model.layers.0", 1600, CONVEX_CURVE)]))
 

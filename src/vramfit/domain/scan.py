@@ -7,10 +7,10 @@ refuses against — #208), which group a parameter belongs to
 under each granularity (`group_key`, the `layer`/`tensor`/`stack`
 naming rule that the torch meter applies but does not own), which
 group names are routed-expert stacks (`is_expert_stack`, the
-predicate the solver prices through — ADR-0028),
+predicate the spread placement rule selects on),
 which decoder layer a group name carries (`layer_prefix`, the
-relation the spread placement rule reads — the 2026-08-21 ADR-0007
-amendment),
+relation that same rule reads — both from the 2026-08-21
+ADR-0007 amendment),
 which discovered groups a caller's selection keeps
 (`select_groups`, the subset rule that keeps a narrowed run out of
 the fingerprint),
@@ -157,11 +157,11 @@ def group_key(name: str, group_by: Literal["layer", "tensor", "stack"]) -> str:
 def is_expert_stack(group: str) -> bool:
     """Report whether a group name is a routed-expert stack.
 
-    The solver prices such a group through the expert-stack
-    effective-bits table (ADR-0028), so the predicate must recognize
-    exactly the groups the GGUF backend treats as expert stacks. The
-    backend then maps or refuses each by its projection and its
-    precision — recognition here, vocabulary there.
+    `vramfit.domain.placement` reads this predicate to spread the
+    cheapest width across the decoder stack (the 2026-08-21
+    ADR-0007 amendment). It selects no price: the 256 super-block
+    decision routes each group by its measured row width, never by
+    its name (ADR-0028, issue #515).
 
     Args:
         group: Group name, as `group_key` produces it.

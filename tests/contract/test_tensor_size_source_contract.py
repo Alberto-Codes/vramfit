@@ -34,6 +34,9 @@ NORM = "backbone.layers.0.input_layernorm.weight"
 
 DENSE_BYTES = 4 * 8 * 2
 EXPERT_BYTES = 2 * 3 * 2
+# The row width is the shape's last dimension (issue #515).
+DENSE_ROWS = 8
+EXPERT_ROWS = 3
 
 
 def write_shard(path: Path, entries: dict[str, dict]) -> None:
@@ -72,9 +75,9 @@ def _real_source(tmp_path: Path) -> TensorSizeSource:
 def _fake_source(tmp_path: Path) -> TensorSizeSource:
     return MemoryTensorSizeSource(
         sizes={
-            DENSE: TensorSize(dtype="BF16", bytes=DENSE_BYTES),
-            EXPERT: TensorSize(dtype="BF16", bytes=EXPERT_BYTES),
-            MTP: TensorSize(dtype="BF16", bytes=DENSE_BYTES),
+            DENSE: TensorSize(dtype="BF16", bytes=DENSE_BYTES, rows=DENSE_ROWS),
+            EXPERT: TensorSize(dtype="BF16", bytes=EXPERT_BYTES, rows=EXPERT_ROWS),
+            MTP: TensorSize(dtype="BF16", bytes=DENSE_BYTES, rows=DENSE_ROWS),
         }
     )
 
@@ -159,7 +162,7 @@ class TestRealReaderReads:
 
         sizes = SafetensorsSizes(tmp_path).tensor_sizes()
 
-        assert sizes[DENSE] == TensorSize(dtype="I8", bytes=32)
+        assert sizes[DENSE] == TensorSize(dtype="I8", bytes=32, rows=DENSE_ROWS)
         with pytest.raises(SizeSourceError, match="no reference size"):
             discovered_group_bytes(sizes, "layer")
 

@@ -128,8 +128,8 @@ vramfit scan ./model --calibration calibration.txt \
 ```
 
 The method covers nominal 8, 4, and 2. It refuses nominal 3, which
-[ADR-0028](../adr/0028-expert-stack-type-table.md) refuses at pack,
-and 5 and 6 until ports exist.
+[ADR-0028](../adr/0028-expert-stack-type-table.md) refuses at pack
+on these rows, and 5 and 6 until ports exist.
 `--imatrix` pairs with it (ADR-0018's 2026-08-21 amendment). The
 map then records the `q0-imx` token. Nominal 4 fits with imatrix
 weights through the ported `quantize_row_q4_0_impl`. Nominal 2 and
@@ -183,11 +183,15 @@ in the same family.
     the scan skips that module's `conv1d` and `gate` classes (#204),
     so only a size source prices them
     ([ADR-0029](../adr/0029-plan-independent-size-source.md)
-    decision 3, amended 2026-09-04). On a family with no such class
-    the same command sums its budget over the groups the map holds
-    and reads no other size source. A 46-of-210 map then prices 46
-    groups and counts the other 164 as zero bytes, and the recipe
-    reports a fit the packed model does not honor.
+    decision 3, amended 2026-09-04). A family with no such class
+    refuses too under `--runtime llama.cpp`: every group a `stack`
+    or `tensor` selection names routes by its measured row width,
+    and only a size source states that width (ADR-0028, issue #515).
+    A runtime with no effective-bits table prices at nominal bits
+    and plans the map, so pass `--checkpoint` there as well. Were
+    the plan to proceed, a 46-of-210 map would price 46 groups and
+    count the other 164 as zero bytes, and the recipe would report a
+    fit the packed model does not honor.
 
     `--checkpoint` prices the other 164 from the model's safetensors
     headers and holds each at reference precision (ADR-0029). Those

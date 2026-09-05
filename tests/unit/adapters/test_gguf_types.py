@@ -26,7 +26,12 @@ from vramfit.adapters.outbound.gguf.types import (
 from vramfit.domain.errors import VramfitError
 from vramfit.domain.model import Assignment, PlanMeta, ProtectedTensor, Recipe
 from vramfit.domain.pack import TypeOverride
-from vramfit.domain.runtime import EFFECTIVE_BITS, LLAMA_CPP, RUNTIME_CAPABILITIES
+from vramfit.domain.runtime import (
+    EFFECTIVE_BITS,
+    LLAMA_CPP,
+    RUNTIME_CAPABILITIES,
+    routes_by_row_width,
+)
 from vramfit.domain.scan import NAME_TABLE_ROOTS
 
 pytestmark = pytest.mark.unit
@@ -94,6 +99,19 @@ def test_gguf_types_spend_the_domains_effective_bits() -> None:
     # (ADR-0014). Swapping q5_k for q5_1 must fail here, loudly.
     for bits, ggml_type in GGML_TYPE_BY_BITS.items():
         assert EFFECTIVE_BITS[LLAMA_CPP][bits] == BITS_PER_GGML_TYPE[ggml_type]
+
+
+# Every group the super-block decision reaches, at a stated row width
+# (issue #515). 256 divides, so the recipe maps through the ADR-0012
+# k-quant table. `NEMOTRON_ROWS` is the 30B target's 2688, which no
+# k-quant super-block divides, so it routes to the ADR-0028 table.
+KQUANT_ROWS = 256
+NEMOTRON_ROWS = 2688
+
+
+def _rows(recipe: Recipe, width: int = KQUANT_ROWS) -> dict[str, int]:
+    """State one row width for every group the routing reaches."""
+    return {a.group: width for a in recipe.assignments if routes_by_row_width(a.group)}
 
 
 @pytest.mark.parametrize(
@@ -208,7 +226,9 @@ def test_output_group_type_without_lm_head_group_is_none() -> None:
 def test_tensor_overrides_escape_dots_so_layer_1_never_matches_layer_11() -> None:
     recipe = make_recipe(("model.layers.1", 8), ("model.layers.11", 4))
 
-    patterns = [override.pattern for override in tensor_overrides(recipe)]
+    patterns = [
+        override.pattern for override in tensor_overrides(recipe, _rows(recipe))
+    ]
 
     assert patterns == [r"blk\.1\.", r"blk\.11\."]
     assert re.search(patterns[0], "blk.1.attn_q.weight")
@@ -223,7 +243,7 @@ def test_tensor_overrides_keep_recipe_order_and_skip_the_flag_groups() -> None:
         ("model.layers.1", 2),
     )
 
-    overrides = tensor_overrides(recipe)
+    overrides = tensor_overrides(recipe, _rows(recipe))
 
     assert [(o.pattern, o.quant_type) for o in overrides] == [
         (r"blk\.0\.", "q4_k"),
@@ -235,7 +255,7 @@ def test_tensor_overrides_reject_tensor_level_groups() -> None:
     recipe = make_recipe(("model.layers.0.self_attn.q_proj.weight", 4))
 
     with pytest.raises(PackError, match="no GGUF tensor mapping"):
-        tensor_overrides(recipe)
+        tensor_overrides(recipe, _rows(recipe))
 
 
 def test_tensor_overrides_name_the_group_they_cannot_map() -> None:
@@ -246,7 +266,7 @@ def test_tensor_overrides_name_the_group_they_cannot_map() -> None:
     recipe = make_recipe(("backbone.layers.0.mixer.up_proj", 4))
 
     with pytest.raises(PackError) as caught:
-        tensor_overrides(recipe)
+        tensor_overrides(recipe, _rows(recipe))
 
     message = str(caught.value)
     assert '"backbone.layers.0.mixer.up_proj"' in message
@@ -274,7 +294,7 @@ def test_tensor_overrides_derive_the_layer_index_from_any_naming_family(
     # table (#208).
     recipe = make_recipe((group, 4))
 
-    assert tensor_overrides(recipe) == (TypeOverride(pattern, "q4_k"),)
+    assert tensor_overrides(recipe, _rows(recipe)) == (TypeOverride(pattern, "q4_k"),)
 
 
 @pytest.mark.parametrize("root", NAME_TABLE_ROOTS, ids=NAME_TABLE_ROOTS)
@@ -288,7 +308,7 @@ def test_tensor_overrides_accept_every_scan_name_table_root(root: str) -> None:
         (f"{root}.layers.2.mixer.in_proj", 16),
     )
 
-    assert len(tensor_overrides(recipe)) == 3
+    assert len(tensor_overrides(recipe, _rows(recipe))) == 3
 
 
 @pytest.mark.parametrize(
@@ -311,7 +331,7 @@ def test_tensor_overrides_refuse_a_recipe_under_one_foreign_root(group: str) -> 
     recipe = make_recipe((group, 4), (f"{root}.layers.1", 4))
 
     with pytest.raises(PackError) as caught:
-        tensor_overrides(recipe)
+        tensor_overrides(recipe, _rows(recipe))
 
     message = str(caught.value)
     assert f'"{group}"' in message
@@ -331,7 +351,7 @@ def test_a_foreign_root_protection_refuses_naming_the_root() -> None:
     )
 
     with pytest.raises(PackError) as caught:
-        all_overrides(recipe)
+        all_overrides(recipe, _rows(recipe))
 
     message = str(caught.value)
     assert 'protected tensor "mtp.layers.0.self_attn.v_proj.weight"' in message
@@ -358,7 +378,7 @@ def test_tensor_overrides_map_a_routed_expert_stack_to_its_fused_tensor(
     # one type, so the stack is what a pack addresses (#159, #161).
     recipe = make_recipe((group, 4))
 
-    overrides = tensor_overrides(recipe)
+    overrides = tensor_overrides(recipe, _rows(recipe, NEMOTRON_ROWS))
 
     assert len(overrides) == 1
     assert re.search(overrides[0].pattern, tensor)
@@ -370,7 +390,7 @@ def test_tensor_overrides_escape_the_stack_pattern_so_layer_1_never_matches_11()
 ):
     recipe = make_recipe(("model.layers.1.mlp.experts.up_proj", 8))
 
-    pattern = tensor_overrides(recipe)[0].pattern
+    pattern = tensor_overrides(recipe, _rows(recipe))[0].pattern
 
     assert re.search(pattern, "blk.1.ffn_up_exps.weight")
     assert not re.search(pattern, "blk.11.ffn_up_exps.weight")
@@ -386,7 +406,7 @@ def test_tensor_overrides_put_stacks_before_layers_so_the_stack_wins() -> None:
         ("model.layers.1.mlp.experts.up_proj", 2),
     )
 
-    overrides = tensor_overrides(recipe)
+    overrides = tensor_overrides(recipe, _rows(recipe, NEMOTRON_ROWS))
 
     assert [o.quant_type for o in overrides] == ["q2_0", "q8_0"]
     assert re.search(overrides[0].pattern, "blk.1.ffn_up_exps.weight")
@@ -398,7 +418,9 @@ def test_tensor_overrides_keep_recipe_order_within_the_stack_bucket() -> None:
         ("backbone.layers.1.mixer.experts.up_proj", 8),
     )
 
-    assert [o.quant_type for o in tensor_overrides(recipe)] == ["q2_0", "q8_0"]
+    assert [
+        o.quant_type for o in tensor_overrides(recipe, _rows(recipe, NEMOTRON_ROWS))
+    ] == ["q2_0", "q8_0"]
 
 
 @pytest.mark.parametrize(
@@ -413,22 +435,24 @@ def test_expert_stack_type_for_maps_the_adr_0028_table(
     # only types whose block size divides both (ADR-0028). The 6 and 5
     # rows map to q5_1 and q5_0, both block 32 (the 2026-09-04
     # amendment, #232).
-    assert expert_stack_type_for(bits, "model.layers.0.mlp.experts.up_proj") == (
-        quant_type
-    )
+    assert expert_stack_type_for(
+        bits, "model.layers.0.mlp.experts.up_proj", NEMOTRON_ROWS
+    ) == (quant_type)
 
 
 def test_tensor_overrides_refuse_nominal_3_on_an_expert_stack_naming_the_gap() -> None:
-    # No GGUF type lands between 2.25 and 4.25 bits per weight on the
-    # stack rows (ADR-0028 decision 2). The refusal names the group,
-    # the gap, and both neighboring table entries.
+    # No type in the ADR-0028 table lands between 2.25 and 4.25 bits
+    # per weight (decision 2). The refusal names the group, the
+    # measured width that selected the table, the gap, and both
+    # neighboring table entries.
     recipe = make_recipe(("backbone.layers.3.mixer.experts.up_proj", 3))
 
     with pytest.raises(PackError) as caught:
-        tensor_overrides(recipe)
+        tensor_overrides(recipe, _rows(recipe, NEMOTRON_ROWS))
 
     message = str(caught.value)
     assert '"backbone.layers.3.mixer.experts.up_proj"' in message
+    assert str(NEMOTRON_ROWS) in message
     assert "2.25" in message
     assert "4.25" in message
     assert "q2_0" in message
@@ -439,7 +463,7 @@ def test_expert_stack_type_for_refuses_a_precision_outside_the_table() -> None:
     # The stack table has no 7-bit row — silently keeping a dense
     # type would let the quantizer substitute (ADR-0028 decision 1).
     with pytest.raises(PackError) as caught:
-        expert_stack_type_for(7, "model.layers.0.mlp.experts.up_proj")
+        expert_stack_type_for(7, "model.layers.0.mlp.experts.up_proj", NEMOTRON_ROWS)
 
     message = str(caught.value)
     assert '"model.layers.0.mlp.experts.up_proj"' in message
@@ -452,7 +476,7 @@ def test_tensor_overrides_reject_an_expert_projection_outside_the_stack_table() 
     recipe = make_recipe(("model.layers.0.block_sparse_moe.experts.w1", 4))
 
     with pytest.raises(PackError) as caught:
-        tensor_overrides(recipe)
+        tensor_overrides(recipe, _rows(recipe))
 
     message = str(caught.value)
     assert '"model.layers.0.block_sparse_moe.experts.w1"' in message
@@ -482,7 +506,7 @@ def test_token_embedding_type_maps_every_embedding_naming_family(
     recipe = make_recipe((group, 8), (layer_group, 4))
 
     assert token_embedding_type(recipe) == "q8_0"
-    assert [o.pattern for o in tensor_overrides(recipe)] == [r"blk\.0\."]
+    assert [o.pattern for o in tensor_overrides(recipe, _rows(recipe))] == [r"blk\.0\."]
 
 
 def test_tensor_overrides_reject_two_layer_stacks_naming_both() -> None:
@@ -493,7 +517,7 @@ def test_tensor_overrides_reject_two_layer_stacks_naming_both() -> None:
     recipe = make_recipe(("backbone.layers.0", 8), ("mtp.layers.0", 4))
 
     with pytest.raises(PackError) as caught:
-        tensor_overrides(recipe)
+        tensor_overrides(recipe, _rows(recipe))
 
     message = str(caught.value)
     assert "two layer stacks" in message
@@ -509,7 +533,7 @@ def test_tensor_overrides_reject_a_vision_tower_beside_the_language_model() -> N
     )
 
     with pytest.raises(PackError, match="two layer stacks"):
-        tensor_overrides(recipe)
+        tensor_overrides(recipe, _rows(recipe))
 
 
 def test_tensor_overrides_accept_one_root_across_layers_and_stacks() -> None:
@@ -519,7 +543,7 @@ def test_tensor_overrides_accept_one_root_across_layers_and_stacks() -> None:
         ("backbone.layers.2", 2),
     )
 
-    assert len(tensor_overrides(recipe)) == 3
+    assert len(tensor_overrides(recipe, _rows(recipe))) == 3
 
 
 def test_tensor_overrides_map_a_shared_expert_as_its_own_class() -> None:
@@ -529,7 +553,7 @@ def test_tensor_overrides_map_a_shared_expert_as_its_own_class() -> None:
     # ADR-0028 type table (the 2026-08-20 amendment).
     recipe = make_recipe(("backbone.layers.1.mixer.shared_experts.up_proj", 4))
 
-    assert tensor_overrides(recipe) == (
+    assert tensor_overrides(recipe, _rows(recipe, NEMOTRON_ROWS)) == (
         TypeOverride(r"blk\.1\.ffn_up_shexp\.", "q4_0"),
     )
 
@@ -558,7 +582,9 @@ def test_tensor_overrides_map_a_layer_class_through_the_adr_0028_table(
     # the type (the 2026-08-20 amendment).
     recipe = make_recipe((group, bits))
 
-    assert tensor_overrides(recipe) == (TypeOverride(pattern, quant_type),)
+    assert tensor_overrides(recipe, _rows(recipe, NEMOTRON_ROWS)) == (
+        TypeOverride(pattern, quant_type),
+    )
 
 
 def test_tensor_overrides_route_a_llama_class_through_the_kquant_table() -> None:
@@ -566,17 +592,20 @@ def test_tensor_overrides_route_a_llama_class_through_the_kquant_table() -> None
     # divide the 256 super-block, so k-quants reach them.
     recipe = make_recipe(("model.layers.2.self_attn.q_proj", 4))
 
-    assert tensor_overrides(recipe) == (TypeOverride(r"blk\.2\.attn_q\.", "q4_k"),)
+    assert tensor_overrides(recipe, _rows(recipe)) == (
+        TypeOverride(r"blk\.2\.attn_q\.", "q4_k"),
+    )
 
 
 def test_tensor_overrides_refuse_nominal_3_on_a_layer_class_naming_the_gap() -> None:
     recipe = make_recipe(("model.layers.3.mixer.in_proj", 3))
 
     with pytest.raises(PackError) as caught:
-        tensor_overrides(recipe)
+        tensor_overrides(recipe, _rows(recipe, NEMOTRON_ROWS))
 
     message = str(caught.value)
     assert 'layer-class group "model.layers.3.mixer.in_proj"' in message
+    assert str(NEMOTRON_ROWS) in message
     assert "between 2.25 and 4.25" in message
 
 
@@ -590,7 +619,9 @@ def test_tensor_overrides_emit_5_and_6_bit_on_an_adr_0028_routed_class(
     # The class rows at 2688 take Q5_0's and Q5_1's block of 32.
     recipe = make_recipe(("model.layers.3.mixer.in_proj", bits))
 
-    assert tensor_overrides(recipe) == (TypeOverride(r"blk\.3\.ssm_in\.", quant_type),)
+    assert tensor_overrides(recipe, _rows(recipe, NEMOTRON_ROWS)) == (
+        TypeOverride(r"blk\.3\.ssm_in\.", quant_type),
+    )
 
 
 @pytest.mark.parametrize(
@@ -603,7 +634,7 @@ def test_tensor_overrides_emit_5_and_6_bit_on_an_expert_stack(
     # block-32 type the amendment names (#232).
     recipe = make_recipe(("backbone.layers.3.mixer.experts.up_proj", bits))
 
-    assert tensor_overrides(recipe) == (
+    assert tensor_overrides(recipe, _rows(recipe, NEMOTRON_ROWS)) == (
         TypeOverride(r"blk\.3\.ffn_up_exps\.", quant_type),
     )
 
@@ -613,7 +644,7 @@ def test_tensor_overrides_escape_the_class_pattern_so_layer_1_never_matches_11()
 ):
     recipe = make_recipe(("model.layers.1.mixer.in_proj", 16))
 
-    (override,) = tensor_overrides(recipe)
+    (override,) = tensor_overrides(recipe, _rows(recipe))
 
     assert re.search(override.pattern, "blk.1.ssm_in.weight")
     assert not re.search(override.pattern, "blk.11.ssm_in.weight")
@@ -632,7 +663,9 @@ def test_tensor_overrides_hold_an_unquantizable_class_without_an_override(
     # 2026-08-20 amendment).
     recipe = make_recipe((group, 16), ("model.layers.0", 4))
 
-    assert tensor_overrides(recipe) == (TypeOverride(r"blk\.0\.", "q4_k"),)
+    assert tensor_overrides(recipe, _rows(recipe)) == (
+        TypeOverride(r"blk\.0\.", "q4_k"),
+    )
 
 
 @pytest.mark.parametrize(
@@ -652,7 +685,7 @@ def test_tensor_overrides_refuse_a_width_below_the_passthrough_naming_the_filter
     recipe = make_recipe((group, 8))
 
     with pytest.raises(PackError) as caught:
-        tensor_overrides(recipe)
+        tensor_overrides(recipe, _rows(recipe))
 
     message = str(caught.value)
     assert f'"{group}"' in message
@@ -670,7 +703,7 @@ def test_tensor_overrides_put_classes_between_stacks_and_layers() -> None:
         ("model.layers.0.mixer.experts.up_proj", 2),
     )
 
-    assert tensor_overrides(recipe) == (
+    assert tensor_overrides(recipe, _rows(recipe, NEMOTRON_ROWS)) == (
         TypeOverride(r"blk\.0\.ffn_up_exps\.", "q2_0"),
         TypeOverride(r"blk\.0\.ssm_in\.", "f16"),
         TypeOverride(r"blk\.0\.", "q4_k"),
@@ -687,7 +720,7 @@ def test_tensor_overrides_reject_a_class_group_under_a_second_root() -> None:
     )
 
     with pytest.raises(PackError, match="two layer stacks"):
-        tensor_overrides(recipe)
+        tensor_overrides(recipe, _rows(recipe))
 
 
 def test_gguf_stack_prefix_maps_experts_attached_straight_to_the_layer() -> None:
@@ -915,7 +948,7 @@ class TestAllOverrides:
             ("model.layers.4", 3),
         )
 
-        assert all_overrides(recipe) == (
+        assert all_overrides(recipe, _rows(recipe)) == (
             TypeOverride(pattern=r"blk\.4\.attn_v\.", quant_type="q5_k"),
             TypeOverride(pattern=r"blk\.4\.", quant_type="q3_k"),
         )
@@ -926,14 +959,16 @@ class TestAllOverrides:
             ("model.layers.4", 3),
         )
 
-        assert all_overrides(recipe) == protection_overrides(recipe) + tensor_overrides(
+        assert all_overrides(recipe, _rows(recipe)) == protection_overrides(
             recipe
-        )
+        ) + tensor_overrides(recipe, _rows(recipe))
 
     def test_unprotected_recipe_yields_the_group_overrides_alone(self) -> None:
         recipe = make_recipe(("model.layers.0", 4))
 
-        assert all_overrides(recipe) == tensor_overrides(recipe)
+        assert all_overrides(recipe, _rows(recipe)) == tensor_overrides(
+            recipe, _rows(recipe)
+        )
 
     @pytest.mark.parametrize("root", ["model", "backbone"], ids=["model", "backbone"])
     def test_protection_under_the_groups_root_passes(self, root: str) -> None:
@@ -942,7 +977,7 @@ class TestAllOverrides:
             (f"{root}.layers.4", 4),
         )
 
-        assert all_overrides(recipe) == (
+        assert all_overrides(recipe, _rows(recipe)) == (
             TypeOverride(pattern=r"blk\.4\.attn_v\.", quant_type="q5_k"),
             TypeOverride(pattern=r"blk\.4\.", quant_type="q4_k"),
         )
@@ -964,7 +999,7 @@ class TestAllOverrides:
         )
 
         with pytest.raises(PackError) as caught:
-            all_overrides(recipe)
+            all_overrides(recipe, _rows(recipe))
 
         message = str(caught.value)
         assert "two layer stacks" in message
@@ -986,7 +1021,7 @@ class TestAllOverrides:
         )
 
         with pytest.raises(PackError) as caught:
-            all_overrides(recipe)
+            all_overrides(recipe, _rows(recipe))
 
         message = str(caught.value)
         assert "two layer stacks" in message

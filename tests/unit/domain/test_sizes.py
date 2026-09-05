@@ -12,6 +12,7 @@ from vramfit.domain.sizes import (
     SizeSourceError,
     TensorSize,
     discovered_group_bytes,
+    discovered_group_rows,
     held_class_overlaps,
     reconcile_root,
     reference_bytes,
@@ -29,37 +30,37 @@ EXPERT_STACK_BYTES = 1_277_165_568
 class TestTensorSize:
     def test_empty_dtype_raises_value_error(self) -> None:
         with pytest.raises(ValueError, match="dtype"):
-            TensorSize(dtype="", bytes=8)
+            TensorSize(dtype="", bytes=8, rows=4)
 
     def test_zero_bytes_raises_value_error(self) -> None:
         with pytest.raises(ValueError, match="positive"):
-            TensorSize(dtype="BF16", bytes=0)
+            TensorSize(dtype="BF16", bytes=0, rows=4)
 
 
 class TestReferenceBytes:
     def test_bf16_tensor_keeps_its_stored_size(self) -> None:
-        size = TensorSize(dtype="BF16", bytes=EXPERT_BYTES)
+        size = TensorSize(dtype="BF16", bytes=EXPERT_BYTES, rows=4)
 
         assert reference_bytes("w", size) == EXPERT_BYTES
 
     def test_fp32_tensor_halves_to_the_reference(self) -> None:
-        size = TensorSize(dtype="F32", bytes=16)
+        size = TensorSize(dtype="F32", bytes=16, rows=4)
 
         assert reference_bytes("w", size) == 8
 
     def test_fp8_tensor_doubles_to_the_reference(self) -> None:
-        size = TensorSize(dtype="F8_E4M3", bytes=8)
+        size = TensorSize(dtype="F8_E4M3", bytes=8, rows=4)
 
         assert reference_bytes("w", size) == 16
 
     def test_unknown_dtype_raises_size_source_error(self) -> None:
-        size = TensorSize(dtype="I8", bytes=8)
+        size = TensorSize(dtype="I8", bytes=8, rows=4)
 
         with pytest.raises(SizeSourceError, match="no reference size"):
             reference_bytes("w", size)
 
     def test_partial_element_raises_size_source_error(self) -> None:
-        size = TensorSize(dtype="F32", bytes=6)
+        size = TensorSize(dtype="F32", bytes=6, rows=3)
 
         with pytest.raises(SizeSourceError, match="whole number"):
             reference_bytes("w", size)
@@ -91,7 +92,7 @@ class TestDiscoveredGroupBytes:
     def test_expert_tensors_sum_into_one_stack_group(self) -> None:
         sizes = {
             f"backbone.layers.1.mixer.experts.{i}.up_proj.weight": TensorSize(
-                dtype="BF16", bytes=EXPERT_BYTES
+                dtype="BF16", bytes=EXPERT_BYTES, rows=256
             )
             for i in range(128)
         }
@@ -102,8 +103,8 @@ class TestDiscoveredGroupBytes:
 
     def test_layer_granularity_sums_a_whole_layer(self) -> None:
         sizes = {
-            "backbone.layers.0.mlp.up_proj.weight": TensorSize("BF16", 8),
-            "backbone.layers.0.mlp.down_proj.weight": TensorSize("BF16", 16),
+            "backbone.layers.0.mlp.up_proj.weight": TensorSize("BF16", 8, 256),
+            "backbone.layers.0.mlp.down_proj.weight": TensorSize("BF16", 16, 256),
         }
 
         groups = discovered_group_bytes(sizes, "layer")
@@ -114,14 +115,14 @@ class TestDiscoveredGroupBytes:
         assert discovered_group_bytes({}, "stack") == {}
 
     def test_an_fp32_tensor_groups_at_its_reference_size(self) -> None:
-        sizes = {"backbone.layers.0.mlp.up_proj.weight": TensorSize("F32", 16)}
+        sizes = {"backbone.layers.0.mlp.up_proj.weight": TensorSize("F32", 16, 256)}
 
         groups = discovered_group_bytes(sizes, "layer")
 
         assert groups == {"model.layers.0": 8}
 
     def test_an_unknown_dtype_refuses_rather_than_undercounting(self) -> None:
-        sizes = {"backbone.layers.0.mlp.up_proj.weight": TensorSize("I8", 8)}
+        sizes = {"backbone.layers.0.mlp.up_proj.weight": TensorSize("I8", 8, 256)}
 
         with pytest.raises(SizeSourceError, match="no reference size"):
             discovered_group_bytes(sizes, "layer")
@@ -133,10 +134,12 @@ class TestDiscoveredGroupBytes:
         # Folded into that covered group, their bytes would leave the
         # plan while the pack holds them at F32 (#409).
         sizes = {
-            "backbone.layers.0.mixer.in_proj.weight": TensorSize("BF16", 8),
-            "backbone.layers.0.mixer.conv1d.weight": TensorSize("BF16", 4),
-            "backbone.layers.1.mixer.gate.weight": TensorSize("BF16", 2),
-            "backbone.layers.1.mixer.experts.0.up_proj.weight": TensorSize("BF16", 16),
+            "backbone.layers.0.mixer.in_proj.weight": TensorSize("BF16", 8, 256),
+            "backbone.layers.0.mixer.conv1d.weight": TensorSize("BF16", 4, 256),
+            "backbone.layers.1.mixer.gate.weight": TensorSize("BF16", 2, 256),
+            "backbone.layers.1.mixer.experts.0.up_proj.weight": TensorSize(
+                "BF16", 16, 256
+            ),
         }
 
         groups = discovered_group_bytes(sizes, "layer")
@@ -152,11 +155,70 @@ class TestDiscoveredGroupBytes:
     def test_an_unquantizable_class_keys_the_same_under_every_granularity(
         self, group_by: Literal["layer", "tensor", "stack"]
     ) -> None:
-        sizes = {"backbone.layers.3.mixer.conv1d.weight": TensorSize("F32", 8)}
+        sizes = {"backbone.layers.3.mixer.conv1d.weight": TensorSize("F32", 8, 256)}
 
         groups = discovered_group_bytes(sizes, group_by)
 
         assert groups == {"model.layers.3.mixer.conv1d": 4}
+
+
+class TestDiscoveredGroupRows:
+    def test_a_stack_reports_the_width_its_experts_share(self) -> None:
+        sizes = {
+            f"backbone.layers.1.mixer.experts.{i}.up_proj.weight": TensorSize(
+                dtype="BF16", bytes=EXPERT_BYTES, rows=2688
+            )
+            for i in range(128)
+        }
+
+        assert discovered_group_rows(sizes, "stack") == {
+            "model.layers.1.mixer.experts.up_proj": 2688
+        }
+
+    def test_a_whole_layer_group_reports_no_width(self) -> None:
+        # A layer group holds classes of several widths, so no single
+        # width describes it and it keeps the ADR-0012 k-quant table.
+        sizes = {
+            "backbone.layers.0.mlp.up_proj.weight": TensorSize("BF16", 8, 2048),
+            "backbone.layers.0.mlp.down_proj.weight": TensorSize("BF16", 16, 768),
+        }
+
+        assert discovered_group_rows(sizes, "layer") == {}
+
+    def test_two_widths_in_one_group_refuse_rather_than_pick_one(self) -> None:
+        # One group packs under one type. Keeping the first width
+        # would misprice the second silently, which is the class #515
+        # exists to remove.
+        sizes = {
+            "backbone.layers.1.mixer.experts.0.up_proj.weight": TensorSize(
+                "BF16", 8, 2048
+            ),
+            "backbone.layers.1.mixer.experts.1.up_proj.weight": TensorSize(
+                "BF16", 8, 2688
+            ),
+        }
+
+        with pytest.raises(SizeSourceError, match="rows of 2048 and 2688"):
+            discovered_group_rows(sizes, "stack")
+
+    def test_a_foreign_root_refuses_naming_the_table(self) -> None:
+        sizes = {"vision_tower.layers.0.attn.q_proj.weight": TensorSize("BF16", 8, 256)}
+
+        with pytest.raises(SizeSourceError, match="root the table does not carry"):
+            discovered_group_rows(sizes, "tensor")
+
+    def test_an_unquantizable_class_keys_by_its_own_name_under_layer(self) -> None:
+        # `discovered_group_bytes` holds such a tensor by its own name
+        # under every granularity (#409, #204), and the width read
+        # mirrors that grouping so the two agree on one name set.
+        sizes = {"backbone.layers.0.mixer.conv1d.weight": TensorSize("F32", 16, 4)}
+
+        assert discovered_group_rows(sizes, "layer") == {
+            "model.layers.0.mixer.conv1d": 4
+        }
+
+    def test_an_empty_source_measures_no_width(self) -> None:
+        assert discovered_group_rows({}, "stack") == {}
 
 
 class TestUncoveredGroups:
@@ -190,9 +252,9 @@ class TestHeldClassOverlaps:
     """A pre-#204 layer map folds a tensor the source holds by itself."""
 
     HYBRID: ClassVar[dict[str, TensorSize]] = {
-        "backbone.layers.0.mixer.in_proj.weight": TensorSize("BF16", 8),
-        "backbone.layers.0.mixer.conv1d.weight": TensorSize("BF16", 4),
-        "backbone.layers.0.mixer.gate.weight": TensorSize("BF16", 2),
+        "backbone.layers.0.mixer.in_proj.weight": TensorSize("BF16", 8, 256),
+        "backbone.layers.0.mixer.conv1d.weight": TensorSize("BF16", 4, 256),
+        "backbone.layers.0.mixer.gate.weight": TensorSize("BF16", 2, 256),
     }
 
     def test_a_layer_group_folding_refused_classes_is_reported(self) -> None:
@@ -253,9 +315,13 @@ class TestHeldClassOverlaps:
         # The checked-in maps use stack granularity: a stack group
         # lists only its own projection's experts.
         sizes = {
-            "backbone.layers.1.mixer.experts.0.up_proj.weight": TensorSize("BF16", 8),
-            "backbone.layers.1.mixer.experts.1.up_proj.weight": TensorSize("BF16", 8),
-            "backbone.layers.1.mixer.conv1d.weight": TensorSize("BF16", 4),
+            "backbone.layers.1.mixer.experts.0.up_proj.weight": TensorSize(
+                "BF16", 8, 256
+            ),
+            "backbone.layers.1.mixer.experts.1.up_proj.weight": TensorSize(
+                "BF16", 8, 256
+            ),
+            "backbone.layers.1.mixer.conv1d.weight": TensorSize("BF16", 4, 256),
         }
         map_ = _map(
             [
@@ -287,7 +353,7 @@ class TestHeldClassOverlaps:
             ],
             "layer",
         )
-        sizes = {"backbone.layers.0.mixer.in_proj.weight": TensorSize("BF16", 8)}
+        sizes = {"backbone.layers.0.mixer.in_proj.weight": TensorSize("BF16", 8, 256)}
         discovered = discovered_group_bytes(sizes, "layer")
 
         assert held_class_overlaps(discovered, map_) == ()

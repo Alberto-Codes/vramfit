@@ -17,6 +17,7 @@ from vramfit.domain.runtime import (
     effective_bits,
     expert_stack_effective_bits,
     missing_unquantizable_module,
+    routes_by_row_width,
     rows_refuse_super_block,
     servable_precisions,
     unquantizable_class,
@@ -158,8 +159,31 @@ class TestExpertStackEffectiveBits:
 
 
 @pytest.mark.unit
-class TestSuperBlockRefusedClasses:
-    """The layer classes the ADR-0028 table reaches (2026-08-20)."""
+class TestRowsRefuseSuperBlock:
+    """The measured row width decides the ADR-0028 routing (#515)."""
+
+    @pytest.mark.parametrize("width", [2688, 1856, 2687, 1, 100])
+    def test_a_width_the_super_block_does_not_divide_refuses(self, width: int) -> None:
+        assert rows_refuse_super_block(width)
+
+    @pytest.mark.parametrize("width", [256, 512, 768, 2048, 5120])
+    def test_a_width_the_super_block_divides_keeps_the_kquant_table(
+        self, width: int
+    ) -> None:
+        # Qwen3-Coder-30B-A3B's routed-expert rows are 2048 and 768.
+        # A name list routed them to the ADR-0028 table and banned
+        # nominal 3 across 94.95 % of its parameters (#515).
+        assert not rows_refuse_super_block(width)
+
+    @pytest.mark.parametrize("width", [0, -256])
+    def test_a_width_that_is_not_positive_refuses_to_answer(self, width: int) -> None:
+        with pytest.raises(ValueError, match="row width must be positive"):
+            rows_refuse_super_block(width)
+
+
+@pytest.mark.unit
+class TestRoutesByRowWidth:
+    """Which groups the super-block decision reaches (#515)."""
 
     @pytest.mark.parametrize(
         "group",
@@ -168,25 +192,20 @@ class TestSuperBlockRefusedClasses:
             "backbone.layers.3.mixer.out_proj",
             "model.layers.1.mixer.shared_experts.down_proj",
             "model.layers.2.mixer.q_proj",
+            "model.layers.3.mlp.experts.up_proj",
         ],
     )
-    def test_a_nemotron_h_dense_class_routes_to_the_stack_table(
+    def test_a_single_class_group_routes_by_its_measured_width(
         self, group: str
     ) -> None:
-        assert rows_refuse_super_block(group)
+        assert routes_by_row_width(group)
 
     @pytest.mark.parametrize(
         "group",
-        [
-            "model.layers.3",
-            "model.layers.3.self_attn.q_proj",
-            "model.layers.3.mixer.gate",
-            "model.layers.3.mixer.conv1d",
-            "model.embeddings",
-        ],
+        ["model.layers.3", "backbone.layers.11", "model.embeddings", "lm_head"],
     )
-    def test_other_groups_keep_their_own_table(self, group: str) -> None:
-        assert not rows_refuse_super_block(group)
+    def test_a_group_of_many_classes_keeps_the_kquant_table(self, group: str) -> None:
+        assert not routes_by_row_width(group)
 
 
 @pytest.mark.unit
