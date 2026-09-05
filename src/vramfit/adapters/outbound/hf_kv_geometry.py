@@ -8,11 +8,11 @@ shared-KV tail (``num_kv_shared_layers``), and a hybrid
 ``layers_block_type`` stack whose non-attention blocks store no KV
 (#427). A ``hybrid_override_pattern`` string expands into the same
 stack, one block per letter, since published Nemotron-H files declare
-the string and omit the list. The module also carries the field-label and integer-bound
-helpers the whole adapter shares, and the refusal that keeps these
-keys off the DeciLM path (#426). It also defines `HfConfigError`,
-the refusal class both modules raise under the `VramfitError` root
-(#474).
+the string and omit the list. The module also carries the field-label
+and integer-bound helpers the whole adapter shares, and the refusal
+that keeps these keys off the DeciLM path (#426). It also defines
+`HfConfigError`, the refusal class both modules raise under the
+`VramfitError` root (#474).
 
 Split from [vramfit.adapters.outbound.hf_config][] to hold the
 300-code-line cap. That module owns dispatch and the container rules.
