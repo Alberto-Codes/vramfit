@@ -30,14 +30,14 @@ Attributes:
         runtimes with a measured pack path have an entry — a runtime
         with a table covers its full capability set.
     EXPERT_STACK_EFFECTIVE_BITS (Mapping[str, Mapping[int, float]]):
-        Effective bits per weight for a routed-expert-stack group,
-        per nominal precision, per runtime. Expert stacks map
-        through their own type table (ADR-0028), so their per-weight
-        costs differ from the dense table's at 2, 4, 5, and 6. The
-        same table reaches
-        a layer-class group whose measured rows refuse the 256
-        super-block (the 2026-08-20 amendment) —
-        `rows_refuse_super_block` decides that from the width.
+        Effective bits per weight for a group whose measured rows
+        refuse the 256 super-block, per nominal precision, per
+        runtime. Such a group maps through the ADR-0028 type table,
+        so its per-weight costs differ from the dense table's at 2,
+        4, 5, and 6. The width decides, and no class name does
+        (ADR-0028 as amended 2026-09-05, #515) —
+        `rows_refuse_super_block` reads it. A routed-expert stack of
+        256-divisible rows keeps the dense table.
     K_QUANT_SUPER_BLOCK (int): Elements a k-quant super-block packs.
         A row the block does not divide takes no k-quant type.
     UNQUANTIZABLE_CLASS_FILTERS (Mapping[str, Mapping[str, str]]):
@@ -505,9 +505,11 @@ def effective_bits(runtime: str | None) -> Mapping[int, float] | None:
 def expert_stack_effective_bits(runtime: str | None) -> Mapping[int, float] | None:
     """Look up a runtime's expert-stack effective-bits table.
 
-    A routed-expert-stack group maps through its own type table
-    (ADR-0028), so the plan step prices it at that table's per-weight
-    costs — 2.25 bits at nominal 2, not Q2_K's 2.625.
+    A group whose measured rows refuse the 256 super-block maps
+    through the ADR-0028 type table, so the plan step prices it at
+    that table's per-weight costs — 2.25 bits at nominal 2, not
+    Q2_K's 2.625. `rows_refuse_super_block` reads the width, and no
+    class name selects the table (#515).
 
     Args:
         runtime: Target runtime name, or None for an unconstrained

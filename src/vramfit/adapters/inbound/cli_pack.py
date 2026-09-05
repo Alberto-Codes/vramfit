@@ -300,11 +300,15 @@ def pack(
     is absent or names a different file, because the pack would not
     match the map's frame (ADR-0020). A recipe with imatrix exclusions
     packs the marked tensors on the unweighted fit, and the command
-    warns when no matrix makes the exclusions inert (ADR-0023). An
-    expert-stack group maps through its own type table (ADR-0028):
-    8 to Q8_0, 6 to Q5_1, 5 to Q5_0, 4 to Q4_0, 2 to Q2_0. Nominal 3
-    refuses there — no GGUF type lands between 2.25 and 4.25 bits per
-    weight on the stack rows. The quantizer's output is scanned for the
+    warns when no matrix makes the exclusions inert (ADR-0023). A
+    group whose measured rows the 256 super-block does not divide
+    maps through the ADR-0028 type table: 8 to Q8_0, 6 to Q5_1, 5 to
+    Q5_0, 4 to Q4_0, 2 to Q2_0. That table refuses nominal 3 — no
+    GGUF type lands between 2.25 and 4.25 bits per weight on a row
+    the super-block does not divide. The width decides, and no class
+    name does (#515), so a 2048-wide routed-expert stack keeps the
+    ADR-0012 k-quant table and takes nominal 3. The
+    quantizer's output is scanned for the
     type-fallback warning pair, and a match halts with the file
     kept — a rewritten type breaks the recipe the artifact claims
     to carry (ADR-0028). A layer the base GGUF numbers that no

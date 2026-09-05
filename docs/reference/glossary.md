@@ -646,6 +646,16 @@ change.
     solver prices these types at their effective bits (ADR-0014),
     and pack re-checks real sizes.
 
+**Row width**
+:   Elements per row of a tensor — the shape's last dimension, which
+    GGUF calls `ne[0]`. A group naming one tensor class has one row
+    width, and the **type mapping** routes the group by it. The
+    checkpoint's safetensors headers state the width, and
+    `TensorSize.rows` carries it (ADR-0029 decision 5, issue #515).
+    The scan adapter's block-straddle refusals still spell the same
+    quantity "row length" (ADR-0018). The two spellings need one
+    term.
+
 **Base GGUF**
 :   The full-precision (f16) GGUF conversion of the source checkpoint
     that `llama-quantize` consumes. Created once per model, reused

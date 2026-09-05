@@ -8,10 +8,12 @@ holds an unmeasured group at (ADR-0029 decision 4), layer groups
 map to escaped `blk.<n>.` regex patterns
 across the three naming families the scan produces, routed-expert
 stack groups map to their fused `blk.<n>.ffn_<proj>_exps.` tensor
-(#159, #161) through their own type table — k-quant super-blocks do
-not divide the stack rows, so the rows carry block-32 and block-64
-types (`q8_0`, `q5_1`, `q5_0`, `q4_0`, `q2_0`), and nominal 3 refuses
-over the empty 2.25-4.25 bits-per-weight gap (ADR-0028) — layer-class
+(#159, #161) — a group whose measured rows the 256 super-block does
+not divide takes the ADR-0028 table's block-32 and block-64 types
+(`q8_0`, `q5_1`, `q5_0`, `q4_0`, `q2_0`), where nominal 3 refuses
+over the empty 2.25-4.25 bits-per-weight gap, and every other group
+keeps the k-quant table above (ADR-0028 as amended 2026-09-05,
+#515) — layer-class
 groups map
 through the class table to `blk.<n>.<stem>.` patterns, where an
 unquantizable class instead pins at the F16 passthrough and refuses

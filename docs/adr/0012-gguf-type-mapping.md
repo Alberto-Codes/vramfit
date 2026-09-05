@@ -78,6 +78,12 @@
   groups map through [ADR-0028](0028-expert-stack-type-table.md)'s
   table, pack halts on the quantizer's type-fallback warning, and
   decision 5's halt stages gain `type_fallback`.
+
+    **Superseded in part 2026-09-05 (#515):** the group's measured
+    row width decides which table it takes, and no class or stack
+    name does. ADR-0028's 2026-09-05 amendment carries that rule. A
+    routed-expert stack of 256-divisible rows keeps decision 1's
+    table. The halt and the `type_fallback` stage stand.
 - **Amendment (2026-08-16, issue #303):** decision 2 gains a
   pre-run check. Every override must match a tensor the base GGUF
   carries. The backend reads that file's tensor names before it runs

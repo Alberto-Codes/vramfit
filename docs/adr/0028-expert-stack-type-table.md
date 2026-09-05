@@ -140,6 +140,12 @@ Facts verified upstream on 2026-08-14 (#189):
    bits per weight. The refusal names the group, the empty
    2.25–4.25 gap, and both neighboring table entries.
 
+   **Superseded 2026-09-05 (#515): the refusal follows the table,
+   so it reaches every group whose measured rows refuse the 256
+   super-block and no other.** A 2048-wide routed-expert stack
+   keeps the k-quant table and takes nominal 3. A 2688-wide
+   layer-class group draws the refusal.
+
 3. **A type-fallback warning halts the pack.** Pack scans the
    quantizer's merged output for the `tensor_type_fallback` warning
    pair. A match halts with exit 1 and keeps the file for
