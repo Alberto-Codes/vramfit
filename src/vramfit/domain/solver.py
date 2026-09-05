@@ -42,7 +42,8 @@ measured rows refuse the 256 super-block prices through the
 expert-stack table instead (ADR-0028) — 2.25 bits at nominal 2, not
 Q2_K's 2.625. The measured width decides and no class name does
 (#515), so a routed-expert stack of 2048-wide rows keeps the k-quant
-table. `solve` takes those widths and refuses a group it has none
+table, read under either naming root. `solve` takes those widths
+and refuses a group it has none
 for. A group of
 a class the runtime's quantizer refuses holds at the F16 passthrough
 whatever the map measured (the 2026-08-20 ADR-0012 amendment). A
@@ -130,6 +131,7 @@ from vramfit.domain.runtime import (
 from vramfit.domain.sizes import (
     REFERENCE_BITS,
     held_assignments,
+    measured_width,
     refuse_unmeasured_rows,
 )
 from vramfit.domain.solver_errors import (
@@ -341,14 +343,15 @@ def _predictor(
 
         Args:
             name: The group's name, which selects its tables through
-                its measured row width.
+                its measured row width, under either naming root.
 
         Returns:
             The group's predictor, carrying the overhead setting.
         """
-        width = row_widths.get(name)
-        stacked = width is not None and rows_refuse_super_block(width)
-        spent_table = merged if stacked and merged is not None else table
+        width = measured_width(row_widths, name) if merged is not None else None
+        spent_table = (
+            merged if width is not None and rows_refuse_super_block(width) else table
+        )
 
         def price(bytes_fp16: int, bits: int) -> int:
             """Predict bytes at one precision under the bound table.

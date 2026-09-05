@@ -15,8 +15,12 @@ import struct
 from pathlib import Path
 
 import pytest
+from typer.testing import CliRunner
 
+from tests.fakes import MemoryRecipePacker
 from tests.unit.conftest import make_map
+from vramfit.adapters.inbound import cli_pack
+from vramfit.adapters.inbound.cli import app
 from vramfit.adapters.outbound.gguf.pack import checkpoint_row_widths
 from vramfit.adapters.outbound.gguf.types import (
     EXPERT_STACK_TYPE_BY_BITS,
@@ -24,8 +28,9 @@ from vramfit.adapters.outbound.gguf.types import (
     PackError,
     tensor_overrides,
 )
+from vramfit.adapters.outbound.recipe_json import save_recipe
 from vramfit.adapters.outbound.sensitivity_map_json import map_from_dict
-from vramfit.domain.model import Recipe
+from vramfit.domain.model import Assignment, PlanMeta, Recipe
 from vramfit.domain.runtime import (
     EFFECTIVE_BITS,
     EXPERT_STACK_EFFECTIVE_BITS,
@@ -323,6 +328,45 @@ class TestUnmeasuredRows:
         assert override.quant_type == GGML_TYPE_BY_BITS[8]
 
 
+class TestGroupSpelledUnderTheCheckpointRoot:
+    """One lookup serves the plan and the pack, so both take both roots."""
+
+    # The scan names a Nemotron-H group under the checkpoint's own
+    # root, and `discovered_group_rows` keys every width under the
+    # map root (ADR-0029 decision 7). The plan must reconcile before
+    # the lookup, as the pack does.
+    BACKBONE_CLASS = "backbone.layers.0.mlp.up_proj"
+    MAP_ROOTED = "model.layers.0.mlp.up_proj"
+
+    def _solve(self) -> Recipe:
+        map_ = map_from_dict(
+            make_map([(self.BACKBONE_CLASS, 160_000, CURVE)], precisions=PRECISIONS)
+        )
+        return solve(
+            map_,
+            weight_budget_bytes=10**9,
+            vram_budget_bytes=10**9 + 1000,
+            kv_headroom_bytes=1000,
+            runtime=LLAMA_CPP,
+            pins={self.BACKBONE_CLASS: 6},
+            row_widths={self.MAP_ROOTED: NEMOTRON_ROWS},
+            format_overhead=0.0,
+        )
+
+    def test_the_plan_prices_it_from_the_reconciled_width(self) -> None:
+        recipe = self._solve()
+
+        assert recipe.assignments[0].bytes == group_bytes(
+            160_000, EXPERT_STACK_EFFECTIVE_BITS[LLAMA_CPP][6], 0.0
+        )
+
+    def test_the_pack_emits_the_type_that_price_assumed(self) -> None:
+        recipe = self._solve()
+
+        (override,) = tensor_overrides(recipe, {self.MAP_ROOTED: NEMOTRON_ROWS})
+        assert override.quant_type == EXPERT_STACK_TYPE_BY_BITS[6]
+
+
 class TestRuntimesWithNoTypeTable:
     """The width routes between two tables, so a runtime without them is exempt."""
 
@@ -444,3 +488,120 @@ class TestCheckpointRowWidths:
 
         with pytest.raises(PackError, match="cannot read the checkpoint"):
             checkpoint_row_widths(model_dir)
+
+
+runner = CliRunner()
+
+
+def make_toolchain(root: Path) -> Path:
+    """Lay out the llama.cpp paths the pack command checks for."""
+    (root / "build" / "bin").mkdir(parents=True)
+    (root / "convert_hf_to_gguf.py").touch()
+    (root / "build" / "bin" / "llama-quantize").touch()
+    (root / "build" / "bin" / "llama-perplexity").touch()
+    return root
+
+
+def make_routed_recipe(model_id: str, groups: dict[str, int]) -> Recipe:
+    """Build an unprotected recipe assigning each group its precision."""
+    return Recipe(
+        model_id=model_id,
+        plan=PlanMeta(
+            vram_budget_bytes=4_000,
+            kv_headroom_bytes=1_000,
+            weight_budget_bytes=3_000,
+            predicted_total_bytes=2_500,
+            predicted_damage=0.05,
+            solver="greedy-damage-per-byte",
+            pins={},
+            protections={},
+            format_overhead=0.05,
+            trace=(),
+        ),
+        assignments=tuple(
+            Assignment(group=group, bits=bits, bytes=500, damage=0.01)
+            for group, bits in groups.items()
+        ),
+        runtime=None,
+        within_group=None,
+        imatrix=None,
+        protected_tensors=(),
+    )
+
+
+class TestPackPreflight:
+    """The width refusal lands before the convert stage (ADR-0022, #367)."""
+
+    def test_an_unprotected_recipe_refuses_before_convert(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        # `--model` names a sibling snapshot that carries layer 9 and
+        # not layer 0. Convert would write a full-size base GGUF
+        # first, and the refusal would land at the quantize stage.
+        packer = MemoryRecipePacker(packed_bytes=100)
+        monkeypatch.setattr(cli_pack, "_build_packer", lambda *args: packer)
+        model_dir = write_checkpoint(
+            tmp_path / "ckpt", {"backbone.layers.9.mixer.in_proj.weight": [4, 2688]}
+        )
+        recipe_path = tmp_path / "recipe.json"
+        save_recipe(
+            make_routed_recipe(str(model_dir), {"model.layers.0.mixer.in_proj": 4}),
+            recipe_path,
+        )
+
+        result = runner.invoke(
+            app,
+            [
+                "pack",
+                str(recipe_path),
+                "--llama-cpp",
+                str(make_toolchain(tmp_path / "llama.cpp")),
+                "--out",
+                str(tmp_path / "packed.gguf"),
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert "no measured row width" in result.output
+        assert "model.layers.0.mixer.in_proj" in result.output
+        assert packer.has_base is False
+
+    def test_a_recipe_of_unquantizable_classes_reads_no_checkpoint(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        # The Nemotron-H layer-granularity shape: the only
+        # width-shaped groups are the classes ADR-0029 holds at the
+        # convert dtype, and nothing consults a width for them. An
+        # absent shard is not this command's problem (#409).
+        seen: dict[str, object] = {}
+
+        def recorder(*args):
+            seen["row_widths"] = args[-1]
+            return MemoryRecipePacker(packed_bytes=100)
+
+        monkeypatch.setattr(cli_pack, "_build_packer", recorder)
+        model_dir = tmp_path / "no-shards"
+        model_dir.mkdir()
+        recipe_path = tmp_path / "recipe.json"
+        save_recipe(
+            make_routed_recipe(
+                str(model_dir),
+                {"model.layers.0": 4, "model.layers.0.mixer.conv1d": 16},
+            ),
+            recipe_path,
+        )
+
+        result = runner.invoke(
+            app,
+            [
+                "pack",
+                str(recipe_path),
+                "--llama-cpp",
+                str(make_toolchain(tmp_path / "llama.cpp")),
+                "--out",
+                str(tmp_path / "packed.gguf"),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert seen["row_widths"] == {}

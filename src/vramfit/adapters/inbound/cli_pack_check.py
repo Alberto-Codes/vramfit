@@ -11,9 +11,11 @@ reproduce. The stage refuses and names the collapsed tensors, suggesting the
 still unused (ADR-0023); it
 never repacks on its own, so the packed file stays recipe-driven
 (ADR-0012 decision 3). The mapping pre-flight lives here too — it
-reads each group's measured row width from the checkpoint, then
-composes every override for a protected recipe, so a cross-root
-protection refuses before any tool runs (#367, #515) — and the run-log
+reads each group's measured row width from the checkpoint and
+refuses a routed group the checkpoint states none for, then
+composes every override for a protected recipe, so a missing width
+and a cross-root protection both refuse before any tool runs (#367,
+#515) — and the run-log
 event guards non-finite measurements the sink would reject
 (ADR-0011). `reconstruction_reference_path` names the reference
 file once, for this stage and for the sidecar collision guard
@@ -47,11 +49,15 @@ from vramfit.adapters.inbound.cli_pack_smoke import _halt
 from vramfit.adapters.inbound.run_log import SafeRunLog
 from vramfit.adapters.outbound.gguf.pack import checkpoint_row_widths
 from vramfit.adapters.outbound.gguf.reconstruction import GgufReconstructionChecker
-from vramfit.adapters.outbound.gguf.types import all_overrides, gguf_tensor_name
+from vramfit.adapters.outbound.gguf.types import (
+    all_overrides,
+    gguf_tensor_name,
+    refuses_super_block,
+)
 from vramfit.domain.errors import VramfitError
 from vramfit.domain.model import Recipe
 from vramfit.domain.pack import collapsed_tensors, without_protections
-from vramfit.domain.runtime import routes_by_row_width
+from vramfit.domain.runtime import routes_by_row_width, unquantizable_class
 from vramfit.ports.outbound import RecipePacker, ReconstructionChecker
 
 
@@ -69,21 +75,26 @@ def _resolve_row_widths(recipe: Recipe, model_dir: Path) -> Mapping[str, int]:
     One function owns the composition, so this check and the pack
     cannot disagree (#303).
 
-    An unprotected recipe skips the check. Its refusals keep their
-    staged halts and run-log records — the quantize-stage halt is on
-    record (#303, #275).
+    An unprotected recipe skips the composition. Its refusals keep
+    their staged halts and run-log records — the quantize-stage halt
+    is on record (#303, #275).
 
-    The composition routes the 256 super-block decision from the
-    checkpoint's measured row widths, so the check reads the
-    checkpoint's shard headers first (issue #515).
+    Every recipe checks its widths here, protected or not. The
+    routing reads the width the checkpoint states (issue #515), so a
+    ``--model`` that carries no width for a routed group refuses
+    before the convert stage writes a full-size base GGUF.
+    `vramfit.adapters.outbound.gguf.types.refuses_super_block` owns
+    that refusal, so the pre-flight and the pack cannot disagree.
 
     Args:
         recipe: The recipe about to pack.
         model_dir: The checkpoint directory the row widths come from.
 
-    A recipe of whole-layer groups alone reads no checkpoint. No
-    such group takes the ADR-0028 table, so no width decides
-    anything and an absent shard is not this command's problem.
+    Only a group the routing consults reads the checkpoint. A
+    whole-layer group holds classes of several widths, and a group
+    of a class the quantizer refuses holds at the convert dtype
+    (#409). Neither takes the ADR-0028 table, so an absent shard is
+    not this command's problem for them.
 
     Returns:
         Elements per row per group, which the packer then applies.
@@ -92,18 +103,25 @@ def _resolve_row_widths(recipe: Recipe, model_dir: Path) -> Mapping[str, int]:
 
     Raises:
         typer.Exit: With code 1 when the checkpoint's row widths
-            cannot be read, or a protected recipe's override
-            composition refuses. One catch covers both — the
-            composition also refuses a group rooted outside the
-            ADR-0029 reconcile table, with the domain's message.
+            cannot be read, a routed group has no measured width, or
+            a protected recipe's override composition refuses. One
+            catch covers all three — the lookup also refuses a group
+            rooted outside the ADR-0029 reconcile table, with the
+            domain's message.
     """
-    needed = any(routes_by_row_width(a.group) for a in recipe.assignments)
+    routed = [
+        a.group
+        for a in recipe.assignments
+        if routes_by_row_width(a.group) and unquantizable_class(a.group) is None
+    ]
     try:
-        row_widths = checkpoint_row_widths(model_dir) if needed else {}
+        row_widths = checkpoint_row_widths(model_dir) if routed else {}
+        for group in routed:
+            refuses_super_block(group, row_widths)
         if recipe.protected_tensors:
             all_overrides(recipe, row_widths)
     except VramfitError as exc:
-        # One honest catch for the root (ADR-0011). The composition
+        # One honest catch for the root (ADR-0011). The lookup
         # refuses a group rooted outside the reconcile table with the
         # domain's own message, which names that root.
         typer.echo(f"error: {exc}", err=True)

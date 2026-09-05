@@ -303,24 +303,42 @@ def reconcile_root(tensor: str) -> str:
     return tensor
 
 
-def _reconciles(group: str) -> bool:
-    """Report whether the size source can key this group's tensors.
+def measured_width(row_widths: Mapping[str, int], group: str) -> int | None:
+    """Read one group's measured row width under either naming root.
 
-    `reconcile_root` owns the root table, so this asks it rather
-    than reading `CHECKPOINT_ROOTS` a second time.
+    `discovered_group_rows` keys every width under `MAP_ROOT`, and a
+    map or a recipe may spell the same group under the checkpoint's
+    root instead (ADR-0029 decision 7). The plan and the pack read
+    the width through this one lookup, so neither accepts a spelling
+    the other refuses (issue #515).
 
     Args:
+        row_widths: Elements per row per group, from
+            `discovered_group_rows`.
         group: A group name, as `vramfit.domain.scan.group_key`
             produces it.
 
     Returns:
-        True when the name reconciles onto `MAP_ROOT`.
+        The group's row width, or None when neither spelling is
+        measured.
+
+    Raises:
+        SizeSourceError: If the name carries a decoder-layer prefix
+            under a root `CHECKPOINT_ROOTS` does not name. No
+            checkpoint can state that group's width.
+
+    Examples:
+        ```python
+        from vramfit.domain.sizes import measured_width
+
+        widths = {"model.layers.0.mixer.in_proj": 2688}
+        assert measured_width(widths, "backbone.layers.0.mixer.in_proj") == 2688
+        ```
     """
-    try:
-        reconcile_root(group)
-    except SizeSourceError:
-        return False
-    return True
+    width = row_widths.get(group)
+    if width is None:
+        width = row_widths.get(reconcile_root(group))
+    return width
 
 
 def discovered_group_bytes(
@@ -601,6 +619,10 @@ def refuse_unmeasured_rows(
     A group of a class the quantizer refuses is exempt. It holds at
     the convert dtype and takes neither type table (#409).
 
+    `measured_width` reads each group under either naming root, so a
+    map spelling a group under the checkpoint's root still finds the
+    width the size source keyed under the map's.
+
     Args:
         row_widths: Elements per row per group, or None when the
             caller read no size source.
@@ -616,15 +638,20 @@ def refuse_unmeasured_rows(
     if effective_bits(runtime) is None or expert_stack_effective_bits(runtime) is None:
         return
     measured = row_widths or {}
-    unmeasured = sorted(
-        {
-            name
-            for name in groups
-            if routes_by_row_width(name)
-            and unquantizable_class(name) is None
-            and name not in measured
-        }
-    )
+    missing: set[str] = set()
+    unrooted_names: set[str] = set()
+    for name in groups:
+        if not routes_by_row_width(name) or unquantizable_class(name) is not None:
+            continue
+        try:
+            width = measured_width(measured, name)
+        except SizeSourceError:
+            unrooted_names.add(name)
+            missing.add(name)
+            continue
+        if width is None:
+            missing.add(name)
+    unmeasured = sorted(missing)
     if not unmeasured:
         return
     count = len(unmeasured)
@@ -634,7 +661,7 @@ def refuse_unmeasured_rows(
         else f"{count} groups have no measured row width, starting with "
         f'"{unmeasured[0]}"'
     )
-    unrooted = sorted(name for name in unmeasured if not _reconciles(name))
+    unrooted = sorted(unrooted_names)
     if unrooted:
         advice = (
             f'No checkpoint can supply it: group "{unrooted[0]}" hangs from '

@@ -206,12 +206,15 @@ without a table row (3) keeps its dense entry on refused rows — pack
 refuses it, and the plan-time refusal stays an open question in
 ADR-0028.
 
-`plan` reads those widths from `--checkpoint`, and it refuses a map
-of layer-class or routed-expert-stack groups planned without one.
-A width no source states would take the k-quant table by omission,
-which misprices the group silently. A whole-layer group holds
-classes of several widths, so it needs no measured width and keeps
-the k-quant table.
+`plan` reads those widths from `--checkpoint`. Under a runtime
+carrying both type tables the width routes between — `llama.cpp`
+today — it refuses a map of layer-class or routed-expert-stack
+groups planned without one. A width no source states would take the
+k-quant table by omission, which misprices the group silently. A
+runtime with no table prices every group at nominal bits, where the
+width moves no byte, so `--runtime vllm` plans such a map without
+`--checkpoint`. A whole-layer group holds classes of several widths,
+so it needs no measured width and keeps the k-quant table.
 
 Size source ([ADR-0029](../adr/0029-plan-independent-size-source.md)):
 `--checkpoint` reads each safetensors shard header, which is a JSON

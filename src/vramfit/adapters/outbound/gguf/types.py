@@ -79,7 +79,7 @@ from vramfit.domain.runtime import (
     unquantizable_filter,
 )
 from vramfit.domain.scan import NAME_TABLE_ROOTS
-from vramfit.domain.sizes import REFERENCE_BITS, reconcile_root
+from vramfit.domain.sizes import REFERENCE_BITS, measured_width
 
 # The 16 row is the F16 passthrough (ADR-0029 decision 4). A recipe
 # holds an unmeasured group at reference precision, and `f16` is what
@@ -706,11 +706,16 @@ def _claim_root(name: str, roots: dict[str, str], kind: str = "group") -> None:
         )
 
 
-def _refuses_super_block(group: str, row_widths: Mapping[str, int]) -> bool:
+def refuses_super_block(group: str, row_widths: Mapping[str, int]) -> bool:
     """Decide whether one group's measured rows take the ADR-0028 table.
 
     The pack reads the same widths the plan priced from, so the
     predicted type and the emitted type cannot disagree (issue #515).
+    `vramfit.domain.sizes.measured_width` owns the lookup, so the
+    two sides accept one set of group spellings.
+
+    The pack pre-flight calls this for its refusal, before the
+    convert stage writes a full-size base GGUF (ADR-0022, #367).
 
     Args:
         group: Recipe group name, under either naming root.
@@ -728,11 +733,7 @@ def _refuses_super_block(group: str, row_widths: Mapping[str, int]) -> bool:
             reconcile table does not carry. That refusal names the
             root, and the missing-width message would hide it.
     """
-    width = row_widths.get(group)
-    if width is None:
-        # The recipe may spell a group under the checkpoint's root
-        # while the widths key on the map's (ADR-0029 decision 7).
-        width = row_widths.get(reconcile_root(group))
+    width = measured_width(row_widths, group)
     if width is None:
         raise PackError(
             f'group "{group}" has no measured row width, and the 256 '
@@ -803,7 +804,7 @@ def _class_override(
         return None
     quant = (
         expert_stack_type_for(bits, group, kind="layer-class group")
-        if _refuses_super_block(group, row_widths)
+        if refuses_super_block(group, row_widths)
         else ggml_type_for(bits)
     )
     return (TypeOverride(re.escape(f"blk.{match.group(1)}.{stem}."), quant),)
@@ -897,7 +898,7 @@ def tensor_overrides(
             # takes the k-quant table, like any other group (#515).
             bits = (
                 expert_stack_type_for(assignment.bits, assignment.group)
-                if _refuses_super_block(assignment.group, row_widths)
+                if refuses_super_block(assignment.group, row_widths)
                 else ggml_type_for(assignment.bits)
             )
             stacks.append(TypeOverride(re.escape(prefix), bits))

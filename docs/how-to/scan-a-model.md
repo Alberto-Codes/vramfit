@@ -184,12 +184,14 @@ in the same family.
     so only a size source prices them
     ([ADR-0029](../adr/0029-plan-independent-size-source.md)
     decision 3, amended 2026-09-04). A family with no such class
-    refuses too: every group a `stack` or `tensor` selection names
-    routes by its measured row width, and only a size source states
-    that width (ADR-0028, issue #515). Were the plan to proceed, a
-    46-of-210 map would price 46 groups and count the other 164 as
-    zero bytes, and the recipe would report a fit the packed model
-    does not honor.
+    refuses too under `--runtime llama.cpp`: every group a `stack`
+    or `tensor` selection names routes by its measured row width,
+    and only a size source states that width (ADR-0028, issue #515).
+    A runtime with no effective-bits table prices at nominal bits
+    and plans the map, so pass `--checkpoint` there as well. Were
+    the plan to proceed, a 46-of-210 map would price 46 groups and
+    count the other 164 as zero bytes, and the recipe would report a
+    fit the packed model does not honor.
 
     `--checkpoint` prices the other 164 from the model's safetensors
     headers and holds each at reference precision (ADR-0029). Those

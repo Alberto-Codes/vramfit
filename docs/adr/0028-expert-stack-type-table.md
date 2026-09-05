@@ -50,7 +50,10 @@
   (ADR-0029), and the pack reads the same widths, so the predicted
   bits per weight and the emitted type come from one table. A group
   the routing reaches with no measured width refuses and names
-  ``--checkpoint``. It never defaults.
+  ``--checkpoint``. It never defaults. The refusal reaches a
+  runtime carrying both tables the width routes between, which is
+  `llama.cpp` today. A runtime with no table prices at nominal
+  bits, where the width selects nothing.
 - **Amendment (2026-09-04, issue #232):** decision 1's table gains
   5- and 6-bit rows (5→`Q5_0` at 5.50, 6→`Q5_1` at 6.00 bits per
   weight). Maintainer ruling 2026-09-04. Both block 32, so both
@@ -178,10 +181,12 @@ Facts verified upstream on 2026-08-14 (#189):
 
 - The routing now reads a measured width, so the plan needs the
   size source for every layer-class and routed-expert-stack group
-  it prices (noted 2026-09-05, #515). `plan` without
-  ``--checkpoint`` refuses such a map and names the flag. A map of
-  whole-layer groups alone is unaffected, because a layer group
-  holds several row widths and never took this table.
+  it prices under a runtime carrying this table (noted 2026-09-05,
+  #515). `plan` without ``--checkpoint`` refuses such a map and
+  names the flag. A map of whole-layer groups alone is unaffected,
+  because a layer group holds several row widths and never took
+  this table. A runtime with no effective-bits table is unaffected
+  too, because it prices at nominal bits.
 - `TensorSize` gains a `rows` field (2026-09-05, #515). ADR-0029
   decision 5 named `dtype` and `bytes` only, so the shapes the
   shard headers carry reached no caller. The safetensors adapter
