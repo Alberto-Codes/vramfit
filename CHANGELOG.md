@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.5.0](https://github.com/Alberto-Codes/vramfit/compare/v0.4.0...v0.5.0) (2026-09-05)
+
+
+### Features
+
+* **adapters:** parse hybrid_override_pattern into block types instead of refusing ([#541](https://github.com/Alberto-Codes/vramfit/issues/541)) ([3e18dae](https://github.com/Alberto-Codes/vramfit/commit/3e18dae4872d55e7c457e1b5af096e78e899acc2))
+* **docs:** add the card upload-and-verify script and align the reproduce blocks ([#538](https://github.com/Alberto-Codes/vramfit/issues/538)) ([80c2306](https://github.com/Alberto-Codes/vramfit/commit/80c2306b7e34fb9bd1e3754b8a1531feb9f6dcae))
+* **pack:** add a thin gguf extra and fold test-gguf into the test job ([eca8eaf](https://github.com/Alberto-Codes/vramfit/commit/eca8eaf237f49121c2d7dbe0468de0a8e50ec507)), closes [#310](https://github.com/Alberto-Codes/vramfit/issues/310) [#311](https://github.com/Alberto-Codes/vramfit/issues/311)
+* **pack:** add the 5- and 6-bit rows to the expert-stack type table ([#534](https://github.com/Alberto-Codes/vramfit/issues/534)) ([0090020](https://github.com/Alberto-Codes/vramfit/commit/0090020f4eb51f498e45bf3ae7f42b73db602b73))
+* **pack:** compare packed bytes against the recipe's prediction at pack time ([#543](https://github.com/Alberto-Codes/vramfit/issues/543)) ([818ac32](https://github.com/Alberto-Codes/vramfit/commit/818ac327efa71eb5a10e1d285200f5030d372de0))
+
+
+### Bug Fixes
+
+* **adapters:** apply the reader's integer bound to the backfill write ([#476](https://github.com/Alberto-Codes/vramfit/issues/476)) ([d6301da](https://github.com/Alberto-Codes/vramfit/commit/d6301da3ab5c2e036f2ef9cfd454354df6a9eb7a))
+* **adapters:** close the run-log handle per emit and raise RunLogError for a refused field ([#522](https://github.com/Alberto-Codes/vramfit/issues/522)) ([d8d3806](https://github.com/Alberto-Codes/vramfit/commit/d8d3806f003de5ea0ff84d73d53db145d0c07950))
+* **adapters:** halt on repeated group names before the checkpoint loads ([#471](https://github.com/Alberto-Codes/vramfit/issues/471)) ([4058cee](https://github.com/Alberto-Codes/vramfit/commit/4058ceef879d387c7b242e934a0d42feb07da29c))
+* **adapters:** name the map when the backfill refuses --out over it ([#479](https://github.com/Alberto-Codes/vramfit/issues/479)) ([18c398b](https://github.com/Alberto-Codes/vramfit/commit/18c398bee9b2ba37d9e5efb2059da4d873ad148e))
+* **adapters:** name the shard index for every parse refusal ([#477](https://github.com/Alberto-Codes/vramfit/issues/477)) ([7dfcce8](https://github.com/Alberto-Codes/vramfit/commit/7dfcce8d6622131807eefb087cb87ff3ed0b3492))
+* **adapters:** raise HfConfigError under the VramfitError root from the HF config readers ([#523](https://github.com/Alberto-Codes/vramfit/issues/523)) ([511a8af](https://github.com/Alberto-Codes/vramfit/commit/511a8af6be2ce8910297eb48c1eeb76c3178d4be))
+* **adapters:** raise run-log refusals under the VramfitError root ([#472](https://github.com/Alberto-Codes/vramfit/issues/472)) ([a585026](https://github.com/Alberto-Codes/vramfit/commit/a58502689fb5356514360ef11095b57c9bd0c38d))
+* **cli:** plain-text the cli_shape module name in budget and plan help ([#490](https://github.com/Alberto-Codes/vramfit/issues/490)) ([#520](https://github.com/Alberto-Codes/vramfit/issues/520)) ([350fbe6](https://github.com/Alberto-Codes/vramfit/commit/350fbe6741b7bff11bbc8fc73f393635512fa19d))
+* **pack:** refuse a recipe rooted outside the scan name table ([#208](https://github.com/Alberto-Codes/vramfit/issues/208)) ([#536](https://github.com/Alberto-Codes/vramfit/issues/536)) ([0b4a291](https://github.com/Alberto-Codes/vramfit/commit/0b4a2914a98dcfd5e0817b8296e8441a60767336))
+* **plan:** price the F16 passthrough from the convert dtype and skip unquantizable classes at scan ([#533](https://github.com/Alberto-Codes/vramfit/issues/533)) ([95bd4ea](https://github.com/Alberto-Codes/vramfit/commit/95bd4ea9a4361c52282e5ba98b3eef50dbca969e))
+* **plan:** skip held groups under a multi-group pin pattern and warn ([#535](https://github.com/Alberto-Codes/vramfit/issues/535)) ([04960a2](https://github.com/Alberto-Codes/vramfit/commit/04960a2412a3126d21788de8ad84a98ff152663d))
+* **plan:** warn when a pre-skip layer map folds a class the checkpoint holds by itself ([#542](https://github.com/Alberto-Codes/vramfit/issues/542)) ([4206db4](https://github.com/Alberto-Codes/vramfit/commit/4206db402b2da8c55efd085bd1b0b71900166c56))
+
 ## [0.4.0](https://github.com/Alberto-Codes/vramfit/compare/v0.3.0...v0.4.0) (2026-09-02)
 
 
