@@ -117,8 +117,11 @@ class TestSizeCheckStage:
         result, out = run_pack(tmp_path, llama_cpp_dir, recipe_path)
 
         assert result.exit_code == 0, result.output
-        assert "delta +10 B (+0.40%)" in result.output
-        assert "warning: predicted" not in result.output
+        # `result.stdout` and `result.stderr`, not `result.output`: on
+        # the pinned click 8.4.2 `output` holds both streams, so it
+        # would pass whichever channel carried the line.
+        assert "delta +10 B (+0.40%)" in result.stdout
+        assert "predicted" not in result.stderr
         log = read_run_log(out.with_name(out.stem + ".runlog.jsonl"))
         checked = next(line for line in log if line["event"] == "size_checked")
         assert checked["predicted_total_bytes"] == PREDICTED
@@ -137,8 +140,10 @@ class TestSizeCheckStage:
         result, out = run_pack(tmp_path, llama_cpp_dir, recipe_path)
 
         assert result.exit_code == 0, result.output
-        assert "warning: predicted" in result.output
-        assert "OUTSIDE" in result.output
+        # The warning is a stderr line, and stdout carries no copy.
+        assert "warning: predicted" in result.stderr
+        assert "OUTSIDE" in result.stderr
+        assert "predicted" not in result.stdout
         assert "pack_halted" not in events_of(out)
         log = read_run_log(out.with_name(out.stem + ".runlog.jsonl"))
         checked = next(line for line in log if line["event"] == "size_checked")

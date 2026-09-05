@@ -132,11 +132,12 @@ def _predicted_report(predicted_total_bytes: int, packed_bytes: int) -> Predicte
 def _size_check_stage(
     run_log: SafeRunLog, recipe: Recipe, packed_bytes: int, out: Path
 ) -> None:
-    """Re-check the packed file's real bytes against the budget.
+    """Re-check the packed bytes against the budget and the prediction.
 
     Nominal-bit predictions undershoot GGUF's effective bits, so the
     recipe's promise is re-proven on the artifact (ADR-0014). The
-    prediction line follows the budget line and only warns.
+    budget line gates the pack. The prediction line follows it, lands
+    in the same ``size_checked`` event, and only warns.
 
     Args:
         run_log: The pack run's event log.
