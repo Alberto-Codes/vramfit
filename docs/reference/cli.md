@@ -564,11 +564,14 @@ bits-per-weight gap, and both neighboring table entries.
 
 `pack` reads those widths itself, from the checkpoint's safetensors
 shard headers under `--model`. The read is a JSON parse of each
-header and runs before the convert stage. A recipe holding any
-layer-class or routed-expert-stack group therefore needs readable
-shards, even when `--base-gguf` names a base the command reuses. A
-group the read states no width for exits 1, and the message names
-the group.
+header and runs before the convert stage. A recipe needs readable
+shards for a routed-expert stack, or for a layer-class group the
+ADR-0012 class table maps, even when `--base-gguf` names a base the
+command reuses. A group the read states no width for exits 1, and
+the message names the group. A recipe of whole-layer groups reads
+no shards, and neither does one whose only class groups are
+unquantizable — the Nemotron-H `mixer.conv1d` and `mixer.gate` hold
+at the convert dtype (#409), so no width decides anything for them.
 
 ```
 vramfit pack RECIPE

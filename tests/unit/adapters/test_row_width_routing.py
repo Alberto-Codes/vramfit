@@ -566,6 +566,43 @@ class TestPackPreflight:
         assert "model.layers.0.mixer.in_proj" in result.output
         assert packer.has_base is False
 
+    def test_an_unmappable_recipe_keeps_the_mapping_refusal(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        # A `--group-by tensor` map of an MoE model names each expert
+        # by index. No class-table stem maps that suffix, so the
+        # recipe is unmappable whatever the checkpoint states, and
+        # `checkpoint_row_widths` measures at stack granularity and
+        # would never hold that spelling. Blaming --model would send
+        # the operator after a checkpoint that is already correct.
+        packer = MemoryRecipePacker(packed_bytes=100)
+        monkeypatch.setattr(cli_pack, "_build_packer", lambda *args: packer)
+        model_dir = tmp_path / "no-shards"
+        model_dir.mkdir()
+        recipe_path = tmp_path / "recipe.json"
+        save_recipe(
+            make_routed_recipe(
+                str(model_dir), {"model.layers.0.mlp.experts.57.up_proj": 4}
+            ),
+            recipe_path,
+        )
+
+        result = runner.invoke(
+            app,
+            [
+                "pack",
+                str(recipe_path),
+                "--llama-cpp",
+                str(make_toolchain(tmp_path / "llama.cpp")),
+                "--out",
+                str(tmp_path / "packed.gguf"),
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert "no GGUF tensor mapping" in result.output
+        assert "no measured row width" not in result.output
+
     def test_a_recipe_of_unquantizable_classes_reads_no_checkpoint(
         self, tmp_path, monkeypatch
     ) -> None:

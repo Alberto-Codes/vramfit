@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import sys
+from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
 from typing import Literal
@@ -262,6 +263,7 @@ def _real_packer(  # noqa: PLR0913 - the contract fixture surface: one flag per 
     with_unreached_exclusion: bool = False,
     with_unmatched_override: bool = False,
     with_tied_base: bool = False,
+    row_widths: Mapping[str, int] = STACK_ROW_WIDTHS,
 ) -> RecipePacker:
     # These three configure the fake alone. The real adapter reads both
     # name lists through the module seams the conftest fixtures patch,
@@ -314,7 +316,7 @@ def _real_packer(  # noqa: PLR0913 - the contract fixture surface: one flag per 
         python_bin=Path(sys.executable),
         threads=1,
         imatrix=tmp_path / "imatrix.gguf" if with_imatrix else None,
-        row_widths=STACK_ROW_WIDTHS,
+        row_widths=row_widths,
     )
 
 
@@ -359,6 +361,7 @@ def _fake_packer(  # noqa: PLR0913 - mirrors _real_packer's fixture surface
     with_unreached_exclusion: bool = False,
     with_unmatched_override: bool = False,
     with_tied_base: bool = False,
+    row_widths: Mapping[str, int] = STACK_ROW_WIDTHS,
 ) -> RecipePacker:
     uncovered = ("token_embd.weight",) if with_uncovered else ()
     if with_excluded_miss:
@@ -379,7 +382,7 @@ def _fake_packer(  # noqa: PLR0913 - mirrors _real_packer's fixture surface
         # #307 report over one tensor list. The matrix's entries are
         # the narrower list the `imatrix_entry_names` fixture serves,
         # for the same reason.
-        row_widths=STACK_ROW_WIDTHS,
+        row_widths=row_widths,
         base_tensor_names=_base_names(
             unmatched=with_unmatched_override, tied=with_tied_base
         ),
@@ -510,6 +513,36 @@ class TestRecipePackerContract:
         result = packer.pack(stack_pack_recipe())
 
         assert result.token_embedding_type == "q8_0"  # noqa: S105 - a ggml type name, not a secret
+
+    def test_pack_without_measured_widths_refuses_the_routed_recipe(
+        self, build, tmp_path
+    ) -> None:
+        # Neither adapter may invent a width. A default would send a
+        # 2048-wide stack to the ADR-0028 table without saying so,
+        # which is the silent misprice #515 removes. The composition
+        # root supplies the widths, and an empty mapping means it did
+        # not.
+        packer: RecipePacker = build(tmp_path, row_widths={})
+        packer.convert()
+
+        with pytest.raises(PackError) as caught:
+            packer.pack(stack_pack_recipe())
+
+        assert "no measured row width" in str(caught.value)
+        assert "backbone.layers.1.mixer.experts.up_proj" in str(caught.value)
+
+    def test_pack_without_measured_widths_still_packs_a_layer_recipe(
+        self, build, tmp_path
+    ) -> None:
+        # The refusal above is the width decision and not a blanket
+        # failure on an empty mapping. A whole-layer group holds
+        # classes of several widths and never consults one.
+        packer: RecipePacker = build(tmp_path, row_widths={})
+        packer.convert()
+
+        result = packer.pack(sample_pack_recipe())
+
+        assert result.packed_bytes == PACKED_BYTES
 
     def test_pack_gemma_recipe_binds_the_nested_embedding_group(
         self, build, tmp_path

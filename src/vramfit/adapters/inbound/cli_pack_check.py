@@ -11,8 +11,8 @@ reproduce. The stage refuses and names the collapsed tensors, suggesting the
 still unused (ADR-0023); it
 never repacks on its own, so the packed file stays recipe-driven
 (ADR-0012 decision 3). The mapping pre-flight lives here too — it
-reads each group's measured row width from the checkpoint and
-refuses a routed group the checkpoint states none for, then
+reads a measured row width for each group the override mapping
+routes by one, refuses a group the checkpoint states none for, then
 composes every override for a protected recipe, so a missing width
 and a cross-root protection both refuse before any tool runs (#367,
 #515) — and the run-log
@@ -51,13 +51,13 @@ from vramfit.adapters.outbound.gguf.pack import checkpoint_row_widths
 from vramfit.adapters.outbound.gguf.reconstruction import GgufReconstructionChecker
 from vramfit.adapters.outbound.gguf.types import (
     all_overrides,
+    consults_row_width,
     gguf_tensor_name,
     refuses_super_block,
 )
 from vramfit.domain.errors import VramfitError
 from vramfit.domain.model import Recipe
 from vramfit.domain.pack import collapsed_tensors, without_protections
-from vramfit.domain.runtime import routes_by_row_width, unquantizable_class
 from vramfit.ports.outbound import RecipePacker, ReconstructionChecker
 
 
@@ -90,11 +90,14 @@ def _resolve_row_widths(recipe: Recipe, model_dir: Path) -> Mapping[str, int]:
         recipe: The recipe about to pack.
         model_dir: The checkpoint directory the row widths come from.
 
-    Only a group the routing consults reads the checkpoint. A
-    whole-layer group holds classes of several widths, and a group
-    of a class the quantizer refuses holds at the convert dtype
-    (#409). Neither takes the ADR-0028 table, so an absent shard is
-    not this command's problem for them.
+    Only a group the mapping reads a width for reaches the
+    checkpoint, which
+    `vramfit.adapters.outbound.gguf.types.consults_row_width`
+    names. A whole-layer group holds classes of several widths, a
+    group of a class the quantizer refuses holds at the convert
+    dtype (#409), and an unmappable group refuses for a reason no
+    width explains. An absent shard is not this command's problem
+    for any of them.
 
     Returns:
         Elements per row per group, which the packer then applies.
@@ -109,11 +112,7 @@ def _resolve_row_widths(recipe: Recipe, model_dir: Path) -> Mapping[str, int]:
             rooted outside the ADR-0029 reconcile table, with the
             domain's message.
     """
-    routed = [
-        a.group
-        for a in recipe.assignments
-        if routes_by_row_width(a.group) and unquantizable_class(a.group) is None
-    ]
+    routed = [a.group for a in recipe.assignments if consults_row_width(a.group)]
     try:
         row_widths = checkpoint_row_widths(model_dir) if routed else {}
         for group in routed:

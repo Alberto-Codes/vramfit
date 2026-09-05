@@ -15,7 +15,9 @@ over the empty 2.25-4.25 bits-per-weight gap (ADR-0028) — layer-class
 groups map
 through the class table to `blk.<n>.<stem>.` patterns, where an
 unquantizable class instead pins at the F16 passthrough and refuses
-any lower width (the 2026-08-20 amendment), protected tensors map
+any lower width (the 2026-08-20 amendment) and `consults_row_width`
+names the groups whose width the mapping reads at all, protected
+tensors map
 through the same class table to per-tensor patterns under a free
 prefix (ADR-0022, #365), excluded pairs map to the full GGUF
 tensor names ``--exclude-weights`` deletes by substring
@@ -704,6 +706,41 @@ def _claim_root(name: str, roots: dict[str, str], kind: str = "group") -> None:
             f'decoder stack "blk.<n>.", so an override for another root '
             f"would match nothing (#208)"
         )
+
+
+def consults_row_width(group: str) -> bool:
+    """Report whether the override mapping reads this group's row width.
+
+    `tensor_overrides` asks `refuses_super_block` for a routed-expert
+    stack and for a layer-class group the class table maps. Every
+    other group maps without a width, or refuses for a reason the
+    width cannot explain. The pack pre-flight reads the checkpoint
+    for this set alone, so an unmappable group keeps its own refusal
+    rather than one blaming the checkpoint (issue #515).
+
+    A group of a class the quantizer refuses is not in the set. It
+    holds at the F16 passthrough and takes neither type table
+    (#409).
+
+    Args:
+        group: Recipe group name, under any supported root.
+
+    Returns:
+        True when the mapping routes this group by its measured row
+        width.
+
+    Examples:
+        ```python
+        assert consults_row_width("model.layers.1.mlp.experts.up_proj")
+        assert not consults_row_width("model.layers.1")
+        ```
+    """
+    if gguf_stack_prefix(group) is not None:
+        return True
+    match = _CLASS_GROUP.match(group)
+    if match is None or unquantizable_filter(group, LLAMA_CPP) is not None:
+        return False
+    return match.group(2) in GGUF_SUFFIX_BY_HF
 
 
 def refuses_super_block(group: str, row_widths: Mapping[str, int]) -> bool:
