@@ -39,8 +39,8 @@ and carries no sidecar.
 | Card numbers | Source record | Ships as |
 |---|---|---|
 | Budget table: 17,179,869,184 / 240,518,169 / 16,939,351,015 B | `recipe.json` `plan` block, the #284 ruling (228.99 MiB) | recipe, in this repo |
-| Predicted pack size 16,946,865,009 B, 7.17 MiB over budget, 32.19 MiB over-reservation | issue #409 tables re-priced at 32 bits under the recipe's 0.002 overhead (2026-09-04); the published `recipe.json` still reads 16,929,873,667 B | card prose, pending the re-pack and re-upload |
-| 46 passthrough rows at F32: 98,501 B per `mixer.conv1d`, 1,379,009 B per `mixer.gate` | the same re-pricing; the published recipe reads 49,251 and 689,505 at F16 | card allocation table, pending the re-upload |
+| Predicted pack size 16,946,865,009 B, 7.17 MiB over budget, 32.19 MiB over-reservation | issue #409 tables re-priced at 32 bits under the recipe's 0.002 overhead (2026-09-04); the published `recipe.json` still reads 16,929,873,667 B | card prose (re-uploaded 2026-09-05), pending the re-pack and the recipe re-upload |
+| 46 passthrough rows at F32: 98,501 B per `mixer.conv1d`, 1,379,009 B per `mixer.gate` | the same re-pricing; the published recipe reads 49,251 and 689,505 at F16 | card allocation table (re-uploaded 2026-09-05), pending the recipe re-upload |
 | Margin 16.09 MiB | `publication-upload/pack-upload.log` | pack log line, run log |
 | 210-group allocation table, 11/35/118/46 split, nine pins, 0.002 overhead, 11-step trace | recipe `assignments` and `plan` | recipe |
 | Serve numbers (16,383 MiB visible, 53/53, 15,774.00, 357.00, 96.00, 190.47, 97.41, 16,157.88 MiB) | `falsifier-q0-imx/` serve logs (#389) | card prose, nineteenth data point |
@@ -66,7 +66,14 @@ card and the source must match.
 | `NVIDIA-Nemotron-3.5-Lightning-30B-A3B-fit16gib.gguf.evals.json` | `bbaf8e76888f0e521896b91de1f39c359e8bc6f376d8186c4ca1f02179efdaf5` | 2,365 |
 | `baselines/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-IQ2_XXS.gguf.evals.json` | `f928e8d0ef05bfe6ea8298e06b2a48f812acfcd6c03efb432f2c18f137245912` | 2,366 |
 | `LICENSE` | `d7c8a9e5d1896d0a9588319cc7b1433e64645ad6d9e55632c30b78d8c038c23b` | 2,693 |
-| `README.md` | Uploaded verbatim at ship. On 2026-09-04 the source changed: #527 corrected the `file_type` sentence, #530 added the Usage section, #533 corrected the pricing figures, and the PR that added `scripts/publish_card.py` moved the reproduce block to `pip install "vramfit[pack]"`. The published copy lags until `scripts/publish_card.py` re-uploads it. Record the printed SHA-256 here after the byte-match. | — |
+| `README.md` | `6ae875df712f1f4a35be2cdc6cab5d2b40ecdd5dfa4cbc72d30d07452eafb3b7` | 35,974 |
+
+The card uploaded verbatim at ship. On 2026-09-04 the source changed:
+#527 corrected the `file_type` sentence, #530 added the Usage
+section, #533 corrected the pricing figures, and #538 moved the
+reproduce block to `pip install "vramfit[pack]"`.
+`scripts/publish_card.py` re-uploaded the source at commit `a1419a3`
+on 2026-09-05 and byte-matched it. The row above records that copy.
 
 The staged pack came from `vramfit pack` on `recipe.json` with the
 #300 box toolchain on 2026-08-22, and its bytes equal the evaluated

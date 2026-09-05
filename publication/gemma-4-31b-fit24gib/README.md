@@ -412,8 +412,11 @@ and 60 per-tensor overrides from the recipe.
 
 The pack consumed an in-frame importance matrix: 356 chunks of the
 framed calibration corpus through the pinned prebuilt llama-imatrix
-b10362 with `--parse-special`. The matrix stays in the run archive
-and is not carried in this repository.
+b10362 with `--parse-special`. This repository does not carry the
+matrix. It publishes in the linked dataset repository:
+[gemma-4-31B-it-sensitivity-maps](https://huggingface.co/datasets/Alberto-Codes/gemma-4-31B-it-sensitivity-maps),
+file `gemma-4-31b-bf16-framed.imatrix.gguf`, with its SHA-256 in
+that card's hashes table.
 
 Coverage derives from the matrix's own entry names, never from a
 label. Two absences matter:
@@ -444,12 +447,15 @@ uv run vramfit pack recipe.json --llama-cpp <llama.cpp checkout> \
 
 The recipe records the full solve: the 15 GiB weight budget, the
 0.005 format overhead, and the 81-step trace, so the type placement
-replays from `recipe.json` alone. Two inputs stay in the project's
-run archive and are not published: the importance matrix and the
-sensitivity map. Without the matrix the pack step reproduces the
-type placement but not this file's exact bytes, and without the map
-`vramfit plan` cannot re-derive the recipe or solve a different
-budget for this model.
+replays from `recipe.json` alone. The other two inputs live in the
+linked dataset repository:
+[gemma-4-31B-it-sensitivity-maps](https://huggingface.co/datasets/Alberto-Codes/gemma-4-31B-it-sensitivity-maps),
+file `sensitivity-32k-kquant-imx.json` for the map and
+`gemma-4-31b-bf16-framed.imatrix.gguf` for the matrix. Keep the
+matrix filename — the pack command above names it. With the matrix
+the pack step reproduces this file's exact bytes. With the map
+`vramfit plan` re-derives the recipe or solves a different budget
+for this model.
 
 ## Damage disclosure
 

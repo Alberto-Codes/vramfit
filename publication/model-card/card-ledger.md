@@ -104,8 +104,8 @@ to the published sidecar aggregates.
 The "What fit24gib means" section carries the measured sentences
 from the two 16k serve attempts: the reference box as configured, and
 a headless card. No sidecar field holds a serve result, so these
-numbers bind to the run archives only. The published card copy lags
-until the next re-upload.
+numbers bind to the run archives only. The re-upload of 2026-09-05
+(below) carries both sentences.
 
 | Card numbers | Source record |
 |---|---|
@@ -145,7 +145,7 @@ key, and no longer the archived hash (#134).
 | `baselines/nvidia_Llama-3_3-Nemotron-Super-49B-v1_5-IQ3_XXS.gguf.evals.json` | `eval/sidecars/baselines/`, same file name | `6264c64c429608db858fcb0244a2f2987d9fd06fbb027d01351c930f93130f1b` |
 | `baselines/Llama-3_3-Nemotron-Super-49B-v1_5-UD-IQ3_XXS.gguf.evals.json` | `eval/sidecars/baselines/`, same file name | `74e47690541518a16d84494fc5e7455b90804d2123d241ac7de05c6f0446b85f` |
 | `analysis/kld564-paired-q3ks.json` | `eval/analysis/`, same file name (#99) | `90d0b813c6a44c91378adc31e7a501d486ce3bfc1194501a1ae7ce837a864a6f` |
-| `README.md` | `publication/model-card/README.md`, uploaded verbatim on 2026-08-10. #492 added `--model` to the reproduce command in the source on 2026-09-04, and the same day the block moved to `pip install "vramfit[pack]"` (#532). The published copy lags until `scripts/publish_card.py` re-uploads it. Record the printed SHA-256 here after the byte-match. | — |
+| `README.md` | `publication/model-card/README.md`, uploaded verbatim on 2026-08-10. #492 added `--model` to the reproduce command in the source on 2026-09-04, and the same day the block moved to `pip install "vramfit[pack]"` (#532) and #501 added the two 16k serve sentences (#537, #539). `scripts/publish_card.py` re-uploaded the source at commit `a1419a3` on 2026-09-05 and byte-matched it (19,292 B). | `b247834560dd73ac76b17ae2b94c63b8a3bb2f4712c386533d72dabe6a45814b` |
 | `LICENSE` | NVIDIA Open Model License text, gathered by #83 | — |
 | `LICENSE-llama3.3` | Llama 3.3 Community License text, gathered by #83 | — |
 | `NOTICE` | NVIDIA notice line (#71), written by #83 | — |
