@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
@@ -28,8 +28,35 @@ from vramfit.domain.budget import ModelShape
 from vramfit.domain.evals import EvalsSidecar
 from vramfit.domain.model import Recipe, SensitivityMap
 from vramfit.domain.pack import PackResult
-from vramfit.domain.scan import GroupSpec, Measurement
+from vramfit.domain.runtime import K_QUANT_SUPER_BLOCK, routes_by_row_width
+from vramfit.domain.scan import GroupSpec, Measurement, is_expert_stack
 from vramfit.domain.sizes import SizeSourceError, TensorSize
+
+# The 30B target's routed-expert row width (#159). No k-quant
+# super-block divides 2688, so a stack of these rows takes the
+# ADR-0028 table. A suite states the width instead of a class name,
+# because the routing reads the width (#515).
+STACK_ROWS = 2688
+
+
+def stack_row_widths(groups: Iterable[str]) -> dict[str, int]:
+    """State a row width for each group the super-block decision reaches.
+
+    A routed-expert stack carries the 30B target's 2688-wide rows and
+    every other class divides the super-block. Suites that exercise
+    the ADR-0028 table on a dense class state their own widths.
+
+    Args:
+        groups: Group names the solve or the pack prices.
+
+    Returns:
+        Elements per row per group the super-block decision reaches.
+    """
+    return {
+        group: STACK_ROWS if is_expert_stack(group) else K_QUANT_SUPER_BLOCK
+        for group in groups
+        if routes_by_row_width(group)
+    }
 
 
 @dataclass
@@ -186,6 +213,13 @@ class MemoryRecipePacker:
     declares the same modal file type the real adapter stamps
     (ADR-0012 decision 3 as amended 2026-09-04). None records no
     label.
+
+    ``row_widths`` states each group's measured row width, which the
+    256 super-block decision reads (issue #515). None means every
+    group the decision reaches has 256-wide rows, so the recipe maps
+    through the ADR-0012 k-quant table. A suite that exercises the
+    ADR-0028 table states the widths that refuse the block, such as
+    the 30B target's 2688.
     """
 
     base_bytes: int = 1_000
@@ -198,6 +232,7 @@ class MemoryRecipePacker:
     base_tensor_names: tuple[str, ...] | None = None
     imatrix_entry_names: tuple[str, ...] | None = None
     packed_type_bytes: dict[str, int] | None = None
+    row_widths: Mapping[str, int] | None = None
     packed: list[Recipe] = field(default_factory=list)
 
     def convert(self) -> int:
@@ -207,6 +242,16 @@ class MemoryRecipePacker:
             raise PackError("convert failed with exit code 3:\nconfigured failure")
         self.has_base = True
         return self.base_bytes
+
+    def _row_widths(self, recipe: Recipe) -> Mapping[str, int]:
+        """State a row width for every group the routing reaches."""
+        if self.row_widths is not None:
+            return self.row_widths
+        return {
+            a.group: K_QUANT_SUPER_BLOCK
+            for a in recipe.assignments
+            if routes_by_row_width(a.group)
+        }
 
     def pack(self, recipe: Recipe) -> PackResult:
         check_runtime(recipe)
@@ -221,7 +266,7 @@ class MemoryRecipePacker:
         base = base_type(recipe)
         embedding = token_embedding_type(recipe)
         output = output_tensor_type(recipe)
-        overrides = all_overrides(recipe)
+        overrides = all_overrides(recipe, self._row_widths(recipe))
         layer_gaps: tuple[str, ...] = ()
         if self.base_tensor_names is not None:
             # Parity with the real adapter's pre-run checks (#303,

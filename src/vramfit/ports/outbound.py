@@ -412,7 +412,10 @@ class TensorSizeSource(Protocol):
 
     The record carries the dtype beside the bytes (decision 5), so
     the domain recovers the element count instead of assuming two
-    bytes per parameter. Group aggregation is domain arithmetic
+    bytes per parameter. It carries the row width too, because the
+    256 super-block decision reads that width and no class name
+    supplies it (ADR-0028 as amended 2026-09-05, #515). Group
+    aggregation is domain arithmetic
     (`vramfit.domain.sizes.discovered_group_bytes`) — the port
     returns raw checkpoint tensor names and reads no model structure
     (decision 6).
@@ -426,7 +429,7 @@ class TensorSizeSource(Protocol):
     """
 
     def tensor_sizes(self) -> Mapping[str, TensorSize]:
-        """Read every priced tensor's stored size and dtype.
+        """Read every priced tensor's stored size, dtype, and row width.
 
         Returns:
             One record per checkpoint tensor the plan step prices,

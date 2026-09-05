@@ -32,9 +32,9 @@ Examples:
     ```python
     from pathlib import Path
 
-    from vramfit.adapters.inbound.cli_plan_sizes import discovered_bytes
+    from vramfit.adapters.inbound.cli_plan_sizes import discovered_groups
 
-    groups = discovered_bytes(Path("/models/nemotron-30b"), map_, map_path)
+    groups = discovered_groups(Path("/models/nemotron-30b"), map_, map_path)
     ```
 
 See Also:
@@ -45,6 +45,7 @@ See Also:
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 
 import typer
@@ -54,16 +55,46 @@ from vramfit.domain.errors import VramfitError
 from vramfit.domain.model import SensitivityMap
 from vramfit.domain.sizes import (
     discovered_group_bytes,
+    discovered_group_rows,
     held_class_overlaps,
     uncovered_groups,
 )
 from vramfit.ports.outbound import TensorSizeSource
 
 
-def discovered_bytes(
+@dataclass(frozen=True, slots=True)
+class CheckpointGroups:
+    """What one checkpoint read tells the plan about its groups.
+
+    Attributes:
+        bytes (Mapping[str, int] | None): Bytes at reference precision
+            per discovered group, or None when the caller passed no
+            ``--checkpoint``.
+        rows (Mapping[str, int] | None): Elements per row per group
+            the 256 super-block decision reaches (issue #515), or
+            None when the caller passed no ``--checkpoint``. The
+            solver's refusal tells the two causes apart from it.
+
+    Examples:
+        ```python
+        from vramfit.adapters.inbound.cli_plan_sizes import CheckpointGroups
+
+        groups = CheckpointGroups(bytes=None, rows=None)
+        ```
+    """
+
+    bytes: Mapping[str, int] | None
+    rows: Mapping[str, int] | None
+
+
+def discovered_groups(
     checkpoint: Path | None, map_: SensitivityMap, map_path: Path
-) -> Mapping[str, int] | None:
-    """Read the checkpoint's group sizes and report the coverage.
+) -> CheckpointGroups:
+    """Read the checkpoint's group sizes and row widths, and report coverage.
+
+    One read serves both. The solver prices from the bytes and routes
+    the 256 super-block decision from the row widths (issue #515), so
+    two reads could disagree about one checkpoint.
 
     Args:
         checkpoint: The checkpoint directory to read, or None when the
@@ -74,8 +105,8 @@ def discovered_bytes(
             count warning.
 
     Returns:
-        Bytes at reference precision per discovered group, or None
-        when no checkpoint was given.
+        The group bytes and row widths. Both are None when no
+        checkpoint was given.
 
     Raises:
         typer.Exit: With code 1 when the checkpoint cannot be read or
@@ -90,11 +121,13 @@ def discovered_bytes(
             f"no --checkpoint: this plan prices the {len(map_.groups)} groups "
             f"the map carries and reads no other size source (ADR-0029)"
         )
-        return None
+        return CheckpointGroups(bytes=None, rows=None)
 
     source: TensorSizeSource = SafetensorsSizes(checkpoint)
     try:
-        groups = discovered_group_bytes(source.tensor_sizes(), map_.scan.group_by)
+        sizes = source.tensor_sizes()
+        groups = discovered_group_bytes(sizes, map_.scan.group_by)
+        rows = discovered_group_rows(sizes, map_.scan.group_by)
     except VramfitError as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(code=1) from exc
@@ -140,4 +173,4 @@ def discovered_bytes(
             f"Re-scan to remove the double count (ADR-0029)",
             err=True,
         )
-    return groups
+    return CheckpointGroups(bytes=groups, rows=rows)

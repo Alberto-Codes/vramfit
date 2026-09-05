@@ -6,10 +6,12 @@ the plan step a size source independent of the map. This module holds
 the pure half of that source.
 
 `TensorSize` is what the port carries: one checkpoint tensor's stored
-bytes and the dtype it is stored at (decision 5). The dtype is there
-so the domain can recover the element count rather than assume two
-bytes per parameter — a checkpoint at fp32 or fp8 counts differently.
-`reference_bytes` does that recovery. Reference precision stays
+bytes, the dtype it is stored at (decision 5), and its row width. The
+dtype is there so the domain can recover the element count rather than
+assume two bytes per parameter — a checkpoint at fp32 or fp8 counts
+differently. `reference_bytes` does that recovery. The row width is
+there because the 256 super-block decision reads it and no class name
+supplies it (issue #515). Reference precision stays
 16-bit throughout, per the glossary, because the solver's size model
 prices every precision against a 16-bit base.
 
@@ -27,6 +29,11 @@ tensors become one stack group (decision 6). Group naming stays
 size source. A tensor of an unquantizable class keys by its own name
 under every granularity (#204, #409): the meter skips it, so a layer
 group that absorbed its bytes would hide them behind a covered name.
+`discovered_group_rows` measures the same groups' row widths, and
+`refuse_unmeasured_rows` refuses a solve that would route a group no
+width describes. That refusal reaches only a runtime carrying the
+two type tables the width routes between — a runtime without them
+prices at nominal bits, where the width moves no byte.
 
 Attributes:
     REFERENCE_BITS (int): Bits per weight at reference precision. The
@@ -49,10 +56,10 @@ Examples:
 
     sizes = {
         "backbone.layers.1.mixer.experts.0.up_proj.weight": TensorSize(
-            dtype="BF16", bytes=8
+            dtype="BF16", bytes=8, rows=4
         ),
         "backbone.layers.1.mixer.experts.1.up_proj.weight": TensorSize(
-            dtype="BF16", bytes=8
+            dtype="BF16", bytes=8, rows=4
         ),
     }
     assert discovered_group_bytes(sizes, "stack") == {
@@ -76,10 +83,10 @@ what the size source implies and not how the budget is spent. It also
 refuses a plan with no size source on a map whose family holds a class
 the scan skips, because nothing else prices that class (the 2026-09-04
 decision 3 amendment). The solver adds its bytes to the total and never
-ranks a downgrade for one. The solver's predictor prices each: an
-uncovered expert stack through the ADR-0028 table, a layer-class group
-whose rows refuse the 256 super-block the same way (the 2026-08-20
-amendment), and an unquantizable class at the convert dtype (#409).
+ranks a downgrade for one. The solver's predictor prices each: a
+group whose measured rows refuse the 256 super-block through the
+ADR-0028 table (the 2026-08-20 amendment, as amended 2026-09-05 by
+#515) and an unquantizable class at the convert dtype (#409).
 
 See Also:
     - [vramfit.ports.outbound][]: `TensorSizeSource`, the port that
@@ -89,7 +96,7 @@ See Also:
 
 from __future__ import annotations
 
-from collections.abc import Callable, Collection, Mapping
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Final, Literal
@@ -99,7 +106,10 @@ from vramfit.domain.model import Assignment, SensitivityMap
 from vramfit.domain.runtime import (
     RUNTIME_CAPABILITIES,
     RuntimeCapabilityError,
+    effective_bits,
+    expert_stack_effective_bits,
     missing_unquantizable_module,
+    routes_by_row_width,
     unquantizable_class,
 )
 from vramfit.domain.scan import group_key, matches_a_layer
@@ -154,7 +164,7 @@ class SizeSourceError(VramfitError, ValueError):
         from vramfit.domain.sizes import SizeSourceError, TensorSize, reference_bytes
 
         try:
-            reference_bytes("w", TensorSize(dtype="I8", bytes=4))
+            reference_bytes("w", TensorSize(dtype="I8", bytes=4, rows=4))
         except SizeSourceError as exc:
             print(exc)
         ```
@@ -170,6 +180,9 @@ class TensorSize:
             the shard header spells it, e.g. ``BF16``. The adapter
             reports it verbatim and invents no convention.
         bytes (int): The tensor's stored size in bytes.
+        rows (int): Elements per row — the shape's last dimension,
+            which GGUF calls ``ne[0]``. The super-block decision
+            reads this width instead of a class name (issue #515).
 
     Examples:
         One expert of the 30B target's up projection:
@@ -177,24 +190,27 @@ class TensorSize:
         ```python
         from vramfit.domain.sizes import TensorSize
 
-        size = TensorSize(dtype="BF16", bytes=9_977_856)
+        size = TensorSize(dtype="BF16", bytes=9_977_856, rows=2688)
         ```
     """
 
     dtype: str
     bytes: int
+    rows: int
 
     def __post_init__(self) -> None:
         """Enforce the record's invariants.
 
         Raises:
-            ValueError: If ``dtype`` is empty or ``bytes`` is not
-                positive.
+            ValueError: If ``dtype`` is empty, or ``bytes`` or
+                ``rows`` is not positive.
         """
         if not self.dtype:
             raise ValueError("dtype must not be empty")
         if self.bytes <= 0:
             raise ValueError("bytes must be positive")
+        if self.rows <= 0:
+            raise ValueError("rows must be positive")
 
 
 def reference_bytes(tensor: str, size: TensorSize) -> int:
@@ -225,7 +241,7 @@ def reference_bytes(tensor: str, size: TensorSize) -> int:
         ```python
         from vramfit.domain.sizes import TensorSize, reference_bytes
 
-        assert reference_bytes("w", TensorSize(dtype="F32", bytes=16)) == 8
+        assert reference_bytes("w", TensorSize(dtype="F32", bytes=16, rows=4)) == 8
         ```
     """
     try:
@@ -287,6 +303,44 @@ def reconcile_root(tensor: str) -> str:
     return tensor
 
 
+def measured_width(row_widths: Mapping[str, int], group: str) -> int | None:
+    """Read one group's measured row width under either naming root.
+
+    `discovered_group_rows` keys every width under `MAP_ROOT`, and a
+    map or a recipe may spell the same group under the checkpoint's
+    root instead (ADR-0029 decision 7). The plan and the pack read
+    the width through this one lookup, so neither accepts a spelling
+    the other refuses (issue #515).
+
+    Args:
+        row_widths: Elements per row per group, from
+            `discovered_group_rows`.
+        group: A group name, as `vramfit.domain.scan.group_key`
+            produces it.
+
+    Returns:
+        The group's row width, or None when neither spelling is
+        measured.
+
+    Raises:
+        SizeSourceError: If the name carries a decoder-layer prefix
+            under a root `CHECKPOINT_ROOTS` does not name. No
+            checkpoint can state that group's width.
+
+    Examples:
+        ```python
+        from vramfit.domain.sizes import measured_width
+
+        widths = {"model.layers.0.mixer.in_proj": 2688}
+        assert measured_width(widths, "backbone.layers.0.mixer.in_proj") == 2688
+        ```
+    """
+    width = row_widths.get(group)
+    if width is None:
+        width = row_widths.get(reconcile_root(group))
+    return width
+
+
 def discovered_group_bytes(
     sizes: Mapping[str, TensorSize],
     group_by: Literal["layer", "tensor", "stack"],
@@ -326,8 +380,8 @@ def discovered_group_bytes(
         from vramfit.domain.sizes import TensorSize, discovered_group_bytes
 
         sizes = {
-            "backbone.layers.0.mlp.up_proj.weight": TensorSize("BF16", 8),
-            "backbone.layers.0.mixer.conv1d.weight": TensorSize("BF16", 4),
+            "backbone.layers.0.mlp.up_proj.weight": TensorSize("BF16", 8, 4),
+            "backbone.layers.0.mixer.conv1d.weight": TensorSize("BF16", 4, 2),
         }
         assert discovered_group_bytes(sizes, "layer") == {
             "model.layers.0": 8,
@@ -343,6 +397,68 @@ def discovered_group_bytes(
             group = group_key(name, group_by)
         groups[group] = groups.get(group, 0) + reference_bytes(tensor, size)
     return groups
+
+
+def discovered_group_rows(
+    sizes: Mapping[str, TensorSize],
+    group_by: Literal["layer", "tensor", "stack"],
+) -> dict[str, int]:
+    """Measure the row width of every group the super-block decision reaches.
+
+    A group naming one tensor class has one row width, and
+    `vramfit.domain.runtime.rows_refuse_super_block` routes it from
+    that width (issue #515). A whole-layer group holds classes of
+    several widths, so this reports none for it and the group keeps
+    the ADR-0012 k-quant table.
+
+    The grouping mirrors `discovered_group_bytes`, so the two read one
+    checkpoint into one set of group names.
+
+    Args:
+        sizes: Stored size per checkpoint tensor name, from a
+            `vramfit.ports.outbound.TensorSizeSource`.
+        group_by: The granularity of the map being planned against,
+            from its ``scan.group_by``.
+
+    Returns:
+        Elements per row per group name, under `MAP_ROOT`. Groups the
+        decision does not reach are absent.
+
+    Raises:
+        SizeSourceError: If two tensors of one group state different
+            row widths, or a layer-bearing name is rooted outside
+            `CHECKPOINT_ROOTS`. One group packs under one type, so
+            two widths have no single answer.
+
+    Examples:
+        ```python
+        from vramfit.domain.sizes import TensorSize, discovered_group_rows
+
+        sizes = {
+            "backbone.layers.0.mixer.in_proj.weight": TensorSize("BF16", 8, 2688),
+        }
+        assert discovered_group_rows(sizes, "tensor") == {
+            "model.layers.0.mixer.in_proj": 2688,
+        }
+        ```
+    """
+    rows: dict[str, int] = {}
+    for tensor, size in sizes.items():
+        name = reconcile_root(tensor)
+        group = group_key(name, "tensor")
+        if unquantizable_class(group) is None:
+            group = group_key(name, group_by)
+        if not routes_by_row_width(group):
+            continue
+        seen = rows.setdefault(group, size.rows)
+        if seen != size.rows:
+            raise SizeSourceError(
+                f'group "{group}" holds rows of {seen} and {size.rows} '
+                f'elements, and tensor "{tensor}" carries the second. One '
+                f"group packs under one type, so one width must describe it "
+                f"(ADR-0028, issue #515)"
+            )
+    return rows
 
 
 def uncovered_groups(
@@ -472,6 +588,98 @@ def _reference_refusal(
         f"groups the map does not measure (ADR-0029). It serves "
         f"{sorted(capability, reverse=True)}. Plan without a size "
         f"source, or scan those groups"
+    )
+
+
+def refuse_unmeasured_rows(
+    row_widths: Mapping[str, int] | None,
+    groups: Sequence[str],
+    runtime: str | None,
+) -> None:
+    """Refuse a solve that would route a group without measuring it.
+
+    The ADR-0028 table reaches a group whose rows refuse the 256
+    super-block, and only the measured width says which groups those
+    are (issue #515). A group the width mapping does not name would
+    take the k-quant table by omission, which is the silent misprice
+    option A removes. So the solve refuses.
+
+    A runtime without an expert-stack table has nothing to route
+    into. It prices every group at nominal bits, so the width moves
+    no byte and the refusal would block a solve it cannot improve.
+
+    Three advices reach this refusal. A group rooted outside
+    `CHECKPOINT_ROOTS` cannot be measured at all, so the message
+    states that limitation rather than naming a flag that would
+    refuse again. A solve with no size source needs one, so the
+    message names the flag. A solve that read a checkpoint already
+    has the flag, and the named group is missing from that
+    checkpoint instead.
+
+    A group of a class the quantizer refuses is exempt. It holds at
+    the convert dtype and takes neither type table (#409).
+
+    `measured_width` reads each group under either naming root, so a
+    map spelling a group under the checkpoint's root still finds the
+    width the size source keyed under the map's.
+
+    Args:
+        row_widths: Elements per row per group, or None when the
+            caller read no size source.
+        groups: Every group name the solve prices.
+        runtime: Target runtime name, or None. The refusal applies
+            only where the runtime carries the tables the width
+            routes between.
+
+    Raises:
+        SizeSourceError: If a group the decision reaches has no
+            measured width.
+    """
+    if effective_bits(runtime) is None or expert_stack_effective_bits(runtime) is None:
+        return
+    measured = row_widths or {}
+    missing: set[str] = set()
+    unrooted_names: set[str] = set()
+    for name in groups:
+        if not routes_by_row_width(name) or unquantizable_class(name) is not None:
+            continue
+        try:
+            width = measured_width(measured, name)
+        except SizeSourceError:
+            unrooted_names.add(name)
+            missing.add(name)
+            continue
+        if width is None:
+            missing.add(name)
+    unmeasured = sorted(missing)
+    if not unmeasured:
+        return
+    count = len(unmeasured)
+    subject = (
+        f'group "{unmeasured[0]}" has no measured row width'
+        if count == 1
+        else f"{count} groups have no measured row width, starting with "
+        f'"{unmeasured[0]}"'
+    )
+    unrooted = sorted(unrooted_names)
+    if unrooted:
+        advice = (
+            f'No checkpoint can supply it: group "{unrooted[0]}" hangs from '
+            f"a root the size source does not read, which covers "
+            f"{sorted(CHECKPOINT_ROOTS)} (ADR-0029 decision 7). Add the root "
+            f"there, or plan this map for a runtime with no type table"
+        )
+    elif row_widths is None:
+        advice = "Plan with --checkpoint (ADR-0029 decision 1)"
+    else:
+        advice = (
+            "The checkpoint states no width for it. Name the checkpoint "
+            "the scan measured"
+        )
+    raise SizeSourceError(
+        f"{subject}. The 256 super-block decision reads the row width "
+        f"the checkpoint states, and no class name supplies it (ADR-0028, "
+        f"issue #515). {advice}"
     )
 
 

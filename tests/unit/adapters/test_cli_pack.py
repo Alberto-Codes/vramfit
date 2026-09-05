@@ -473,8 +473,15 @@ class TestPackCommand:
     ) -> None:
         seen: dict[str, object] = {}
 
-        def recorder(
-            model_dir, base_gguf, out, llama_cpp, python_bin, threads, imatrix
+        def recorder(  # noqa: PLR0913, PLR0917 - it mirrors `_build_packer`'s slots
+            model_dir,
+            base_gguf,
+            out,
+            llama_cpp,
+            python_bin,
+            threads,
+            imatrix,
+            row_widths,
         ):
             seen.update(
                 model_dir=model_dir,
@@ -484,6 +491,7 @@ class TestPackCommand:
                 python_bin=python_bin,
                 threads=threads,
                 imatrix=imatrix,
+                row_widths=row_widths,
             )
             return MemoryRecipePacker(packed_bytes=100)
 
@@ -524,6 +532,10 @@ class TestPackCommand:
             "python_bin": tmp_path / "python3",
             "threads": 3,
             "imatrix": imatrix_path,
+            # This recipe names whole-layer groups only, so no group
+            # the super-block decision reaches asks for a width and
+            # the command reads no checkpoint (#515).
+            "row_widths": {},
         }
 
     def test_override_matching_no_tensor_exits_1_and_halts_at_quantize(

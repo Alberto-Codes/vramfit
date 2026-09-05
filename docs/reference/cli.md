@@ -169,8 +169,10 @@ Implemented. Solves a sensitivity map into a recipe under a VRAM budget.
 vramfit plan SENSITIVITY_MAP
   --vram SIZE            Hard VRAM ceiling (e.g. 24GiB)  [required]
   --checkpoint PATH      Checkpoint the map was scanned from. Its
-                         safetensors headers price every group
-                         (ADR-0029)
+                         safetensors headers price every group and
+                         state each group's row width, so a map
+                         covering part of the model no longer
+                         defines it (ADR-0029, #515)
   --kv-headroom SIZE     Reserved for KV cache + runtime  [default: 4GiB]
   --pin TEXT             Pin groups to a precision, repeatable (glob=bits)
   --protect TEXT         Hold tensors at a precision floor inside
@@ -191,12 +193,28 @@ effective-bits table prices each precision at its real per-weight
 cost (llama.cpp: Q4_K spends 4.5 bits, not 4), and the overhead
 fraction covers only unquantized tensors and file metadata. A
 runtime without a table (vLLM, or `--runtime` omitted via the API)
-keeps the nominal-bits prediction and the 0.05 scalar. A
-routed-expert-stack group prices through the expert-stack type
-table instead ([ADR-0028](../adr/0028-expert-stack-type-table.md)):
-2.25 bits at nominal 2, not Q2_K's 2.625. A stack precision without
-a table row (3) keeps its dense entry — pack refuses it, and the
-plan-time refusal stays an open question in ADR-0028.
+keeps the nominal-bits prediction and the 0.05 scalar.
+
+A group whose measured rows the 256 super-block does not divide
+prices through the expert-stack type table instead
+([ADR-0028](../adr/0028-expert-stack-type-table.md)): 2.25 bits at
+nominal 2, not Q2_K's 2.625. The measured width decides, and no
+class name does (issue #515). So the 30B Nemotron target's 2688-wide
+classes take that table, and Qwen3-Coder-30B-A3B's 2048-wide and
+768-wide routed-expert stacks keep the k-quant table. A precision
+without a table row (3) keeps its dense entry on refused rows — pack
+refuses it, and the plan-time refusal stays an open question in
+ADR-0028.
+
+`plan` reads those widths from `--checkpoint`. Under a runtime
+carrying both type tables the width routes between — `llama.cpp`
+today — it refuses a map of layer-class or routed-expert-stack
+groups planned without one. A width no source states would take the
+k-quant table by omission, which misprices the group silently. A
+runtime with no table prices every group at nominal bits, where the
+width moves no byte, so `--runtime vllm` plans such a map without
+`--checkpoint`. A whole-layer group holds classes of several widths,
+so it needs no measured width and keeps the k-quant table.
 
 Size source ([ADR-0029](../adr/0029-plan-independent-size-source.md)):
 `--checkpoint` reads each safetensors shard header, which is a JSON
@@ -532,14 +550,29 @@ covers the most bytes in the file (ADR-0012 decision 3, the
 2026-09-04 amendment). The quantizer stamps the floor there, and on
 a mixed pack the floor can name a type the file does not hold.
 
-A routed-expert-stack group maps through its own type table
+A group whose measured rows the 256 super-block does not divide maps
+through the expert-stack type table
 ([ADR-0028](../adr/0028-expert-stack-type-table.md)): 8 to `Q8_0`, 6
-to `Q5_1`, 5 to `Q5_0`, 4 to `Q4_0`, 2 to `Q2_0`. K-quant
-super-blocks do not divide the stack rows, so the dense table cannot
-reach them. The backend refuses every stack precision without a
-table row. Nominal 3 draws the dedicated refusal: it names the
-group, the empty 2.25–4.25 bits-per-weight gap, and both neighboring
-table entries.
+to `Q5_1`, 5 to `Q5_0`, 4 to `Q4_0`, 2 to `Q2_0`. Every k-quant packs
+256-element super-blocks, so the dense table cannot reach such a row.
+The measured width decides, and no class name does (issue #515). A
+2048-wide or 768-wide routed-expert stack keeps the k-quant table and
+takes nominal 3. The backend refuses a precision without a row in the
+table the width selected. Nominal 3 on refused rows draws the
+dedicated refusal: it names the group, its measured row width, the
+empty 2.25–4.25 bits-per-weight gap, and both neighboring table
+entries.
+
+`pack` reads those widths itself, from the checkpoint's safetensors
+shard headers under `--model`. The read is a JSON parse of each
+header and runs before the convert stage. A recipe needs readable
+shards for a routed-expert stack, or for a layer-class group the
+ADR-0012 class table maps, even when `--base-gguf` names a base the
+command reuses. A group the read states no width for exits 1, and
+the message names the group. A recipe of whole-layer groups reads
+no shards, and neither does one whose only class groups are
+unquantizable — the Nemotron-H `mixer.conv1d` and `mixer.gate` hold
+at the convert dtype (#409), so no width decides anything for them.
 
 ```
 vramfit pack RECIPE

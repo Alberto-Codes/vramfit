@@ -31,7 +31,9 @@ when a glob overreaches the protected set (ADR-0023). Its
 ``--checkpoint`` reads the model's safetensors headers for a size
 source independent of the map, so a partial map no longer defines
 the model (ADR-0029) — that wiring lives in
-[vramfit.adapters.inbound.cli_plan_sizes][].
+[vramfit.adapters.inbound.cli_plan_sizes][]. That one read also
+states each group's row width, which routes the 256 super-block
+decision (#515).
 ``--format-overhead`` defaults per size
 model (ADR-0014): the residual when the runtime has an
 effective-bits table, the scalar otherwise. An artifact field a
@@ -63,7 +65,7 @@ import typer
 
 from vramfit import __version__
 from vramfit.adapters.inbound import cli_capacity, cli_pack, cli_scan, cli_validate
-from vramfit.adapters.inbound.cli_plan_sizes import discovered_bytes
+from vramfit.adapters.inbound.cli_plan_sizes import discovered_groups
 from vramfit.adapters.inbound.cli_protection_warnings import warn_protection_gaps
 from vramfit.adapters.inbound.cli_shape import (
     check_kv_dtype,
@@ -295,8 +297,9 @@ def plan(
         Path | None,
         typer.Option(
             help="Checkpoint the map was scanned from. Its safetensors "
-            "headers price every group, so a map covering part of the "
-            "model no longer defines it (ADR-0029)."
+            "headers price every group and state each group's row "
+            "width, so a map covering part of the model no longer "
+            "defines it (ADR-0029, #515)."
         ),
     ] = None,
     kv_headroom: Annotated[
@@ -368,8 +371,15 @@ def plan(
     ``--checkpoint`` reads the model's safetensors headers for a size
     source independent of the map (ADR-0029). A group the checkpoint
     holds and the map does not measure holds at reference precision,
-    and the recipe assigns it there. Without the option the map
-    defines the model, and the command says so. A ``layer`` map
+    and the recipe assigns it there. The same read states each
+    group's row width, which routes the 256 super-block decision
+    (ADR-0028, as amended 2026-09-05 by #515). Without the option the
+    map defines the model, and the command says so. A map naming a
+    layer-class or routed-expert-stack group then refuses, because no
+    name supplies its row width. That refusal reaches only a runtime
+    carrying both type tables the width routes between, which is
+    ``llama.cpp`` today. A ``vllm`` plan prices at nominal bits, so
+    the same map solves with no ``--checkpoint``. A ``layer`` map
     scanned before the discovery skip (#204) folds a class the
     quantizer refuses into its layer group, which the checkpoint
     holds by its own name. The plan prices it twice and draws a
@@ -446,7 +456,8 @@ def plan(
             f"{list(map_.scan.precisions)} — candidates {dropped} dropped"
         )
 
-    sizes = discovered_bytes(checkpoint, map_, sensitivity_map)
+    groups = discovered_groups(checkpoint, map_, sensitivity_map)
+    sizes = groups.bytes
 
     try:
         recipe = solve(
@@ -460,6 +471,7 @@ def plan(
             format_overhead=format_overhead,
             runtime=runtime,
             discovered_bytes=sizes,
+            row_widths=groups.rows,
         )
     except VramfitError as exc:
         # One honest catch for the root (ADR-0011): the solver's
