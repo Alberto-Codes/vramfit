@@ -60,6 +60,16 @@ Examples:
     }
     ```
 
+`held_class_overlaps` finds the case that rule cannot cover: a map
+scanned before the discovery skip (#204) under `layer` granularity
+already folds such a tensor into its layer group. The source then
+keys the tensor as its own held group, and `plan` would price it
+twice, once inside the covered group at the assigned width and once
+uncovered at the convert dtype. `plan` warns and keeps both prices
+(the ADR-0029 open question 2 ruling of 2026-09-04). The map's group
+bytes and damage were measured with the tensor inside, so neither
+price separates cleanly, and the direction is conservative.
+
 `held_assignments` turns the uncovered set into the recipe rows decision
 3 requires. It lives here rather than in the solver, because it states
 what the size source implies and not how the budget is spent. It also
@@ -364,6 +374,69 @@ def uncovered_groups(
     return tuple(
         (name, size) for name, size in sorted(discovered.items()) if name not in seen
     )
+
+
+def held_class_overlaps(
+    discovered: Mapping[str, int], sensitivity_map: SensitivityMap
+) -> tuple[tuple[str, tuple[str, ...]], ...]:
+    """Find map groups that fold a tensor the source holds by itself.
+
+    A map scanned before the discovery skip (#204) under ``layer``
+    granularity lists an unquantizable-class tensor inside its layer
+    group. `discovered_group_bytes` keys that tensor by its own name,
+    and that name is uncovered, so `held_assignments` prices it at
+    the convert dtype while the layer group prices it again at the
+    assigned width. This finds each such pair so `plan` can name the
+    double count. A map that carries the class as its own group is
+    not affected: the source's group is covered.
+
+    Args:
+        discovered: Bytes at reference precision per discovered group,
+            from `discovered_group_bytes`.
+        sensitivity_map: The map, whose groups are the covered set.
+
+    Returns:
+        ``(group, tensors)`` pairs in map order: the covered group and
+        the tensors it lists that the source also holds as their own
+        uncovered groups. Empty when no group folds one.
+
+    Examples:
+        A layer group listing the conv1d the scan now skips:
+
+        ```python
+        from vramfit.domain.model import LayerGroup, ScanMeta, SensitivityMap
+        from vramfit.domain.sizes import held_class_overlaps
+
+        group = LayerGroup(
+            name="model.layers.0",
+            tensors=("model.layers.0.mixer.conv1d.weight",),
+            bytes_fp16=8,
+            sensitivity={8: 0.0},
+        )
+        map_ = SensitivityMap(
+            model_id="m",
+            scan=ScanMeta("kl_divergence", "wikitext", 1, (8,), "layer", "t"),
+            groups=(group,),
+        )
+        discovered = {"model.layers.0": 8, "model.layers.0.mixer.conv1d": 8}
+        assert held_class_overlaps(discovered, map_) == (
+            ("model.layers.0", ("model.layers.0.mixer.conv1d.weight",)),
+        )
+        ```
+    """
+    covered = {group.name for group in sensitivity_map.groups}
+    overlaps: list[tuple[str, tuple[str, ...]]] = []
+    for group in sensitivity_map.groups:
+        folded = tuple(
+            tensor
+            for tensor in group.tensors
+            if (held := group_key(tensor, "tensor")) not in covered
+            and held in discovered
+            and unquantizable_class(held) is not None
+        )
+        if folded:
+            overlaps.append((group.name, folded))
+    return tuple(overlaps)
 
 
 def _reference_refusal(

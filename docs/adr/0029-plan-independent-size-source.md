@@ -293,6 +293,25 @@ A **base GGUF** exists only after a pack, and `plan` runs before packing.
   the other. The map already carries `bytes_fp16` per group, so a
   disagreement is detectable. Whether it warns or refuses is unruled.
 
+    **One case ruled 2026-09-04 (#409 review): `plan` warns on a
+    folded refused class and keeps both prices.** A `layer` map
+    scanned before the discovery skip (#204) lists `mixer.conv1d`
+    and `mixer.gate` inside `model.layers.N`. The source holds each
+    by its own name, so the plan prices the tensor twice: inside the
+    group at its assigned width, and held at the convert dtype. The
+    direction is conservative, about 9 MB plus the F32 bytes on the
+    30B. `held_class_overlaps` in `vramfit.domain.sizes` finds each
+    pair from the map's tensor list, and `plan` warns naming the
+    map, the group, and the tensors. The prices stand. The group's
+    `bytes_fp16` and damage curve were measured with the tensor
+    inside, so no arithmetic separates them without a re-scan.
+    A schema bump was the other remedy. It refuses every pre-skip
+    map, including a map planned without `--checkpoint`, which
+    prices the class correctly on its own. The tensor list already
+    carries the evidence, so the warning costs no field. The
+    general disagreement, a `bytes_fp16` mismatch on one group,
+    stays unruled.
+
 - ~~**Whether the passthrough's 16.0 bits per weight is exact for every
   writer.** GGUF `F16` stores two bytes per weight with no block
   overhead. A checkpoint stored at bf16 converts to f16 without a size

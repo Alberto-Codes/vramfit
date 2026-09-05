@@ -10,6 +10,7 @@ from tests.unit.conftest import make_map
 from vramfit import __version__
 from vramfit.adapters.inbound.cli import app
 from vramfit.adapters.outbound.recipe_json import load_recipe
+from vramfit.domain.runtime import EFFECTIVE_BITS
 from vramfit.domain.solver import (
     DEFAULT_FORMAT_OVERHEAD,
     DEFAULT_RESIDUAL_OVERHEAD,
@@ -1308,6 +1309,83 @@ class TestPlanCheckpointOption:
             a for a in load_recipe(out).assignments if a.group.endswith("conv1d")
         )
         assert held.bits == 16
+        assert held.bytes == group_bytes(8_000, 32.0, DEFAULT_RESIDUAL_OVERHEAD)
+
+    def test_a_pre_skip_layer_map_prices_a_refused_class_twice_and_warns(
+        self, tmp_path
+    ) -> None:
+        # A layer map scanned before the discovery skip (#204) folds
+        # the conv1d into model.layers.0. The source holds it by its
+        # own name, so the plan prices it inside the group and again
+        # held at F32. The direction is conservative, and the ruling
+        # is a warning naming the map, the group, and the tensors
+        # (ADR-0029 open question 2, 2026-09-04).
+        raw = make_map([("model.layers.0", 168_000, CURVE)])
+        raw["groups"][0]["tensors"] = [
+            "model.layers.0.mixer.in_proj.weight",
+            "model.layers.0.mixer.conv1d.weight",
+        ]
+        map_path = tmp_path / "sensitivity.json"
+        map_path.write_text(json.dumps(raw))
+        model_dir = self._write_checkpoint(
+            tmp_path,
+            {
+                "model.layers.0.mixer.in_proj.weight": 160_000,
+                "model.layers.0.mixer.conv1d.weight": 8_000,
+            },
+        )
+        out = tmp_path / "recipe.json"
+
+        result = self._plan(map_path, out, "--checkpoint", str(model_dir))
+
+        assert result.exit_code == 0, result.output
+        assert f'warning: {map_path}: group "model.layers.0" folds 1 tensors' in (
+            result.stderr
+        )
+        assert "model.layers.0.mixer.conv1d.weight" in result.stderr
+        assert "prices them twice" in result.stderr
+        recipe = load_recipe(out)
+        by_group = {a.group: a for a in recipe.assignments}
+        # Both prices stand: the map's 168,000 inside the group at the
+        # assigned width, and the checkpoint's 8,000 held at the
+        # convert dtype.
+        covered = by_group["model.layers.0"]
+        assert covered.bytes == group_bytes(
+            168_000,
+            EFFECTIVE_BITS["llama.cpp"][covered.bits],
+            DEFAULT_RESIDUAL_OVERHEAD,
+        )
+        assert by_group["model.layers.0.mixer.conv1d"].bytes == group_bytes(
+            8_000, 32.0, DEFAULT_RESIDUAL_OVERHEAD
+        )
+
+    def test_a_stack_map_with_a_refused_class_draws_no_overlap_warning(
+        self, tmp_path
+    ) -> None:
+        # The checked-in maps use stack granularity, where a group
+        # lists only its own projection's experts.
+        map_path = self._write_map(
+            tmp_path,
+            [("model.layers.0.mixer.experts.up_proj", 160_000, CURVE)],
+            "stack",
+        )
+        model_dir = self._write_checkpoint(
+            tmp_path,
+            {
+                "model.layers.0.mixer.experts.0.up_proj.weight": 80_000,
+                "model.layers.0.mixer.experts.1.up_proj.weight": 80_000,
+                "model.layers.0.mixer.conv1d.weight": 8_000,
+            },
+        )
+        out = tmp_path / "recipe.json"
+
+        result = self._plan(map_path, out, "--checkpoint", str(model_dir))
+
+        assert result.exit_code == 0, result.output
+        assert "prices them twice" not in result.stderr
+        held = next(
+            a for a in load_recipe(out).assignments if a.group.endswith("conv1d")
+        )
         assert held.bytes == group_bytes(8_000, 32.0, DEFAULT_RESIDUAL_OVERHEAD)
 
     def test_a_runtime_without_reference_precision_exits_one(self, tmp_path) -> None:
