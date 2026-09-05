@@ -435,15 +435,16 @@ def test_expert_stack_type_for_maps_the_adr_0028_table(
     # only types whose block size divides both (ADR-0028). The 6 and 5
     # rows map to q5_1 and q5_0, both block 32 (the 2026-09-04
     # amendment, #232).
-    assert expert_stack_type_for(bits, "model.layers.0.mlp.experts.up_proj") == (
-        quant_type
-    )
+    assert expert_stack_type_for(
+        bits, "model.layers.0.mlp.experts.up_proj", NEMOTRON_ROWS
+    ) == (quant_type)
 
 
 def test_tensor_overrides_refuse_nominal_3_on_an_expert_stack_naming_the_gap() -> None:
-    # No GGUF type lands between 2.25 and 4.25 bits per weight on the
-    # stack rows (ADR-0028 decision 2). The refusal names the group,
-    # the gap, and both neighboring table entries.
+    # No type in the ADR-0028 table lands between 2.25 and 4.25 bits
+    # per weight (decision 2). The refusal names the group, the
+    # measured width that selected the table, the gap, and both
+    # neighboring table entries.
     recipe = make_recipe(("backbone.layers.3.mixer.experts.up_proj", 3))
 
     with pytest.raises(PackError) as caught:
@@ -451,6 +452,7 @@ def test_tensor_overrides_refuse_nominal_3_on_an_expert_stack_naming_the_gap() -
 
     message = str(caught.value)
     assert '"backbone.layers.3.mixer.experts.up_proj"' in message
+    assert str(NEMOTRON_ROWS) in message
     assert "2.25" in message
     assert "4.25" in message
     assert "q2_0" in message
@@ -461,7 +463,7 @@ def test_expert_stack_type_for_refuses_a_precision_outside_the_table() -> None:
     # The stack table has no 7-bit row — silently keeping a dense
     # type would let the quantizer substitute (ADR-0028 decision 1).
     with pytest.raises(PackError) as caught:
-        expert_stack_type_for(7, "model.layers.0.mlp.experts.up_proj")
+        expert_stack_type_for(7, "model.layers.0.mlp.experts.up_proj", NEMOTRON_ROWS)
 
     message = str(caught.value)
     assert '"model.layers.0.mlp.experts.up_proj"' in message
@@ -603,6 +605,7 @@ def test_tensor_overrides_refuse_nominal_3_on_a_layer_class_naming_the_gap() -> 
 
     message = str(caught.value)
     assert 'layer-class group "model.layers.3.mixer.in_proj"' in message
+    assert str(NEMOTRON_ROWS) in message
     assert "between 2.25 and 4.25" in message
 
 

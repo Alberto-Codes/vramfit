@@ -53,7 +53,7 @@ from vramfit.adapters.outbound.gguf.types import (
     all_overrides,
     consults_row_width,
     gguf_tensor_name,
-    refuses_super_block,
+    measured_row_width,
 )
 from vramfit.domain.errors import VramfitError
 from vramfit.domain.model import Recipe
@@ -83,7 +83,7 @@ def _resolve_row_widths(recipe: Recipe, model_dir: Path) -> Mapping[str, int]:
     routing reads the width the checkpoint states (issue #515), so a
     ``--model`` that carries no width for a routed group refuses
     before the convert stage writes a full-size base GGUF.
-    `vramfit.adapters.outbound.gguf.types.refuses_super_block` owns
+    `vramfit.adapters.outbound.gguf.types.measured_row_width` owns
     that refusal, so the pre-flight and the pack cannot disagree.
 
     Args:
@@ -116,7 +116,7 @@ def _resolve_row_widths(recipe: Recipe, model_dir: Path) -> Mapping[str, int]:
     try:
         row_widths = checkpoint_row_widths(model_dir) if routed else {}
         for group in routed:
-            refuses_super_block(group, row_widths)
+            measured_row_width(group, row_widths)
         if recipe.protected_tensors:
             all_overrides(recipe, row_widths)
     except VramfitError as exc:

@@ -200,6 +200,16 @@ Facts verified upstream on 2026-08-14 (#189):
   holds several row widths and never took this table. A runtime
   with no effective-bits table is unaffected too, because it prices
   at nominal bits.
+- A published sensitivity map alone no longer plans under
+  `llama.cpp` at `stack` or `tensor` granularity (noted 2026-09-05,
+  #515). The map carries every damage measurement and no row width,
+  so the operator must also hold the checkpoint and pass
+  ``--checkpoint``. Two claims build on the capability this removes.
+  The [artifact ecosystem](../explanation/artifact-ecosystem.md)
+  page states "Publish maps for models we did not pack. The map is
+  the product." Its phase 3 Space re-solves recipes live against
+  published maps, and a Space holds no checkpoint. Issue #558 asks
+  whether the map itself should carry the width.
 - `TensorSize` gains a `rows` field (2026-09-05, #515). ADR-0029
   decision 5 named `dtype` and `bytes` only, so the shapes the
   shard headers carry reached no caller. The safetensors adapter

@@ -374,9 +374,13 @@ def plan(
     and the recipe assigns it there. The same read states each
     group's row width, which routes the 256 super-block decision
     (ADR-0028, as amended 2026-09-05 by #515). Without the option the
-    map defines the model, and the command says so — and a map
-    naming a layer-class or routed-expert-stack group refuses,
-    because no name supplies its row width. A ``layer`` map
+    map defines the model, and the command says so. A map naming a
+    layer-class or routed-expert-stack group then refuses, because no
+    name supplies its row width. That refusal reaches only a runtime
+    carrying both type tables the width routes between, which is
+    ``llama.cpp`` today. A ``vllm`` plan and a plan with no
+    ``--runtime`` price at nominal bits, so the same map solves. A
+    ``layer`` map
     scanned before the discovery skip (#204) folds a class the
     quantizer refuses into its layer group, which the checkpoint
     holds by its own name. The plan prices it twice and draws a

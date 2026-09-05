@@ -126,8 +126,12 @@ class TestPredictedMatchesPacked:
         # The synthetic layout's types are the ones the pack step
         # maps: the stack table for the expert stacks and the
         # super-block-refused class, no override for the F32 classes.
-        assert expert_stack_type_for(4, LAYOUT[0][0]) == "q4_0"
-        assert expert_stack_type_for(2, LAYOUT[1][0]) == "q2_0"
+        assert (
+            expert_stack_type_for(4, LAYOUT[0][0], ROW_WIDTHS[LAYOUT[0][0]]) == "q4_0"
+        )
+        assert (
+            expert_stack_type_for(2, LAYOUT[1][0], ROW_WIDTHS[LAYOUT[1][0]]) == "q2_0"
+        )
         map_ = map_from_dict(
             make_map([(LAYOUT[2][0], 1024, {8: 0.0})], precisions=(8,))
         )
