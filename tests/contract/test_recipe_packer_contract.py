@@ -147,6 +147,18 @@ def sample_pack_recipe() -> Recipe:
     )
 
 
+# The 30B target's measured row widths (#159). Its routed-expert
+# stacks carry rows of 2688, which no k-quant super-block divides, so
+# both stacks route through the ADR-0028 table. The routing reads the
+# width, never the class name (#515).
+STACK_ROW_WIDTHS = {
+    "backbone.layers.1.mixer.experts.up_proj": 2688,
+    "backbone.layers.1.mixer.experts.down_proj": 2688,
+    "model.layers.1.mlp.experts.up_proj": 2688,
+    "model.layers.1.mlp.experts.down_proj": 2688,
+}
+
+
 def stack_pack_recipe() -> Recipe:
     """A `--group-by stack` recipe shaped like the Nemotron target.
 
@@ -302,6 +314,7 @@ def _real_packer(  # noqa: PLR0913 - the contract fixture surface: one flag per 
         python_bin=Path(sys.executable),
         threads=1,
         imatrix=tmp_path / "imatrix.gguf" if with_imatrix else None,
+        row_widths=STACK_ROW_WIDTHS,
     )
 
 
@@ -366,6 +379,7 @@ def _fake_packer(  # noqa: PLR0913 - mirrors _real_packer's fixture surface
         # #307 report over one tensor list. The matrix's entries are
         # the narrower list the `imatrix_entry_names` fixture serves,
         # for the same reason.
+        row_widths=STACK_ROW_WIDTHS,
         base_tensor_names=_base_names(
             unmatched=with_unmatched_override, tied=with_tied_base
         ),

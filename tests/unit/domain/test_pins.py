@@ -6,6 +6,7 @@ from typing import Any
 
 import pytest
 
+from tests.fakes import stack_row_widths
 from tests.unit.conftest import make_map
 from vramfit.adapters.outbound.sensitivity_map_json import map_from_dict
 from vramfit.domain.model import SensitivityMap
@@ -18,6 +19,16 @@ def load(raw: dict[str, Any]) -> SensitivityMap:
 
 
 def solve_simple(map_: SensitivityMap, budget: int, **kwargs: Any):
+    # The ADR-0028 routing reads each group's measured row width
+    # (#515). These suites model the 30B target, so a stack carries
+    # 2688-wide rows and every other class divides the super-block.
+    kwargs.setdefault(
+        "row_widths",
+        stack_row_widths(
+            [group.name for group in map_.groups]
+            + sorted(kwargs.get("discovered_bytes") or {})
+        ),
+    )
     return solve(
         map_,
         weight_budget_bytes=budget,

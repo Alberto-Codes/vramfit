@@ -60,6 +60,12 @@ LAYOUT = (
 )
 
 
+# The 30B target's measured row widths (#159). 2688 divides by no
+# k-quant super-block, so every group here routes through the
+# ADR-0028 table — the width decides, not the class name (#515).
+ROW_WIDTHS = {group: 2688 for group, _, _, _ in LAYOUT}
+
+
 def packed_bytes(weights: int, gguf_type: str) -> int:
     if gguf_type == "F32":
         return weights * 4
@@ -100,6 +106,7 @@ class TestPredictedMatchesPacked:
             runtime="llama.cpp",
             discovered_bytes=discovered,
             pins={LAYOUT[1][0]: 2, LAYOUT[2][0]: 8},
+            row_widths=ROW_WIDTHS,
             format_overhead=0.0,
         )
         types_by_group = {group: gguf_type for group, _, _, gguf_type in LAYOUT}
@@ -131,6 +138,7 @@ class TestPredictedMatchesPacked:
             kv_headroom_bytes=1000,
             runtime="llama.cpp",
             discovered_bytes={LAYOUT[3][0]: 192, LAYOUT[4][0]: 256},
+            row_widths=ROW_WIDTHS,
         )
-        overrides = tensor_overrides(recipe)
+        overrides = tensor_overrides(recipe, ROW_WIDTHS)
         assert [o.quant_type for o in overrides] == ["q8_0"]

@@ -149,6 +149,16 @@ torch.
 
 A **base GGUF** exists only after a pack, and `plan` runs before packing.
 
+- **Note (2026-09-05, issue #515):** decision 5's record gains a
+  `rows` field, the shape's last dimension. The record named
+  `dtype` and `bytes` only, so the shapes the shard headers carry
+  reached no caller — the adapter parsed the shape, checked it
+  against the data range, and dropped it. ADR-0028's 2026-09-05
+  amendment routes the 256 super-block decision from that width, so
+  the plan needs it. Nothing else about the port changes: the
+  adapter still reports what the header states and computes no
+  convention of its own.
+
 ## Decision
 
 1. **The source is the checkpoint's safetensors shard headers.** Not the
@@ -222,7 +232,7 @@ A **base GGUF** exists only after a pack, and `plan` runs before packing.
    a bare integer.** `TensorSizeSource.tensor_sizes` returns a
    `Mapping[str, TensorSize]` keyed by checkpoint tensor name.
    `TensorSize` is a frozen domain dataclass holding `dtype` and
-   `bytes`.
+   `bytes` (and `rows` since the 2026-09-05 note, #515).
 
    A bare `Mapping[str, int]` ~~would mirror
    `ImatrixCountSource.expert_stack_counts` and~~ would hardcode the

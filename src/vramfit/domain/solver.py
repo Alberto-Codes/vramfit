@@ -37,10 +37,13 @@ Size predictions follow ADR-0014: a runtime with an effective-bits
 table prices each precision at its real per-weight cost, and the
 overhead fraction shrinks to a residual for what the table cannot
 see (unquantized tensors, file metadata). Without a table the
-nominal-bits prediction and the 0.05 scalar remain. A routed-expert-
-stack group prices through the expert-stack table instead (ADR-0028)
-— 2.25 bits at nominal 2, not Q2_K's 2.625 — and so does a
-layer-class group whose rows refuse the 256 super-block. A group of
+nominal-bits prediction and the 0.05 scalar remain. A group whose
+measured rows refuse the 256 super-block prices through the
+expert-stack table instead (ADR-0028) — 2.25 bits at nominal 2, not
+Q2_K's 2.625. The measured width decides and no class name does
+(#515), so a routed-expert stack of 2048-wide rows keeps the k-quant
+table. `solve` takes those widths and refuses a group it has none
+for. A group of
 a class the runtime's quantizer refuses holds at the F16 passthrough
 whatever the map measured (the 2026-08-20 ADR-0012 amendment). A
 pin pattern that resolves to that one group refuses, and a pattern
@@ -124,8 +127,11 @@ from vramfit.domain.runtime import (
     servable_precisions,
     unquantizable_class,
 )
-from vramfit.domain.scan import is_expert_stack
-from vramfit.domain.sizes import REFERENCE_BITS, held_assignments
+from vramfit.domain.sizes import (
+    REFERENCE_BITS,
+    held_assignments,
+    refuse_unmeasured_rows,
+)
 from vramfit.domain.solver_errors import (
     InfeasibleBudgetError as InfeasibleBudgetError,  # noqa: PLC0414 - re-export: the solver's errors read from this module
 )
@@ -290,13 +296,17 @@ def _refine_last_step(
 
 
 def _predictor(
-    runtime: str | None, format_overhead: float
+    runtime: str | None,
+    format_overhead: float,
+    row_widths: Mapping[str, int],
 ) -> Callable[[str], Callable[[int, int], int]]:
     """Build the per-group size predictor for one solve.
 
-    An expert-stack group prices through the ADR-0028 table where it
-    has a row (8, 6, 5, 4, 2), and so does a layer-class group whose rows
-    refuse the 256 super-block (the 2026-08-20 amendment). Nominal 3
+    A group whose measured rows refuse the 256 super-block prices
+    through the ADR-0028 table where it has a row (8, 6, 5, 4, 2).
+    The width decides, never a class name (issue #515), so a
+    routed-expert stack of 2048-wide rows keeps the k-quant table.
+    Nominal 3
     keeps the dense entry: the plan-time refusal is an ADR-0028 open
     question, so pack refuses first and the plan still prices the
     assignment. At the passthrough a group prices at its table's 16
@@ -309,6 +319,10 @@ def _predictor(
             bits.
         format_overhead: Overhead fraction on top of the per-weight
             bit cost.
+        row_widths: Elements per row per group, from
+            `vramfit.domain.sizes.discovered_group_rows`. A group the
+            mapping does not name takes the k-quant table, and
+            `solve` refuses before that reading can misprice one.
 
     Returns:
         A builder from group name to a ``(bytes_fp16, bits) -> bytes``
@@ -326,12 +340,14 @@ def _predictor(
         """Bind one group's tables into its predictor.
 
         Args:
-            name: The group's name, which selects its tables.
+            name: The group's name, which selects its tables through
+                its measured row width.
 
         Returns:
             The group's predictor, carrying the overhead setting.
         """
-        stacked = is_expert_stack(name) or rows_refuse_super_block(name)
+        width = row_widths.get(name)
+        stacked = width is not None and rows_refuse_super_block(width)
         spent_table = merged if stacked and merged is not None else table
 
         def price(bytes_fp16: int, bits: int) -> int:
@@ -372,6 +388,7 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
     format_overhead: float | None = None,
     runtime: str | None = None,
     discovered_bytes: Mapping[str, int] | None = None,
+    row_widths: Mapping[str, int] | None = None,
 ) -> Recipe:
     """Assign a precision to every group so the total fits the budget.
 
@@ -382,10 +399,10 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
     runtime removed, so the reported floor is explainable. A runtime
     with an effective-bits table prices every candidate at its real
     per-weight cost (ADR-0014) — Q4_K spends 4.5 bits, not 4. A
-    routed-expert-stack group prices through the expert-stack table
-    instead (ADR-0028): 2.25 bits at nominal 2. A layer-class group
-    whose rows refuse the 256 super-block prices through the same
-    table, and a group of a class the runtime's quantizer refuses
+    group whose measured rows refuse the 256 super-block prices
+    through the expert-stack table instead (ADR-0028): 2.25 bits at
+    nominal 2. The measured width decides, never a class name (issue
+    #515), and a group of a class the runtime's quantizer refuses
     holds at the F16 passthrough whatever the map measured — a pin
     pattern that resolves to that one group refuses, a multi-group
     pattern skips it (ADR-0007, 2026-09-04 amendment, #371), and
@@ -445,8 +462,13 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
             at reference precision and the recipe assigns it there.
             None means the map defines the model, which is the
             behavior ADR-0029 replaced. An uncovered expert-stack
-            group prices through the ADR-0028 table, like a measured
-            one.
+            group prices through the ADR-0028 table when its rows
+            refuse the super-block, like a measured one.
+        row_widths: Elements per row per group, from
+            `vramfit.domain.sizes.discovered_group_rows`. The
+            super-block decision reads this width (issue #515). Every
+            layer-class and routed-expert-stack group the map or the
+            checkpoint names must appear, or the solve refuses.
 
     Returns:
         The recipe, with assignments in sensitivity-map group order
@@ -459,6 +481,9 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
     Raises:
         ValueError: If ``format_overhead`` is negative, NaN, or
             infinite.
+        SizeSourceError: If a layer-class or routed-expert-stack
+            group has no measured row width. The ADR-0028 routing
+            reads that width, and no name supplies it (issue #515).
         RuntimeCapabilityError: If the runtime is unknown, serves
             none of the scanned precisions, or cannot serve reference
             precision while ``discovered_bytes`` leaves a group
@@ -512,7 +537,14 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
     floors = expand_protections(protections, sensitivity_map, runtime)
     excluded = expand_exclusions(imatrix_exclusions, floors, sensitivity_map)
 
-    price_for = _predictor(runtime, format_overhead)
+    widths = dict(row_widths or {})
+    refuse_unmeasured_rows(
+        widths,
+        [group.name for group in sensitivity_map.groups]
+        + sorted(discovered_bytes or {}),
+    )
+
+    price_for = _predictor(runtime, format_overhead, widths)
 
     def size(group: LayerGroup, bits: int) -> int:
         """Price one group, holding its protected tensors at floor.

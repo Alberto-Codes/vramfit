@@ -56,7 +56,7 @@ Examples:
 
     base = types.base_type(recipe)
     embed = types.token_embedding_type(recipe)
-    overrides = types.all_overrides(recipe)
+    overrides = types.all_overrides(recipe, row_widths)
     ```
 
 See Also:
@@ -67,6 +67,7 @@ See Also:
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from typing import Final
 
 from vramfit.domain.errors import VramfitError
@@ -78,7 +79,7 @@ from vramfit.domain.runtime import (
     unquantizable_filter,
 )
 from vramfit.domain.scan import NAME_TABLE_ROOTS
-from vramfit.domain.sizes import REFERENCE_BITS
+from vramfit.domain.sizes import REFERENCE_BITS, SizeSourceError, reconcile_root
 
 # The 16 row is the F16 passthrough (ADR-0029 decision 4). A recipe
 # holds an unmeasured group at reference precision, and `f16` is what
@@ -705,14 +706,56 @@ def _claim_root(name: str, roots: dict[str, str], kind: str = "group") -> None:
         )
 
 
-def _class_override(group: str, bits: int) -> tuple[TypeOverride, ...] | None:
+def _refuses_super_block(group: str, row_widths: Mapping[str, int]) -> bool:
+    """Decide whether one group's measured rows take the ADR-0028 table.
+
+    The pack reads the same widths the plan priced from, so the
+    predicted type and the emitted type cannot disagree (issue #515).
+
+    Args:
+        group: Recipe group name, under either naming root.
+        row_widths: Elements per row per group, from
+            `vramfit.domain.sizes.discovered_group_rows`.
+
+    Returns:
+        True when the super-block does not divide the group's rows.
+
+    Raises:
+        PackError: If the group has no measured row width. A name
+            cannot supply one, and a default would misprice the
+            group silently.
+    """
+    width = row_widths.get(group)
+    if width is None:
+        # The recipe may spell a group under the checkpoint's root
+        # while the widths key on the map's (ADR-0029 decision 7). A
+        # root outside that table reconciles to nothing, and the
+        # missing-width refusal below states it.
+        try:
+            width = row_widths.get(reconcile_root(group))
+        except SizeSourceError:
+            width = None
+    if width is None:
+        raise PackError(
+            f'group "{group}" has no measured row width, and the 256 '
+            f"super-block decision reads that width rather than a class "
+            f"name (ADR-0028, issue #515). The checkpoint the pack reads "
+            f"states it — check that --model names the checkpoint the "
+            f"recipe was planned from (ADR-0029 decision 1)"
+        )
+    return rows_refuse_super_block(width)
+
+
+def _class_override(
+    group: str, bits: int, row_widths: Mapping[str, int]
+) -> tuple[TypeOverride, ...] | None:
     r"""Map one layer-class group to its override, or hold it at F16.
 
     The class table keys on the tensor suffix under a free prefix,
     at two or three dot-separated segments (the 2026-08-20
-    amendment). A class whose rows refuse the 256 super-block routes
-    through the ADR-0028 table, and the rest keep the ADR-0012
-    k-quant table. An unquantizable class emits no override — the
+    amendment). A class whose measured rows refuse the 256
+    super-block routes through the ADR-0028 table, and the rest keep
+    the ADR-0012 k-quant table. An unquantizable class emits no override — the
     quantizer refuses its tensors and holds them at the convert
     dtype, so the F16 passthrough is what packing already does.
 
@@ -720,6 +763,8 @@ def _class_override(group: str, bits: int) -> tuple[TypeOverride, ...] | None:
         group: Recipe group name, e.g.
             ``model.layers.3.mixer.in_proj``.
         bits: Nominal precision from the group's assignment.
+        row_widths: Elements per row per group, from
+            `vramfit.domain.sizes.discovered_group_rows`.
 
     Returns:
         A one-override tuple for a mapped class, an empty tuple for
@@ -760,13 +805,15 @@ def _class_override(group: str, bits: int) -> tuple[TypeOverride, ...] | None:
         return None
     quant = (
         expert_stack_type_for(bits, group, kind="layer-class group")
-        if rows_refuse_super_block(group)
+        if _refuses_super_block(group, row_widths)
         else ggml_type_for(bits)
     )
     return (TypeOverride(re.escape(f"blk.{match.group(1)}.{stem}."), quant),)
 
 
-def tensor_overrides(recipe: Recipe) -> tuple[TypeOverride, ...]:
+def tensor_overrides(
+    recipe: Recipe, row_widths: Mapping[str, int]
+) -> tuple[TypeOverride, ...]:
     r"""Translate recipe groups into quantizer tensor-type overrides.
 
     Three group shapes map. A layer group under any of the three
@@ -804,6 +851,10 @@ def tensor_overrides(recipe: Recipe) -> tuple[TypeOverride, ...]:
 
     Args:
         recipe: The recipe to pack.
+        row_widths: Elements per row per group, from
+            `vramfit.domain.sizes.discovered_group_rows` over the
+            checkpoint the recipe was planned from. The ADR-0028
+            routing reads this width (issue #515).
 
     Returns:
         Expert-stack overrides in recipe order, then layer-class
@@ -817,7 +868,8 @@ def tensor_overrides(recipe: Recipe) -> tuple[TypeOverride, ...]:
             outside the fused-stack table, an ADR-0028-routed group
             names a precision outside that table (nominal 3 refuses
             over the empty 2.25-4.25 gap), an unquantizable class
-            takes a width below the F16 passthrough, the groups and
+            takes a width below the F16 passthrough, a group the
+            routing reaches has no measured row width, the groups and
             protected tensors hang from two roots or from a root the
             scan name table does not support, or a precision has no
             table entry.
@@ -842,10 +894,17 @@ def tensor_overrides(recipe: Recipe) -> tuple[TypeOverride, ...]:
         _claim_root(assignment.group, roots)
         prefix = gguf_stack_prefix(assignment.group)
         if prefix is not None:
-            bits = expert_stack_type_for(assignment.bits, assignment.group)
+            # A stack takes the ADR-0028 table only when its measured
+            # rows refuse the super-block. A stack of 2048-wide rows
+            # takes the k-quant table, like any other group (#515).
+            bits = (
+                expert_stack_type_for(assignment.bits, assignment.group)
+                if _refuses_super_block(assignment.group, row_widths)
+                else ggml_type_for(assignment.bits)
+            )
             stacks.append(TypeOverride(re.escape(prefix), bits))
             continue
-        mapped = _class_override(assignment.group, assignment.bits)
+        mapped = _class_override(assignment.group, assignment.bits, row_widths)
         if mapped is not None:
             classes.extend(mapped)
             continue
@@ -862,7 +921,9 @@ def tensor_overrides(recipe: Recipe) -> tuple[TypeOverride, ...]:
     return tuple(stacks) + tuple(classes) + tuple(layers)
 
 
-def all_overrides(recipe: Recipe) -> tuple[TypeOverride, ...]:
+def all_overrides(
+    recipe: Recipe, row_widths: Mapping[str, int]
+) -> tuple[TypeOverride, ...]:
     """Compose every override the quantizer receives, in priority order.
 
     Protection overrides lead, because the quantizer applies the
@@ -876,19 +937,22 @@ def all_overrides(recipe: Recipe) -> tuple[TypeOverride, ...]:
 
     Args:
         recipe: The recipe to pack.
+        row_widths: Elements per row per group, from
+            `vramfit.domain.sizes.discovered_group_rows`.
 
     Returns:
         Protection overrides, then expert-stack and layer overrides.
 
     Raises:
-        PackError: If any group or precision has no mapping. See
-            `protection_overrides` and `tensor_overrides`.
+        PackError: If any group or precision has no mapping, or a
+            group the ADR-0028 routing reaches has no measured row
+            width. See `protection_overrides` and `tensor_overrides`.
 
     Examples:
         The pack step and its pre-run check read one list:
 
         ```python
-        overrides = all_overrides(recipe)
+        overrides = all_overrides(recipe, row_widths)
         ```
     """
-    return protection_overrides(recipe) + tensor_overrides(recipe)
+    return protection_overrides(recipe) + tensor_overrides(recipe, row_widths)

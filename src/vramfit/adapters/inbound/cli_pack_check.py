@@ -11,8 +11,9 @@ reproduce. The stage refuses and names the collapsed tensors, suggesting the
 still unused (ADR-0023); it
 never repacks on its own, so the packed file stays recipe-driven
 (ADR-0012 decision 3). The mapping pre-flight lives here too — it
+reads each group's measured row width from the checkpoint, then
 composes every override for a protected recipe, so a cross-root
-protection refuses before any tool runs (#367) — and the run-log
+protection refuses before any tool runs (#367, #515) — and the run-log
 event guards non-finite measurements the sink would reject
 (ADR-0011). `reconstruction_reference_path` names the reference
 file once, for this stage and for the sidecar collision guard
@@ -37,13 +38,14 @@ from __future__ import annotations
 
 import math
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 
 import typer
 
 from vramfit.adapters.inbound.cli_pack_smoke import _halt
 from vramfit.adapters.inbound.run_log import SafeRunLog
+from vramfit.adapters.outbound.gguf.pack import checkpoint_row_widths
 from vramfit.adapters.outbound.gguf.reconstruction import GgufReconstructionChecker
 from vramfit.adapters.outbound.gguf.types import (
     PackError,
@@ -52,11 +54,12 @@ from vramfit.adapters.outbound.gguf.types import (
 )
 from vramfit.domain.model import Recipe
 from vramfit.domain.pack import collapsed_tensors, without_protections
+from vramfit.domain.runtime import routes_by_row_width
 from vramfit.ports.outbound import RecipePacker, ReconstructionChecker
 
 
-def _check_protected_mappable(recipe: Recipe) -> None:
-    """Reject a protected recipe's bad override composition early.
+def _resolve_row_widths(recipe: Recipe, model_dir: Path) -> Mapping[str, int]:
+    """Measure the checkpoint's row widths and check the composition early.
 
     `all_overrides` composes the override list here, so a
     composition the backend cannot drive fails in milliseconds —
@@ -73,20 +76,37 @@ def _check_protected_mappable(recipe: Recipe) -> None:
     staged halts and run-log records — the quantize-stage halt is on
     record (#303, #275).
 
+    The composition routes the 256 super-block decision from the
+    checkpoint's measured row widths, so the check reads the
+    checkpoint's shard headers first (issue #515).
+
     Args:
         recipe: The recipe about to pack.
+        model_dir: The checkpoint directory the row widths come from.
+
+    A recipe of whole-layer groups alone reads no checkpoint. No
+    such group takes the ADR-0028 table, so no width decides
+    anything and an absent shard is not this command's problem.
+
+    Returns:
+        Elements per row per group, which the packer then applies.
+        Empty when no group the super-block decision reaches appears
+        in the recipe.
 
     Raises:
-        typer.Exit: With code 1 when a protected recipe's override
+        typer.Exit: With code 1 when the checkpoint's row widths
+            cannot be read, or a protected recipe's override
             composition refuses.
     """
-    if not recipe.protected_tensors:
-        return
+    needed = any(routes_by_row_width(a.group) for a in recipe.assignments)
     try:
-        all_overrides(recipe)
+        row_widths = checkpoint_row_widths(model_dir) if needed else {}
+        if recipe.protected_tensors:
+            all_overrides(recipe, row_widths)
     except PackError as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(code=1) from exc
+    return row_widths
 
 
 def reconstruction_reference_path(out: Path) -> Path:

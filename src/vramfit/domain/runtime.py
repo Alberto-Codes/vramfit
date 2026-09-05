@@ -35,13 +35,11 @@ Attributes:
         through their own type table (ADR-0028), so their per-weight
         costs differ from the dense table's at 2, 4, 5, and 6. The
         same table reaches
-        a layer-class group whose rows refuse the 256 super-block
-        (the 2026-08-20 amendment) — `SUPER_BLOCK_REFUSED_CLASSES`
-        names those classes.
-    SUPER_BLOCK_REFUSED_CLASSES (frozenset[str]): Layer-class group
-        suffixes whose tensor rows refuse the k-quant 256
-        super-block. Each maps and prices through the ADR-0028
-        table.
+        a layer-class group whose measured rows refuse the 256
+        super-block (the 2026-08-20 amendment) —
+        `rows_refuse_super_block` decides that from the width.
+    K_QUANT_SUPER_BLOCK (int): Elements a k-quant super-block packs.
+        A row the block does not divide takes no k-quant type.
     UNQUANTIZABLE_CLASS_FILTERS (Mapping[str, Mapping[str, str]]):
         Per runtime, the layer-class suffixes whose tensors the
         runtime's quantizer refuses, each mapped to the name of the
@@ -139,23 +137,12 @@ EXPERT_STACK_EFFECTIVE_BITS: Final[Mapping[str, Mapping[int, float]]] = (
 )
 
 
-# The Nemotron-H dense classes, by group suffix. Their tensor rows are
-# 2688 wide, which no 256-element k-quant super-block divides, so each
-# maps and prices through the ADR-0028 table (ADR-0012 and ADR-0028,
-# 2026-08-20 amendments). `mixer.gate` and `mixer.conv1d` stay out:
-# they pin at the F16 passthrough below and take no table row.
-SUPER_BLOCK_REFUSED_CLASSES: Final[frozenset[str]] = frozenset(
-    {
-        "mixer.in_proj",
-        "mixer.out_proj",
-        "mixer.shared_experts.up_proj",
-        "mixer.shared_experts.down_proj",
-        "mixer.q_proj",
-        "mixer.k_proj",
-        "mixer.v_proj",
-        "mixer.o_proj",
-    }
-)
+# Elements a k-quant super-block packs. `llama-quantize` accepts a
+# k-quant only on rows the block divides, and `tensor_type_fallback`
+# rewrites the type on any other row (ADR-0028 context). The scan
+# reads the same width to refuse a cell it cannot price (ADR-0018).
+K_QUANT_SUPER_BLOCK: Final[int] = 256
+
 
 # The layer-class suffixes llama-quantize refuses to quantize, each
 # mapped to the upstream filter that refuses it. The filter list in
@@ -203,30 +190,65 @@ _CLASS_SUFFIX: Final[re.Pattern[str]] = re.compile(
 )
 
 
-def rows_refuse_super_block(group: str) -> bool:
-    """Report whether a group's rows refuse the k-quant super-block.
+def rows_refuse_super_block(row_width: int) -> bool:
+    """Report whether a measured row width refuses the k-quant super-block.
 
-    Such a layer-class group maps and prices through the ADR-0028
-    table, exactly like a routed-expert stack (ADR-0028, 2026-08-20
-    amendment). The class list is `SUPER_BLOCK_REFUSED_CLASSES`.
+    A group whose rows refuse the block maps and prices through the
+    ADR-0028 table, exactly like a routed-expert stack (ADR-0028,
+    2026-08-20 amendment). The decision reads the width the
+    checkpoint states, never a class name (issue #515). A name list
+    misprices a model of the same family whose rows do divide the
+    block, and it does so silently.
+
+    Args:
+        row_width: Elements per row — the tensor's last dimension,
+            which GGUF calls ``ne[0]``.
+
+    Returns:
+        True when `K_QUANT_SUPER_BLOCK` does not divide the width.
+
+    Raises:
+        ValueError: If ``row_width`` is not positive. No tensor has
+            such a row, so the caller measured the wrong thing.
+
+    Examples:
+        ```python
+        from vramfit.domain.runtime import rows_refuse_super_block
+
+        assert rows_refuse_super_block(2688)
+        assert not rows_refuse_super_block(2048)
+        ```
+    """
+    if row_width <= 0:
+        raise ValueError(f"row width must be positive, and it is {row_width}")
+    return row_width % K_QUANT_SUPER_BLOCK != 0
+
+
+def routes_by_row_width(group: str) -> bool:
+    """Report whether the super-block decision reaches this group.
+
+    A group naming one tensor class has one row width, so a measured
+    width routes it (issue #515). A whole-layer group holds classes
+    of several widths and keeps the ADR-0012 k-quant table, which is
+    what it took before the width reached the decision.
 
     Args:
         group: Group name, as `vramfit.domain.scan.group_key`
             produces it.
 
     Returns:
-        True when the group's class suffix is in the list.
+        True when the group names a layer-class or routed-expert-stack
+        group.
 
     Examples:
         ```python
-        from vramfit.domain.runtime import rows_refuse_super_block
+        from vramfit.domain.runtime import routes_by_row_width
 
-        assert rows_refuse_super_block("model.layers.3.mixer.in_proj")
-        assert not rows_refuse_super_block("model.layers.3")
+        assert routes_by_row_width("model.layers.3.mixer.in_proj")
+        assert not routes_by_row_width("model.layers.3")
         ```
     """
-    match = _CLASS_SUFFIX.match(group)
-    return match is not None and match.group(1) in SUPER_BLOCK_REFUSED_CLASSES
+    return _CLASS_SUFFIX.match(group) is not None
 
 
 def unquantizable_filter(group: str, runtime: str | None) -> str | None:

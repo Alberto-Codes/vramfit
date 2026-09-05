@@ -27,10 +27,30 @@
   groups on this target — ADR-0021's 2026-08-22 amendment.**
 - **Amendment (2026-08-20, issue #183):** decision 1's table also
   reaches a layer-class group whose rows refuse the 256
-  super-block. The Nemotron-H dense classes qualify at 2688. The
+  super-block. The Nemotron-H dense classes qualify at 2688. (The
+  2026-09-05 amendment below replaces that class list with the
+  measured width, #515.) The
   2026-08-20 amendment to [ADR-0012](0012-gguf-type-mapping.md)
   carries the class table and the F16 pin, and #368 lands the
   build.
+- **Amendment (2026-09-05, issue #515):** the measured row width
+  decides which groups decision 1's table reaches, and no class
+  name does. Maintainer ruling 2026-09-05 on #515, option A. A
+  group whose measured rows the 256 super-block does not divide
+  takes this table. Every other group takes ADR-0012 decision 1's
+  k-quant table, **a routed-expert stack included**. Decision 1
+  read "the backend already recognizes a routed-expert-stack group
+  from its name", and that name was a proxy for the 30B target's
+  2688- and 1856-wide rows. The proxy holds on that target and
+  fails elsewhere: Qwen3-Coder-30B-A3B's routed-expert rows are
+  2048 and 768, both of which the super-block divides, so the name
+  sent 94.95 % of its parameters to this table and banned nominal 3
+  there. The name list `SUPER_BLOCK_REFUSED_CLASSES` is deleted.
+  The plan reads each group's row width from the size source
+  (ADR-0029), and the pack reads the same widths, so the predicted
+  bits per weight and the emitted type come from one table. A group
+  the routing reaches with no measured width refuses and names
+  ``--checkpoint``. It never defaults.
 - **Amendment (2026-09-04, issue #232):** decision 1's table gains
   5- and 6-bit rows (5→`Q5_0` at 5.50, 6→`Q5_1` at 6.00 bits per
   weight). Maintainer ruling 2026-09-04. Both block 32, so both
@@ -99,10 +119,12 @@ Facts verified upstream on 2026-08-14 (#189):
    The 6- and 5-bit rows date from the 2026-09-04 amendment (#232).
    The drift column states each type's cost over its nominal width.
 
-   The backend already recognizes a routed-expert-stack group from
-   its name (ADR-0012, 2026-08-12 amendment). Every entry's block
-   size divides both 2688 and 1856, so the fallback never fires on
-   these rows. Q4_0 takes the 4-bit row over MXFP4 because
+   ~~The backend already recognizes a routed-expert-stack group from
+   its name (ADR-0012, 2026-08-12 amendment).~~ **Superseded
+   2026-09-05 (#515): the measured row width selects this table,
+   and a stack whose rows divide 256 takes the k-quant table
+   instead.** Every entry's block size divides both 2688 and 1856,
+   so the fallback never fires on these rows. Q4_0 takes the 4-bit row over MXFP4 because
    `quantize_q4_0` consumes the importance matrix per expert and
    MXFP4 ignores it.
 
@@ -154,6 +176,16 @@ Facts verified upstream on 2026-08-14 (#189):
 
 ## Consequences
 
+- The routing now reads a measured width, so the plan needs the
+  size source for every layer-class and routed-expert-stack group
+  it prices (noted 2026-09-05, #515). `plan` without
+  ``--checkpoint`` refuses such a map and names the flag. A map of
+  whole-layer groups alone is unaffected, because a layer group
+  holds several row widths and never took this table.
+- `TensorSize` gains a `rows` field (2026-09-05, #515). ADR-0029
+  decision 5 named `dtype` and `bytes` only, so the shapes the
+  shard headers carry reached no caller. The safetensors adapter
+  already parsed the shape and dropped it.
 - The plan step prices an expert-stack group at this table's
   effective bits (ADR-0014): 2.25 at nominal 2, not Q2_K's 2.625.
   Without that entry the size prediction drifts and the ADR-0012

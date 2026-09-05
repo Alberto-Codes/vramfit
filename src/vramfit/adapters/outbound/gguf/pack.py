@@ -9,7 +9,10 @@ recorded for a foreign runtime (ADR-0013), then runs
 [vramfit.adapters.outbound.gguf.types][]: protection overrides
 first (ADR-0022 — the quantizer applies the first matching
 pattern), then pattern overrides per
-layer group, plus dedicated embedding and output-head flags. It then
+layer group, plus dedicated embedding and output-head flags. That
+mapping routes the 256 super-block decision from each group's
+measured row width, which `checkpoint_row_widths` reads from the
+checkpoint's shard headers (issue #515). It then
 holds every override against the base GGUF's tensor names and refuses
 one that matches nothing
 ([vramfit.adapters.outbound.gguf.override_match][]) — such an
@@ -73,7 +76,8 @@ See Also:
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final
 
@@ -91,8 +95,11 @@ from vramfit.adapters.outbound.gguf.types import (
     output_tensor_type,
     token_embedding_type,
 )
+from vramfit.adapters.outbound.safetensors_sizes import SafetensorsSizes
+from vramfit.domain.errors import VramfitError
 from vramfit.domain.model import Recipe
 from vramfit.domain.pack import PackResult
+from vramfit.domain.sizes import discovered_group_rows
 
 # The quantizer's zero-exit warning for a tensor the importance
 # matrix does not cover (llama.cpp src/llama-quant.cpp). The tensor
@@ -223,6 +230,51 @@ class TypeFallbackError(PackError):
         self.rewritten = rewritten
 
 
+def checkpoint_row_widths(model_dir: Path) -> Mapping[str, int]:
+    """Measure each group's row width from a checkpoint's shard headers.
+
+    The 256 super-block decision reads the width the checkpoint
+    states, never a class name (issue #515). The pack reads it from
+    the same source the plan priced from, so the predicted type and
+    the emitted type cannot disagree. The read is a shard-header
+    parse and needs no torch (ADR-0029 decision 1).
+
+    The granularity is ``stack``: it fuses a routed-expert projection
+    into the group a pack addresses and leaves every other tensor
+    under its own name, which is the group set `tensor_overrides`
+    maps.
+
+    Args:
+        model_dir: The Hugging Face checkpoint directory.
+
+    Returns:
+        Elements per row per group, under the map naming root.
+
+    Raises:
+        PackError: If the checkpoint cannot be read or priced. The
+            source's own message carries the reason.
+
+    Examples:
+        ```python
+        widths = checkpoint_row_widths(Path("/models/qwen3-coder-30b"))
+        ```
+    """
+    try:
+        sizes = SafetensorsSizes(model_dir).tensor_sizes()
+        return discovered_group_rows(sizes, "stack")
+    except VramfitError as exc:
+        raise PackError(
+            f"cannot measure the checkpoint's row widths at {model_dir}: "
+            f"{exc}. The 256 super-block decision reads those widths "
+            f"(ADR-0028, issue #515)"
+        ) from exc
+    except OSError as exc:
+        raise PackError(
+            f"cannot read the checkpoint at {model_dir}: {exc}. The pack "
+            f"measures each group's row width there (issue #515)"
+        ) from exc
+
+
 @dataclass(frozen=True, slots=True)
 class LlamaCppPacker:
     """`RecipePacker` adapter driving the llama.cpp toolchain.
@@ -239,6 +291,11 @@ class LlamaCppPacker:
         threads (int): Quantizer thread count.
         imatrix (Path | None): Importance matrix file for the
             quantizer (ADR-0016). None packs without one.
+        row_widths (Mapping[str, int]): Elements per row per group,
+            from `checkpoint_row_widths` over ``model_dir``. The 256
+            super-block decision reads this width (issue #515), and
+            the composition root passes the same mapping the plan
+            priced from.
 
     Examples:
         The composition root wires the paths:
@@ -263,6 +320,7 @@ class LlamaCppPacker:
     python_bin: Path
     threads: int = 8
     imatrix: Path | None = None
+    row_widths: Mapping[str, int] = field(default_factory=dict)
 
     def convert(self) -> int:
         """Materialize the f16 base GGUF, reusing any existing file.
@@ -324,6 +382,11 @@ class LlamaCppPacker:
         modal type by bytes, and the result records it (ADR-0012
         decision 3 as amended 2026-09-04).
 
+        The override composition reads each group's measured row
+        width, which `checkpoint_row_widths` supplies to the
+        composition root. The 256 super-block decision reads that
+        width and never a class name (issue #515).
+
         Args:
             recipe: The recipe to apply.
 
@@ -357,7 +420,7 @@ class LlamaCppPacker:
         # Protection overrides first (ADR-0022): the quantizer applies
         # the first matching pattern, so a protected tensor must match
         # its own pattern before its group's.
-        overrides = all_overrides(recipe)
+        overrides = all_overrides(recipe, self.row_widths)
         # Last mapping check, and the only one that reads the model.
         # An override the base GGUF carries no tensor for changes no
         # type, and the quantizer reports nothing and exits 0. It runs

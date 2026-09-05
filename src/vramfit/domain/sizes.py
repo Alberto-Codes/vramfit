@@ -6,10 +6,12 @@ the plan step a size source independent of the map. This module holds
 the pure half of that source.
 
 `TensorSize` is what the port carries: one checkpoint tensor's stored
-bytes and the dtype it is stored at (decision 5). The dtype is there
-so the domain can recover the element count rather than assume two
-bytes per parameter — a checkpoint at fp32 or fp8 counts differently.
-`reference_bytes` does that recovery. Reference precision stays
+bytes, the dtype it is stored at (decision 5), and its row width. The
+dtype is there so the domain can recover the element count rather than
+assume two bytes per parameter — a checkpoint at fp32 or fp8 counts
+differently. `reference_bytes` does that recovery. The row width is
+there because the 256 super-block decision reads it and no class name
+supplies it (issue #515). Reference precision stays
 16-bit throughout, per the glossary, because the solver's size model
 prices every precision against a 16-bit base.
 
@@ -27,6 +29,9 @@ tensors become one stack group (decision 6). Group naming stays
 size source. A tensor of an unquantizable class keys by its own name
 under every granularity (#204, #409): the meter skips it, so a layer
 group that absorbed its bytes would hide them behind a covered name.
+`discovered_group_rows` measures the same groups' row widths, and
+`refuse_unmeasured_rows` refuses a solve that would route a group no
+width describes.
 
 Attributes:
     REFERENCE_BITS (int): Bits per weight at reference precision. The
@@ -76,10 +81,10 @@ what the size source implies and not how the budget is spent. It also
 refuses a plan with no size source on a map whose family holds a class
 the scan skips, because nothing else prices that class (the 2026-09-04
 decision 3 amendment). The solver adds its bytes to the total and never
-ranks a downgrade for one. The solver's predictor prices each: an
-uncovered expert stack through the ADR-0028 table, a layer-class group
-whose rows refuse the 256 super-block the same way (the 2026-08-20
-amendment), and an unquantizable class at the convert dtype (#409).
+ranks a downgrade for one. The solver's predictor prices each: a
+group whose measured rows refuse the 256 super-block through the
+ADR-0028 table (the 2026-08-20 amendment, as amended 2026-09-05 by
+#515) and an unquantizable class at the convert dtype (#409).
 
 See Also:
     - [vramfit.ports.outbound][]: `TensorSizeSource`, the port that
@@ -89,7 +94,7 @@ See Also:
 
 from __future__ import annotations
 
-from collections.abc import Callable, Collection, Mapping
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Final, Literal
@@ -100,6 +105,7 @@ from vramfit.domain.runtime import (
     RUNTIME_CAPABILITIES,
     RuntimeCapabilityError,
     missing_unquantizable_module,
+    routes_by_row_width,
     unquantizable_class,
 )
 from vramfit.domain.scan import group_key, matches_a_layer
@@ -170,6 +176,9 @@ class TensorSize:
             the shard header spells it, e.g. ``BF16``. The adapter
             reports it verbatim and invents no convention.
         bytes (int): The tensor's stored size in bytes.
+        rows (int): Elements per row — the shape's last dimension,
+            which GGUF calls ``ne[0]``. The super-block decision
+            reads this width instead of a class name (issue #515).
 
     Examples:
         One expert of the 30B target's up projection:
@@ -177,24 +186,27 @@ class TensorSize:
         ```python
         from vramfit.domain.sizes import TensorSize
 
-        size = TensorSize(dtype="BF16", bytes=9_977_856)
+        size = TensorSize(dtype="BF16", bytes=9_977_856, rows=2688)
         ```
     """
 
     dtype: str
     bytes: int
+    rows: int
 
     def __post_init__(self) -> None:
         """Enforce the record's invariants.
 
         Raises:
-            ValueError: If ``dtype`` is empty or ``bytes`` is not
-                positive.
+            ValueError: If ``dtype`` is empty, or ``bytes`` or
+                ``rows`` is not positive.
         """
         if not self.dtype:
             raise ValueError("dtype must not be empty")
         if self.bytes <= 0:
             raise ValueError("bytes must be positive")
+        if self.rows <= 0:
+            raise ValueError("rows must be positive")
 
 
 def reference_bytes(tensor: str, size: TensorSize) -> int:
@@ -345,6 +357,68 @@ def discovered_group_bytes(
     return groups
 
 
+def discovered_group_rows(
+    sizes: Mapping[str, TensorSize],
+    group_by: Literal["layer", "tensor", "stack"],
+) -> dict[str, int]:
+    """Measure the row width of every group the super-block decision reaches.
+
+    A group naming one tensor class has one row width, and
+    `vramfit.domain.runtime.rows_refuse_super_block` routes it from
+    that width (issue #515). A whole-layer group holds classes of
+    several widths, so this reports none for it and the group keeps
+    the ADR-0012 k-quant table.
+
+    The grouping mirrors `discovered_group_bytes`, so the two read one
+    checkpoint into one set of group names.
+
+    Args:
+        sizes: Stored size per checkpoint tensor name, from a
+            `vramfit.ports.outbound.TensorSizeSource`.
+        group_by: The granularity of the map being planned against,
+            from its ``scan.group_by``.
+
+    Returns:
+        Elements per row per group name, under `MAP_ROOT`. Groups the
+        decision does not reach are absent.
+
+    Raises:
+        SizeSourceError: If two tensors of one group state different
+            row widths, or a layer-bearing name is rooted outside
+            `CHECKPOINT_ROOTS`. One group packs under one type, so
+            two widths have no single answer.
+
+    Examples:
+        ```python
+        from vramfit.domain.sizes import TensorSize, discovered_group_rows
+
+        sizes = {
+            "backbone.layers.0.mixer.in_proj.weight": TensorSize("BF16", 8, 2688),
+        }
+        assert discovered_group_rows(sizes, "tensor") == {
+            "model.layers.0.mixer.in_proj": 2688,
+        }
+        ```
+    """
+    rows: dict[str, int] = {}
+    for tensor, size in sizes.items():
+        name = reconcile_root(tensor)
+        group = group_key(name, "tensor")
+        if unquantizable_class(group) is None:
+            group = group_key(name, group_by)
+        if not routes_by_row_width(group):
+            continue
+        seen = rows.setdefault(group, size.rows)
+        if seen != size.rows:
+            raise SizeSourceError(
+                f'group "{group}" holds rows of {seen} and {size.rows} '
+                f'elements, and tensor "{tensor}" carries the second. One '
+                f"group packs under one type, so one width must describe it "
+                f"(ADR-0028, issue #515)"
+            )
+    return rows
+
+
 def uncovered_groups(
     discovered: Mapping[str, int], covered: Collection[str]
 ) -> tuple[tuple[str, int], ...]:
@@ -472,6 +546,48 @@ def _reference_refusal(
         f"groups the map does not measure (ADR-0029). It serves "
         f"{sorted(capability, reverse=True)}. Plan without a size "
         f"source, or scan those groups"
+    )
+
+
+def refuse_unmeasured_rows(
+    row_widths: Mapping[str, int], groups: Sequence[str]
+) -> None:
+    """Refuse a solve that would route a group without measuring it.
+
+    The ADR-0028 table reaches a group whose rows refuse the 256
+    super-block, and only the measured width says which groups those
+    are (issue #515). A group the width mapping does not name would
+    take the k-quant table by omission, which is the silent misprice
+    option A removes. So the solve refuses and names the flag that
+    supplies the widths.
+
+    A group of a class the quantizer refuses is exempt. It holds at
+    the convert dtype and takes neither type table (#409).
+
+    Args:
+        row_widths: Elements per row per group.
+        groups: Every group name the solve prices.
+
+    Raises:
+        SizeSourceError: If a group the decision reaches has no
+            measured width.
+    """
+    unmeasured = sorted(
+        {
+            name
+            for name in groups
+            if routes_by_row_width(name)
+            and unquantizable_class(name) is None
+            and name not in row_widths
+        }
+    )
+    if not unmeasured:
+        return
+    raise SizeSourceError(
+        f"{len(unmeasured)} groups have no measured row width, starting with "
+        f'"{unmeasured[0]}". The 256 super-block decision reads the row width '
+        f"the checkpoint states, and no class name supplies it (ADR-0028, "
+        f"issue #515). Plan with --checkpoint (ADR-0029 decision 1)"
     )
 
 

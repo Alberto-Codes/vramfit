@@ -6,6 +6,7 @@ import pytest
 from hypothesis import assume, given
 from hypothesis import strategies as st
 
+from tests.fakes import stack_row_widths
 from tests.strategies import raw_protected_maps, raw_sensitivity_maps
 from vramfit.adapters.outbound.recipe_json import recipe_from_dict, recipe_to_dict
 from vramfit.adapters.outbound.sensitivity_map_json import (
@@ -41,6 +42,10 @@ class TestArtifactRoundTripProperties:
             weight_budget_bytes=budget,
             vram_budget_bytes=budget + 1000,
             kv_headroom_bytes=1000,
+            # The ADR-0028 routing reads each group's measured row
+            # width (#515). The round trip does not depend on which
+            # table priced a group, so one stated width serves.
+            row_widths=stack_row_widths(g.name for g in map_.groups),
         )
 
         assert recipe_from_dict(recipe_to_dict(recipe)) == recipe
