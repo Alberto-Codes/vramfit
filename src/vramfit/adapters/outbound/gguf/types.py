@@ -79,7 +79,7 @@ from vramfit.domain.runtime import (
     unquantizable_filter,
 )
 from vramfit.domain.scan import NAME_TABLE_ROOTS
-from vramfit.domain.sizes import REFERENCE_BITS, SizeSourceError, reconcile_root
+from vramfit.domain.sizes import REFERENCE_BITS, reconcile_root
 
 # The 16 row is the F16 passthrough (ADR-0029 decision 4). A recipe
 # holds an unmeasured group at reference precision, and `f16` is what
@@ -724,17 +724,15 @@ def _refuses_super_block(group: str, row_widths: Mapping[str, int]) -> bool:
         PackError: If the group has no measured row width. A name
             cannot supply one, and a default would misprice the
             group silently.
+        SizeSourceError: If the group hangs from a root the
+            reconcile table does not carry. That refusal names the
+            root, and the missing-width message would hide it.
     """
     width = row_widths.get(group)
     if width is None:
         # The recipe may spell a group under the checkpoint's root
-        # while the widths key on the map's (ADR-0029 decision 7). A
-        # root outside that table reconciles to nothing, and the
-        # missing-width refusal below states it.
-        try:
-            width = row_widths.get(reconcile_root(group))
-        except SizeSourceError:
-            width = None
+        # while the widths key on the map's (ADR-0029 decision 7).
+        width = row_widths.get(reconcile_root(group))
     if width is None:
         raise PackError(
             f'group "{group}" has no measured row width, and the 256 '

@@ -70,20 +70,21 @@ class CheckpointGroups:
         bytes (Mapping[str, int] | None): Bytes at reference precision
             per discovered group, or None when the caller passed no
             ``--checkpoint``.
-        rows (Mapping[str, int]): Elements per row per group the 256
-            super-block decision reaches (issue #515). Empty without
-            a checkpoint.
+        rows (Mapping[str, int] | None): Elements per row per group
+            the 256 super-block decision reaches (issue #515), or
+            None when the caller passed no ``--checkpoint``. The
+            solver's refusal tells the two causes apart from it.
 
     Examples:
         ```python
         from vramfit.adapters.inbound.cli_plan_sizes import CheckpointGroups
 
-        groups = CheckpointGroups(bytes=None, rows={})
+        groups = CheckpointGroups(bytes=None, rows=None)
         ```
     """
 
     bytes: Mapping[str, int] | None
-    rows: Mapping[str, int]
+    rows: Mapping[str, int] | None
 
 
 def discovered_groups(
@@ -104,8 +105,8 @@ def discovered_groups(
             count warning.
 
     Returns:
-        The group bytes and row widths. The bytes are None when no
-        checkpoint was given, and the widths are then empty.
+        The group bytes and row widths. Both are None when no
+        checkpoint was given.
 
     Raises:
         typer.Exit: With code 1 when the checkpoint cannot be read or
@@ -120,7 +121,7 @@ def discovered_groups(
             f"no --checkpoint: this plan prices the {len(map_.groups)} groups "
             f"the map carries and reads no other size source (ADR-0029)"
         )
-        return CheckpointGroups(bytes=None, rows={})
+        return CheckpointGroups(bytes=None, rows=None)
 
     source: TensorSizeSource = SafetensorsSizes(checkpoint)
     try:

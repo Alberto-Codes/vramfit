@@ -484,6 +484,8 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
         SizeSourceError: If a layer-class or routed-expert-stack
             group has no measured row width. The ADR-0028 routing
             reads that width, and no name supplies it (issue #515).
+            The message names the flag when ``row_widths`` is None,
+            and the missing group when a size source was read.
         RuntimeCapabilityError: If the runtime is unknown, serves
             none of the scanned precisions, or cannot serve reference
             precision while ``discovered_bytes`` leaves a group
@@ -537,12 +539,12 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
     floors = expand_protections(protections, sensitivity_map, runtime)
     excluded = expand_exclusions(imatrix_exclusions, floors, sensitivity_map)
 
-    widths = dict(row_widths or {})
     refuse_unmeasured_rows(
-        widths,
+        row_widths,
         [group.name for group in sensitivity_map.groups]
         + sorted(discovered_bytes or {}),
     )
+    widths = dict(row_widths or {})
 
     price_for = _predictor(runtime, format_overhead, widths)
 

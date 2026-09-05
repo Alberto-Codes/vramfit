@@ -42,6 +42,10 @@ QWEN_UP = "model.layers.0.mlp.experts.up_proj"
 QWEN_DOWN = "model.layers.0.mlp.experts.down_proj"
 QWEN_ROWS = {QWEN_UP: 2048, QWEN_DOWN: 768}
 
+# A layer-class group under a root the scan name table supports and
+# the ADR-0029 reconcile table does not.
+FOREIGN_ROOT_CLASS = "transformer.h.3.mlp.up_proj"
+
 CURVE = {8: 0.001, 6: 0.002, 4: 0.01, 3: 0.02, 2: 0.1}
 PRECISIONS = (8, 6, 4, 3, 2)
 
@@ -199,6 +203,78 @@ class TestUnmeasuredRows:
 
         with pytest.raises(PackError, match="no measured row width"):
             tensor_overrides(recipe, {})
+
+    def test_the_pack_surfaces_the_root_refusal_rather_than_the_width_one(
+        self,
+    ) -> None:
+        # `transformer.` sits in the scan name table and outside the
+        # ADR-0029 reconcile table. The width lookup asks that table
+        # for a second spelling, and the table's own refusal names
+        # the root. The missing-width message would name nothing.
+        recipe = plan(FOREIGN_ROOT_CLASS, 2048, 4)
+
+        with pytest.raises(SizeSourceError, match="root the table does not carry"):
+            tensor_overrides(recipe, {})
+
+    def test_a_single_unmeasured_group_reads_as_one_group(self) -> None:
+        map_ = map_from_dict(
+            make_map([(QWEN_UP, 160_000, CURVE)], precisions=PRECISIONS)
+        )
+
+        with pytest.raises(SizeSourceError) as caught:
+            solve(
+                map_,
+                weight_budget_bytes=10**9,
+                vram_budget_bytes=10**9 + 1000,
+                kv_headroom_bytes=1000,
+                runtime=LLAMA_CPP,
+                discovered_bytes={QWEN_UP: 160_000},
+            )
+
+        assert f'group "{QWEN_UP}" has no measured row width' in str(caught.value)
+        assert "1 groups" not in str(caught.value)
+
+    def test_a_checkpoint_that_misses_one_group_does_not_repeat_the_flag(
+        self,
+    ) -> None:
+        # The plan already read a checkpoint, so telling the operator
+        # to pass --checkpoint repeats what they did. The checkpoint
+        # carries QWEN_UP and not QWEN_DOWN.
+        map_ = map_from_dict(
+            make_map(
+                [(QWEN_UP, 160_000, CURVE), (QWEN_DOWN, 160_000, CURVE)],
+                precisions=PRECISIONS,
+            )
+        )
+
+        with pytest.raises(SizeSourceError) as caught:
+            solve(
+                map_,
+                weight_budget_bytes=10**9,
+                vram_budget_bytes=10**9 + 1000,
+                kv_headroom_bytes=1000,
+                runtime=LLAMA_CPP,
+                discovered_bytes={QWEN_UP: 160_000, QWEN_DOWN: 160_000},
+                row_widths={QWEN_UP: 2048},
+            )
+
+        assert QWEN_DOWN in str(caught.value)
+        assert "--checkpoint" not in str(caught.value)
+        assert "Name the checkpoint the scan measured" in str(caught.value)
+
+    def test_no_size_source_at_all_names_the_flag(self) -> None:
+        map_ = map_from_dict(
+            make_map([(QWEN_UP, 160_000, CURVE)], precisions=PRECISIONS)
+        )
+
+        with pytest.raises(SizeSourceError, match="Plan with --checkpoint"):
+            solve(
+                map_,
+                weight_budget_bytes=10**9,
+                vram_budget_bytes=10**9 + 1000,
+                kv_headroom_bytes=1000,
+                runtime=LLAMA_CPP,
+            )
 
     def test_a_whole_layer_group_needs_no_width(self) -> None:
         # A layer group holds classes of several widths and keeps the

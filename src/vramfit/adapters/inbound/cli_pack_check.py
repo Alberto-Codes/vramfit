@@ -47,11 +47,8 @@ from vramfit.adapters.inbound.cli_pack_smoke import _halt
 from vramfit.adapters.inbound.run_log import SafeRunLog
 from vramfit.adapters.outbound.gguf.pack import checkpoint_row_widths
 from vramfit.adapters.outbound.gguf.reconstruction import GgufReconstructionChecker
-from vramfit.adapters.outbound.gguf.types import (
-    PackError,
-    all_overrides,
-    gguf_tensor_name,
-)
+from vramfit.adapters.outbound.gguf.types import all_overrides, gguf_tensor_name
+from vramfit.domain.errors import VramfitError
 from vramfit.domain.model import Recipe
 from vramfit.domain.pack import collapsed_tensors, without_protections
 from vramfit.domain.runtime import routes_by_row_width
@@ -96,14 +93,19 @@ def _resolve_row_widths(recipe: Recipe, model_dir: Path) -> Mapping[str, int]:
     Raises:
         typer.Exit: With code 1 when the checkpoint's row widths
             cannot be read, or a protected recipe's override
-            composition refuses.
+            composition refuses. One catch covers both — the
+            composition also refuses a group rooted outside the
+            ADR-0029 reconcile table, with the domain's message.
     """
     needed = any(routes_by_row_width(a.group) for a in recipe.assignments)
     try:
         row_widths = checkpoint_row_widths(model_dir) if needed else {}
         if recipe.protected_tensors:
             all_overrides(recipe, row_widths)
-    except PackError as exc:
+    except VramfitError as exc:
+        # One honest catch for the root (ADR-0011). The composition
+        # refuses a group rooted outside the reconcile table with the
+        # domain's own message, which names that root.
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(code=1) from exc
     return row_widths

@@ -54,10 +54,10 @@ Examples:
 
     sizes = {
         "backbone.layers.1.mixer.experts.0.up_proj.weight": TensorSize(
-            dtype="BF16", bytes=8
+            dtype="BF16", bytes=8, rows=4
         ),
         "backbone.layers.1.mixer.experts.1.up_proj.weight": TensorSize(
-            dtype="BF16", bytes=8
+            dtype="BF16", bytes=8, rows=4
         ),
     }
     assert discovered_group_bytes(sizes, "stack") == {
@@ -160,7 +160,7 @@ class SizeSourceError(VramfitError, ValueError):
         from vramfit.domain.sizes import SizeSourceError, TensorSize, reference_bytes
 
         try:
-            reference_bytes("w", TensorSize(dtype="I8", bytes=4))
+            reference_bytes("w", TensorSize(dtype="I8", bytes=4, rows=4))
         except SizeSourceError as exc:
             print(exc)
         ```
@@ -237,7 +237,7 @@ def reference_bytes(tensor: str, size: TensorSize) -> int:
         ```python
         from vramfit.domain.sizes import TensorSize, reference_bytes
 
-        assert reference_bytes("w", TensorSize(dtype="F32", bytes=16)) == 8
+        assert reference_bytes("w", TensorSize(dtype="F32", bytes=16, rows=4)) == 8
         ```
     """
     try:
@@ -338,8 +338,8 @@ def discovered_group_bytes(
         from vramfit.domain.sizes import TensorSize, discovered_group_bytes
 
         sizes = {
-            "backbone.layers.0.mlp.up_proj.weight": TensorSize("BF16", 8),
-            "backbone.layers.0.mixer.conv1d.weight": TensorSize("BF16", 4),
+            "backbone.layers.0.mlp.up_proj.weight": TensorSize("BF16", 8, 4),
+            "backbone.layers.0.mixer.conv1d.weight": TensorSize("BF16", 4, 2),
         }
         assert discovered_group_bytes(sizes, "layer") == {
             "model.layers.0": 8,
@@ -550,7 +550,7 @@ def _reference_refusal(
 
 
 def refuse_unmeasured_rows(
-    row_widths: Mapping[str, int], groups: Sequence[str]
+    row_widths: Mapping[str, int] | None, groups: Sequence[str]
 ) -> None:
     """Refuse a solve that would route a group without measuring it.
 
@@ -558,36 +558,54 @@ def refuse_unmeasured_rows(
     super-block, and only the measured width says which groups those
     are (issue #515). A group the width mapping does not name would
     take the k-quant table by omission, which is the silent misprice
-    option A removes. So the solve refuses and names the flag that
-    supplies the widths.
+    option A removes. So the solve refuses.
+
+    Two causes reach this refusal, and the advice differs. A solve
+    with no size source needs one, so the message names the flag. A
+    solve that read a checkpoint already has the flag, and the named
+    group is missing from that checkpoint instead.
 
     A group of a class the quantizer refuses is exempt. It holds at
     the convert dtype and takes neither type table (#409).
 
     Args:
-        row_widths: Elements per row per group.
+        row_widths: Elements per row per group, or None when the
+            caller read no size source.
         groups: Every group name the solve prices.
 
     Raises:
         SizeSourceError: If a group the decision reaches has no
             measured width.
     """
+    measured = row_widths or {}
     unmeasured = sorted(
         {
             name
             for name in groups
             if routes_by_row_width(name)
             and unquantizable_class(name) is None
-            and name not in row_widths
+            and name not in measured
         }
     )
     if not unmeasured:
         return
+    count = len(unmeasured)
+    subject = (
+        f'group "{unmeasured[0]}" has no measured row width'
+        if count == 1
+        else f"{count} groups have no measured row width, starting with "
+        f'"{unmeasured[0]}"'
+    )
+    advice = (
+        "Plan with --checkpoint (ADR-0029 decision 1)"
+        if row_widths is None
+        else "The checkpoint states no width for it. Name the checkpoint "
+        "the scan measured"
+    )
     raise SizeSourceError(
-        f"{len(unmeasured)} groups have no measured row width, starting with "
-        f'"{unmeasured[0]}". The 256 super-block decision reads the row width '
+        f"{subject}. The 256 super-block decision reads the row width "
         f"the checkpoint states, and no class name supplies it (ADR-0028, "
-        f"issue #515). Plan with --checkpoint (ADR-0029 decision 1)"
+        f"issue #515). {advice}"
     )
 
 
