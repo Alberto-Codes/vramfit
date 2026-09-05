@@ -19,7 +19,8 @@ event and one ``warning:`` line name every layer the base GGUF
 numbers that no override reached. Those layers pack at the recipe's
 floor and the quantizer reports none of them (#307). After
 packing it re-checks the real bytes against the recipe's weight
-budget, gates a protected
+budget and against its prediction (the stage lives in
+[vramfit.adapters.inbound.cli_pack_size][]), gates a protected
 imatrix pack on the reconstruction check
 (ADR-0022 — the stage lives in
 [vramfit.adapters.inbound.cli_pack_check][]), ships the
@@ -67,6 +68,7 @@ from vramfit.adapters.inbound.cli_pack_sidecar import (
     _ship_sidecar_stage,
     check_sidecar_collisions,
 )
+from vramfit.adapters.inbound.cli_pack_size import _size_check_stage
 from vramfit.adapters.inbound.cli_pack_smoke import (
     _check_inputs,
     _halt,
@@ -78,9 +80,8 @@ from vramfit.adapters.outbound.gguf.pack import LlamaCppPacker, TypeFallbackErro
 from vramfit.adapters.outbound.json_common import ArtifactError
 from vramfit.adapters.outbound.recipe_json import load_recipe
 from vramfit.adapters.outbound.run_log_jsonl import JsonlRunLogFile
-from vramfit.domain.budget import format_size
 from vramfit.domain.model import Recipe
-from vramfit.domain.pack import PackResult, weight_budget_margin
+from vramfit.domain.pack import PackResult
 from vramfit.ports.outbound import RecipePacker
 
 
@@ -190,49 +191,6 @@ def _report_pack_effects(result: PackResult) -> None:
     """
     _report_floored_layers(result)
     _report_imatrix_effects(result)
-
-
-def _size_check_stage(
-    run_log: SafeRunLog, recipe: Recipe, packed_bytes: int, out: Path
-) -> None:
-    """Re-check the packed file's real bytes against the budget.
-
-    Nominal-bit predictions undershoot GGUF's effective bits, so the
-    recipe's promise is re-proven on the artifact (ADR-0014).
-
-    Args:
-        run_log: The pack run's event log.
-        recipe: The recipe the pack applied.
-        packed_bytes: Real size of the packed model file.
-        out: The packed model path, for the report.
-
-    Raises:
-        typer.Exit: With code 1 when the packed bytes exceed the
-            weight budget (via ``_halt``); the file is kept.
-    """
-    margin = weight_budget_margin(recipe, packed_bytes)
-    fits = margin >= 0
-    run_log.emit(
-        "size_checked",
-        {
-            "packed_bytes": packed_bytes,
-            "weight_budget_bytes": recipe.plan.weight_budget_bytes,
-            "margin_bytes": margin,
-            "fits": fits,
-        },
-    )
-    typer.echo(
-        f"packed {len(recipe.assignments)} groups -> {out} "
-        f"({format_size(packed_bytes)}), weight budget "
-        f"{format_size(recipe.plan.weight_budget_bytes)}, margin "
-        f"{format_size(abs(margin))} {'under' if fits else 'OVER'}"
-    )
-    if not fits:
-        error = RuntimeError(
-            f"packed model exceeds the weight budget by {format_size(-margin)} "
-            f"— the file is kept at {out}"
-        )
-        raise _halt(run_log, "size_check", error)
 
 
 def pack(

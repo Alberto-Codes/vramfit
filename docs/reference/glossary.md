@@ -747,6 +747,15 @@ change.
     ([ADR-0022](../adr/0022-within-layer-protections.md)). Not
     "fit check" or "dequant test".
 
+**Predicted-bytes tolerance**
+:   The fraction of `plan.predicted_total_bytes` a packed file may
+    miss in either direction before `vramfit pack` warns: 1.0 %
+    ([ADR-0012](../adr/0012-gguf-type-mapping.md) decision 4, amended
+    2026-09-04). A miss past it warns and never refuses — the weight
+    budget is the only size gate. Constant
+    `vramfit.domain.pack.PREDICTED_BYTES_TOLERANCE`. Not "size
+    threshold" or "prediction slack".
+
 **Smoke test**
 :   The post-pack proof that a packed model emits language: a few
     perplexity chunks through the target runtime, gated by a

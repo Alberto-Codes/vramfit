@@ -523,6 +523,55 @@
     under such a root refuses the same way. A new root joins the
     domain list with a scan change, never in the pack alone.
 
+- **Amendment (2026-09-04, review of #409 and #204):** decision 4
+  gains a second line and a tolerance. The re-check compared the
+  packed bytes against the weight budget only. Publication #2 fit
+  its budget on two cancelling pricing errors — the passthrough
+  under-priced the F32 classes by 16.9 MB and the residual overhead
+  over-priced the quantized classes by 33.8 MB — and the pack
+  reported only its margin (ADR-0029's 2026-09-04 note). The
+  per-type check that found the miss is a synthetic unit test, and
+  a real pack had no line to show it. The maintainer ruled on
+  2026-09-04: compare the packed bytes against
+  `plan.predicted_total_bytes` at pack time, not only against the
+  budget.
+
+    **The pack prints the prediction delta beside the margin.** After
+    the budget line, the stage prints `plan.predicted_total_bytes`,
+    the signed delta `packed - predicted`, and the delta as a
+    fraction of the prediction. The `size_checked` event carries
+    `predicted_total_bytes`, `predicted_delta_bytes`,
+    `predicted_delta_fraction`, and `predicted_within_tolerance`.
+    The prediction comes from the recipe the pack already read,
+    never from a fresh fetch, so a replay reads the same number.
+
+    **The predicted-bytes tolerance is 1.0 % of the prediction, in
+    either direction.** ADR-0014 decision 3 sets the residual
+    overhead at 0.5 %, so a prediction that tracks the file to the
+    residual lands inside 1.0 %. A miss past 1.0 % means the size
+    model mispriced a class, which is what an F32 passthrough on a
+    16-bit price does at scale. The constant is
+    `PREDICTED_BYTES_TOLERANCE` in `vramfit.domain.pack`.
+
+    **A delta past the tolerance warns and never refuses.** The
+    weight budget stays the only size gate. A recipe that fits its
+    budget serves, whatever its prediction said, and the warning
+    puts the size model's miss on record for the next plan. No
+    Accepted record rules a refusal on the prediction, and this
+    amendment adds none.
+
+    **A recipe with no positive prediction prints the absence.** The
+    loader requires the field today, so the case reaches the stage
+    only from a zero prediction. The line says the prediction is
+    absent, the event fields are null, and the pack continues.
+
+    **The total line cannot see a cancelling pair.** Publication
+    #2's two misses net to 16.9 MB on a 20 GiB prediction, inside
+    the tolerance. The line would have read within. The per-type
+    check in `tests/unit/adapters/test_predicted_vs_packed.py`
+    remains the proof against cancellation, and whether the pack
+    reads its per-type bytes at pack time is an open question below.
+
 ## Context
 
 ADR-0010 routes sub-4-bit serving through llama.cpp and leaves one
@@ -614,6 +663,14 @@ scan does not produce one today. K-quants need no extra input.
 
 ## Open questions
 
+- Whether the size check compares bytes per type, not only the
+  total. The 2026-09-04 amendment to decision 4 prints the total
+  delta, and a cancelling pair of misses nets inside its tolerance.
+  `read_layout` in `vramfit.adapters.outbound.gguf.file_type` already
+  reads the packed file's bytes per type for the declared file type,
+  so the per-type comparison has a reader. What it has no ruling on
+  is which per-type prediction it compares against — the recipe
+  records bytes per group, not per type.
 - ~~The i-quant table, once the scan emits an importance matrix.
   **Escalated 2026-07-29:** the control experiment traced ~81 % of
   the 49B head-to-head perplexity gap to the baseline's importance

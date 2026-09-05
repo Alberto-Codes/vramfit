@@ -650,7 +650,15 @@ undecodable tensor. A pack without `--imatrix` runs no such scan.
 
 After quantizing, the command re-checks the packed file's real bytes
 against `plan.weight_budget_bytes` — nominal-bit predictions
-undershoot GGUF's effective bits (ADR-0012). On a protected pack made
+undershoot GGUF's effective bits (ADR-0012). A second line compares
+the same bytes against `plan.predicted_total_bytes`: the signed
+delta and its fraction of the prediction. A delta past the
+predicted-bytes tolerance of 1.0 % warns on stderr and never
+refuses — the weight budget stays the only size gate (ADR-0012
+decision 4, amended 2026-09-04). A recipe with no positive
+prediction prints that the prediction is absent. The prediction
+comes from the recipe file, so a replay compares against the same
+number. On a protected pack made
 with `--imatrix`, the reconstruction check then runs, mandatory
 ([ADR-0022](../adr/0022-within-layer-protections.md)): the command
 packs the same recipe with its protections stripped as the
@@ -701,8 +709,11 @@ packed model is unproven. Every run appends the pack events to the
 run log: pack_started, gguf_converted (with `reused`), model_packed
 (real bytes, base type, embedding and output tensor types, override
 count, imatrix, uncovered tensors, excluded tensors, zero-count
-experts, floored layers, declared file type), size_checked (margin and
-`fits`), reconstruction_checked when the gate ran
+experts, floored layers, declared file type), size_checked (margin,
+`fits`, `predicted_total_bytes`, `predicted_delta_bytes`,
+`predicted_delta_fraction`, and `predicted_within_tolerance` — all
+four null when the prediction is absent), reconstruction_checked
+when the gate ran
 (per-tensor
 protected and reference RMSE, `collapsed`, `passed`),
 sidecar_shipped when `--mmproj` shipped (mmproj, path,
