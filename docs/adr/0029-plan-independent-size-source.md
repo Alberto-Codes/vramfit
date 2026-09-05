@@ -306,9 +306,12 @@ A **base GGUF** exists only after a pack, and `plan` runs before packing.
     `bytes_fp16` and damage curve were measured with the tensor
     inside, so no arithmetic separates them without a re-scan.
     A schema bump was the other remedy. It refuses every pre-skip
-    map, including a map planned without `--checkpoint`, which
-    prices the class correctly on its own. The tensor list already
-    carries the evidence, so the warning costs no field. The
+    map, including a map planned without `--checkpoint`. Without a
+    size source the class's bytes stay inside the group at the
+    assigned width. That underprices them against the 32-bit
+    convert width, so the bytes are not dropped and not correct.
+    The bump would have refused that map too. The tensor list
+    already carries the evidence, so the warning costs no field. The
     general disagreement, a `bytes_fp16` mismatch on one group,
     stays unruled.
 
