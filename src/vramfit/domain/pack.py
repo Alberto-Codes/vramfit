@@ -361,27 +361,24 @@ def predicted_bytes_delta(predicted_total_bytes: int, packed_bytes: int) -> int:
 
 
 def predicted_bytes_within_tolerance(
-    predicted_total_bytes: int,
-    packed_bytes: int,
-    tolerance: float = PREDICTED_BYTES_TOLERANCE,
+    predicted_total_bytes: int, packed_bytes: int
 ) -> bool:
-    """Judge the prediction delta against the tolerance.
+    """Judge the prediction delta against the predicted-bytes tolerance.
 
-    The tolerance is a fraction of the prediction, applied in both
-    directions. The judgment never refuses a pack: the weight budget
-    stays the only size gate (ADR-0012 decision 4).
+    ``PREDICTED_BYTES_TOLERANCE`` is a fraction of the prediction,
+    applied in both directions. The judgment never refuses a pack: the
+    weight budget stays the only size gate (ADR-0012 decision 4).
 
     Args:
         predicted_total_bytes: The recipe's ``plan.predicted_total_bytes``.
         packed_bytes: Real size of the packed model file.
-        tolerance: Allowed fraction of the prediction, either sign.
 
     Returns:
-        True when ``|delta| <= tolerance * predicted_total_bytes``.
+        True when ``|delta| <= PREDICTED_BYTES_TOLERANCE *
+        predicted_total_bytes``.
 
     Raises:
-        ValueError: If either count is not positive, or the tolerance
-            is negative or not finite.
+        ValueError: If either count is not positive.
 
     Examples:
         One percent over a 10,000-byte prediction sits on the edge:
@@ -391,10 +388,8 @@ def predicted_bytes_within_tolerance(
         assert predicted_bytes_within_tolerance(10_000, 10_101) is False
         ```
     """
-    if tolerance < 0 or not math.isfinite(tolerance):
-        raise ValueError("tolerance must be a finite non-negative fraction")
     delta = predicted_bytes_delta(predicted_total_bytes, packed_bytes)
-    return abs(delta) <= tolerance * predicted_total_bytes
+    return abs(delta) <= PREDICTED_BYTES_TOLERANCE * predicted_total_bytes
 
 
 def without_protections(recipe: Recipe) -> Recipe:

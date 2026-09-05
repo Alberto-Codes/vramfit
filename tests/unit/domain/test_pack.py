@@ -303,18 +303,6 @@ class TestPredictedBytesWithinTolerance:
     def test_undershoot_past_the_tolerance_is_outside(self) -> None:
         assert predicted_bytes_within_tolerance(10_000, 9_899) is False
 
-    def test_explicit_tolerance_replaces_the_default(self) -> None:
-        assert predicted_bytes_within_tolerance(10_000, 10_500, 0.05) is True
-
-    @pytest.mark.parametrize(
-        "tolerance",
-        [-0.01, float("inf"), float("nan")],
-        ids=["negative", "inf", "nan"],
-    )
-    def test_bad_tolerance_raises_value_error(self, tolerance) -> None:
-        with pytest.raises(ValueError, match="tolerance"):
-            predicted_bytes_within_tolerance(10_000, 10_000, tolerance)
-
 
 class TestSmokePassed:
     def test_working_perplexity_under_ceiling_passes(self) -> None:
