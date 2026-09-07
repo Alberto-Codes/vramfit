@@ -355,7 +355,10 @@ ignore_imports = [
 # --------------------------------------------------------------------------- #
 [dependency-groups]
 dev = [
-    "docvet>=1.15",
+    # The `griffe` extra installs the check that `[tool.docvet]
+    # fail-on` blocks on. Without the extra, docvet warns on stderr
+    # and exits 0.
+    "docvet[griffe]>=1.15",
     "hypothesis>=6.100",
     "import-linter>=2.11",
     "pytest>=9.0",
