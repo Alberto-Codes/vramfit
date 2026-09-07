@@ -244,7 +244,7 @@ reserves roughly twice the model when the budget admits it. The plan
 refuses as over budget otherwise. That refusal counts the held
 groups and requests a scan of them. It states no coverage mismatch.
 Issue #564 carries this defect. Issue #554 owns the general root
-solve.
+question.
 
 A group the checkpoint holds and the map does not measure is
 *uncovered*. It prices at reference precision, and the recipe assigns
