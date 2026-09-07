@@ -50,7 +50,9 @@ def write_map(tmp_path: Path, root: str) -> Path:
 
 def write_checkpoint(tmp_path: Path, root: str) -> Path:
     """Write the one-shard checkpoint that map was scanned from."""
-    entries = {f"{root}layers.{i}.mlp.up_proj.weight": LAYER_BYTES for i in range(LAYERS)}
+    entries = {
+        f"{root}layers.{i}.mlp.up_proj.weight": LAYER_BYTES for i in range(LAYERS)
+    }
     entries["lm_head.weight"] = HEAD_BYTES
     model_dir = tmp_path / f"checkpoint-{root.strip('.') or 'root'}"
     model_dir.mkdir(parents=True, exist_ok=True)
