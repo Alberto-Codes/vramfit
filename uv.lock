@@ -328,14 +328,19 @@ wheels = [
 
 [[package]]
 name = "docvet"
-version = "1.15.1"
+version = "1.15.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "typer" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ac/d4/5eded08c29cfa6f844e2bcf23c738d1026dce74d564153ec683211ea8e34/docvet-1.15.1.tar.gz", hash = "sha256:4e22d9f81d2b8e06d453c70d95a4d238f146ed3c31518b6811912aa30a4fce6b", size = 87800, upload-time = "2026-05-08T21:34:07.27Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e1/06/cc5129b1e0652f64657b2bf7e4353abd456db221fcd1bc6e4e856382aee4/docvet-1.15.2.tar.gz", hash = "sha256:4d1a09afdab0dc5a88b2790b3a11bc703e32e82775e71a4edf6184d11ed62e5a", size = 88424, upload-time = "2026-09-03T02:18:12.538Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c7/5b/03daeb7b4406179c281837c7f3731e82c675a706cb7f9e8252b438221dd2/docvet-1.15.1-py3-none-any.whl", hash = "sha256:e332b40473d3710527ebf38bf5a0ff5559b0a198e028fdacff2389f22a488b48", size = 107079, upload-time = "2026-05-08T21:34:05.939Z" },
+    { url = "https://files.pythonhosted.org/packages/74/f0/480383c3f4cce11c05766f7beef1ce3712356171192c1464bc4464170ac4/docvet-1.15.2-py3-none-any.whl", hash = "sha256:ce928c341df19592d347011a7c7e941b69e0227d632613ed368b902a3a5115de", size = 107163, upload-time = "2026-09-03T02:18:11.114Z" },
+]
+
+[package.optional-dependencies]
+griffe = [
+    { name = "griffelib" },
 ]
 
 [[package]]
@@ -398,11 +403,11 @@ wheels = [
 
 [[package]]
 name = "griffelib"
-version = "2.1.0"
+version = "2.3.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/33/e4/8d187ea29c2e30b3a09505c567513077d6117861bde1fbd997a167f262ec/griffelib-2.1.0.tar.gz", hash = "sha256:762a186d2c6fd6794d4ea20d428d597ffb857cb56b66421651cbba15bdd5e813", size = 216234, upload-time = "2026-06-19T12:05:42.278Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/27/af/018c10bc9edd42b6ef6db2e96b09542050d5253f9b195e74bc910b2d13ab/griffelib-2.3.0.tar.gz", hash = "sha256:7b0952caf5bca6afa4bb5ee8c6a2d183fe3f21b62efc5f6c7243cb2b26d2d115", size = 234534, upload-time = "2026-09-04T15:08:17.472Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e4/d3/5268aeabf2ad82658c4e2ff3a060648d0f02f3926cb53247c0e4d0dab49e/griffelib-2.1.0-py3-none-any.whl", hash = "sha256:cc7b3d2d2865ad0b909fcc38086e3f554b5ea7acbaa7bbb7ecaa3f5dfb7d9f00", size = 142560, upload-time = "2026-06-19T12:05:38.742Z" },
+    { url = "https://files.pythonhosted.org/packages/41/63/e876e789525063c840ccfa8857febdabd6523bcef9ce7eb979b9305ea895/griffelib-2.3.0-py3-none-any.whl", hash = "sha256:1b8f9cd525681c26b1d6d574faa1371651e8459ca51d209684f50b8096ae06e0", size = 169423, upload-time = "2026-09-04T15:08:12.956Z" },
 ]
 
 [[package]]
@@ -2038,7 +2043,7 @@ scan = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "docvet" },
+    { name = "docvet", extra = ["griffe"] },
     { name = "hypothesis" },
     { name = "import-linter" },
     { name = "pytest" },
@@ -2073,7 +2078,7 @@ provides-extras = ["scan", "gguf", "pack", "docs"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "docvet", specifier = ">=1.15" },
+    { name = "docvet", extras = ["griffe"], specifier = ">=1.15" },
     { name = "hypothesis", specifier = ">=6.100" },
     { name = "import-linter", specifier = ">=2.11" },
     { name = "pytest", specifier = ">=9.0" },

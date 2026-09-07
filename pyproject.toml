@@ -355,7 +355,7 @@ ignore_imports = [
 # --------------------------------------------------------------------------- #
 [dependency-groups]
 dev = [
-    "docvet>=1.15",
+    "docvet[griffe]>=1.15",
     "hypothesis>=6.100",
     "import-linter>=2.11",
     "pytest>=9.0",
