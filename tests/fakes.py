@@ -215,11 +215,13 @@ class MemoryRecipePacker:
     label.
 
     ``row_widths`` states each group's measured row width, which the
-    256 super-block decision reads (issue #515). None means every
-    group the decision reaches has 256-wide rows, so the recipe maps
-    through the ADR-0012 k-quant table. A suite that exercises the
-    ADR-0028 table states the widths that refuse the block, such as
-    the 30B target's 2688.
+    256 super-block decision reads (issue #515). It defaults to the
+    empty mapping, as `LlamaCppPacker` does, so a recipe whose groups
+    route by width refuses under both packers until the caller states
+    the widths (issue #553). `stack_row_widths` builds the mapping a
+    suite that only needs the ADR-0012 k-quant table wants. A suite
+    that exercises the ADR-0028 table states the widths that refuse
+    the block, such as the 30B target's 2688.
     """
 
     base_bytes: int = 1_000
@@ -232,7 +234,7 @@ class MemoryRecipePacker:
     base_tensor_names: tuple[str, ...] | None = None
     imatrix_entry_names: tuple[str, ...] | None = None
     packed_type_bytes: dict[str, int] | None = None
-    row_widths: Mapping[str, int] | None = None
+    row_widths: Mapping[str, int] = field(default_factory=dict)
     packed: list[Recipe] = field(default_factory=list)
 
     def convert(self) -> int:
@@ -242,16 +244,6 @@ class MemoryRecipePacker:
             raise PackError("convert failed with exit code 3:\nconfigured failure")
         self.has_base = True
         return self.base_bytes
-
-    def _row_widths(self, recipe: Recipe) -> Mapping[str, int]:
-        """State a row width for every group the routing reaches."""
-        if self.row_widths is not None:
-            return self.row_widths
-        return {
-            a.group: K_QUANT_SUPER_BLOCK
-            for a in recipe.assignments
-            if routes_by_row_width(a.group)
-        }
 
     def pack(self, recipe: Recipe) -> PackResult:
         check_runtime(recipe)
@@ -266,7 +258,7 @@ class MemoryRecipePacker:
         base = base_type(recipe)
         embedding = token_embedding_type(recipe)
         output = output_tensor_type(recipe)
-        overrides = all_overrides(recipe, self._row_widths(recipe))
+        overrides = all_overrides(recipe, self.row_widths)
         layer_gaps: tuple[str, ...] = ()
         if self.base_tensor_names is not None:
             # Parity with the real adapter's pre-run checks (#303,

@@ -18,7 +18,7 @@ import sys
 from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 import pytest
 
@@ -34,6 +34,9 @@ from vramfit.adapters.outbound.gguf.types import PackError
 from vramfit.domain.model import Assignment, PlanMeta, ProtectedTensor, Recipe
 from vramfit.domain.pack import TypeOverride
 from vramfit.ports.outbound import RecipePacker
+
+if TYPE_CHECKING:  # pragma: no cover - a typing-only import
+    from _typeshed import DataclassInstance
 
 pytestmark = pytest.mark.contract
 
@@ -246,6 +249,27 @@ def _write_stub(path: Path, body: str) -> Path:
     return path
 
 
+def _with_widths[PackerT: DataclassInstance](
+    packer: PackerT, row_widths: Mapping[str, int] | None
+) -> PackerT:
+    """State the widths on a packer built without the keyword.
+
+    None leaves the constructor default standing, the way a caller
+    who writes no keyword leaves it standing. A case then reads that
+    default rather than a mapping that stands in for it (#553).
+
+    Args:
+        packer: A packer built with no `row_widths` keyword.
+        row_widths: Elements per row per group, or None to state none.
+
+    Returns:
+        The packer the case runs, widths stated or default.
+    """
+    if row_widths is None:
+        return packer
+    return replace(packer, row_widths=row_widths)
+
+
 def _real_packer(  # noqa: PLR0913 - the contract fixture surface: one flag per stub behavior
     tmp_path: Path,
     *,
@@ -263,7 +287,7 @@ def _real_packer(  # noqa: PLR0913 - the contract fixture surface: one flag per 
     with_unreached_exclusion: bool = False,
     with_unmatched_override: bool = False,
     with_tied_base: bool = False,
-    row_widths: Mapping[str, int] = STACK_ROW_WIDTHS,
+    row_widths: Mapping[str, int] | None = STACK_ROW_WIDTHS,
 ) -> RecipePacker:
     # These three configure the fake alone. The real adapter reads both
     # name lists through the module seams the conftest fixtures patch,
@@ -307,16 +331,18 @@ def _real_packer(  # noqa: PLR0913 - the contract fixture surface: one flag per 
     model_dir.mkdir(exist_ok=True)
     if base_exists:
         (tmp_path / "base.gguf").write_bytes(b"G" * BASE_BYTES)
-    return LlamaCppPacker(
-        model_dir=model_dir,
-        base_gguf=tmp_path / "base.gguf",
-        out_path=tmp_path / "out.gguf",
-        convert_script=convert,
-        quantize_bin=quantize,
-        python_bin=Path(sys.executable),
-        threads=1,
-        imatrix=tmp_path / "imatrix.gguf" if with_imatrix else None,
-        row_widths=row_widths,
+    return _with_widths(
+        LlamaCppPacker(
+            model_dir=model_dir,
+            base_gguf=tmp_path / "base.gguf",
+            out_path=tmp_path / "out.gguf",
+            convert_script=convert,
+            quantize_bin=quantize,
+            python_bin=Path(sys.executable),
+            threads=1,
+            imatrix=tmp_path / "imatrix.gguf" if with_imatrix else None,
+        ),
+        row_widths,
     )
 
 
@@ -361,7 +387,7 @@ def _fake_packer(  # noqa: PLR0913 - mirrors _real_packer's fixture surface
     with_unreached_exclusion: bool = False,
     with_unmatched_override: bool = False,
     with_tied_base: bool = False,
-    row_widths: Mapping[str, int] = STACK_ROW_WIDTHS,
+    row_widths: Mapping[str, int] | None = STACK_ROW_WIDTHS,
 ) -> RecipePacker:
     uncovered = ("token_embd.weight",) if with_uncovered else ()
     if with_excluded_miss:
@@ -369,29 +395,31 @@ def _fake_packer(  # noqa: PLR0913 - mirrors _real_packer's fixture surface
     fallbacks = (FALLBACK_REWRITE,) if with_type_fallback else ()
     if with_f16_fallback:
         fallbacks += (FALLBACK_REWRITE_F16,)
-    return MemoryRecipePacker(
-        base_bytes=BASE_BYTES,
-        packed_bytes=PACKED_BYTES,
-        fail_stage=fail_stage,
-        has_base=base_exists,
-        imatrix=str(tmp_path / "imatrix.gguf") if with_imatrix else None,
-        imatrix_uncovered=uncovered,
-        type_fallbacks=fallbacks,
-        # The same names `base_gguf_names` serves the real adapter, so
-        # both sides run the #303 refusal, the #306 refusal, and the
-        # #307 report over one tensor list. The matrix's entries are
-        # the narrower list the `imatrix_entry_names` fixture serves,
-        # for the same reason.
-        row_widths=row_widths,
-        base_tensor_names=_base_names(
-            unmatched=with_unmatched_override, tied=with_tied_base
+    return _with_widths(
+        MemoryRecipePacker(
+            base_bytes=BASE_BYTES,
+            packed_bytes=PACKED_BYTES,
+            fail_stage=fail_stage,
+            has_base=base_exists,
+            imatrix=str(tmp_path / "imatrix.gguf") if with_imatrix else None,
+            imatrix_uncovered=uncovered,
+            type_fallbacks=fallbacks,
+            # The same names `base_gguf_names` serves the real adapter, so
+            # both sides run the #303 refusal, the #306 refusal, and the
+            # #307 report over one tensor list. The matrix's entries are
+            # the narrower list the `imatrix_entry_names` fixture serves,
+            # for the same reason.
+            base_tensor_names=_base_names(
+                unmatched=with_unmatched_override, tied=with_tied_base
+            ),
+            imatrix_entry_names=_entry_names(
+                with_imatrix=with_imatrix, unreached=with_unreached_exclusion
+            ),
+            # The composition the `packed_layout` fixture serves the real
+            # adapter, so both sides declare one modal type (#414).
+            packed_type_bytes=dict(PACKED_TYPE_BYTES),
         ),
-        imatrix_entry_names=_entry_names(
-            with_imatrix=with_imatrix, unreached=with_unreached_exclusion
-        ),
-        # The composition the `packed_layout` fixture serves the real
-        # adapter, so both sides declare one modal type (#414).
-        packed_type_bytes=dict(PACKED_TYPE_BYTES),
+        row_widths,
     )
 
 
@@ -523,6 +551,23 @@ class TestRecipePackerContract:
         # root supplies the widths, and an empty mapping means it did
         # not.
         packer: RecipePacker = build(tmp_path, row_widths={})
+        packer.convert()
+
+        with pytest.raises(PackError) as caught:
+            packer.pack(stack_pack_recipe())
+
+        assert "no measured row width" in str(caught.value)
+        assert "backbone.layers.1.mixer.experts.up_proj" in str(caught.value)
+
+    def test_pack_with_no_widths_keyword_refuses_the_routed_recipe(
+        self, build, tmp_path
+    ) -> None:
+        # The refusal above states an empty mapping. This one states
+        # nothing at all, so it reads the constructor default. Both
+        # packers default to the empty mapping, and neither
+        # synthesizes a 256-wide row for the groups the decision
+        # reaches (#553).
+        packer: RecipePacker = build(tmp_path, row_widths=None)
         packer.convert()
 
         with pytest.raises(PackError) as caught:
