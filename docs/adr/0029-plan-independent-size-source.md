@@ -142,8 +142,7 @@
 
     **Decision 7's reconciliation does not reach the plan's coverage
     match.** The [CLI reference](../reference/cli.md) carries the
-    mechanism. Issue #564 carries the defect, and issue #554 owns the
-    general root question.
+    mechanism. Issue #564 carries the defect.
 
     `docs/reference/cli.md` and `docs/reference/glossary.md` stated
     the opposite rule. Both now describe the adapter.
