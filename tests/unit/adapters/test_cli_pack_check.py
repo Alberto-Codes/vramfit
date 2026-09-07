@@ -348,6 +348,33 @@ class TestReconstructionGate:
         assert events[-1] == "pack_halted"
 
 
+@pytest.mark.parametrize("projection", ["w1", "w2", "w3"])
+def test_pack_unmappable_expert_projection_refuses_cleanly(
+    tmp_path, monkeypatch, llama_cpp_dir, projection
+) -> None:
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    group = f"model.layers.0.block_sparse_moe.experts.{projection}"
+    recipe = replace(
+        make_protected_recipe(str(model_dir), protected=False),
+        assignments=(Assignment(group=group, bits=4, bytes=1_000, damage=0.01),),
+    )
+    recipe_path = tmp_path / "recipe.json"
+    save_recipe(recipe, recipe_path)
+    fake = MemoryRecipePacker(packed_bytes=WEIGHT_BUDGET - 100)
+    monkeypatch.setattr(cli_pack, "_build_packer", lambda *args: fake)
+
+    result = invoke_pack(recipe_path, llama_cpp_dir, tmp_path / "packed.gguf")
+
+    assert result.exit_code == 1
+    assert f'error: expert stack "{group}" has no GGUF mapping' in result.stderr
+    assert "llama.cpp fuses the projections" in result.stderr
+    assert "Traceback" not in result.output
+    # CliRunner captures unhandled exceptions instead of printing their traceback.
+    assert isinstance(result.exception, SystemExit)
+    assert fake.packed == []
+
+
 class TestProtectedPreflight:
     def test_unmappable_protected_tensor_fails_before_any_stage(
         self, tmp_path, monkeypatch, llama_cpp_dir
