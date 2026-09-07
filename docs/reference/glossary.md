@@ -395,9 +395,9 @@ change.
     names, because the scan normalizes none. The size source keys its
     own sums under `model.`, so a domain table reconciles the two
     before a tensor reaches a group. `measured_width` then reads a
-    group under either spelling (#515). A map rooted outside
-    `model.` trips #564 in `plan`. The table is explicit and
-    never a prefix wildcard, which once mapped a vision tower's
+    group under either spelling (#515). A `backbone.`-rooted map
+    trips #564 in `plan`. The table is explicit and never a prefix
+    wildcard, which once mapped a vision tower's
     `layers.5` onto the decoder's `blk.5` (#177). The scan name
     table supports a closed list of roots, `NAME_TABLE_ROOTS` in
     the domain, and the pack refuses a recipe rooted outside it
