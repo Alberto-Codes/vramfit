@@ -263,8 +263,8 @@ path exists.
 With `--checkpoint`, `plan` warns when a map group includes an
 unquantizable-class tensor that the checkpoint also holds as an uncovered
 group. The warning names the map, the group, and the affected tensors.
-The plan counts each tensor twice: inside the group at its assigned
-width, and separately at the convert dtype. This affects layer maps
+The plan prices each such tensor twice: inside the group at its
+assigned width, and held at the convert dtype. This affects layer maps
 from before the discovery skip (#204). Re-scan the model to remove the
 double count ([ADR-0029](../adr/0029-plan-independent-size-source.md)).
 
