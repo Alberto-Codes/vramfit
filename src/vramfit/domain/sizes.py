@@ -18,9 +18,9 @@ prices every precision against a 16-bit base.
 `reconcile_root` maps a checkpoint tensor name onto `MAP_ROOT`, the
 root this module keys its own sums under, against an explicit root
 table and never a prefix wildcard (decision 7). A map carries whatever
-root its checkpoint names, because the scan normalizes none, so
-`measured_width` reads a group under either spelling (#515). #177
-measured what a wildcard costs: it mapped a vision tower's
+root the loaded model's module tree names, because the scan normalizes
+none, so `measured_width` reads a group under either spelling (#515).
+#177 measured what a wildcard costs: it mapped a vision tower's
 ``layers.5`` onto the decoder's ``blk.5`` and would have priced it
 against the wrong columns. A checkpoint rooted outside the table
 refuses.
@@ -47,7 +47,7 @@ Attributes:
         reference precision to price against.
     MAP_ROOT (str): The naming root this module keys its own group
         sums under. It is not a rule about maps: a map carries
-        whatever root its checkpoint names.
+        whatever root the loaded model's module tree names.
     CHECKPOINT_ROOTS (Mapping[str, str]): Checkpoint naming root to
         the root it reconciles onto. The explicit table decision
         7 requires. Each new target costs one entry.
@@ -139,10 +139,8 @@ MAP_ROOT: Final[str] = "model."
 # The explicit root table (ADR-0029 decision 7). The 30B target's
 # checkpoint roots at `backbone.` and this module keys its sums at
 # `model.`, so the two must be reconciled before a name reaches a
-# group. A scan of that checkpoint emits `backbone.` group names, so
-# `measured_width` reads a group under either spelling (#515). A prefix
-# wildcard would do it in one line and would price a vision tower's
-# tensors against a decoder group (#177).
+# group. A prefix wildcard would do it in one line and would price a
+# vision tower's tensors against a decoder group (#177).
 CHECKPOINT_ROOTS: Final[Mapping[str, str]] = MappingProxyType(
     {
         "backbone.": MAP_ROOT,

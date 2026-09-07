@@ -219,9 +219,9 @@ so it needs no measured width and keeps the k-quant table.
 Size source ([ADR-0029](../adr/0029-plan-independent-size-source.md)):
 `--checkpoint` reads each safetensors shard header, which is a JSON
 parse and needs no torch. It sums the tensors into the groups the map
-names. A map carries the naming root the checkpoint's module tree
-names. The scan normalizes none. So a `backbone.`-rooted checkpoint
-yields `backbone.`-rooted group names, and a llama-family checkpoint
+names. A map carries the naming root the loaded model's module tree
+names. The scan normalizes none. So a `backbone.`-rooted module tree
+yields `backbone.`-rooted group names, and a llama-family module tree
 yields `model.`. Confirm the rule against the function that names a
 group:
 
@@ -244,7 +244,8 @@ The coverage match reconciles no root. `uncovered_groups` compares
 the map's group names against the discovered names by exact string. A
 `backbone.`-rooted map planned against its own checkpoint marks every
 decoder group uncovered. Root-less groups such as `lm_head` still
-match, so the refusal below stays silent. The plan then prices the
+match, so the refusal below stays silent. The plan warns that the
+checkpoint carries only some of the map's groups. It then prices the
 map's groups and the checkpoint's groups together. Issue #554 owns
 the general root solve.
 

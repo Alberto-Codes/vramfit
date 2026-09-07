@@ -391,12 +391,12 @@ change.
 **Naming root**
 :   The first segment of a checkpoint's parameter names —
     `backbone.` on the 30B target, `model.` on a llama-family
-    checkpoint. A map repeats the root its checkpoint names, because
-    the scan normalizes none. The size source keys its own sums under
-    `model.`, so a domain table reconciles the two before a tensor
-    reaches a group. `measured_width` then reads a group under either
-    spelling (#515). The table is explicit and never a prefix
-    wildcard, which once mapped a vision tower's
+    checkpoint. A map repeats the root the loaded model's module tree
+    names, because the scan normalizes none. The size source keys its
+    own sums under `model.`, so a domain table reconciles the two
+    before a tensor reaches a group. `measured_width` then reads a
+    group under either spelling (#515). The table is explicit and
+    never a prefix wildcard, which once mapped a vision tower's
     `layers.5` onto the decoder's `blk.5` (#177). The scan name
     table supports a closed list of roots, `NAME_TABLE_ROOTS` in
     the domain, and the pack refuses a recipe rooted outside it
