@@ -120,9 +120,7 @@
     `vramfit.domain.scan.group_key`, which rewrites no root. So a
     `backbone.`-rooted module tree yields `backbone.`-rooted group
     names, and `tests/integration/test_torch_scan_adapter.py` pins
-    that output on a Nemotron-like module. The
-    [CLI reference](../reference/cli.md) carries the console check a
-    reader runs to confirm the rule without torch.
+    that output on a Nemotron-like module.
 
     **No record here establishes why both held maps carry `model.`.**
     This ADR's 2026-08-19 note records that measurement. The records

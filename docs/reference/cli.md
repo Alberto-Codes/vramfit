@@ -222,14 +222,7 @@ parse and needs no torch. It sums the tensors into the groups the map
 names. A map carries the naming root the loaded model's module tree
 names. The scan normalizes none. So a `backbone.`-rooted module tree
 yields `backbone.`-rooted group names, and a llama-family module tree
-yields `model.`. Confirm the rule against the function that names a
-group:
-
-```console
-$ uv run python -c "from vramfit.domain.scan import group_key; \
-print(group_key('backbone.layers.0.mixer.in_proj.weight', 'tensor'))"
-backbone.layers.0.mixer.in_proj
-```
+yields `model.`.
 
 The size source keys its own sums under `model.`, so a domain table
 reconciles the two roots. `measured_width` reads a group's width
