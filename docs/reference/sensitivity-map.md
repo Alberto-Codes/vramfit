@@ -111,11 +111,11 @@ below remain, the sub-4-bit pricing claims do not.
   attempt. The fingerprint excludes it for that reason. The loader
   requires a non-empty string and checks no format.
 - **`groups[].name`** — the group's key under `scan.group_by`: a
-  layer prefix such as `model.layers.0` for `layer`, a full tensor
-  name for `tensor`, and a pack-addressable stack for `stack`. The
-  name carries the naming root the checkpoint's module tree names,
-  because the scan normalizes none. A `backbone.`-rooted checkpoint
-  writes `backbone.`-rooted names here
+  layer prefix such as `model.layers.0` for `layer`, a tensor name
+  without its `.weight` suffix for `tensor`, and a pack-addressable
+  stack for `stack`. The name carries the naming root the
+  checkpoint's module tree names, because the scan normalizes none. A
+  `backbone.`-rooted checkpoint writes `backbone.`-rooted names here
   ([ADR-0029](../adr/0029-plan-independent-size-source.md) decision 7,
   amended 2026-09-06). Names are unique across the map, and the
   loader refuses a duplicate.

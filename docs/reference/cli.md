@@ -232,12 +232,21 @@ backbone.layers.0.mixer.in_proj
 ```
 
 The size source keys its own sums under `model.`, so a domain table
-reconciles the two roots. `measured_width` reads a group under either
-spelling, and the plan and the pack share that one lookup (#515). The
-table is explicit and carries no prefix wildcard. A checkpoint rooted
-outside the table refuses, rather than pricing one stack against
-another (#177). The MTP block stays out, because a GGUF numbers one
-layer stack and backbone and MTP cannot pack together.
+reconciles the two roots. `measured_width` reads a group's width
+under either spelling, and the plan and the pack share that one
+lookup (#515). The table is explicit and carries no prefix wildcard.
+A checkpoint rooted outside the table refuses, rather than pricing
+one stack against another (#177). The MTP block stays out, because a
+GGUF numbers one layer stack and backbone and MTP cannot pack
+together.
+
+The coverage match reconciles no root. `uncovered_groups` compares
+the map's group names against the discovered names by exact string. A
+`backbone.`-rooted map planned against its own checkpoint marks every
+decoder group uncovered. Root-less groups such as `lm_head` still
+match, so the refusal below stays silent. The plan then prices the
+map's groups and the checkpoint's groups together. Issue #554 owns
+the general root solve.
 
 A group the checkpoint holds and the map does not measure is
 *uncovered*. It prices at reference precision, and the recipe assigns

@@ -118,19 +118,24 @@
     group through `vramfit.domain.scan.group_key`, which rewrites no
     root. So a `backbone.`-rooted checkpoint yields `backbone.`-rooted
     group names, and `tests/integration/test_torch_scan_adapter.py`
-    pins that output on a Nemotron-like module. Read the rule without
-    torch:
-
-    ```console
-    $ uv run python -c "from vramfit.domain.scan import group_key; \
-    print(group_key('backbone.layers.0.mixer.in_proj.weight', 'tensor'))"
-    backbone.layers.0.mixer.in_proj
-    ```
+    pins that output on a Nemotron-like module. The
+    [CLI reference](../reference/cli.md) carries the console check a
+    reader runs to confirm the rule without torch.
 
     **`MAP_ROOT` states no rule about maps.** It is the root this
-    ADR's size source keys its own sums under. `measured_width` reads
-    a group under either spelling, so the plan and the pack accept
-    both (#515).
+    ADR's size source keys its own sums under. Issue #563 tracks the
+    constant's name. `measured_width` reads a group's width under
+    either spelling, and the plan and the pack share that one lookup
+    (#515).
+
+    **The plan's coverage match reconciles no root.**
+    `uncovered_groups` compares a map group name against the
+    discovered names by exact string. A `backbone.`-rooted map planned
+    against its own checkpoint marks every decoder group uncovered.
+    Root-less groups such as `lm_head` still match, so the
+    wrong-checkpoint refusal stays silent. The plan then prices the
+    map's groups and the checkpoint's groups together. Issue #554 owns
+    the general root solve.
 
     **The rejected alternative moved the scan onto `MAP_ROOT` at
     discovery.** It costs two things #552 did not weigh.

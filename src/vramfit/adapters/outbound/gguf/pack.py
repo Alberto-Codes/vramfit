@@ -248,7 +248,7 @@ def checkpoint_row_widths(model_dir: Path) -> Mapping[str, int]:
         model_dir: The Hugging Face checkpoint directory.
 
     Returns:
-        Elements per row per group, under the map naming root.
+        Elements per row per group, under `MAP_ROOT`.
 
     Raises:
         PackError: If the checkpoint cannot be read or priced. The
