@@ -219,12 +219,25 @@ so it needs no measured width and keeps the k-quant table.
 Size source ([ADR-0029](../adr/0029-plan-independent-size-source.md)):
 `--checkpoint` reads each safetensors shard header, which is a JSON
 parse and needs no torch. It sums the tensors into the groups the map
-names. The checkpoint roots at `backbone.` and the maps root at
-`model.`, so a domain table reconciles the two. The table is explicit
-and carries no prefix wildcard. A checkpoint rooted at neither name
-refuses, rather than pricing one stack against another (#177). The MTP
-block stays out, because a GGUF numbers one layer stack and backbone
-and MTP cannot pack together.
+names. A map carries the naming root the checkpoint's module tree
+names. The scan normalizes none. So a `backbone.`-rooted checkpoint
+yields `backbone.`-rooted group names, and a llama-family checkpoint
+yields `model.`. Confirm the rule against the function that names a
+group:
+
+```console
+$ uv run python -c "from vramfit.domain.scan import group_key; \
+print(group_key('backbone.layers.0.mixer.in_proj.weight', 'tensor'))"
+backbone.layers.0.mixer.in_proj
+```
+
+The size source keys its own sums under `model.`, so a domain table
+reconciles the two roots. `measured_width` reads a group under either
+spelling, and the plan and the pack share that one lookup (#515). The
+table is explicit and carries no prefix wildcard. A checkpoint rooted
+outside the table refuses, rather than pricing one stack against
+another (#177). The MTP block stays out, because a GGUF numbers one
+layer stack and backbone and MTP cannot pack together.
 
 A group the checkpoint holds and the map does not measure is
 *uncovered*. It prices at reference precision, and the recipe assigns

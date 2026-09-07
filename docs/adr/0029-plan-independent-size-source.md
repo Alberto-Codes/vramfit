@@ -25,8 +25,9 @@
   So #301's `vramfit validate` refusal is a hand-authored artifact
   diverging from tool output, not a tool-level naming split. **Decision
   7 stands on the checkpoint-to-map direction alone**, where the split
-  is real: the checkpoint roots at `backbone.` and every map roots at
-  `model.`.
+  is real: the checkpoint roots at `backbone.` and ~~every map roots
+  at `model.`~~ **the two maps named above root at `model.` because
+  their checkpoints do** (corrected 2026-09-06, #552).
 - **Amendment (2026-09-04, issue #362):** a fact-check pass and a
   peer-review pass ran after the merge, against the build in #358 and
   PR #360. Neither invalidates a decision. This amendment records what
@@ -108,6 +109,41 @@
   past a 1.0 % tolerance
   ([ADR-0012](0012-gguf-type-mapping.md) decision 4, amended
   2026-09-04).
+- **Amendment (2026-09-06, issue #552):** decision 7 never said which
+  spelling a map carries, and two reference pages guessed. The
+  maintainer ruled the adapter canonical on 2026-09-06.
+
+    **A map carries the naming root its checkpoint's module tree
+    names.** The scan normalizes none. `discover_groups` names each
+    group through `vramfit.domain.scan.group_key`, which rewrites no
+    root. So a `backbone.`-rooted checkpoint yields `backbone.`-rooted
+    group names, and `tests/integration/test_torch_scan_adapter.py`
+    pins that output on a Nemotron-like module. Read the rule without
+    torch:
+
+    ```console
+    $ uv run python -c "from vramfit.domain.scan import group_key; \
+    print(group_key('backbone.layers.0.mixer.in_proj.weight', 'tensor'))"
+    backbone.layers.0.mixer.in_proj
+    ```
+
+    **`MAP_ROOT` states no rule about maps.** It is the root this
+    ADR's size source keys its own sums under. `measured_width` reads
+    a group under either spelling, so the plan and the pack accept
+    both (#515).
+
+    **The rejected alternative moved the scan onto `MAP_ROOT` at
+    discovery.** It costs two things #552 did not weigh.
+    `CHECKPOINT_ROOTS` carries two roots and
+    `vramfit.domain.scan.NAME_TABLE_ROOTS` carries five. So
+    `reconcile_root` refuses a `transformer.` or `gpt_neox.` layer
+    name that the scan supports today (#208). A normalized group name
+    also stops matching `--groups`, which
+    [Scan a model](../how-to/scan-a-model.md) documents as the
+    checkpoint's parameter names.
+
+    `docs/reference/cli.md` and `docs/reference/glossary.md` stated
+    the opposite rule. Both now describe the adapter.
 
 ## Context
 
@@ -262,8 +298,11 @@ A **base GGUF** exists only after a pack, and `plan` runs before packing.
 
 7. **A domain utility reconciles the naming roots, against an explicit
    root table and never a prefix wildcard.** The checkpoint roots at
-   `backbone.`. The scan's discovered groups root at `model.`, measured
-   on #328. ADR-0012 decision 2, as amended 2026-08-12, carries the
+   `backbone.`. ~~The scan's discovered groups root at `model.`,
+   measured on #328.~~ **#328 measured a `model.`-rooted checkpoint,
+   so it measured that checkpoint's root and not a scan rule. The
+   scan normalizes no root** (corrected 2026-09-06, #552).
+   ADR-0012 decision 2, as amended 2026-08-12, carries the
    naming families on the GGUF pack side only, so no record reconciles
    the roots for `plan`.
 
