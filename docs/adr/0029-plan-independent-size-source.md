@@ -41,8 +41,10 @@
     1. *Which naming root the emitted recipe carries.* Decision 7 says
        a utility reconciles the roots and never says in which
        direction. ADR-0012's 2026-08-12 (#180) amendment refuses a
-       recipe naming two roots. #360 emits `model.` for every group
-       (`MAP_ROOT` in `vramfit.domain.sizes`).
+       recipe naming two roots. ~~#360 emits `model.` for every group
+       (`MAP_ROOT` in `vramfit.domain.sizes`).~~ **The recipe carries
+       the map's root for a covered group and `MAP_ROOT` for a held
+       group** (corrected 2026-09-06, #552).
     2. *Which byte count prices a group both the map and the source
        carry.* Open question 2 asks whether `plan` warns or refuses
        on a disagreement. It never asks which number prices the
