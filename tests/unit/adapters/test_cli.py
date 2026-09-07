@@ -1337,8 +1337,21 @@ class TestPlanCheckpointOption:
         assert held.bits == 16
         assert held.bytes == group_bytes(8_000, 32.0, DEFAULT_RESIDUAL_OVERHEAD)
 
+    @pytest.mark.parametrize(
+        ("tensor_names", "folded_text", "held_text", "priced_text"),
+        [
+            (("conv1d",), "1 tensor", "it by its own name", "it"),
+            (
+                ("conv1d", "gate"),
+                "2 tensors",
+                "each by its own name",
+                "them",
+            ),
+        ],
+        ids=["singular", "plural"],
+    )
     def test_a_pre_skip_layer_map_prices_a_refused_class_twice_and_warns(
-        self, tmp_path
+        self, tmp_path, tensor_names, folded_text, held_text, priced_text
     ) -> None:
         # A layer map scanned before the discovery skip (#204) folds
         # the conv1d into model.layers.0. The source holds it by its
@@ -1346,10 +1359,14 @@ class TestPlanCheckpointOption:
         # held at F32. The direction is conservative, and the ruling
         # is a warning naming the map, the group, and the tensors
         # (ADR-0029 open question 2, 2026-09-04).
-        raw = make_map([("model.layers.0", 168_000, CURVE)])
+        held_tensors = {
+            f"model.layers.0.mixer.{name}.weight": 8_000 for name in tensor_names
+        }
+        layer_bytes = 160_000 + sum(held_tensors.values())
+        raw = make_map([("model.layers.0", layer_bytes, CURVE)])
         raw["groups"][0]["tensors"] = [
             "model.layers.0.mixer.in_proj.weight",
-            "model.layers.0.mixer.conv1d.weight",
+            *held_tensors,
         ]
         map_path = tmp_path / "sensitivity.json"
         map_path.write_text(json.dumps(raw))
@@ -1357,7 +1374,7 @@ class TestPlanCheckpointOption:
             tmp_path,
             {
                 "model.layers.0.mixer.in_proj.weight": 160_000,
-                "model.layers.0.mixer.conv1d.weight": 8_000,
+                **held_tensors,
             },
         )
         out = tmp_path / "recipe.json"
@@ -1365,25 +1382,29 @@ class TestPlanCheckpointOption:
         result = self._plan(map_path, out, "--checkpoint", str(model_dir))
 
         assert result.exit_code == 0, result.output
-        assert f'warning: {map_path}: group "model.layers.0" folds 1 tensors' in (
-            result.stderr
-        )
-        assert "model.layers.0.mixer.conv1d.weight" in result.stderr
-        assert "prices them twice" in result.stderr
+        assert (
+            f'warning: {map_path}: group "model.layers.0" folds {folded_text} '
+            f"of a class the quantizer refuses ({', '.join(held_tensors)}), and the "
+            f"checkpoint holds {held_text}. The plan prices {priced_text} "
+            "twice: inside the group at its assigned width, and held at the "
+            "convert dtype. The map predates the discovery skip (#204). "
+            "Re-scan to remove the double count (ADR-0029)"
+        ) in result.stderr
         recipe = load_recipe(out)
         by_group = {a.group: a for a in recipe.assignments}
-        # Both prices stand: the map's 168,000 inside the group at the
-        # assigned width, and the checkpoint's 8,000 held at the
+        # Both prices stand: the map's layer bytes at the assigned
+        # width, and each checkpoint tensor's 8,000 held at the
         # convert dtype.
         covered = by_group["model.layers.0"]
         assert covered.bytes == group_bytes(
-            168_000,
+            layer_bytes,
             EFFECTIVE_BITS["llama.cpp"][covered.bits],
             DEFAULT_RESIDUAL_OVERHEAD,
         )
-        assert by_group["model.layers.0.mixer.conv1d"].bytes == group_bytes(
-            8_000, 32.0, DEFAULT_RESIDUAL_OVERHEAD
-        )
+        for name in tensor_names:
+            assert by_group[f"model.layers.0.mixer.{name}"].bytes == group_bytes(
+                8_000, 32.0, DEFAULT_RESIDUAL_OVERHEAD
+            )
 
     def test_a_stack_map_with_a_refused_class_draws_no_overlap_warning(
         self, tmp_path
@@ -1408,7 +1429,7 @@ class TestPlanCheckpointOption:
         result = self._plan(map_path, out, "--checkpoint", str(model_dir))
 
         assert result.exit_code == 0, result.output
-        assert "prices them twice" not in result.stderr
+        assert "The plan prices" not in result.stderr
         held = next(
             a for a in load_recipe(out).assignments if a.group.endswith("conv1d")
         )

@@ -96,6 +96,9 @@ def discovered_groups(
     the 256 super-block decision from the row widths (issue #515), so
     two reads could disagree about one checkpoint.
 
+    The overlap warning names and counts the tensors priced twice,
+    with singular or plural wording for each affected group.
+
     Args:
         checkpoint: The checkpoint directory to read, or None when the
             caller passed no ``--checkpoint``.
@@ -164,10 +167,13 @@ def discovered_groups(
             err=True,
         )
     for group, tensors in held_class_overlaps(groups, map_):
+        noun = "tensor" if len(tensors) == 1 else "tensors"
+        held_pronoun = "it" if len(tensors) == 1 else "each"
+        priced = "it" if len(tensors) == 1 else "them"
         typer.echo(
-            f'warning: {map_path}: group "{group}" folds {len(tensors)} tensors '
+            f'warning: {map_path}: group "{group}" folds {len(tensors)} {noun} '
             f"of a class the quantizer refuses ({', '.join(tensors)}), and the "
-            f"checkpoint holds each by its own name. The plan prices them "
+            f"checkpoint holds {held_pronoun} by its own name. The plan prices {priced} "
             f"twice: inside the group at its assigned width, and held at the "
             f"convert dtype. The map predates the discovery skip (#204). "
             f"Re-scan to remove the double count (ADR-0029)",
