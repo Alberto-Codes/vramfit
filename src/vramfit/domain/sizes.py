@@ -286,7 +286,7 @@ def reconcile_root(tensor: str) -> str:
             under a root the table does not name.
 
     Examples:
-        The 30B target's root reconciles onto the map's:
+        The 30B target's root reconciles onto `MAP_ROOT`:
 
         ```python
         from vramfit.domain.sizes import reconcile_root
@@ -623,9 +623,8 @@ def refuse_unmeasured_rows(
     A group of a class the quantizer refuses is exempt. It holds at
     the convert dtype and takes neither type table (#409).
 
-    `measured_width` reads each group under either naming root, so a
-    map spelling a group under the checkpoint's root still finds the
-    width the size source keyed under the map's.
+    `measured_width` reads a group's width under either naming root,
+    so either spelling finds the width the size source measured.
 
     Args:
         row_widths: Elements per row per group, or None when the

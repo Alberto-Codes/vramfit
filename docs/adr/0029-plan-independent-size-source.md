@@ -27,7 +27,8 @@
   7 stands on the checkpoint-to-map direction alone**, where the split
   is real: the checkpoint roots at `backbone.` and ~~every map roots
   at `model.`~~ **the two maps named above carry `model.` group
-  names** (corrected 2026-09-06, #552).
+  names** (corrected 2026-09-06, #552). The 2026-09-06 amendment
+  below carries the current rule.
 - **Amendment (2026-09-04, issue #362):** a fact-check pass and a
   peer-review pass ran after the merge, against the build in #358 and
   PR #360. Neither invalidates a decision. This amendment records what
@@ -141,25 +142,10 @@
     either spelling, and the plan and the pack share that one lookup
     (#515).
 
-    **The plan's coverage match reconciles no root.**
-    `uncovered_groups` compares a map group name against the
-    discovered names by exact string. A `backbone.`-rooted map planned
-    against its own checkpoint marks every decoder group uncovered.
-    Root-less groups such as `lm_head` still match, so the
-    wrong-checkpoint refusal stays silent. The plan warns that the
-    checkpoint carries only some of the map's groups. It then prices
-    the map's groups and the checkpoint's groups together. Issue #554
-    owns the general root solve.
-
-    **The rejected alternative moved the scan onto `MAP_ROOT` at
-    discovery.** It costs two things #552 did not weigh.
-    `CHECKPOINT_ROOTS` carries two roots and
-    `vramfit.domain.scan.NAME_TABLE_ROOTS` carries five. So
-    `reconcile_root` refuses a `transformer.` or `gpt_neox.` layer
-    name that the scan supports today (#208). A normalized group name
-    also stops matching `--groups`, which
-    [Scan a model](../how-to/scan-a-model.md) documents as the
-    checkpoint's parameter names.
+    **Decision 7's reconciliation does not reach the plan's coverage
+    match.** The [CLI reference](../reference/cli.md) carries the
+    mechanism. Issue #564 carries the defect, and issue #554 owns the
+    general root question.
 
     `docs/reference/cli.md` and `docs/reference/glossary.md` stated
     the opposite rule. Both now describe the adapter.

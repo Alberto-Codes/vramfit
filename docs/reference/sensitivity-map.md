@@ -117,7 +117,8 @@ below remain, the sub-4-bit pricing claims do not.
   model's module tree names, because the scan normalizes none. A
   `backbone.`-rooted module tree writes `backbone.`-rooted names here
   ([ADR-0029](../adr/0029-plan-independent-size-source.md) decision 7,
-  amended 2026-09-06). Names are unique across the map, and the
+  amended 2026-09-06). A map rooted outside `model.` currently trips
+  #564 in `plan`. Names are unique across the map, and the
   loader refuses a duplicate.
   `vramfit plan` keys assignments on this name, and `--pin` matches
   against it.

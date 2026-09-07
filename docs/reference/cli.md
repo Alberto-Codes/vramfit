@@ -246,8 +246,9 @@ the map's group names against the discovered names by exact string. A
 decoder group uncovered. Root-less groups such as `lm_head` still
 match, so the refusal below stays silent. The plan warns that the
 checkpoint carries only some of the map's groups. It then prices the
-map's groups and the checkpoint's groups together. Issue #554 owns
-the general root solve.
+map's groups and the checkpoint's groups together, so the recipe
+reserves roughly twice the model. Issue #564 carries this defect.
+Issue #554 owns the general root solve.
 
 A group the checkpoint holds and the map does not measure is
 *uncovered*. It prices at reference precision, and the recipe assigns
