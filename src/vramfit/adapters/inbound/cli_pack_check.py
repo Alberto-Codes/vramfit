@@ -105,15 +105,15 @@ def _resolve_row_widths(recipe: Recipe, model_dir: Path) -> Mapping[str, int]:
         in the recipe.
 
     Raises:
-        typer.Exit: With code 1 when the checkpoint's row widths
-            cannot be read, a routed group has no measured width, or
-            a protected recipe's override composition refuses. One
-            catch covers all three — the lookup also refuses a group
+        typer.Exit: With code 1 when an expert projection has no GGUF
+            mapping, checkpoint row widths cannot be read, a routed group
+            has no measured width, or protected override composition refuses.
+            One catch covers each refusal — the lookup also refuses a group
             rooted outside the ADR-0029 reconcile table, with the
             domain's message.
     """
-    routed = [a.group for a in recipe.assignments if consults_row_width(a.group)]
     try:
+        routed = [a.group for a in recipe.assignments if consults_row_width(a.group)]
         row_widths = checkpoint_row_widths(model_dir) if routed else {}
         for group in routed:
             measured_row_width(group, row_widths)
