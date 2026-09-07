@@ -105,10 +105,11 @@ def _resolve_row_widths(recipe: Recipe, model_dir: Path) -> Mapping[str, int]:
         in the recipe.
 
     Raises:
-        typer.Exit: With code 1 when an expert projection has no GGUF
-            mapping, checkpoint row widths cannot be read, a routed group
-            has no measured width, or protected override composition refuses.
-            One catch covers each refusal — the lookup also refuses a group
+        typer.Exit: With code 1 when an expert stack has no GGUF
+            mapping. The same exit covers a checkpoint's unreadable
+            row widths, a routed group with no measured width, and a
+            protected recipe's refused override composition. One
+            catch covers all four — the lookup also refuses a group
             rooted outside the ADR-0029 reconcile table, with the
             domain's message.
     """
