@@ -25,8 +25,10 @@
   So #301's `vramfit validate` refusal is a hand-authored artifact
   diverging from tool output, not a tool-level naming split. **Decision
   7 stands on the checkpoint-to-map direction alone**, where the split
-  is real: the checkpoint roots at `backbone.` and every map roots at
-  `model.`.
+  is real: the checkpoint roots at `backbone.` and ~~every map roots
+  at `model.`~~ **the two maps named above carry `model.` group
+  names** (corrected 2026-09-06, #552). The 2026-09-06 amendment
+  below carries the current rule.
 - **Amendment (2026-09-04, issue #362):** a fact-check pass and a
   peer-review pass ran after the merge, against the build in #358 and
   PR #360. Neither invalidates a decision. This amendment records what
@@ -39,8 +41,10 @@
     1. *Which naming root the emitted recipe carries.* Decision 7 says
        a utility reconciles the roots and never says in which
        direction. ADR-0012's 2026-08-12 (#180) amendment refuses a
-       recipe naming two roots. #360 emits `model.` for every group
-       (`MAP_ROOT` in `vramfit.domain.sizes`).
+       recipe naming two roots. ~~#360 emits `model.` for every group
+       (`MAP_ROOT` in `vramfit.domain.sizes`).~~ **The recipe carries
+       the map's root for a covered group and `MAP_ROOT` for a held
+       group** (corrected 2026-09-06, #552).
     2. *Which byte count prices a group both the map and the source
        carry.* Open question 2 asks whether `plan` warns or refuses
        on a disagreement. It never asks which number prices the
@@ -108,6 +112,42 @@
   past a 1.0 % tolerance
   ([ADR-0012](0012-gguf-type-mapping.md) decision 4, amended
   2026-09-04).
+- **Amendment (2026-09-06, issue #552):** decision 7 never said which
+  spelling a map carries, and two reference pages guessed. The
+  maintainer ruled the adapter canonical on 2026-09-06.
+
+    **A map carries the naming root the loaded model's module tree
+    names.** The scan normalizes none. `discover_groups` walks
+    `named_parameters()` and names each group through
+    `vramfit.domain.scan.group_key`, which rewrites no root. So a
+    `backbone.`-rooted module tree yields `backbone.`-rooted group
+    names, and `tests/integration/test_torch_scan_adapter.py` pins
+    that output on a Nemotron-like module.
+
+    **No record here establishes why both held maps carry `model.`.**
+    This ADR's 2026-08-19 note records that measurement. The records
+    place #328 on the 30B target, at the "#328 map" and "#328 used
+    it" mentions here and at
+    [ADR-0007](0007-recipe-solver-strategy.md)'s "#328's re-scan".
+    Other records call that target's decoder `backbone.`-rooted, at
+    [ADR-0012](0012-gguf-type-mapping.md) decision 2 as amended
+    2026-08-12, at [ADR-0022](0022-within-layer-protections.md), and
+    at [Scan a model](../how-to/scan-a-model.md)'s `--groups`
+    example. Why those differ is not established here. Issue #554
+    owns the general root question.
+
+    **`MAP_ROOT` states no rule about maps.** It is the root this
+    ADR's size source keys its own sums under. Issue #563 tracks the
+    constant's name. `measured_width` reads a group's width under
+    either spelling, and the plan and the pack share that one lookup
+    (#515).
+
+    **Decision 7's reconciliation does not reach the plan's coverage
+    match.** The [CLI reference](../reference/cli.md) carries the
+    mechanism. Issue #564 carries the defect.
+
+    `docs/reference/cli.md` and `docs/reference/glossary.md` stated
+    the opposite rule. Both now describe the adapter.
 
 ## Context
 
@@ -262,8 +302,10 @@ A **base GGUF** exists only after a pack, and `plan` runs before packing.
 
 7. **A domain utility reconciles the naming roots, against an explicit
    root table and never a prefix wildcard.** The checkpoint roots at
-   `backbone.`. The scan's discovered groups root at `model.`, measured
-   on #328. ADR-0012 decision 2, as amended 2026-08-12, carries the
+   `backbone.`. ~~The scan's discovered groups root at `model.`,
+   measured on #328.~~ **The scan normalizes no root** (corrected
+   2026-09-06, #552).
+   ADR-0012 decision 2, as amended 2026-08-12, carries the
    naming families on the GGUF pack side only, so no record reconciles
    the roots for `plan`.
 

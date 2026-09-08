@@ -15,12 +15,15 @@ supplies it (issue #515). Reference precision stays
 16-bit throughout, per the glossary, because the solver's size model
 prices every precision against a 16-bit base.
 
-`reconcile_root` maps a checkpoint tensor name onto the naming root
-the maps use, against an explicit root table and never a prefix
-wildcard (decision 7). #177 measured what a wildcard costs: it mapped
-a vision tower's ``layers.5`` onto the decoder's ``blk.5`` and would
-have priced it against the wrong columns. A checkpoint rooted outside
-the table refuses.
+`reconcile_root` maps a checkpoint tensor name onto `MAP_ROOT`, the
+root this module keys its own sums under, against an explicit root
+table and never a prefix wildcard (decision 7). A map carries whatever
+root the loaded model's module tree names, because the scan normalizes
+none, so `measured_width` reads a group under either spelling (#515).
+#177 measured what a wildcard costs: it mapped a vision tower's
+``layers.5`` onto the decoder's ``blk.5`` and would have priced it
+against the wrong columns. A checkpoint rooted outside the table
+refuses.
 
 `discovered_group_bytes` sums the reference bytes of every tensor into
 the group the map would name, so the checkpoint's 128 per-expert
@@ -42,10 +45,11 @@ Attributes:
         each safetensors float dtype the source reads. A dtype
         outside the table refuses — an integer checkpoint holds no
         reference precision to price against.
-    MAP_ROOT (str): The naming root every sensitivity map this
-        project holds emits.
+    MAP_ROOT (str): The naming root this module keys its own group
+        sums under. It is not a rule about maps: a map carries
+        whatever root the loaded model's module tree names.
     CHECKPOINT_ROOTS (Mapping[str, str]): Checkpoint naming root to
-        the map root it reconciles onto. The explicit table decision
+        the root it reconciles onto. The explicit table decision
         7 requires. Each new target costs one entry.
 
 Examples:
@@ -133,10 +137,10 @@ DTYPE_ELEMENT_BYTES: Final[Mapping[str, int]] = MappingProxyType(
 MAP_ROOT: Final[str] = "model."
 
 # The explicit root table (ADR-0029 decision 7). The 30B target's
-# checkpoint roots at `backbone.` and its maps root at `model.`, so
-# the two must be reconciled before a name reaches a group. A prefix
-# wildcard would do it in one line and would price a vision tower's
-# tensors against a decoder group (#177).
+# checkpoint roots at `backbone.` and this module keys its sums at
+# `model.`, so the two must be reconciled before a name reaches a
+# group. A prefix wildcard would do it in one line and would price a
+# vision tower's tensors against a decoder group (#177).
 CHECKPOINT_ROOTS: Final[Mapping[str, str]] = MappingProxyType(
     {
         "backbone.": MAP_ROOT,
@@ -261,7 +265,7 @@ def reference_bytes(tensor: str, size: TensorSize) -> int:
 
 
 def reconcile_root(tensor: str) -> str:
-    """Rewrite one checkpoint tensor name onto the map's naming root.
+    """Rewrite one checkpoint tensor name onto `MAP_ROOT`.
 
     The table is explicit and the match is a whole root, never a
     prefix wildcard (ADR-0029 decision 7). A name carrying no known
@@ -282,7 +286,7 @@ def reconcile_root(tensor: str) -> str:
             under a root the table does not name.
 
     Examples:
-        The 30B target's root reconciles onto the map's:
+        The 30B target's root reconciles onto `MAP_ROOT`:
 
         ```python
         from vramfit.domain.sizes import reconcile_root
@@ -619,9 +623,8 @@ def refuse_unmeasured_rows(
     A group of a class the quantizer refuses is exempt. It holds at
     the convert dtype and takes neither type table (#409).
 
-    `measured_width` reads each group under either naming root, so a
-    map spelling a group under the checkpoint's root still finds the
-    width the size source keyed under the map's.
+    `measured_width` reads a group's width under either naming root,
+    so either spelling finds the width the size source measured.
 
     Args:
         row_widths: Elements per row per group, or None when the
