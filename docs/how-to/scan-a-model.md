@@ -210,10 +210,8 @@ in the same family.
     classes the scan skips. A skipped class prices at the 32 bits
     the converter wrote it at (#409).
 
-    A `backbone.`-rooted map has a separate coverage mismatch:
-    the size source uses `model.`, and coverage compares names
-    without reconciling roots. Read the [CLI reference](
-    ../reference/cli.md#vramfit-plan) before planning such a map.
+    Read the [CLI reference](../reference/cli.md#vramfit-plan)
+    before planning a `backbone.`-rooted map.
 
 The selection stays out of the fingerprint, because a group subset is
 not provenance. So a narrow run and a wide run share one checkpoint on
