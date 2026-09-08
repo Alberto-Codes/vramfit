@@ -168,15 +168,19 @@ vramfit scan ./model --calibration calibration.txt \
 The names must be keys `--group-by` produces from the loaded model's
 module tree. Transformers may convert names when it loads checkpoint
 weights. On this native path, it converts on-disk `backbone.` keys
-to `model.` module paths. The scan preserves the loaded naming root.
-`group_key` collapses a routed-expert index and drops the `.weight`
-suffix. This stack reads `model.layers.1.mixer.experts.up_proj`,
+to `model.` module paths. It also fuses each layer's routed experts
+into one parameter per projection. So the loaded name carries no
+expert index and no `.weight` suffix. The scan preserves the loaded
+naming root. This stack reads `model.layers.1.mixer.experts.up_proj`,
 not the GGUF name `blk.1.ffn_up_exps`.
 
 Custom implementations can expose a different module tree. NVIDIA
 still publishes a [Nemotron 3 Nano custom implementation](
 https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/blob/main/modeling_nemotron_h.py)
-with a `backbone.` root. A scan using that implementation retains
+with a `backbone.` root. That implementation builds the routed
+experts as a module list, so each loaded name carries an expert
+index and a `.weight` suffix. `group_key` collapses the index and
+drops the suffix. A scan using that implementation retains
 `backbone.` in its group names. Select names from the implementation
 you load; neither root is universal.
 

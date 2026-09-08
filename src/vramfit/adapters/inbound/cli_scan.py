@@ -16,7 +16,7 @@ the finished measurements to the pure assembly logic in
 fingerprint, and the run log — relative spellings must not split
 or mix checkpoint identities.
 ``--groups`` restricts a run to named groups, so a caller that wants
-46 of 210 groups pays for 46 (#282). Only the list shape checks here.
+46 of 164 groups pays for 46 (#282). Only the list shape checks here.
 `resolve_grid` matches each name against the loaded meter's groups,
 after the model loads and before any cell measures.
 Every failure — a missing extra, a bad destination, an unstable
@@ -404,7 +404,7 @@ def scan(
     routed experts into one group per projection, and keeps every
     other weight separate. On a dense model it matches ``tensor``.
     ``--groups`` restricts the run to named groups, so a caller that
-    wants 46 of 210 groups pays for 46. The names must be keys
+    wants 46 of 164 groups pays for 46. The names must be keys
     ``--group-by`` produces. A name matching no discovered group halts
     the run, after the model loads and before any cell measures. The
     map then carries the selected groups alone.
