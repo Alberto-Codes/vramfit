@@ -140,8 +140,8 @@
     [Scan a model](../how-to/scan-a-model.md)'s `--groups` example
     no longer holds. That example now reads `model.`-rooted. On the
     current native path, Transformers converts the on-disk
-    `backbone.` keys to `model.` module paths. The other two
-    citations stand, and so does the conclusion above.
+    `backbone.` keys to `model.` module paths. This correction does
+    not address the amendment's other two citations.
 
     **`MAP_ROOT` states no rule about maps.** It is the root this
     ADR's size source keys its own sums under. Issue #563 tracks the
