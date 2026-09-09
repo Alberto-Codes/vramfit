@@ -252,7 +252,7 @@ below remain, the sub-4-bit pricing claims do not.
     surveyed runtime serves a per-expert precision. The native load
     fuses the routed experts, so no granularity reaches one anyway.
 
-    !!! warning "A `stack` scan packs its expert stacks, not every group"
+    !!! warning "A `stack` scan packs only the groups the backend maps"
 
         The GGUF backend maps layer groups, routed-expert stacks,
         and layer-class groups, beside the dedicated embedding and
