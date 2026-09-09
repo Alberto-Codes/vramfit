@@ -251,9 +251,13 @@ below remain, the sub-4-bit pricing claims do not.
         output-head flags (ADR-0012 decision 2, as amended). Two
         shapes matter here. A layer group becomes `blk.<n>.` across
         the three naming families above and any prefix —
-        `model.layers.<n>`, the Nemotron 3.5 Lightning target's
-        `backbone.layers.<n>`, and Gemma 4's nested
-        `model.language_model.layers.<n>`. A routed-expert stack becomes its
+        `model.layers.<n>`, `backbone.layers.<n>`, and Gemma 4's
+        nested `model.language_model.layers.<n>`.
+        Group names follow the loaded module tree. Nemotron 3.5
+        Lightning's checkpoint parameter names use `backbone.`.
+        Native Transformers converts them to `model.` module paths
+        before discovery, so that target's groups use `model.`.
+        A routed-expert stack becomes its
         fused tensor: `blk.<n>.ffn_up_exps.`,
         `blk.<n>.ffn_down_exps.`, or `blk.<n>.ffn_gate_exps.`.
 

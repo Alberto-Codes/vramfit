@@ -35,6 +35,16 @@
   work. Until it lands, `--group-by stack` serves measurement and
   planning only.
 
+    **Correction (2026-09-09):** the Nemotron 3.5 Lightning
+    attribution above and in the 2026-08-12 amendment confuses
+    checkpoint parameter names with loaded module paths.
+    Its checkpoint stores `backbone.` keys. Native Transformers
+    converts those keys to `model.` module paths before discovery.
+    The target's layer groups read `model.layers.<n>`, and its
+    embedding group reads `model.embeddings`. Group names follow
+    the loaded module tree. The backend's support for either prefix
+    remains unchanged.
+
     Decision 7 also says "`--group-by tensor` remains unbuilt". Read
     that as stale since the meter shipped the flag. What decision 7
     rules is unchanged and still holds: the 8.5-day per-tensor scan

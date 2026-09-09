@@ -39,6 +39,15 @@
     alone refused the Nemotron 3.5 Lightning target at
     `backbone.layers.<n>` (#160).
 
+    **Correction (2026-09-09):** the Nemotron 3.5 Lightning
+    attribution in this amendment confuses checkpoint parameter names
+    with loaded module paths. Its checkpoint stores `backbone.` keys.
+    Native Transformers converts those keys to `model.` module paths
+    before discovery. The target's layer groups therefore read
+    `model.layers.<n>`, and its embedding group reads
+    `model.embeddings`. Group names follow the loaded module tree.
+    The backend's support for either prefix remains unchanged.
+
     The embedding group gains the same treatment. Decision 2 fixed
     it at `model.embed_tokens`, and the target names it
     `backbone.embeddings`. The backend now carries both names. The
