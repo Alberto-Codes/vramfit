@@ -270,12 +270,20 @@ below remain, the sub-4-bit pricing claims do not.
         `blk.<n>.ffn_gate_exps.`.
 
         Every other `stack` group still raises a `PackError` that
-        names it. On the Nemotron target that covers the Mamba
-        `in_proj`, `out_proj`, and `conv1d`, the attention
-        projections, the router, and the shared experts. So a
-        `layer`-keyed recipe packs today and a whole-model
-        `stack`-keyed recipe does not. Issue #183 carries the
-        remaining classes.
+        names it. The Nemotron target reaches no such group. Its
+        164 native groups all map:
+
+        - 23 `mixer.in_proj` and 23 `mixer.out_proj`.
+        - 46 routed-expert stacks.
+        - 46 shared-expert groups.
+        - 6 each of `mixer.q_proj`, `mixer.k_proj`, `mixer.v_proj`,
+          and `mixer.o_proj`.
+        - `model.embeddings` and `lm_head`.
+
+        So a whole-model `stack`-keyed recipe for that target
+        packs. [ADR-0012](../adr/0012-gguf-type-mapping.md)'s
+        2026-08-20 amendment rules the class table, and #368 landed
+        it.
 
         The backend also refuses a recipe naming two layer stacks.
         GGUF numbers one stack `blk.<n>.`, so the target's

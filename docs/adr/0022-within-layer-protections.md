@@ -35,12 +35,16 @@
   work. Until it lands, `--group-by stack` serves measurement and
   planning only.
 
-    **Correction (2026-09-09):** this amendment names the target at
-    `backbone.layers.<n>`, and the 2026-08-12 amendment names its
-    `backbone.embeddings`. Both are checkpoint parameter names, not
-    loaded module paths.
+    **Correction (2026-09-09):** this record names the Nemotron 3.5
+    Lightning target with `backbone.` paths throughout. This
+    amendment says `backbone.layers.<n>`. The 2026-08-12 amendment
+    says `backbone.embeddings` and
+    `backbone.layers.<n>.mixer.{q,k,v,o}_proj`. Each is a
+    checkpoint parameter name, not a loaded module path. The loaded
+    module tree names those groups `model.embeddings` and
+    `model.layers.<n>.mixer.{q,k,v,o}_proj`.
     [ADR-0012](0012-gguf-type-mapping.md)'s correction of the same
-    date carries the rule and the target's loaded group names.
+    date carries the rule.
 
     Decision 7 also says "`--group-by tensor` remains unbuilt". Read
     that as stale since the meter shipped the flag. What decision 7
