@@ -226,13 +226,17 @@ below remain, the sub-4-bit pricing claims do not.
     | `stack` | pack-addressable stack | 1 per weight | 164: 46 expert stacks plus 118 other groups |
     | `tensor` | loaded parameter | 1 per weight | 164: the same set `stack` gives |
 
-    The counts come from a native Transformers load, which reports
-    378 parameters under the roots `model` and `lm_head` (#571).
-    That load fuses each projection's routed experts into one
-    parameter, so `tensor` reaches no finer key than `stack` here.
-    It loads no MTP parameters, so no count above covers the MTP
-    block. The on-disk checkpoint carries that block at the `mtp`
-    root (#571).
+    The counts come from a native Transformers load (#571). Those
+    groups root at `model.`, apart from `lm_head`. Discovery keeps a
+    floating-point parameter of two or more dimensions. It then
+    drops every class a quantizer refuses, which is `mixer.gate` and
+    `mixer.conv1d` on this target (#204). That filter, not expert
+    fusion, is why discovery reports fewer groups than the load
+    reports parameters. The load fuses each projection's routed
+    experts into one parameter, so `tensor` reaches no finer key
+    than `stack` here. It loads no MTP parameters, so no count above
+    covers the MTP block. The on-disk checkpoint carries that block
+    at the `mtp` root (#571).
 
     `stack` keys on the unit a pack assigns a precision to (#161). It
     collapses a mixture-of-experts layer's routed experts into one
@@ -246,9 +250,7 @@ below remain, the sub-4-bit pricing claims do not.
     target (#159). vLLM, TensorRT-LLM, and SGLang each resolve one
     algorithm per mixture-of-experts module, which gives 23 (#166). No
     surveyed runtime serves a per-expert precision. The native load
-    fuses the routed experts, so no granularity reaches one there. An
-    unfused custom-code load keys each expert alone, which prices
-    5888 routed-expert distinctions no pack can express.
+    fuses the routed experts, so no granularity reaches one anyway.
 
     !!! warning "A `stack` scan packs its expert stacks, not every group"
 
