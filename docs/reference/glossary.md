@@ -390,9 +390,10 @@ change.
 
 **Naming root**
 :   The first segment of a checkpoint's parameter names —
-    `backbone.` on the 30B target, `model.` on a llama-family
-    checkpoint. A map repeats the root the loaded model's module tree
-    names, because the scan normalizes none. The size source keys its
+    `backbone.` in the 30B target's on-disk checkpoint, `model.` in a
+    llama-family checkpoint. A map repeats the root the loaded
+    model's module tree names, because the scan normalizes none. The
+    size source keys its
     own sums under `model.`, so a domain table reconciles the two
     before a tensor reaches a group. `measured_width` then reads a
     group under either spelling (#515). A `backbone.`-rooted map that

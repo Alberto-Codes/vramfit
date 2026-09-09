@@ -220,14 +220,19 @@ below remain, the sub-4-bit pricing claims do not.
   (the v1 loader rejects partially-scanned groups).
 - **`scan.group_by`** — `layer`, `tensor`, or `stack`.
 
-    | Value | One group per | Dense model | Nemotron 3.5 Lightning 30B-A3B backbone |
+    | Value | One group per | Dense model | Nemotron 3.5 Lightning 30B-A3B, native load |
     |-------|---------------|-------------|--------------------------------|
-    | `layer` | decoder layer | 1 per layer | 52 layers plus the embeddings |
-    | `stack` | pack-addressable stack | 1 per weight | 46 expert stacks plus the rest |
-    | `tensor` | checkpoint weight | 1 per weight | 5888 expert weights plus the rest |
+    | `layer` | decoder layer | 1 per layer | 54: 52 layers, the embeddings, the output head |
+    | `stack` | pack-addressable stack | 1 per weight | 164: 46 expert stacks plus 118 other groups |
+    | `tensor` | loaded parameter | 1 per weight | 164: the same set `stack` gives |
 
-    Counts are backbone-only (#160). Scanning the MTP block adds 256
-    expert weights, which is 2 more expert stacks.
+    The counts come from a native Transformers load, which reports
+    378 parameters under the roots `model` and `lm_head` (#571).
+    That load fuses each projection's routed experts into one
+    parameter, so `tensor` reaches no finer key than `stack` here.
+    It loads no MTP parameters, so no count above covers the MTP
+    block. The on-disk checkpoint carries that block at the `mtp`
+    root (#571).
 
     `stack` keys on the unit a pack assigns a precision to (#161). It
     collapses a mixture-of-experts layer's routed experts into one
@@ -240,9 +245,10 @@ below remain, the sub-4-bit pricing claims do not.
     type, which gives 46 addressable expert slots on the Nemotron
     target (#159). vLLM, TensorRT-LLM, and SGLang each resolve one
     algorithm per mixture-of-experts module, which gives 23 (#166). No
-    surveyed runtime serves a per-expert precision, so a
-    `tensor`-keyed map of that model prices 5888 distinctions no pack
-    can express.
+    surveyed runtime serves a per-expert precision. The native load
+    fuses the routed experts, so no granularity reaches one there. An
+    unfused custom-code load keys each expert alone, which prices
+    5888 routed-expert distinctions no pack can express.
 
     !!! warning "A `stack` scan packs its expert stacks, not every group"
 
