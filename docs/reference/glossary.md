@@ -393,11 +393,11 @@ change.
     `backbone.` in the 30B target's on-disk checkpoint, `model.` in a
     llama-family checkpoint. A map repeats the root the loaded
     model's module tree names, because the scan normalizes none. The
-    size source keys its
-    own sums under `model.`, so a domain table reconciles the two
-    before a tensor reaches a group. `measured_width` then reads a
-    group under either spelling (#515). A `backbone.`-rooted map that
-    keeps a root-less group such as `lm_head` trips #564 in `plan`.
+    size source keys its own sums under `model.`, so a domain table
+    reconciles the two before a tensor reaches a group.
+    `measured_width` then reads a group under either spelling (#515).
+    A `backbone.`-rooted map that keeps a root-less group such as
+    `lm_head` trips #564 in `plan`.
     The table is explicit and never a prefix wildcard, which once
     mapped a vision tower's `layers.5` onto the decoder's `blk.5`
     (#177). The scan name

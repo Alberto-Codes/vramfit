@@ -265,9 +265,9 @@ below remain, the sub-4-bit pricing claims do not.
         Lightning's checkpoint parameter names use `backbone.`.
         Native Transformers converts them to `model.` module paths
         before discovery, so that target's groups use `model.`.
-        A routed-expert stack becomes its
-        fused tensor: `blk.<n>.ffn_up_exps.`,
-        `blk.<n>.ffn_down_exps.`, or `blk.<n>.ffn_gate_exps.`.
+        A routed-expert stack becomes its fused tensor:
+        `blk.<n>.ffn_up_exps.`, `blk.<n>.ffn_down_exps.`, or
+        `blk.<n>.ffn_gate_exps.`.
 
         Every other `stack` group still raises a `PackError` that
         names it. On the Nemotron target that covers the Mamba

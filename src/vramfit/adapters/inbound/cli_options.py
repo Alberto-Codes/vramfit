@@ -66,8 +66,8 @@ def echo_imatrix_coverage(meter: DamageMeter) -> None:
     in the validation pass alike. The console states the counts
     only. Native Nemotron 3.5 Lightning discovery reports 164
     parameters (#571), and a joined list of names buries the split.
-    The run log's ``meter_built`` event names
-    every uncovered parameter.
+    The run log's ``meter_built`` event names every uncovered
+    parameter.
     Silent for unassisted meters and meters without the notion.
 
     Args:
