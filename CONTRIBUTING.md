@@ -267,15 +267,33 @@ Security Policy section above. If it flags something:
 - **Fix exists?** Upgrade the package: `uv lock --upgrade-package <pkg>`. No suppression needed.
 - **No fix?** Add the specific GHSA/CVE ID to the ignore list in `pyproject.toml` with an inline comment (package, version, description, "No fix available"). `allow_unused_ignores = false` stays set so stale suppressions fail CI and get cleaned up.
 
-**One open advisory.** `uv-secure` flags GHSA-4j2p-28q2-5m79 /
-CVE-2026-69112 against `accelerate`. Upstream declined the fix and
-closed PR 4214 on 2026-09-08. `accelerate` 1.15.0 ships the vulnerable
-join byte-identical, so no upgrade clears the advisory. vramfit never
-calls the affected entry points, `load_checkpoint_in_model` and
+These two cases are not exhaustive. The note below records a case
+they do not cover.
+
+**One unfixed advisory the scanner no longer reports.**
+GHSA-4j2p-28q2-5m79 / CVE-2026-69112 declares `accelerate` <= 1.14.0
+affected. The `scan` extra floors `accelerate` at 1.15, which sits
+outside that range, so `uv-secure` is green. The upgrade cleared the
+scanner. It did not fix the vulnerability.
+
+Upstream declined the fix and closed PR 4214 on 2026-09-08. `accelerate`
+1.15.0 ships the vulnerable `os.path.join` over unchecked `weight_map`
+values byte-identical to 1.14.0. Neither version checks that path with
+`realpath`, `commonpath`, `is_relative_to`, or `.resolve()`.
+
+vramfit is safe for a different reason. vramfit never calls the affected
+entry points, `load_checkpoint_in_model` and
 `load_checkpoint_and_dispatch`. vramfit reads the shard index itself,
 and that reader refuses a `weight_map` entry outside the model
-directory. `uv-secure` therefore stays red on `main` and on every
-branch. Treat that red as expected, not as a new failure.
+directory.
+
+vramfit reaches `accelerate` transitively. The scan meter calls
+`from_pretrained` with `device_map`, and `transformers` loads the
+checkpoint from there. A direct call to either entry point is one way
+to move this exposure. A `transformers` upgrade that changes how a
+model loads is another. Read this note in either case. The scanner will
+not warn you. `ignore_vulnerabilities` stays empty, because nothing
+needed suppressing.
 
 ## Key Constraints
 

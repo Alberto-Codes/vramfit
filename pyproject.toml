@@ -44,7 +44,17 @@ dependencies = [
 # The scan extra carries the GPU stack (ADR-0005): the base install and
 # the plan step stay importable without torch.
 scan = [
-    "accelerate>=1.0",
+    # The floor sits outside the declared range of GHSA-4j2p-28q2-5m79 /
+    # CVE-2026-69112, so uv-secure stays quiet. The vulnerability is
+    # unfixed upstream. 1.15.0 ships the same unchecked join as 1.14.0.
+    # This silence is not evidence of safety. The scan meter reaches
+    # accelerate through transformers checkpoint loading. A future
+    # caller of load_checkpoint_in_model or load_checkpoint_and_dispatch
+    # is one way to move this exposure. A transformers upgrade that
+    # changes how a model loads is another. Neither gets a scanner
+    # warning. See the Dependency Vulnerabilities note in
+    # CONTRIBUTING.md.
+    "accelerate>=1.15",
     # Reads the GGUF imatrix artifact for assisted pricing (ADR-0020).
     "gguf>=0.10",
     # Direct import in the scan adapter (shard restore, ADR-0015) —
@@ -107,7 +117,8 @@ explicit = true
 # uv-secure
 # --------------------------------------------------------------------------- #
 [tool.uv-secure.vulnerability_criteria]
-# GHSA-4j2p-28q2-5m79 is absent on purpose, not by oversight. Read the
+# The list stays empty. GHSA-4j2p-28q2-5m79 never needed a suppression,
+# and the accelerate floor now sits outside its declared range. Read the
 # Dependency Vulnerabilities note in CONTRIBUTING.md for the evidence.
 ignore_vulnerabilities = []
 allow_unused_ignores = false
