@@ -403,8 +403,13 @@ class ShardPathError(VramfitError, ValueError):
         )
 
 
-def _shard_path(directory: Path, index_path: Path, name: str, entry: str) -> Path:
+def _shard_path(directory: Path, index_path: Path, name: str, entry: object) -> Path:
     """Join one ``weight_map`` entry, refusing a path that escapes.
+
+    The publisher writes the value, so it can be any JSON type. A
+    non-string value names no file at all. The join would raise
+    `TypeError` and escape the reader's refusal contract, so this
+    function refuses the value first.
 
     Two escapes exist and both reach the same file read. A relative
     entry climbs out through ``..``. An absolute entry makes
@@ -420,14 +425,21 @@ def _shard_path(directory: Path, index_path: Path, name: str, entry: str) -> Pat
         directory: The model directory that holds the index.
         index_path: The index file, for the refusal message.
         name: The tensor name mapped to ``entry``.
-        entry: The ``weight_map`` value.
+        entry: The ``weight_map`` value, as the publisher wrote it.
 
     Returns:
         The joined path, inside ``directory``.
 
     Raises:
+        ValueError: If ``entry`` is not a string. The message names the
+            index file, the tensor name, and the value.
         ShardPathError: If the entry resolves outside ``directory``.
     """
+    if not isinstance(entry, str):
+        raise ValueError(  # noqa: TRY004 - the reader refuses through ValueError by contract
+            f"{index_path}: weight_map entry {name!r} is {entry!r}, "
+            f"which is no shard file name"
+        )
     candidate = directory / entry
     base = os.path.abspath(directory)
     target = os.path.abspath(candidate)
@@ -458,8 +470,9 @@ def open_shard_reader(model_id: str) -> ShardReader | None:
         ValueError: If the index file is not UTF-8, is not valid JSON,
             defines the same key twice, carries a number literal the
             parser refuses, nests past the recursion limit, is not a
-            JSON object, or holds no ``weight_map`` object. Every
-            message names the index file.
+            JSON object, holds no ``weight_map`` object, or maps a
+            tensor name to a non-string value. Every message names the
+            index file.
         ShardPathError: If a ``weight_map`` entry names a file outside
             the model directory, through ``..`` or an absolute path.
     """

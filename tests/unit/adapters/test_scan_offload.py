@@ -12,11 +12,14 @@ a green fast suite onto the reference box.
 from __future__ import annotations
 
 import json
+import os
+from pathlib import Path
 
 import pytest
 
 torch = pytest.importorskip("torch", reason="scan extra not installed")
 
+from vramfit.adapters.outbound.scan import offload
 from vramfit.adapters.outbound.scan.offload import (
     ShardPathError,
     ShardReader,
@@ -370,23 +373,51 @@ class TestShardPathContainment:
     ) -> None:
         # The refusal has to land before any read. A path that only
         # fails at `safe_open` would already have opened the file.
+        # Spy on both read boundaries the adapter uses: `Path.read_text`
+        # for the index, and the `safe_open` bound in the module for
+        # every shard. `builtins.open` catches neither.
         _, model = self._planted(tmp_path)
         self._write_index(model, entry)
-        opened: list[str] = []
+        read: list[str] = []
 
-        real_open = open
+        real_read_text = Path.read_text
+        real_safe_open = offload.safe_open
 
-        def _spy(file, *args, **kwargs):
-            opened.append(str(file))
-            return real_open(file, *args, **kwargs)
+        def _read_text_spy(self, *args, **kwargs):
+            read.append(os.path.abspath(self))
+            return real_read_text(self, *args, **kwargs)
 
-        monkeypatch.setattr("builtins.open", _spy)
+        def _safe_open_spy(filename, *args, **kwargs):
+            read.append(os.path.abspath(filename))
+            return real_safe_open(filename, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_text", _read_text_spy)
+        monkeypatch.setattr(offload, "safe_open", _safe_open_spy)
 
         with pytest.raises(ShardPathError):
             open_shard_reader(str(model))
 
-        base = str(model)
-        assert not [p for p in opened if not p.startswith(base)]
+        # The index read proves the spy sits on the real boundary. An
+        # empty list would pass the containment assertion vacuously.
+        base = os.path.abspath(model)
+        assert read == [os.path.join(base, "model.safetensors.index.json")]
+        assert [p for p in read if not p.startswith(base + os.sep)] == []
+
+    @pytest.mark.parametrize(
+        "entry", [None, 123, ["m-00001.safetensors"], {"file": "m-00001.safetensors"}]
+    )
+    def test_open_on_a_non_string_entry_refuses(self, tmp_path, entry) -> None:
+        # A non-string value names no file. The join would raise
+        # `TypeError`, which escapes the reader's `ValueError` contract
+        # and the scan-loop catch that reports a halted scan.
+        _, model = self._planted(tmp_path)
+        self._write_index(model, entry)
+
+        with pytest.raises(ValueError, match="no shard file name") as caught:
+            open_shard_reader(str(model))
+
+        assert "index.json" in str(caught.value)
+        assert "'planted'" in str(caught.value)
 
     def test_open_accepts_a_shard_symlinked_out_of_the_directory(
         self, tmp_path
