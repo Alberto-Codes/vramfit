@@ -107,6 +107,8 @@ explicit = true
 # uv-secure
 # --------------------------------------------------------------------------- #
 [tool.uv-secure.vulnerability_criteria]
+# GHSA-4j2p-28q2-5m79 is absent on purpose, not by oversight. Read the
+# Dependency Vulnerabilities note in CONTRIBUTING.md for the evidence.
 ignore_vulnerabilities = []
 allow_unused_ignores = false
 
