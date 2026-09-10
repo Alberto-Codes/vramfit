@@ -287,7 +287,11 @@ entry points, `load_checkpoint_in_model` and
 and that reader refuses a `weight_map` entry outside the model
 directory.
 
-Read this before you add a call to either entry point. The scanner will
+vramfit reaches `accelerate` transitively. The scan meter calls
+`from_pretrained` with `device_map`, and `transformers` loads the
+checkpoint from there. A direct call to either entry point is one way
+to move this exposure. A `transformers` upgrade that changes how a
+model loads is another. Read this note in either case. The scanner will
 not warn you. `ignore_vulnerabilities` stays empty, because nothing
 needed suppressing.
 
