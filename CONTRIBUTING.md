@@ -267,6 +267,9 @@ Security Policy section above. If it flags something:
 - **Fix exists?** Upgrade the package: `uv lock --upgrade-package <pkg>`. No suppression needed.
 - **No fix?** Add the specific GHSA/CVE ID to the ignore list in `pyproject.toml` with an inline comment (package, version, description, "No fix available"). `allow_unused_ignores = false` stays set so stale suppressions fail CI and get cleaned up.
 
+These two cases are not exhaustive. The note below records a case
+they do not cover.
+
 **One unfixed advisory the scanner no longer reports.**
 GHSA-4j2p-28q2-5m79 / CVE-2026-69112 declares `accelerate` <= 1.14.0
 affected. The `scan` extra floors `accelerate` at 1.15, which sits
