@@ -267,6 +267,16 @@ Security Policy section above. If it flags something:
 - **Fix exists?** Upgrade the package: `uv lock --upgrade-package <pkg>`. No suppression needed.
 - **No fix?** Add the specific GHSA/CVE ID to the ignore list in `pyproject.toml` with an inline comment (package, version, description, "No fix available"). `allow_unused_ignores = false` stays set so stale suppressions fail CI and get cleaned up.
 
+**One open advisory.** `uv-secure` flags GHSA-4j2p-28q2-5m79 /
+CVE-2026-69112 against `accelerate`. Upstream declined the fix and
+closed PR 4214 on 2026-09-08. `accelerate` 1.15.0 ships the vulnerable
+join byte-identical, so no upgrade clears the advisory. vramfit never
+calls the affected entry points, `load_checkpoint_in_model` and
+`load_checkpoint_and_dispatch`. vramfit reads the shard index itself,
+and that reader refuses a `weight_map` entry outside the model
+directory. `uv-secure` therefore stays red on `main` and on every
+branch. Treat that red as expected, not as a new failure.
+
 ## Key Constraints
 
 - Keep heavy ML dependencies (torch, transformers) out of the base install -- they live behind the `scan` and `pack` extras (ADR-0005)
