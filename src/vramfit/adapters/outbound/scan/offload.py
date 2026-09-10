@@ -20,7 +20,10 @@ the uncapped group set instead of perturbing one tensor twice.
 originals restore from the model's safetensors shards instead.
 
 The model publisher owns the shard index. vramfit reads it and never
-writes it, and it still refuses an index that defines one key twice
+writes it, so every value in it is untrusted input. It refuses a
+``weight_map`` entry that resolves outside the model directory, because
+``..`` or an absolute entry would read a file the operator never
+offered to the scan. It also refuses an index that defines one key twice
 (#283). The alternative keeps the last value, so a repeated tensor name
 in ``weight_map`` would restore the wrong shard with no report. Every
 parse refusal names the index file (#287). A scan names one model
@@ -42,6 +45,7 @@ See Also:
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -53,6 +57,7 @@ from vramfit.adapters.outbound.json_duplicate_key import (
     DuplicateKeyError,
     object_from_pairs,
 )
+from vramfit.domain.errors import VramfitError
 
 _INDEX_FILE = "model.safetensors.index.json"
 _SINGLE_FILE = "model.safetensors"
@@ -355,6 +360,82 @@ def _load_index(path: Path) -> dict[str, Any]:
     return index
 
 
+class ShardPathError(VramfitError, ValueError):
+    """A ``weight_map`` entry names a file outside the model directory.
+
+    The publisher owns the shard index, so a scan reads paths vramfit
+    did not write. An entry of ``../secrets.safetensors`` climbs out of
+    the model directory, and an absolute entry discards it altogether.
+    Either one reads a file the operator never offered to the scan.
+    vramfit refuses instead of correcting the path, because an index
+    that points outside its own directory is malformed or hostile. The
+    operator has to learn which it is.
+
+    Attributes:
+        name (str): The tensor name that carries the offending entry.
+        entry (str): The ``weight_map`` value, as the publisher wrote it.
+
+    Examples:
+        Catch the refusal at the composition root:
+
+        ```python
+        try:
+            open_shard_reader(model_id)
+        except ShardPathError as exc:
+            print(f"error: {exc}")
+        ```
+    """
+
+    def __init__(self, index_path: Path, name: str, entry: str) -> None:
+        """Build the refusal message.
+
+        Args:
+            index_path: The index file that carries the entry.
+            name: The tensor name mapped to ``entry``.
+            entry: The offending ``weight_map`` value.
+        """
+        self.name = name
+        self.entry = entry
+        super().__init__(
+            f"{index_path}: weight_map entry {name!r} names {entry!r}, "
+            f"which is outside the model directory. Every shard path must "
+            f"stay inside the directory that holds the index."
+        )
+
+
+def _shard_path(directory: Path, index_path: Path, name: str, entry: str) -> Path:
+    """Join one ``weight_map`` entry, refusing a path that escapes.
+
+    Two escapes exist and both reach the same file read. A relative
+    entry climbs out through ``..``. An absolute entry makes
+    `pathlib` discard ``directory`` and keep the right side alone.
+
+    Containment compares lexically normalized paths. `Path.resolve`
+    would follow symlinks, and the Hugging Face hub cache stores each
+    shard under ``snapshots/<revision>/`` as a symlink into ``blobs/``.
+    Resolving would place a legitimate shard outside the model
+    directory and refuse a checkpoint that is correct.
+
+    Args:
+        directory: The model directory that holds the index.
+        index_path: The index file, for the refusal message.
+        name: The tensor name mapped to ``entry``.
+        entry: The ``weight_map`` value.
+
+    Returns:
+        The joined path, inside ``directory``.
+
+    Raises:
+        ShardPathError: If the entry resolves outside ``directory``.
+    """
+    candidate = directory / entry
+    base = os.path.abspath(directory)
+    target = os.path.abspath(candidate)
+    if not target.startswith(base + os.sep):
+        raise ShardPathError(index_path, name, entry)
+    return candidate
+
+
 def open_shard_reader(model_id: str) -> ShardReader | None:
     """Locate the safetensors shards behind a local model path.
 
@@ -379,6 +460,8 @@ def open_shard_reader(model_id: str) -> ShardReader | None:
             parser refuses, nests past the recursion limit, is not a
             JSON object, or holds no ``weight_map`` object. Every
             message names the index file.
+        ShardPathError: If a ``weight_map`` entry names a file outside
+            the model directory, through ``..`` or an absolute path.
     """
     directory = Path(model_id)
     if not directory.is_dir():
@@ -390,7 +473,10 @@ def open_shard_reader(model_id: str) -> ShardReader | None:
         if not isinstance(weight_map, dict):
             raise ValueError(f"{index_path} has no weight_map object")
         return ShardReader(
-            {name: directory / file for name, file in weight_map.items()}
+            {
+                name: _shard_path(directory, index_path, name, entry)
+                for name, entry in weight_map.items()
+            }
         )
     single = directory / _SINGLE_FILE
     if single.is_file():
