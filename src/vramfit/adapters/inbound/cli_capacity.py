@@ -7,7 +7,9 @@ decision 3). The command then reports what the remaining KV
 headroom buys (#422): the largest context, the sequence count at a
 fixed ``--context``, and an image capacity at the measured
 ``--tokens-per-image`` cost the caller supplies (ADR-0030 decision
-4). The solvers live in
+4). The readout prices the key and value caches at the
+``--kv-dtype`` / ``--kv-value-dtype`` pair, as ``budget`` does
+(#424). The solvers live in
 [vramfit.domain.capacity][] and search `kv_cache_bytes` itself, so
 the readout stays exact on a mixed sliding/global stack.
 
@@ -32,7 +34,7 @@ from typing import Annotated
 import typer
 
 from vramfit.adapters.inbound.cli_shape import (
-    check_kv_dtype,
+    check_kv_dtypes,
     kv_detail,
     parse_size_option,
     resolve_shape,
@@ -64,8 +66,16 @@ def capacity(
         ),
     ] = None,
     kv_dtype: Annotated[
-        str, typer.Option(help="KV-cache dtype: fp16, bf16, or fp8.")
+        str, typer.Option(help="Key-cache dtype: fp16, bf16, or fp8.")
     ] = "fp16",
+    kv_value_dtype: Annotated[
+        str | None,
+        typer.Option(
+            help="Value-cache dtype, priced apart from the key cache: "
+            "fp16, bf16, or fp8. Default: the --kv-dtype value, which "
+            "then prices both caches."
+        ),
+    ] = None,
     sequences: Annotated[
         int, typer.Option(min=1, help="Concurrent sequences for the context line.")
     ] = 1,
@@ -112,7 +122,9 @@ def capacity(
     bytes, minus ``--overhead``, minus the ``--vision-line`` the
     card's claim licenses. The attention shape comes from
     exactly one source: ``--model-config`` or the manual triple, as
-    in ``vramfit budget``. ``--vram`` defaults to the VRAM budget
+    in ``vramfit budget``. ``--kv-dtype`` prices both caches on its
+    own, and ``--kv-value-dtype`` prices the value cache apart from
+    the key cache (#424). ``--vram`` defaults to the VRAM budget
     the recipe records. The context line solves at ``--sequences``.
     A capacity line prints ``unbounded`` when the KV cache stops
     growing inside the headroom — the reading is then not
@@ -139,7 +151,7 @@ def capacity(
         $ vramfit capacity recipe.json --model-config config.json
         ```
     """
-    check_kv_dtype(kv_dtype)
+    check_kv_dtypes(kv_dtype, kv_value_dtype)
     shape = resolve_shape(model_config, attn_layers, kv_heads, head_dim)
     vision_bytes, vision_note = resolve_vision_line(model_config, vision_line)
     # Reject malformed options before any IO, as budget and plan do.
@@ -156,7 +168,8 @@ def capacity(
     headroom = vram_bytes - weight_bytes - overhead_bytes - vision_bytes
 
     typer.echo(
-        f"attention layers      {len(shape.kv_layers)}  ({kv_detail(shape, kv_dtype)})"
+        f"attention layers      {len(shape.kv_layers)}  "
+        f"({kv_detail(shape, kv_dtype, kv_value_dtype)})"
     )
     typer.echo(f"VRAM total            {format_size(vram_bytes)}")
     typer.echo(f"- weights (recipe)    {format_size(weight_bytes)}")
@@ -175,14 +188,14 @@ def capacity(
         raise typer.Exit(code=1)
 
     seq_note = f"{sequences} sequence" + ("s" if sequences != 1 else "")
-    tokens = max_context_tokens(shape, headroom, kv_dtype, sequences)
+    tokens = max_context_tokens(shape, headroom, kv_dtype, sequences, kv_value_dtype)
     if tokens is None:
         typer.echo(f"max context           unbounded  ({seq_note})")
     else:
         typer.echo(f"max context           {tokens} tokens  ({seq_note})")
 
     if context is not None:
-        count = max_sequences(shape, headroom, context, kv_dtype)
+        count = max_sequences(shape, headroom, context, kv_dtype, kv_value_dtype)
         # None needs a shape that allocates no KV at all, which no
         # admitted config produces — rendered defensively.
         rendered = "unbounded" if count is None else str(count)

@@ -43,7 +43,7 @@ Each attention layer prices its own cache (`KVLayer`, #421). Per layer
 and sequence:
 
 ```
-layer_kv_bytes = kv_tensors × n_kv_heads × head_dim × bytes_per_elem × cached_tokens
+layer_kv_bytes = n_kv_heads × head_dim × (key_bytes + value_bytes) × cached_tokens
 ```
 
 Three mechanisms decide `cached_tokens`, and one constant sets
@@ -74,6 +74,29 @@ kv_growth_bytes_per_token = 2 × n_attention_layers × n_kv_heads × head_dim ×
 Grouped-query attention (small `n_kv_heads`) is what makes long context
 affordable; FP8 KV cache halves it again. This is why the budget must be
 planned *jointly*: every GiB saved on weights is context length gained.
+
+### The two caches carry their own dtypes
+
+The key cache and the value cache are priced as a **KV dtype pair**
+(#424). llama.cpp already serves the two at separate types — an 8-bit
+key cache beside a 4-bit value cache is an ordinary setting — so a
+budget with one shared dtype could not describe a configuration the
+target already runs. `--kv-dtype` names the key dtype and prices the
+value cache at it too, which is the symmetric reading the budget has
+always had. `--kv-value-dtype` splits the pair. Half the pair at half
+the width costs three quarters of the symmetric total, not half.
+
+Two limits are deliberate, and both are conditions rather than
+silences:
+
+- **The pair is run-wide, not per-layer.** A per-layer KV type map is
+  parked until a ruled runtime accepts per-layer KV types. No runtime
+  reads such a map today, so the map would emit an output nothing can
+  consume. The trigger is the condition to build it, not a date.
+- **The dtype table holds whole-byte element widths**, so it names no
+  block-quantized cache type. llama.cpp's `q8_0` (8.5 bits/element)
+  and `q4_0` (4.5 bits/element) cannot be priced until the table
+  carries sub-byte widths (#575).
 
 ### Worked example: Gemma 4 31B (mixed sliding/global)
 

@@ -43,7 +43,9 @@ A `layers_block_type` list is authoritative when both keys come.
 vramfit budget
   --vram SIZE            Total VRAM  [default: 24GiB]
   --context INT          Context length in tokens  [default: 16384]
-  --kv-dtype TEXT        fp16 | bf16 | fp8  [default: fp16]
+  --kv-dtype TEXT        Key cache: fp16 | bf16 | fp8  [default: fp16]
+  --kv-value-dtype TEXT  Value cache: fp16 | bf16 | fp8
+                         [default: the --kv-dtype value]
   --sequences INT        Concurrent sequences  [default: 1]
   --overhead SIZE        Runtime overhead reservation  [default: 2GiB]
   --vision-line SIZE     Measured vision line, subtracted when the
@@ -73,6 +75,27 @@ window pool per sequence)`. Each concurrent sequence pays its own
 pool. The KV-cache line sums both terms at the given context and
 `--sequences`.
 
+`--kv-dtype` prices both caches on its own. `--kv-value-dtype`
+prices the value cache apart from the key cache, the way llama.cpp
+serves the two at separate types (#424). The first line then names
+the pair:
+
+```console
+$ vramfit budget --attn-layers 49 --kv-heads 8 --head-dim 128 \
+    --kv-dtype fp16 --kv-value-dtype fp8
+attention layers      49  (KV grows 150528 bytes/token, fp16 keys / fp8 values)
+VRAM total            24.00 GiB
+- KV cache            2.30 GiB  (16384 tokens x 1 seq)
+- runtime overhead    2.00 GiB
+= weight budget       19.70 GiB
+```
+
+The pair is one run-wide assignment. The budget assigns no per-layer
+KV type, and it will not until a ruled runtime accepts one (#424).
+The dtype table holds whole-byte element widths, so it names no
+block-quantized cache type such as llama.cpp's `q8_0` or `q4_0`
+(#575).
+
 The ledger subtracts `--vision-line` only when the model card
 claims vision — a top-level `vision_config` object in
 `--model-config`
@@ -97,7 +120,8 @@ the recipe's predicted weight bytes, minus `--overhead`, minus the
 solves the headroom against the per-layer KV arithmetic itself.
 Sliding terms saturate while global terms grow, so the readout
 stays exact on a mixed stack. The attention shape comes from
-exactly one source, as in `budget`. `--vram` defaults to the
+exactly one source, as in `budget`, and so does the
+`--kv-dtype` / `--kv-value-dtype` pair. `--vram` defaults to the
 VRAM budget the recipe records. The weights line uses the recipe's
 predicted bytes — the packed file can exceed them (#307), and
 `vramfit pack` re-checks the real bytes.
@@ -106,7 +130,9 @@ predicted bytes — the packed file can exceed them (#307), and
 vramfit capacity RECIPE
   --vram SIZE            Total VRAM  [default: the recipe's record]
   --context INT          Fixed context — adds the sequence-capacity line
-  --kv-dtype TEXT        fp16 | bf16 | fp8  [default: fp16]
+  --kv-dtype TEXT        Key cache: fp16 | bf16 | fp8  [default: fp16]
+  --kv-value-dtype TEXT  Value cache: fp16 | bf16 | fp8
+                         [default: the --kv-dtype value]
   --sequences INT        Concurrent sequences for the context line  [default: 1]
   --tokens-per-image INT Measured image token cost — adds the image-capacity line
   --overhead SIZE        Runtime overhead reservation  [default: 2GiB]

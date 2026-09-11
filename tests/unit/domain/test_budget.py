@@ -17,6 +17,7 @@ from vramfit.domain.budget import (
     kv_growth_bytes_per_token,
     kv_window_pool_bytes,
     parse_size,
+    resolve_kv_dtypes,
 )
 
 NEMOTRON_SHAPE = ModelShape.uniform(attn_layers=49, kv_heads=8, head_dim=128)
@@ -211,6 +212,67 @@ class TestKvMath:
         one = kv_cache_bytes(GEMMA_31B_SHAPE, context=8192)
 
         assert kv_cache_bytes(GEMMA_31B_SHAPE, context=8192, sequences=4) == 4 * one
+
+
+@pytest.mark.unit
+class TestKvDtypePair:
+    def test_omitted_value_dtype_prices_both_caches_at_the_key_dtype(self) -> None:
+        assert resolve_kv_dtypes("fp8", None) == ("fp8", "fp8")
+
+    def test_named_value_dtype_survives_resolution(self) -> None:
+        assert resolve_kv_dtypes("fp16", "fp8") == ("fp16", "fp8")
+
+    def test_matching_pair_prices_exactly_as_the_single_dtype(self) -> None:
+        for dtype in ("fp16", "bf16", "fp8"):
+            assert kv_cache_bytes(
+                GEMMA_31B_SHAPE, context=16384, kv_dtype=dtype, kv_value_dtype=dtype
+            ) == kv_cache_bytes(GEMMA_31B_SHAPE, context=16384, kv_dtype=dtype)
+
+    def test_fp8_value_cache_costs_three_quarters_of_the_fp16_pair(self) -> None:
+        # fp16 keys (2 B) + fp8 values (1 B) is 3 of the 4 bytes a
+        # matched fp16 pair costs.
+        split = kv_growth_bytes_per_token(NEMOTRON_SHAPE, "fp16", "fp8")
+
+        assert split == 150_528
+        assert 4 * split == 3 * kv_growth_bytes_per_token(NEMOTRON_SHAPE, "fp16")
+
+    def test_split_pair_prices_the_window_pool_too(self) -> None:
+        symmetric = kv_window_pool_bytes(GEMMA_31B_SHAPE, "fp16")
+        split = kv_window_pool_bytes(GEMMA_31B_SHAPE, "fp16", "fp8")
+
+        assert 4 * split == 3 * symmetric
+
+    def test_swapping_the_halves_prices_the_same_total(self) -> None:
+        # Every admitted layer stores one K and one V, so the pair is
+        # symmetric in the two dtypes.
+        assert kv_cache_bytes(
+            GEMMA_31B_SHAPE, context=4096, kv_dtype="fp16", kv_value_dtype="fp8"
+        ) == kv_cache_bytes(
+            GEMMA_31B_SHAPE, context=4096, kv_dtype="fp8", kv_value_dtype="fp16"
+        )
+
+    def test_kv_tensors_one_prices_the_key_dtype_alone(self) -> None:
+        # One stored tensor is the K cache, so the value dtype does
+        # not reach it.
+        shape = ModelShape(kv_layers=(KVLayer(kv_heads=4, head_dim=128, kv_tensors=1),))
+
+        assert kv_cache_bytes(
+            shape, context=1024, kv_dtype="fp16", kv_value_dtype="fp8"
+        ) == kv_cache_bytes(shape, context=1024, kv_dtype="fp16")
+
+    def test_unknown_value_dtype_raises_key_error(self) -> None:
+        with pytest.raises(KeyError):
+            kv_growth_bytes_per_token(NEMOTRON_SHAPE, "fp16", "int4")
+
+    def test_shared_layer_still_allocates_nothing_under_a_split_pair(self) -> None:
+        shape = ModelShape(
+            kv_layers=(KVLayer(kv_heads=4, head_dim=128, shares_kv=True),)
+        )
+
+        assert (
+            kv_cache_bytes(shape, context=1024, kv_dtype="fp16", kv_value_dtype="fp8")
+            == 0
+        )
 
 
 @pytest.mark.unit

@@ -442,3 +442,45 @@ def test_capacity_vision_line_with_a_manual_shape_rejected(tmp_path: Path) -> No
 
     assert result.exit_code == 2
     assert "needs --model-config" in result.output
+
+
+class TestKvValueDtype:
+    def test_omitted_value_dtype_reads_exactly_as_today(self, tmp_path) -> None:
+        recipe = save_capacity_recipe(tmp_path)
+        args = ["capacity", str(recipe), *SHAPE_OPTIONS]
+
+        default = runner.invoke(app, args)
+        matched = runner.invoke(app, [*args, "--kv-value-dtype", "fp16"])
+
+        assert default.exit_code == 0, default.output
+        assert default.output == matched.output
+
+    def test_fp8_value_cache_raises_the_max_context(self, tmp_path) -> None:
+        recipe = save_capacity_recipe(tmp_path)
+        args = ["capacity", str(recipe), *SHAPE_OPTIONS]
+
+        symmetric = runner.invoke(app, args)
+        split = runner.invoke(app, [*args, "--kv-value-dtype", "fp8"])
+
+        assert split.exit_code == 0, split.output
+        assert "fp16 keys / fp8 values" in split.output
+        assert context_tokens(split.output) > context_tokens(symmetric.output)
+
+    def test_unknown_value_dtype_exits_two(self, tmp_path) -> None:
+        recipe = save_capacity_recipe(tmp_path)
+
+        result = runner.invoke(
+            app,
+            ["capacity", str(recipe), *SHAPE_OPTIONS, "--kv-value-dtype", "int4"],
+        )
+
+        assert result.exit_code == 2
+        assert "--kv-value-dtype" in result.output
+
+
+def context_tokens(output: str) -> int:
+    """Read the ``max context`` line's token count out of a readout."""
+    for line in output.splitlines():
+        if line.startswith("max context"):
+            return int(line.split()[2])
+    raise AssertionError(f"no max context line in:\n{output}")

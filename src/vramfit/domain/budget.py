@@ -14,6 +14,18 @@ price these stacks: `kv_growth_bytes_per_token` carries the
 context-scaled term and `kv_window_pool_bytes` the saturated window
 term.
 
+Every KV function prices the key cache and the value cache as a pair
+(#424). llama.cpp serves the two caches at separate types, so a
+symmetric-only budget could not describe a configuration the packed
+target already runs. A caller that names one dtype prices both at it,
+which is the reading every caller had before the pair landed.
+
+The pair is a run-wide assignment, not a per-layer one. A per-layer KV
+type map stays parked, and the trigger to build it is: a ruled runtime
+accepts per-layer KV types. No runtime reads such a map today, so the
+map would produce an output nothing can consume (#424, ruled
+2026-09-11).
+
 `parse_size` refuses a size the artifacts cannot carry, at the signed
 64-bit range every reader bounds (ADR-0008 as amended 2026-08-16,
 #260). Refusing here names the option the operator typed rather than
@@ -21,7 +33,10 @@ the artifact vramfit would write.
 
 Attributes:
     KV_DTYPE_BYTES (dict[str, int]): Bytes per KV-cache element by dtype
-        name (``fp16``, ``bf16``, ``fp8``).
+        name (``fp16``, ``bf16``, ``fp8``). The table holds whole-byte
+        element widths. It names no block-quantized cache type, so the
+        budget cannot yet price llama.cpp's ``q8_0`` or ``q4_0``
+        caches (#575).
     DEFAULT_RUNTIME_OVERHEAD_BYTES (int): Planning figure for CUDA
         context, workspace, and fragmentation (2 GiB).
     KV_WINDOW_PAD_TOKENS (int): Tokens the serving runtime adds to
@@ -244,22 +259,60 @@ class ModelShape:
         )
 
 
-def _layer_token_bytes(layer: KVLayer, kv_dtype: str) -> int:
+def resolve_kv_dtypes(kv_dtype: str, kv_value_dtype: str | None) -> tuple[str, str]:
+    """Resolve the key and value dtypes a caller asked for.
+
+    A caller that names one dtype prices both caches at it. That is
+    the symmetric reading every caller had before #424.
+
+    Args:
+        kv_dtype: The key-cache element dtype.
+        kv_value_dtype: The value-cache element dtype, or None to
+            price the value cache at ``kv_dtype``.
+
+    Returns:
+        The key dtype and the value dtype, in that order.
+
+    Examples:
+        One dtype prices the pair:
+
+        ```python
+        from vramfit.domain.budget import resolve_kv_dtypes
+
+        assert resolve_kv_dtypes("fp16", None) == ("fp16", "fp16")
+        assert resolve_kv_dtypes("fp16", "fp8") == ("fp16", "fp8")
+        ```
+    """
+    return kv_dtype, kv_dtype if kv_value_dtype is None else kv_value_dtype
+
+
+def _layer_token_bytes(layer: KVLayer, kv_dtype: str, kv_value_dtype: str) -> int:
     """Compute one layer's KV bytes per cached token.
 
     Args:
         layer: The layer's KV geometry.
-        kv_dtype: KV-cache element dtype.
+        kv_dtype: Key-cache element dtype.
+        kv_value_dtype: Value-cache element dtype.
 
     Returns:
         Bytes per cached token, zero for a shared layer.
     """
     if layer.shares_kv:
         return 0
-    return layer.kv_tensors * layer.kv_heads * layer.head_dim * KV_DTYPE_BYTES[kv_dtype]
+    # The runtime allocates the K cache first, then the V cache, so
+    # the storage factor walks the pair in that order (#431). One
+    # tensor prices the key alone. Equal dtypes reproduce the
+    # pre-#424 product for every storage factor.
+    roles = (kv_dtype, kv_value_dtype)
+    element_bytes = sum(
+        KV_DTYPE_BYTES[roles[index % 2]] for index in range(layer.kv_tensors)
+    )
+    return layer.kv_heads * layer.head_dim * element_bytes
 
 
-def kv_growth_bytes_per_token(shape: ModelShape, kv_dtype: str = "fp16") -> int:
+def kv_growth_bytes_per_token(
+    shape: ModelShape, kv_dtype: str = "fp16", kv_value_dtype: str | None = None
+) -> int:
     """Compute the KV bytes each context token adds, windows excluded.
 
     Only global layers scale with context. Sliding layers stop at
@@ -268,13 +321,17 @@ def kv_growth_bytes_per_token(shape: ModelShape, kv_dtype: str = "fp16") -> int:
 
     Args:
         shape: The model's attention geometry.
-        kv_dtype: KV-cache element dtype (``fp16``, ``bf16``, or ``fp8``).
+        kv_dtype: Key-cache element dtype (``fp16``, ``bf16``, or
+            ``fp8``). It prices the value cache too while
+            ``kv_value_dtype`` stays None.
+        kv_value_dtype: Value-cache element dtype, or None to price
+            the value cache at ``kv_dtype`` (#424).
 
     Returns:
         Context-scaled bytes per token.
 
     Raises:
-        KeyError: If ``kv_dtype`` is not a known dtype.
+        KeyError: If either dtype is not a known dtype.
 
     Examples:
         The north-star target stores ~196 KiB per token at fp16:
@@ -285,15 +342,27 @@ def kv_growth_bytes_per_token(shape: ModelShape, kv_dtype: str = "fp16") -> int:
         shape = ModelShape.uniform(attn_layers=49, kv_heads=8, head_dim=128)
         assert kv_growth_bytes_per_token(shape) == 200_704
         ```
+
+        An fp8 value cache costs three quarters of the fp16 pair:
+
+        ```python
+        from vramfit.domain.budget import ModelShape, kv_growth_bytes_per_token
+
+        shape = ModelShape.uniform(attn_layers=49, kv_heads=8, head_dim=128)
+        assert kv_growth_bytes_per_token(shape, "fp16", "fp8") == 150_528
+        ```
     """
+    key, value = resolve_kv_dtypes(kv_dtype, kv_value_dtype)
     return sum(
-        _layer_token_bytes(layer, kv_dtype)
+        _layer_token_bytes(layer, key, value)
         for layer in shape.kv_layers
         if layer.window is None
     )
 
 
-def kv_window_pool_bytes(shape: ModelShape, kv_dtype: str = "fp16") -> int:
+def kv_window_pool_bytes(
+    shape: ModelShape, kv_dtype: str = "fp16", kv_value_dtype: str | None = None
+) -> int:
     """Compute the sliding layers' KV pool at window saturation.
 
     Each sliding layer caps its cache at its window plus the
@@ -302,13 +371,17 @@ def kv_window_pool_bytes(shape: ModelShape, kv_dtype: str = "fp16") -> int:
 
     Args:
         shape: The model's attention geometry.
-        kv_dtype: KV-cache element dtype (``fp16``, ``bf16``, or ``fp8``).
+        kv_dtype: Key-cache element dtype (``fp16``, ``bf16``, or
+            ``fp8``). It prices the value cache too while
+            ``kv_value_dtype`` stays None.
+        kv_value_dtype: Value-cache element dtype, or None to price
+            the value cache at ``kv_dtype`` (#424).
 
     Returns:
         Saturated window-pool bytes, zero for a uniform shape.
 
     Raises:
-        KeyError: If ``kv_dtype`` is not a known dtype.
+        KeyError: If either dtype is not a known dtype.
 
     Examples:
         Gemma 4 31B holds 1,200 MiB of saturated windows at fp16:
@@ -322,8 +395,9 @@ def kv_window_pool_bytes(shape: ModelShape, kv_dtype: str = "fp16") -> int:
         assert kv_window_pool_bytes(shape) == 1_258_291_200
         ```
     """
+    key, value = resolve_kv_dtypes(kv_dtype, kv_value_dtype)
     return sum(
-        _layer_token_bytes(layer, kv_dtype) * (layer.window + KV_WINDOW_PAD_TOKENS)
+        _layer_token_bytes(layer, key, value) * (layer.window + KV_WINDOW_PAD_TOKENS)
         for layer in shape.kv_layers
         if layer.window is not None
     )
@@ -334,6 +408,7 @@ def kv_cache_bytes(
     context: int,
     kv_dtype: str = "fp16",
     sequences: int = 1,
+    kv_value_dtype: str | None = None,
 ) -> int:
     """Compute total KV-cache bytes for a context length and batch.
 
@@ -345,8 +420,11 @@ def kv_cache_bytes(
     Args:
         shape: The model's attention geometry.
         context: Context length in tokens.
-        kv_dtype: KV-cache element dtype.
+        kv_dtype: Key-cache element dtype. It prices the value cache
+            too while ``kv_value_dtype`` stays None.
         sequences: Concurrent sequences sharing the card.
+        kv_value_dtype: Value-cache element dtype, or None to price
+            the value cache at ``kv_dtype`` (#424).
 
     Returns:
         Total KV-cache bytes.
@@ -361,13 +439,14 @@ def kv_cache_bytes(
         total = kv_cache_bytes(shape, context=16384)
         ```
     """
+    key, value = resolve_kv_dtypes(kv_dtype, kv_value_dtype)
     total = 0
     for layer in shape.kv_layers:
         if layer.window is None:
             tokens = context
         else:
             tokens = min(context, layer.window + KV_WINDOW_PAD_TOKENS)
-        total += _layer_token_bytes(layer, kv_dtype) * tokens
+        total += _layer_token_bytes(layer, key, value) * tokens
     return total * sequences
 
 

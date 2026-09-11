@@ -49,6 +49,7 @@ def max_context_tokens(
     kv_headroom_bytes: int,
     kv_dtype: str = "fp16",
     sequences: int = 1,
+    kv_value_dtype: str | None = None,
 ) -> int | None:
     """Solve for the largest context whose KV cache fits the headroom.
 
@@ -59,11 +60,14 @@ def max_context_tokens(
     Args:
         shape: The model's attention geometry.
         kv_headroom_bytes: Bytes available for the KV cache.
-        kv_dtype: KV-cache element dtype (``fp16``, ``bf16``, or
-            ``fp8``).
+        kv_dtype: Key-cache element dtype (``fp16``, ``bf16``, or
+            ``fp8``). It prices the value cache too while
+            ``kv_value_dtype`` stays None.
         sequences: Concurrent sequences sharing the headroom. The CLI
             admits only positive counts, and the domain does not
             re-check that bound.
+        kv_value_dtype: Value-cache element dtype, or None to price
+            the value cache at ``kv_dtype`` (#424).
 
     Returns:
         The largest context in tokens — 0 when not even one token
@@ -71,7 +75,7 @@ def max_context_tokens(
         window inside the headroom and context is not KV-limited.
 
     Raises:
-        KeyError: If ``kv_dtype`` is not a known dtype and any layer
+        KeyError: If either dtype is not a known dtype and any layer
             allocates KV.
 
     Examples:
@@ -88,9 +92,9 @@ def max_context_tokens(
     """
     if kv_headroom_bytes < 0:
         return 0
-    growth = kv_growth_bytes_per_token(shape, kv_dtype) * sequences
+    growth = kv_growth_bytes_per_token(shape, kv_dtype, kv_value_dtype) * sequences
     if growth == 0:
-        saturated = kv_window_pool_bytes(shape, kv_dtype) * sequences
+        saturated = kv_window_pool_bytes(shape, kv_dtype, kv_value_dtype) * sequences
         if saturated <= kv_headroom_bytes:
             return None
         # `saturated > headroom >= 0` proves a costing sliding layer
@@ -106,7 +110,8 @@ def max_context_tokens(
     lo = 0
     while hi - lo > 1:
         mid = (lo + hi) // 2
-        if kv_cache_bytes(shape, mid, kv_dtype, sequences) <= kv_headroom_bytes:
+        fits = kv_cache_bytes(shape, mid, kv_dtype, sequences, kv_value_dtype)
+        if fits <= kv_headroom_bytes:
             lo = mid
         else:
             hi = mid
@@ -118,6 +123,7 @@ def max_sequences(
     kv_headroom_bytes: int,
     context: int,
     kv_dtype: str = "fp16",
+    kv_value_dtype: str | None = None,
 ) -> int | None:
     """Solve for the largest sequence count at a fixed context.
 
@@ -129,8 +135,11 @@ def max_sequences(
         shape: The model's attention geometry.
         kv_headroom_bytes: Bytes available for the KV cache.
         context: Context length in tokens each sequence holds.
-        kv_dtype: KV-cache element dtype (``fp16``, ``bf16``, or
-            ``fp8``).
+        kv_dtype: Key-cache element dtype (``fp16``, ``bf16``, or
+            ``fp8``). It prices the value cache too while
+            ``kv_value_dtype`` stays None.
+        kv_value_dtype: Value-cache element dtype, or None to price
+            the value cache at ``kv_dtype`` (#424).
 
     Returns:
         The largest sequence count — 0 when not even one sequence
@@ -138,7 +147,7 @@ def max_sequences(
         concurrency is not KV-limited.
 
     Raises:
-        KeyError: If ``kv_dtype`` is not a known dtype and any layer
+        KeyError: If either dtype is not a known dtype and any layer
             allocates KV.
 
     Examples:
@@ -154,7 +163,9 @@ def max_sequences(
     """
     if kv_headroom_bytes < 0:
         return 0
-    per_sequence = kv_cache_bytes(shape, context, kv_dtype, sequences=1)
+    per_sequence = kv_cache_bytes(
+        shape, context, kv_dtype, sequences=1, kv_value_dtype=kv_value_dtype
+    )
     if per_sequence == 0:
         return None
     return kv_headroom_bytes // per_sequence
