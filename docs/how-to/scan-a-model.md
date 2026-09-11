@@ -150,25 +150,39 @@ map cannot merge.
 
 ## Pricing a subset of the groups
 
-`--group-by stack` returns 210 groups on Nemotron 3.5 Lightning
-30B-A3B. The 46 routed-expert stacks are the unit `vramfit pack`
-addresses, so a campaign that needs those alone pays for 420 cells
-without a filter. `--groups` names the subset:
+`--group-by stack` returns 164 groups on Nemotron 3.5 Lightning
+30B-A3B with the native Transformers 5.14.1 implementation. These
+include 46 routed-expert stacks, the units `vramfit pack` addresses.
+At two precisions, an unfiltered scan schedules 328 cells.
+`--groups` names the subset. This example selects two stacks:
 
 ```bash
 vramfit scan ./model --calibration calibration.txt \
   --group-by stack \
-  --groups backbone.layers.1.mixer.experts.up_proj,backbone.layers.1.mixer.experts.down_proj \
+  --groups model.layers.1.mixer.experts.up_proj,model.layers.1.mixer.experts.down_proj \
   --precisions 4,2 \
   --within-group q0 \
   --out sensitivity-stacks.json
 ```
 
-The names must be keys `--group-by` produces, which are the checkpoint's
-parameter names. They are not the GGUF tensor names a recipe packs
-through — `group_key` collapses a routed-expert index and drops the
-`.weight` suffix, so a stack reads
-`backbone.layers.1.mixer.experts.up_proj` and never `blk.1.ffn_up_exps`.
+The names must be keys `--group-by` produces from the loaded model's
+module tree. Transformers may convert names when it loads checkpoint
+weights. On this native path, it converts on-disk `backbone.` keys
+to `model.` module paths. It also fuses each layer's routed experts
+into one parameter per projection. So a fused expert stack carries
+no expert index. `group_key` drops the `.weight` suffix from every
+name. The scan preserves the loaded naming root. This stack reads
+`model.layers.1.mixer.experts.up_proj`, not the GGUF name
+`blk.1.ffn_up_exps`.
+
+Custom implementations can expose a different module tree. NVIDIA
+still publishes a [Nemotron 3 Nano custom implementation](
+https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/blob/main/modeling_nemotron_h.py)
+with a `backbone.` root. That implementation builds the routed
+experts as a module list, so each loaded name carries an expert
+index. `group_key` collapses that index. A scan using that
+implementation retains `backbone.` in its group names. Select names
+from the implementation you load; neither root is universal.
 
 A name that matches no discovered group halts the run, after the model
 loads and before any cell measures. The halt names every unmatched name
@@ -189,16 +203,19 @@ in the same family.
     and only a size source states that width (ADR-0028, issue #515).
     A runtime with no effective-bits table prices at nominal bits
     and plans the map, so pass `--checkpoint` there as well. Were
-    the plan to proceed, a 46-of-210 map would price 46 groups and
-    count the other 164 as zero bytes, and the recipe would report a
-    fit the packed model does not honor.
+    the plan to proceed, a map covering all 46 expert stacks would
+    omit the other 118 discovered groups and the classes the scan
+    skips. The recipe could report a fit the packed model does not
+    honor. The two-stack example above omits 162 discovered groups.
 
-    `--checkpoint` prices the other 164 from the model's safetensors
-    headers and holds each at reference precision (ADR-0029). Those
-    groups are unmeasured, so the plan reserves reference bytes for
-    them rather than spending the measurement it does not have. A
-    skipped class prices at the 32 bits the converter wrote it at
-    (#409).
+    For this native `model.`-rooted map, `--checkpoint` prices
+    unmeasured groups from the model's safetensors headers and holds
+    each at reference precision (ADR-0029). It also prices the
+    classes the scan skips. A skipped class prices at the 32 bits
+    the converter wrote it at (#409).
+
+    Read the [CLI reference](../reference/cli.md#vramfit-plan)
+    before planning a `backbone.`-rooted map.
 
 The selection stays out of the fingerprint, because a group subset is
 not provenance. So a narrow run and a wide run share one checkpoint on

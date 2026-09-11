@@ -409,7 +409,7 @@ never one that matches too much. An enumerated list cannot widen, and
 the run log records it verbatim.
 
 `--groups` restricts the run to named groups. A caller that wants 46 of
-210 groups pays for 46. The map then carries the selected groups alone.
+164 groups pays for 46. The map then carries the selected groups alone.
 A name that matches no discovered group halts the run. The halt runs
 after the model loads and before any cell measures. It names every
 unmatched name at once and records the stage `group_select`.

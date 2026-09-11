@@ -7,7 +7,12 @@ fetched 2026-09-04 from the local Hugging Face cache (snapshot
 real geometry: a hybrid `layers_block_type` stack of 52 layers, 23
 `mamba`, 23 `moe`, and 6 `attention`, with 2 KV heads and head_dim 128.
 
-The worked-example unit test (`tests/unit/test_worked_example.py`)
-checks that the budget reader prices the 6 attention layers alone
-(#427). Re-fetch only if NVIDIA revises the checkpoint, and update the
-test in the same change.
+Two tests read this config. The worked-example unit test
+(`tests/unit/test_worked_example.py`) checks that the budget reader
+prices the 6 attention layers alone (#427). `TestNativeTargetDiscovery`
+in `tests/integration/test_torch_scan_adapter.py` builds the native
+module tree on the meta device. It asserts the group inventory
+`discover_groups` returns, which
+[Scan a model](../../../docs/how-to/scan-a-model.md) also states. Re-fetch
+only if NVIDIA revises the checkpoint, and update both tests in the
+same change.
