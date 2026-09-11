@@ -122,9 +122,10 @@ below remain, the sub-4-bit pricing claims do not.
   unique across the map, and the loader refuses a duplicate.
   `vramfit plan` keys assignments on this name, and `--pin` matches
   against it.
-- **`groups[].tensors`** — the full names of the checkpoint tensors
+- **`groups[].tensors`** — the full names of the loaded parameters
   the group quantizes together, as the scan discovered them
-  (`model.layers.0.self_attn.v_proj.weight`). The loader requires a
+  (`model.layers.0.self_attn.v_proj.weight`). They carry the same
+  naming root as `groups[].name`. The loader requires a
   list of strings. `tensor_bytes` keys on these names, and
   `--protect` and `--exclude-imatrix` match against them.
 - **`sensitivity`** — divergence of the perturbed model's output from the
@@ -220,14 +221,23 @@ below remain, the sub-4-bit pricing claims do not.
   (the v1 loader rejects partially-scanned groups).
 - **`scan.group_by`** — `layer`, `tensor`, or `stack`.
 
-    | Value | One group per | Dense model | Nemotron 3.5 Lightning 30B-A3B backbone |
+    | Value | One group per | Dense model | Nemotron 3.5 Lightning 30B-A3B, native load |
     |-------|---------------|-------------|--------------------------------|
-    | `layer` | decoder layer | 1 per layer | 52 layers plus the embeddings |
-    | `stack` | pack-addressable stack | 1 per weight | 46 expert stacks plus the rest |
-    | `tensor` | checkpoint weight | 1 per weight | 5888 expert weights plus the rest |
+    | `layer` | decoder layer | 1 per layer | 54: 52 layers, the embeddings, the output head |
+    | `stack` | pack-addressable stack | 1 per weight | 164: 46 expert stacks plus 118 other groups |
+    | `tensor` | loaded parameter | 1 per weight | 164: the same set `stack` gives |
 
-    Counts are backbone-only (#160). Scanning the MTP block adds 256
-    expert weights, which is 2 more expert stacks.
+    The counts come from a native Transformers load (#571). Those
+    groups root at `model.`, apart from `lm_head`. Discovery keeps a
+    floating-point parameter of two or more dimensions. It then
+    drops every class a quantizer refuses, which is `mixer.gate` and
+    `mixer.conv1d` on this target (#204). Those two filters, not
+    expert fusion, are why discovery reports fewer groups than the
+    load reports parameters. The load fuses each projection's routed
+    experts into one parameter, so `tensor` reaches no finer key
+    than `stack` here. It loads no MTP parameters, so no count above
+    covers the MTP block. The on-disk checkpoint carries that block
+    at the `mtp` root (#571).
 
     `stack` keys on the unit a pack assigns a precision to (#161). It
     collapses a mixture-of-experts layer's routed experts into one
@@ -240,35 +250,50 @@ below remain, the sub-4-bit pricing claims do not.
     type, which gives 46 addressable expert slots on the Nemotron
     target (#159). vLLM, TensorRT-LLM, and SGLang each resolve one
     algorithm per mixture-of-experts module, which gives 23 (#166). No
-    surveyed runtime serves a per-expert precision, so a
-    `tensor`-keyed map of that model prices 5888 distinctions no pack
-    can express.
+    surveyed runtime serves a per-expert precision. The native load
+    fuses the routed experts, so no granularity reaches one anyway.
 
-    !!! warning "A `stack` scan packs its expert stacks, not every group"
+    !!! warning "A `stack` scan packs only the groups the backend maps"
 
         The GGUF backend maps layer groups, routed-expert stacks,
         and layer-class groups, beside the dedicated embedding and
         output-head flags (ADR-0012 decision 2, as amended). Two
         shapes matter here. A layer group becomes `blk.<n>.` across
         the three naming families above and any prefix —
-        `model.layers.<n>`, the Nemotron 3.5 Lightning target's
-        `backbone.layers.<n>`, and Gemma 4's nested
-        `model.language_model.layers.<n>`. A routed-expert stack becomes its
-        fused tensor: `blk.<n>.ffn_up_exps.`,
-        `blk.<n>.ffn_down_exps.`, or `blk.<n>.ffn_gate_exps.`.
+        `model.layers.<n>`, `backbone.layers.<n>`, and Gemma 4's
+        nested `model.language_model.layers.<n>`.
+        Group names follow the loaded module tree. Nemotron 3.5
+        Lightning's checkpoint parameter names use `backbone.`.
+        Native Transformers converts them to `model.` module paths
+        before discovery, so that target's groups use `model.`.
+        A routed-expert stack becomes its fused tensor:
+        `blk.<n>.ffn_up_exps.`, `blk.<n>.ffn_down_exps.`, or
+        `blk.<n>.ffn_gate_exps.`.
 
         Every other `stack` group still raises a `PackError` that
-        names it. On the Nemotron target that covers the Mamba
-        `in_proj`, `out_proj`, and `conv1d`, the attention
-        projections, the router, and the shared experts. So a
-        `layer`-keyed recipe packs today and a whole-model
-        `stack`-keyed recipe does not. Issue #183 carries the
-        remaining classes.
+        names it. The Nemotron target reaches no such group. Its
+        164 native groups all map:
+
+        - 23 `mixer.in_proj` and 23 `mixer.out_proj`.
+        - 46 routed-expert stacks.
+        - 46 shared-expert groups.
+        - 6 each of `mixer.q_proj`, `mixer.k_proj`, `mixer.v_proj`,
+          and `mixer.o_proj`.
+        - `model.embeddings` and `lm_head`.
+
+        Mapping does not by itself guarantee every precision. A
+        group whose rows refuse the 256 super-block prices through
+        the ADR-0028 table. That table holds no type between 2.25
+        and 4.25 bits per weight. So such a group raises a
+        `PackError` at nominal 3. The measured width decides, never
+        the class name (ADR-0028, #515).
+        [ADR-0012](../adr/0012-gguf-type-mapping.md)'s 2026-08-20
+        amendment rules the class table, and #368 landed it.
 
         The backend also refuses a recipe naming two layer stacks.
-        GGUF numbers one stack `blk.<n>.`, so the target's
-        `mtp.layers.<n>` and a multimodal checkpoint's vision tower
-        each collide with the backbone. Scan one stack at a time.
+        GGUF numbers one stack `blk.<n>.`, so a multimodal
+        checkpoint's vision tower collides with the decoder stack.
+        Scan one stack at a time.
 
 ## Unknown fields
 
