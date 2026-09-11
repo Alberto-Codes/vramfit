@@ -12,12 +12,16 @@ a green fast suite onto the reference box.
 from __future__ import annotations
 
 import json
+import os
+from pathlib import Path
 
 import pytest
 
 torch = pytest.importorskip("torch", reason="scan extra not installed")
 
+from vramfit.adapters.outbound.scan import offload
 from vramfit.adapters.outbound.scan.offload import (
+    ShardPathError,
     ShardReader,
     dedupe_aliased_groups,
     open_shard_reader,
@@ -307,3 +311,134 @@ class TestShardReader:
 
         assert live.dtype == torch.bfloat16
         assert torch.equal(live, original.to(torch.bfloat16))
+
+
+class TestShardPathContainment:
+    """The publisher owns ``weight_map``, so every entry is untrusted.
+
+    accelerate carries the same defect through
+    ``load_checkpoint_in_model`` (GHSA-4j2p-28q2-5m79), and its
+    maintainer declined the fix. vramfit never calls that entry point.
+    It reached the same exposure through its own index read, so it
+    closes the hole in its own code.
+    """
+
+    @staticmethod
+    def _planted(tmp_path):
+        """Plant a target outside the model directory, inside tmp_path."""
+        from safetensors.torch import save_file
+
+        outside = tmp_path / "outside.safetensors"
+        save_file({"planted": torch.tensor([42.0])}, str(outside))
+        model = tmp_path / "model"
+        model.mkdir()
+        save_file({"a": torch.randn(2, 2)}, str(model / "m-00001.safetensors"))
+        return outside, model
+
+    @staticmethod
+    def _write_index(model, entry) -> None:
+        index = {"weight_map": {"a": "m-00001.safetensors", "planted": entry}}
+        (model / "model.safetensors.index.json").write_text(json.dumps(index))
+
+    def test_open_on_a_relative_traversal_entry_refuses(self, tmp_path) -> None:
+        _, model = self._planted(tmp_path)
+        self._write_index(model, "../outside.safetensors")
+
+        with pytest.raises(ShardPathError, match="outside the model directory"):
+            open_shard_reader(str(model))
+
+    def test_open_on_an_absolute_entry_refuses(self, tmp_path) -> None:
+        # `pathlib` discards the left side on an absolute right side, so
+        # the join alone never leaves the entry under the model directory.
+        outside, model = self._planted(tmp_path)
+        self._write_index(model, str(outside))
+
+        with pytest.raises(ShardPathError, match="outside the model directory"):
+            open_shard_reader(str(model))
+
+    def test_refusal_names_the_entry_and_the_tensor(self, tmp_path) -> None:
+        _, model = self._planted(tmp_path)
+        self._write_index(model, "../outside.safetensors")
+
+        with pytest.raises(ShardPathError) as caught:
+            open_shard_reader(str(model))
+
+        assert caught.value.name == "planted"
+        assert caught.value.entry == "../outside.safetensors"
+        assert "index.json" in str(caught.value)
+
+    @pytest.mark.parametrize("entry", ["../outside.safetensors", "/etc/hostname"])
+    def test_refusal_reads_no_file_outside_the_model_directory(
+        self, tmp_path, entry, monkeypatch
+    ) -> None:
+        # The refusal has to land before any read. A path that only
+        # fails at `safe_open` would already have opened the file.
+        # Spy on both read boundaries the adapter uses: `Path.read_text`
+        # for the index, and the `safe_open` bound in the module for
+        # every shard. `builtins.open` catches neither.
+        _, model = self._planted(tmp_path)
+        self._write_index(model, entry)
+        read: list[str] = []
+
+        real_read_text = Path.read_text
+        real_safe_open = offload.safe_open
+
+        def _read_text_spy(self, *args, **kwargs):
+            read.append(os.path.abspath(self))
+            return real_read_text(self, *args, **kwargs)
+
+        def _safe_open_spy(filename, *args, **kwargs):
+            read.append(os.path.abspath(filename))
+            return real_safe_open(filename, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_text", _read_text_spy)
+        monkeypatch.setattr(offload, "safe_open", _safe_open_spy)
+
+        with pytest.raises(ShardPathError):
+            open_shard_reader(str(model))
+
+        # The index read proves the spy sits on the real boundary. An
+        # empty list would pass the containment assertion vacuously.
+        base = os.path.abspath(model)
+        assert read == [os.path.join(base, "model.safetensors.index.json")]
+        assert [p for p in read if not p.startswith(base + os.sep)] == []
+
+    @pytest.mark.parametrize(
+        "entry", [None, 123, ["m-00001.safetensors"], {"file": "m-00001.safetensors"}]
+    )
+    def test_open_on_a_non_string_entry_refuses(self, tmp_path, entry) -> None:
+        # A non-string value names no file. The join would raise
+        # `TypeError`, which escapes the reader's `ValueError` contract
+        # and the scan-loop catch that reports a halted scan.
+        _, model = self._planted(tmp_path)
+        self._write_index(model, entry)
+
+        with pytest.raises(ValueError, match="no shard file name") as caught:
+            open_shard_reader(str(model))
+
+        assert "index.json" in str(caught.value)
+        assert "'planted'" in str(caught.value)
+
+    def test_open_accepts_a_shard_symlinked_out_of_the_directory(
+        self, tmp_path
+    ) -> None:
+        # The Hugging Face hub cache stores every shard under
+        # `snapshots/<revision>/` as a symlink into `blobs/`. Containment
+        # that resolved symlinks would refuse a correct checkpoint, so
+        # the check compares lexically normalized paths instead.
+        from safetensors.torch import save_file
+
+        blobs = tmp_path / "blobs"
+        blobs.mkdir()
+        live = torch.randn(3, 3)
+        save_file({"a": live}, str(blobs / "sha256-deadbeef"))
+        snapshot = tmp_path / "snapshots" / "main"
+        snapshot.mkdir(parents=True)
+        (snapshot / "m-00001.safetensors").symlink_to(blobs / "sha256-deadbeef")
+        index = {"weight_map": {"a": "m-00001.safetensors"}}
+        (snapshot / "model.safetensors.index.json").write_text(json.dumps(index))
+
+        reader = open_shard_reader(str(snapshot))
+
+        assert reader is not None
+        assert reader.verify({"a": live}) is None
