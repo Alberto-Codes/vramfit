@@ -8,6 +8,8 @@ network. They skip cleanly when torch is absent (ADR-0009).
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from types import MappingProxyType
 from typing import Literal, cast
 
 import pytest
@@ -1182,8 +1184,16 @@ class TestNativeTargetDiscovery:
     figures came from.
     """
 
+    @pytest.fixture(scope="class")
     @staticmethod
-    def _native_stack_groups() -> dict[str, list[str]]:
+    def groups() -> Mapping[str, list[str]]:
+        """Build the native module tree once and share its inventory.
+
+        The installed transformers version owns both steps below. A
+        version that does not implement the target skips the class.
+        ``discover_groups`` stays outside the guard, so a discovery
+        regression still fails.
+        """
         transformers = pytest.importorskip(
             "transformers", reason="scan extra not installed"
         )
@@ -1201,41 +1211,43 @@ class TestNativeTargetDiscovery:
         )
         try:
             loaded = AutoConfig.from_pretrained(config)
-        except ValueError as exc:
+            with torch.device("meta"):
+                model = AutoModelForCausalLM.from_config(loaded)
+        except (ValueError, KeyError, AttributeError, TypeError) as exc:
             pytest.skip(
-                f"transformers {transformers.__version__} does not implement "
-                f"the target's architecture: {exc}"
+                f"transformers {transformers.__version__} does not build "
+                f"the target's architecture: {exc!r}"
             )
-        with torch.device("meta"):
-            model = AutoModelForCausalLM.from_config(loaded)
-        return discover_groups(model, "stack")
+        return MappingProxyType(discover_groups(model, "stack"))
 
-    def test_stack_discovery_counts_the_documented_groups(self) -> None:
+    def test_stack_discovery_counts_the_documented_groups(
+        self, groups: Mapping[str, list[str]]
+    ) -> None:
         # 164 groups, 46 of them routed-expert stacks. The 23
         # `mixer.conv1d` and 23 `mixer.gate` parameters stay out (#204).
         from vramfit.domain.scan import is_expert_stack
 
-        groups = self._native_stack_groups()
         stacks = [name for name in groups if is_expert_stack(name)]
 
         assert len(groups) == 164
         assert len(stacks) == 46
         assert len(groups) - len(stacks) == 118
 
-    def test_native_group_names_carry_the_loaded_module_root(self) -> None:
+    def test_native_group_names_carry_the_loaded_module_root(
+        self, groups: Mapping[str, list[str]]
+    ) -> None:
         # The loaded tree roots at `model.`, not the checkpoint's
         # `backbone.`, so a name copied off the shards matches nothing.
-        groups = self._native_stack_groups()
-
         assert {name.split(".")[0] for name in groups} == {"model", "lm_head"}
 
-    def test_the_how_to_example_selects_two_fused_expert_stacks(self) -> None:
+    def test_the_how_to_example_selects_two_fused_expert_stacks(
+        self, groups: Mapping[str, list[str]]
+    ) -> None:
         # The `--groups` example on the how-to page. A fused stack
         # holds one parameter that carries no expert index and no
         # `.weight` suffix.
         from vramfit.domain.scan import GroupSpec, select_groups
 
-        groups = self._native_stack_groups()
         specs = tuple(
             GroupSpec(name=name, tensors=tuple(members), bytes_fp16=1)
             for name, members in groups.items()
@@ -1250,13 +1262,14 @@ class TestNativeTargetDiscovery:
         assert [spec.name for spec in kept] == named
         assert groups[named[0]] == [named[0]]
 
-    def test_the_previous_backbone_rooted_example_halts_the_selection(self) -> None:
+    def test_the_previous_backbone_rooted_example_halts_the_selection(
+        self, groups: Mapping[str, list[str]]
+    ) -> None:
         # The names the page carried before #554. They reach
         # `select_groups` after the model loads, so the run halts at
         # stage `group_select` and measures nothing.
         from vramfit.domain.scan import GroupSpec, select_groups
 
-        groups = self._native_stack_groups()
         specs = tuple(
             GroupSpec(name=name, tensors=tuple(members), bytes_fp16=1)
             for name, members in groups.items()
@@ -1265,11 +1278,11 @@ class TestNativeTargetDiscovery:
         with pytest.raises(ValueError, match="no discovered group matches"):
             select_groups(specs, ["backbone.layers.1.mixer.experts.up_proj"])
 
-    def test_group_key_drops_the_weight_suffix_on_the_native_path(self) -> None:
+    def test_group_key_drops_the_weight_suffix_on_the_native_path(
+        self, groups: Mapping[str, list[str]]
+    ) -> None:
         # The 118 non-fused groups load as ordinary modules, so their
         # parameter names keep `.weight` and the group name does not.
-        groups = self._native_stack_groups()
-
         assert groups["model.layers.0.mixer.in_proj"] == [
             "model.layers.0.mixer.in_proj.weight"
         ]
