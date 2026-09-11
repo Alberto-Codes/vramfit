@@ -10,10 +10,9 @@ live in [vramfit.adapters.inbound.cli_scan][],
 the size cap. ``budget`` reports KV growth per token, plus the
 window pool on a mixed sliding/global stack (#421), prices the key
 and value caches at the ``--kv-dtype`` / ``--kv-value-dtype`` pair
-(#424), and subtracts
-the measured ``--vision-line`` when the model card claims vision
-(ADR-0030 decision 3). ``capacity``
-runs the same ledger in reverse from a packed recipe (#422).
+(#424), and subtracts the measured ``--vision-line`` when the model
+card claims vision (ADR-0030 decision 3). ``capacity`` runs the same
+ledger in reverse from a packed recipe (#422).
 The CLI wires outbound adapters to the pure domain, typing
 them against the ports so the seams stay explicit. Every IO boundary —
 artifact and config reads, checkpoint and artifact writes, and model

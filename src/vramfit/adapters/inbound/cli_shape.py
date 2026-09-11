@@ -3,10 +3,10 @@
 Both commands resolve the attention geometry from exactly one source
 — ``--model-config`` through the `ModelShapeSource` port, or the
 manual ``--attn-layers --kv-heads --head-dim`` triple — and validate
-the same ``--kv-dtype`` and ``--kv-value-dtype`` set. Both resolve ``--vision-line`` the same
-way: the card's vision claim licenses the subtraction (ADR-0030
-decision 3). ``plan`` shares the size-option rule.
-Each rule lives here once.
+the same ``--kv-dtype`` and ``--kv-value-dtype`` set. Both resolve
+``--vision-line`` the same way: the card's vision claim licenses the
+subtraction (ADR-0030 decision 3). ``plan`` shares the size-option
+rule. Each rule lives here once.
 
 Examples:
     Resolve a manual shape the way both commands do:
