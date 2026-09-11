@@ -240,8 +240,7 @@ def budget(
         Budget an fp8 value cache behind fp16 keys:
 
         ```console
-        $ vramfit budget --model-config config.json --kv-dtype fp16 \
-            --kv-value-dtype fp8
+        $ vramfit budget --model-config config.json --kv-dtype fp16 --kv-value-dtype fp8
         ```
     """
     check_kv_dtypes(kv_dtype, kv_value_dtype)

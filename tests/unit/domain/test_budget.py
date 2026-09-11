@@ -260,6 +260,18 @@ class TestKvDtypePair:
             shape, context=1024, kv_dtype="fp16", kv_value_dtype="fp8"
         ) == kv_cache_bytes(shape, context=1024, kv_dtype="fp16")
 
+    def test_storage_factor_above_two_prices_the_pair_and_no_third_cache(
+        self,
+    ) -> None:
+        # The storage factor selects a prefix of the key/value pair,
+        # so it names no third cache above the field's domain of 2.
+        pair = ModelShape(kv_layers=(KVLayer(kv_heads=4, head_dim=128, kv_tensors=2),))
+        above = ModelShape(kv_layers=(KVLayer(kv_heads=4, head_dim=128, kv_tensors=3),))
+
+        assert kv_cache_bytes(
+            above, context=1024, kv_dtype="fp16", kv_value_dtype="fp8"
+        ) == kv_cache_bytes(pair, context=1024, kv_dtype="fp16", kv_value_dtype="fp8")
+
     def test_unknown_value_dtype_raises_key_error(self) -> None:
         with pytest.raises(KeyError):
             kv_growth_bytes_per_token(NEMOTRON_SHAPE, "fp16", "int4")
