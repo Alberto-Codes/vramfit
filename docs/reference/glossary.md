@@ -533,7 +533,10 @@ change.
     `kv_tensors`). The field prices the runtime's allocation, not
     the model's storage semantics. The ruled runtime allocates a K
     and a V cache even under `attention_k_eq_v`, so every layer
-    prices 2 (#431). Not "KV factor".
+    prices 2 (#431). The factor selects that many entries of the
+    **KV dtype pair**, so 1 prices the key cache alone (`KVLayer`,
+    [VRAM budget math](../explanation/vram-budget.md)). Not "KV
+    factor".
 
 **Capacity readout**
 :   The budget ledger run in reverse
