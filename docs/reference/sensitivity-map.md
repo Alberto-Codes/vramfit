@@ -281,18 +281,14 @@ below remain, the sub-4-bit pricing claims do not.
           and `mixer.o_proj`.
         - `model.embeddings` and `lm_head`.
 
-        A mapped group still refuses one precision. A group whose
-        rows refuse the 256 super-block prices through the ADR-0028
-        table. That table holds no type between 2.25 and 4.25 bits
-        per weight. So such a group raises a `PackError` at nominal
-        3. The 46 routed-expert stacks hold such rows, at 2688 and
-        1856 ([ADR-0018](../adr/0018-kquant-within-group-method.md),
-        #159, #189). They carry 93.0 % of the parameters.
-        `mixer.in_proj` holds 2688-wide rows too.
+        Mapping does not by itself guarantee every precision. A
+        group whose rows refuse the 256 super-block prices through
+        the ADR-0028 table. That table holds no type between 2.25
+        and 4.25 bits per weight. So such a group raises a
+        `PackError` at nominal 3. The measured width decides, never
+        the class name (ADR-0028, #515).
         [ADR-0012](../adr/0012-gguf-type-mapping.md)'s 2026-08-20
-        amendment rules the class table and that exclusion, and
-        #368 landed it. The measured width decides, never the class
-        name (ADR-0028, #515).
+        amendment rules the class table, and #368 landed it.
 
         The backend also refuses a recipe naming two layer stacks.
         GGUF numbers one stack `blk.<n>.`, so a multimodal
