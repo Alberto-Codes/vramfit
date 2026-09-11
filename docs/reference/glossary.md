@@ -523,8 +523,10 @@ change.
     dtype could not describe a configuration the packed target already
     runs (#424). A caller that names one dtype prices both halves at
     it. The pair is run-wide: the budget assigns no per-layer KV type
-    until a ruled runtime accepts one. Not "KV precision" or "cache
-    type".
+    until a ruled runtime accepts one. Both halves take a whole-byte
+    element width, so the pair names no block-quantized cache type
+    such as llama.cpp's `q8_0` or `q4_0` (#575). Not "KV precision"
+    or "cache type".
 
 **Storage factor**
 :   KV tensors the runtime allocates per cached token (field

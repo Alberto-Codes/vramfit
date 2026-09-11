@@ -46,8 +46,8 @@ and sequence:
 layer_kv_bytes = n_kv_heads × head_dim × (key_bytes + value_bytes) × cached_tokens
 ```
 
-Three mechanisms decide `cached_tokens`, and one constant sets
-`kv_tensors`:
+Three mechanisms decide `cached_tokens`, and one constant decides
+which caches the layer pays for:
 
 - A **global** layer caches `context` tokens — it grows with context.
 - A **sliding** layer caches `min(context, window + 512)` tokens. The
@@ -57,23 +57,28 @@ Three mechanisms decide `cached_tokens`, and one constant sets
 - A **shared-KV** layer reuses an earlier layer's cache and allocates
   nothing (`num_kv_shared_layers`).
 - `kv_tensors` is 2: the runtime allocates a K and a V cache for every
-  layer. Where the model declares `attention_k_eq_v` it fills V with K
-  but still allocates both, so the price stays 2 (#431).
+  layer, so the layer pays `key_bytes + value_bytes`. The constant
+  selects a prefix of the pair, and a value of 1 prices the key cache
+  alone. Where the model declares `attention_k_eq_v` the runtime fills
+  V with K but still allocates both, so the price stays 2 (#431).
 
 The stack's total therefore splits into two terms: **KV growth**
 (`kv_growth_bytes_per_token`, the global layers' bytes per context
 token) and the **window pool** (`kv_window_pool_bytes`, the sliding
 layers' saturated bytes per sequence). For a uniform full-attention
-stack the pool is zero and the familiar formula holds:
+stack the pool is zero and the formula collapses to one product:
 
 ```
-kv_growth_bytes_per_token = 2 × n_attention_layers × n_kv_heads × head_dim × bytes_per_elem
+kv_growth_bytes_per_token = n_attention_layers × n_kv_heads × head_dim × (key_bytes + value_bytes)
 ```
 
-(2 = keys + values.) Multiply by context length × concurrent sequences.
-Grouped-query attention (small `n_kv_heads`) is what makes long context
-affordable; FP8 KV cache halves it again. This is why the budget must be
-planned *jointly*: every GiB saved on weights is context length gained.
+Multiply by context length × concurrent sequences. A matched pair
+reduces the last term to `2 × bytes_per_elem`, which is the familiar
+shortcut — it holds only while the key and the value cache share a
+dtype. Grouped-query attention (small `n_kv_heads`) is what makes long
+context affordable, and an fp8 pair halves the term again. This is why
+the budget must be planned *jointly*: every GiB saved on weights is
+context length gained.
 
 ### The two caches carry their own dtypes
 
@@ -106,8 +111,8 @@ heads × width 512, `attention_k_eq_v`). The runtime allocates a K and
 V pair on every layer (#431). At fp16, one sequence, measured on the
 ruled instrument:
 
-- KV growth: `10 × 4 × 512 × 2 × 2` = **81,920 B/token**;
-- window pool: `50 × 16 × 256 × 2 × 2 × (1024 + 512)` = **1,200 MiB**;
+- KV growth: `10 × 4 × 512 × (2 + 2)` = **81,920 B/token**;
+- window pool: `50 × 16 × 256 × (2 + 2) × (1024 + 512)` = **1,200 MiB**;
 - total: **11.17 GiB at 128k context**, **21.17 GiB at 256k**.
 
 Past ~1.5k tokens the card pays 80 KiB per extra token instead of the
