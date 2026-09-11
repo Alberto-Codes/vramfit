@@ -12,6 +12,10 @@ The decisive test is `test_a_budget_only_the_expert_mass_can_meet_solves`.
 Its budget is unreachable while gate and up hold at reference
 precision, so removing the reconciliation fails it with the refusal
 the run reported.
+
+`test_the_merged_measurement_counts_once_in_the_prediction` pins the
+other half: one perturbation measured one curve, so the recipe states
+it once.
 """
 
 from __future__ import annotations
@@ -213,17 +217,18 @@ class TestAMergedMapAgainstASplitCheckpoint:
         )
 
         assert result.exit_code == 0, result.output
-        discovered = LAYERS * (3 + len(ATTENTION))
+        # Gate and up fold onto the one group the scan measured, so
+        # the priced set holds one expert group less per layer than
+        # the checkpoint spells.
+        priced = LAYERS * (2 + len(ATTENTION))
         assert (
-            f"checkpoint holds {discovered} groups: {discovered} measured by "
+            f"checkpoint holds {priced} groups: {priced} measured by "
             f"the map, 0 held at reference precision" in result.output
         )
 
-    def test_the_command_reports_the_split_and_calls_the_damage_inherited(
-        self, tmp_path
-    ) -> None:
-        # Reader-facing provenance: a split group's damage curve was
-        # measured on the merged parameter, not on that group.
+    def test_the_command_reports_the_reconciliation_it_made(self, tmp_path) -> None:
+        # Reader-facing provenance: the pair's damage curve was
+        # measured on the merged parameter, not on either half.
         out = tmp_path / "recipe.json"
 
         result = plan(
@@ -235,13 +240,16 @@ class TestAMergedMapAgainstASplitCheckpoint:
         )
 
         assert result.exit_code == 0, result.output
-        assert f"reconciled {LAYERS} merged groups" in result.output
+        assert f"reconciled {LAYERS} merged projections" in result.output
         assert merged_group(0) in result.output
-        assert "inherits its merged group's measured damage curve" in result.output
+        assert "one measured damage curve counts once" in result.output
 
-    def test_each_split_group_carries_the_merged_curve_and_its_own_bytes(
+    def test_the_merged_measurement_counts_once_in_the_prediction(
         self, tmp_path
     ) -> None:
+        # The scan perturbed gate and up together, so one curve
+        # covers both. Charging it to each half would inflate
+        # `predicted_damage` and `validate`'s ratio with it.
         out = tmp_path / "recipe.json"
 
         result = plan(
@@ -253,10 +261,41 @@ class TestAMergedMapAgainstASplitCheckpoint:
         )
 
         assert result.exit_code == 0, result.output
-        rows = {a.group: a for a in load_recipe(out).assignments}
+        recipe = load_recipe(out)
+        top = max(MERGED_CURVE)
+        expected = LAYERS * (
+            MERGED_CURVE[top] + DOWN_CURVE[top] + len(ATTENTION) * ATTENTION_CURVE[top]
+        )
+        assert recipe.plan.predicted_damage == pytest.approx(expected)
+        rows = {a.group: a for a in recipe.assignments}
         gate, up = split_groups(0)
-        assert rows[gate].damage == rows[up].damage
-        assert rows[gate].bytes == rows[up].bytes
+        assert rows[gate].damage == MERGED_CURVE[top]
+        assert rows[up].damage == 0.0
+
+    def test_the_split_rows_share_one_precision_and_the_merged_prediction(
+        self, tmp_path
+    ) -> None:
+        # One measurement prices the pair, so the solver moves it as
+        # one unit and the two rows sum to what it predicted.
+        out = tmp_path / "recipe.json"
+
+        result = plan(
+            write_map(tmp_path),
+            out,
+            TIGHT_BUDGET,
+            "--checkpoint",
+            str(write_checkpoint(tmp_path)),
+        )
+
+        assert result.exit_code == 0, result.output
+        recipe = load_recipe(out)
+        rows = {a.group: a for a in recipe.assignments}
+        for layer in range(LAYERS):
+            gate, up = split_groups(layer)
+            assert rows[gate].bits == rows[up].bits
+        assert sum(a.bytes for a in recipe.assignments) == (
+            recipe.plan.predicted_total_bytes
+        )
 
     def test_a_pin_on_the_experts_now_reaches_gate_and_up(self, tmp_path) -> None:
         # "Scan them to spend it" became followable, and so did a pin

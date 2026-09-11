@@ -33,7 +33,11 @@ source independent of the map, so a partial map no longer defines
 the model (ADR-0029) — that wiring lives in
 [vramfit.adapters.inbound.cli_plan_sizes][]. That one read also
 states each group's row width, which routes the 256 super-block
-decision (#515).
+decision (#515), and it reconciles a merged projection the loaded
+model fused against the checkpoint that keeps its halves apart
+([vramfit.domain.projections][], #576). The plan prices that
+projection as one group and names the checkpoint's projections in
+the recipe.
 ``--format-overhead`` defaults per size
 model (ADR-0014): the residual when the runtime has an
 effective-bits table, the scalar otherwise. An artifact field a
@@ -88,6 +92,7 @@ from vramfit.domain.budget import (
 )
 from vramfit.domain.errors import VramfitError
 from vramfit.domain.pins import held_pin_skips
+from vramfit.domain.projections import split_assignments
 from vramfit.domain.runtime import LLAMA_CPP, RUNTIME_CAPABILITIES
 from vramfit.domain.solver import (
     DEFAULT_FORMAT_OVERHEAD,
@@ -389,10 +394,11 @@ def plan(
     The same read reconciles the map's group names against the
     checkpoint's. The installed ``transformers`` decides how many of
     the checkpoint's projections one loaded parameter holds, so a
-    merged projection such as ``mlp.experts.gate_up_proj`` splits
-    into one group per checkpoint projection (#576). Each split group
-    takes its bytes from the checkpoint and inherits the merged
-    group's damage curve, and the command echoes every split it made.
+    merged projection such as ``mlp.experts.gate_up_proj`` prices as
+    one group and the recipe then names the checkpoint's projections
+    (#576). One measurement covers the pair, so the solver counts it
+    once and moves the pair as a unit. The command echoes every
+    reconciliation it made.
 
     A map field the reader does not know draws a warning too, and the
     plan continues (#261). The warning names the JSON path and states
@@ -465,9 +471,10 @@ def plan(
         )
 
     groups = discovered_groups(checkpoint, map_, sensitivity_map)
-    # The map reconciled against the checkpoint's names (#576). Every
-    # step below prices, pins, and protects the names the pack
-    # addresses, not the names the loaded model happened to merge.
+    # The map reconciled against the checkpoint (#576). A merged
+    # projection keeps the one group the scan measured, and the
+    # checkpoint's halves fold onto it, so the solve prices that
+    # measurement once.
     map_ = groups.sensitivity_map
     sizes = groups.bytes
 
@@ -503,6 +510,10 @@ def plan(
         state = {a.group: a.bits for a in recipe.assignments}
         warn_protection_gaps(protections, exclusions, map_, state, runtime)
 
+    # `pack` addresses each checkpoint projection by name (#159), so
+    # a merged projection's row becomes one row per projection here,
+    # after every step above read the names the map measured (#576).
+    recipe = split_assignments(recipe, groups.splits)
     sink: RecipeSink = JsonRecipeFile(out)
     try:
         sink.save(recipe)

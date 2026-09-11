@@ -73,19 +73,21 @@ change.
     Qwen3-MoE on `transformers` 5.16.1 loads gate and up as one
     `mlp.experts.gate_up_proj`, and the checkpoint keeps
     `mlp.experts.gate_proj` and `mlp.experts.up_proj` apart (#576).
-    `vramfit scan` names the merged group, so
-    `plan --checkpoint` splits it into one **split group** per
-    checkpoint projection before it matches coverage. The merge is a
+    `vramfit scan` names the merged group and measures it once, so
+    `plan --checkpoint` folds the checkpoint's halves onto that name
+    and prices them as one group. The merge is a
     `transformers`-version property and not a model property. Not
     "fused projection" — **Expert stack** owns "fused".
 
 **Split group**
-:   A group `plan --checkpoint` derived from a **merged projection**.
-    It takes its bytes from the checkpoint and its damage curve from
-    the merged group, verbatim: the scan perturbed the merged
-    parameter, so one measurement covers every half. The reconciled
-    map records the split under `derived`, and the command echoes it,
-    so a reader tells an inherited curve from a measured one.
+:   One recipe row `plan --checkpoint` derived from a **merged
+    projection**, named as the checkpoint names it. `pack` addresses
+    each projection separately, so the recipe cannot name the merged
+    parameter. The rows of one merged projection share its precision
+    and sum to its predicted bytes. The first row carries the
+    measured damage, and the rest carry 0.0, because one perturbation
+    measured one curve. `vramfit validate` folds the rows back onto
+    the merged name before it measures.
 
 **Routing mass**
 :   The share of a layer's imatrix counts held by the experts a recipe
