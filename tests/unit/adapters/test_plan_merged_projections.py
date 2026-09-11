@@ -122,7 +122,11 @@ def write_checkpoint(tmp_path: Path) -> Path:
                 ATTENTION_BYTES,
                 [HIDDEN, HIDDEN],
             )
-    model_dir = tmp_path / "checkpoint"
+    return _write_shard(tmp_path / "checkpoint", entries)
+
+
+def _write_shard(model_dir: Path, entries: dict[str, tuple[int, list[int]]]) -> Path:
+    """Write one BF16 safetensors shard holding the given entries."""
     model_dir.mkdir(parents=True, exist_ok=True)
     header: dict[str, dict[str, object]] = {}
     offset = 0
@@ -136,6 +140,25 @@ def write_checkpoint(tmp_path: Path) -> Path:
     blob = json.dumps(header).encode("utf-8")
     (model_dir / "model.safetensors").write_bytes(struct.pack("<Q", len(blob)) + blob)
     return model_dir
+
+
+def write_merged_checkpoint(tmp_path: Path) -> Path:
+    """Write a checkpoint that fuses gate and up, as the model does."""
+    entries: dict[str, tuple[int, list[int]]] = {}
+    for layer in range(LAYERS):
+        for expert in range(EXPERTS):
+            stem = f"model.layers.{layer}.mlp.experts.{expert}"
+            entries[f"{stem}.gate_up_proj.weight"] = (
+                2 * EXPERT_BYTES,
+                [2 * INTERMEDIATE, HIDDEN],
+            )
+            entries[f"{stem}.down_proj.weight"] = (EXPERT_BYTES, [HIDDEN, INTERMEDIATE])
+        for name in ATTENTION:
+            entries[f"model.layers.{layer}.self_attn.{name}.weight"] = (
+                ATTENTION_BYTES,
+                [HIDDEN, HIDDEN],
+            )
+    return _write_shard(tmp_path / "merged-checkpoint", entries)
 
 
 def plan(map_path: Path, out: Path, budget: int, *extra: str):
@@ -321,6 +344,50 @@ class TestAMergedMapAgainstASplitCheckpoint:
         # the pair.
         assert assigned[_up] == 4
 
+    def test_two_pins_disagreeing_on_one_parameter_refuse(self, tmp_path) -> None:
+        # The recipe names both projections, so an operator pins
+        # both. They reach one parameter, and keeping the last would
+        # discard the first with no word about it.
+        out = tmp_path / "recipe.json"
+        gate, up = split_groups(0)
+
+        result = plan(
+            write_map(tmp_path),
+            out,
+            MODEL_BYTES,
+            "--checkpoint",
+            str(write_checkpoint(tmp_path)),
+            "--pin",
+            f"{gate}=4",
+            "--pin",
+            f"{up}=2",
+        )
+
+        assert result.exit_code == 1
+        assert "must share one precision" in result.output
+        assert not out.exists()
+
+    def test_two_pins_agreeing_on_one_parameter_land(self, tmp_path) -> None:
+        out = tmp_path / "recipe.json"
+        gate, up = split_groups(0)
+
+        result = plan(
+            write_map(tmp_path),
+            out,
+            MODEL_BYTES,
+            "--checkpoint",
+            str(write_checkpoint(tmp_path)),
+            "--pin",
+            f"{gate}=4",
+            "--pin",
+            f"{up}=4",
+        )
+
+        assert result.exit_code == 0, result.output
+        assigned = {a.group: a.bits for a in load_recipe(out).assignments}
+        assert assigned[gate] == 4
+        assert assigned[up] == 4
+
     def test_a_checkpoint_that_keeps_a_projection_apart_pins_it_alone(
         self, tmp_path
     ) -> None:
@@ -387,6 +454,47 @@ class TestSurfacesThatAlreadyAgree:
         assert "reconciled" not in result.output
         groups = {a.group for a in load_recipe(out).assignments}
         assert set(split_groups(0)) <= groups
+
+    def test_without_a_checkpoint_a_split_spelling_pins_nothing(self, tmp_path) -> None:
+        # No fold happened, so no surface of this run spells
+        # `gate_proj`. Pinning the merged group behind the operator's
+        # back would hide the typo.
+        out = tmp_path / "recipe.json"
+        gate, _up = split_groups(0)
+
+        result = plan(
+            write_map(tmp_path),
+            out,
+            MODEL_BYTES,
+            "--runtime",
+            "vllm",
+            "--pin",
+            f"{gate}=4",
+        )
+
+        assert result.exit_code == 1
+        assert f'pin "{gate}=4" matches no group' in result.output
+
+    def test_a_checkpoint_storing_the_parameter_merged_pins_no_spelling(
+        self, tmp_path
+    ) -> None:
+        # The two surfaces agree, so nothing folded and the split
+        # spelling names no group.
+        out = tmp_path / "recipe.json"
+        gate, _up = split_groups(0)
+
+        result = plan(
+            write_map(tmp_path),
+            out,
+            MODEL_BYTES,
+            "--checkpoint",
+            str(write_merged_checkpoint(tmp_path)),
+            "--pin",
+            f"{gate}=4",
+        )
+
+        assert result.exit_code == 1
+        assert "matches no group" in result.output
 
     def test_without_a_checkpoint_the_merged_map_plans_its_own_names(
         self, tmp_path

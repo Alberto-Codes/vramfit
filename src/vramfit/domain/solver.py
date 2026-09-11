@@ -392,6 +392,7 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
     runtime: str | None = None,
     discovered_bytes: Mapping[str, int] | None = None,
     row_widths: Mapping[str, int] | None = None,
+    merged_splits: Mapping[str, Mapping[str, int]] | None = None,
 ) -> Recipe:
     """Assign a precision to every group so the total fits the budget.
 
@@ -472,6 +473,12 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
             super-block decision reads this width (issue #515). Every
             layer-class and routed-expert-stack group the map or the
             checkpoint names must appear, or the solve refuses.
+        merged_splits: The merged projections the plan folded, from
+            `vramfit.domain.projections.reconcile_merged_projections`
+            (#576). A pin may name a folded projection's checkpoint
+            spelling, because the recipe names it. None means the
+            plan folded nothing, and such a spelling then matches no
+            group.
 
     Returns:
         The recipe, with assignments in sensitivity-map group order
@@ -497,8 +504,9 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
             precision while ``discovered_bytes`` leaves a group
             uncovered.
         PinError: If a pin uses a precision neither scanned nor
-            runtime-servable, matches no group, or lands on an
-            unquantizable-class group.
+            runtime-servable, matches no group, lands on an
+            unquantizable-class group, or disagrees with an earlier
+            pin about one merged projection's precision (#576).
         ProtectionError: If a protection floor is unservable, a
             pattern matches no tensor or a single-tensor group, the
             map lacks per-tensor sizes (ADR-0022), an imatrix
@@ -540,7 +548,7 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
         candidates = servable_precisions(candidates, runtime)
     dropped = tuple(p for p in sensitivity_map.scan.precisions if p not in candidates)
     pinned, uncovered_pins, user_pinned = resolve_pins(
-        pins, sensitivity_map, candidates, runtime, discovered_bytes
+        pins, sensitivity_map, candidates, runtime, discovered_bytes, merged_splits
     )
     floors = expand_protections(protections, sensitivity_map, runtime)
     excluded = expand_exclusions(imatrix_exclusions, floors, sensitivity_map)

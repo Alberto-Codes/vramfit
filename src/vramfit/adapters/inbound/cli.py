@@ -391,6 +391,10 @@ def plan(
     warning naming the map, the group, and the tensors (ADR-0029
     open question 2, ruled 2026-09-04).
 
+    ``--pin`` reaches a folded projection under the name the recipe
+    gives it. Two pins that give one parameter's projections two
+    widths refuse, because one parameter takes one precision.
+
     The same read reconciles the map's group names against the
     checkpoint's. The installed ``transformers`` decides how many of
     the checkpoint's projections one loaded parameter holds, so a
@@ -491,6 +495,7 @@ def plan(
             runtime=runtime,
             discovered_bytes=sizes,
             row_widths=groups.rows,
+            merged_splits=groups.splits,
         )
     except VramfitError as exc:
         # One honest catch for the root (ADR-0011): the solver's
@@ -498,7 +503,7 @@ def plan(
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
-    for skip in held_pin_skips(pins, map_, runtime, sizes):
+    for skip in held_pin_skips(pins, map_, runtime, sizes, groups.splits):
         typer.echo(
             f'warning: --pin "{skip.pattern}={skip.bits}" skips group '
             f'"{skip.group}" — it holds at the F16 passthrough, because '

@@ -14,13 +14,15 @@ skips the held group instead, and `held_pin_skips` names each skip
 for the caller to warn about (ADR-0007, 2026-09-04 amendment, #371).
 
 The match universe also carries the checkpoint spelling of every
-merged projection (issue #576). `plan --checkpoint` prices such a
-projection as one group and names the checkpoint's projections in
-the recipe, so an operator reads those names and pins them. The
-universe folds each back onto the group the plan prices, through
-`vramfit.domain.projections.merged_parts` and no second table. A
-checkpoint that carries a projection by itself keeps it, because
-then the name is a group rather than a spelling of one.
+merged projection the plan actually folded (issue #576).
+`plan --checkpoint` prices such a projection as one group and names
+the checkpoint's projections in the recipe, so an operator reads
+those names and pins them. The split record
+`vramfit.domain.projections.reconcile_merged_projections` produced
+says which spellings exist and where each lands, so a run that
+folded nothing refuses an unknown spelling the ordinary way. Two
+pins that reach one projection at two widths refuse, because the
+last one would discard the first without a word.
 
 Examples:
     Resolve dense pins at nominal 8 beside a stack-keyed map:
@@ -50,39 +52,47 @@ from collections.abc import Mapping
 
 from vramfit.domain.model import LayerGroup, SensitivityMap
 from vramfit.domain.pin_skips import HeldPinSkip, match_pattern
-from vramfit.domain.projections import merged_parts
+from vramfit.domain.projections import merged_pin_conflict
 from vramfit.domain.runtime import RUNTIME_CAPABILITIES, unquantizable_filter
 from vramfit.domain.sizes import REFERENCE_BITS
 from vramfit.domain.solver_errors import PinError
 
 
 def _match_universe(
-    sensitivity_map: SensitivityMap, discovered_bytes: Mapping[str, int] | None
+    sensitivity_map: SensitivityMap,
+    discovered_bytes: Mapping[str, int] | None,
+    merged_splits: Mapping[str, Mapping[str, int]] | None,
 ) -> tuple[list[str], dict[str, str]]:
     """Build the names a pin pattern matches, and where each lands.
 
     The map's groups and the checkpoint's groups are the universe
-    (the 2026-08-22 ADR-0007 amendment). A merged projection adds the
-    checkpoint spelling of each projection it holds, because the
-    recipe names the projections and an operator pins what the recipe
-    names (#576). A spelling the universe already holds as a group
-    stays a group.
+    (the 2026-08-22 ADR-0007 amendment). A merged projection the plan
+    folded adds the checkpoint spelling of each projection it holds,
+    because the recipe names the projections and an operator pins
+    what the recipe names (#576). The split record decides, so a run
+    that folded nothing adds nothing and an unknown spelling refuses
+    the ordinary way. A spelling the universe already holds as a
+    group stays a group.
 
     Args:
         sensitivity_map: The map whose groups are matched.
         discovered_bytes: Bytes per checkpoint-discovered group, or
             None.
+        merged_splits: Merged group name to the checkpoint
+            projections it holds, from
+            `vramfit.domain.projections.reconcile_merged_projections`,
+            or None when the plan folded nothing.
 
     Returns:
         The sorted match universe, and the mapping from an added
         spelling to the group it lands on. The mapping is empty when
-        no merged projection is in play.
+        the plan folded nothing.
     """
     names = {g.name for g in sensitivity_map.groups} | set(discovered_bytes or {})
     folded = {
-        part: name
-        for name in sorted(names)
-        for part in merged_parts(name)
+        part: group
+        for group, parts in (merged_splits or {}).items()
+        for part in parts
         if part not in names
     }
     return sorted(names | set(folded)), folded
@@ -94,6 +104,7 @@ def _expand_pins(
     candidates: tuple[int, ...],
     runtime: str | None,
     discovered_bytes: Mapping[str, int] | None,
+    merged_splits: Mapping[str, Mapping[str, int]] | None,
 ) -> dict[str, int]:
     """Resolve pin patterns to concrete per-group precisions.
 
@@ -105,7 +116,10 @@ def _expand_pins(
     to more than one group skips the unquantizable-class groups it
     sweeps (ADR-0007, 2026-09-04 amendment, #371). A pattern that
     names a merged projection's checkpoint spelling lands on the
-    group the plan prices (`_match_universe`, #576).
+    group the plan prices (`_match_universe`, #576). Two patterns
+    that name two of one projection's spellings at two widths refuse
+    together, because one parameter takes one precision and the
+    later pattern would otherwise discard the earlier one.
 
     Args:
         pins: Ordered mapping of glob pattern to forced precision.
@@ -118,6 +132,8 @@ def _expand_pins(
             widens the allowed pin widths.
         discovered_bytes: Bytes per checkpoint-discovered group
             (ADR-0029), or None. Its names widen the match universe.
+        merged_splits: The merged projections the plan folded, or
+            None. Their checkpoint spellings widen the universe too.
 
     Returns:
         Mapping of group name to pinned precision. Empty when the
@@ -125,7 +141,8 @@ def _expand_pins(
 
     Raises:
         PinError: If a pin uses a precision neither scanned nor
-            runtime-servable, or matches no group.
+            runtime-servable, matches no group, or disagrees with an
+            earlier pin about one merged projection's precision.
     """
     if not pins:
         return {}
@@ -133,8 +150,9 @@ def _expand_pins(
     # Sorted, so the expansion order is structural rather than an
     # accident of set iteration — recipes stay deterministic
     # (ADR-0007).
-    names, folded = _match_universe(sensitivity_map, discovered_bytes)
+    names, folded = _match_universe(sensitivity_map, discovered_bytes, merged_splits)
     pinned: dict[str, int] = {}
+    claimed: dict[str, tuple[str, str, int]] = {}
     for pattern, bits in pins.items():
         if bits not in allowed:
             raise PinError(
@@ -146,7 +164,22 @@ def _expand_pins(
         if not matched and not _skipped:
             raise PinError(f'pin "{pattern}={bits}" matches no group')
         for name in matched:
-            pinned[folded.get(name, name)] = bits
+            group = folded.get(name)
+            if group is None:
+                pinned[name] = bits
+                continue
+            prior = claimed.get(group)
+            if prior is not None and prior[0] != name and prior[2] != bits:
+                raise PinError(
+                    merged_pin_conflict(
+                        group,
+                        (merged_splits or {})[group],
+                        (prior[1], prior[2]),
+                        (pattern, bits),
+                    )
+                )
+            claimed[group] = (name, pattern, bits)
+            pinned[group] = bits
     return pinned
 
 
@@ -248,6 +281,7 @@ def resolve_pins(
     candidates: tuple[int, ...],
     runtime: str | None,
     discovered_bytes: Mapping[str, int] | None,
+    merged_splits: Mapping[str, Mapping[str, int]] | None = None,
 ) -> tuple[dict[str, int], dict[str, int], frozenset[str]]:
     """Expand, split, and guard the caller's pins.
 
@@ -258,6 +292,8 @@ def resolve_pins(
         runtime: Target runtime name, or None.
         discovered_bytes: Bytes per checkpoint-discovered group, or
             None.
+        merged_splits: The merged projections the plan folded, or
+            None (#576).
 
     Returns:
         A triple: measured-group pins with the unquantizable holds
@@ -265,11 +301,12 @@ def resolve_pins(
         pins forced.
 
     Raises:
-        PinError: On a bad width, a matchless pattern, or a pin on an
-            unquantizable-class group.
+        PinError: On a bad width, a matchless pattern, a pin on an
+            unquantizable-class group, or two pins that disagree
+            about one merged projection's precision.
     """
     expanded = _expand_pins(
-        pins, sensitivity_map, candidates, runtime, discovered_bytes
+        pins, sensitivity_map, candidates, runtime, discovered_bytes, merged_splits
     )
     map_names = {g.name for g in sensitivity_map.groups}
     uncovered_pins = {n: b for n, b in expanded.items() if n not in map_names}
@@ -287,6 +324,7 @@ def held_pin_skips(
     sensitivity_map: SensitivityMap,
     runtime: str | None,
     discovered_bytes: Mapping[str, int] | None,
+    merged_splits: Mapping[str, Mapping[str, int]] | None = None,
 ) -> tuple[HeldPinSkip, ...]:
     """List the held groups the caller's multi-group pins skipped.
 
@@ -303,6 +341,8 @@ def held_pin_skips(
         runtime: Target runtime name, or None.
         discovered_bytes: Bytes per checkpoint-discovered group, or
             None.
+        merged_splits: The merged projections the plan folded, or
+            None (#576).
 
     The match universe is `_match_universe`, the one `resolve_pins`
     uses, so a pattern resolves to the same groups in both. A skip
@@ -312,7 +352,7 @@ def held_pin_skips(
         One entry per skipped group, in pattern order and then name
         order. A group two patterns sweep appears once per pattern.
     """
-    names, folded = _match_universe(sensitivity_map, discovered_bytes)
+    names, folded = _match_universe(sensitivity_map, discovered_bytes, merged_splits)
     skips: list[HeldPinSkip] = []
     for pattern, bits in pins.items():
         _matched, skipped = match_pattern(pattern, names, runtime)

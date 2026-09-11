@@ -344,6 +344,7 @@ class TestPinningAMergedProjection:
             candidates=(8, 2),
             runtime=None,
             discovered_bytes={MERGED: 1000},
+            merged_splits={MERGED: SPLIT_CHECKPOINT},
         )
 
         assert pinned == {MERGED: 2}
@@ -373,6 +374,7 @@ class TestPinningAMergedProjection:
             candidates=(8, 2),
             runtime=None,
             discovered_bytes={MERGED: 1000},
+            merged_splits={MERGED: SPLIT_CHECKPOINT},
         )
 
         assert pinned == {MERGED: 2}
@@ -385,4 +387,96 @@ class TestPinningAMergedProjection:
                 candidates=(8, 2),
                 runtime=None,
                 discovered_bytes={MERGED: 1000},
+                merged_splits={MERGED: SPLIT_CHECKPOINT},
+            )
+
+
+class TestPinsThatDisagreeOnOneParameter:
+    """Two spellings of one parameter cannot take two precisions."""
+
+    def test_two_widths_on_the_two_spellings_refuse(self) -> None:
+        with pytest.raises(PinError, match="must share one precision"):
+            resolve_pins(
+                {GATE: 8, UP: 2},
+                make_map(merged_group()),
+                candidates=(8, 2),
+                runtime=None,
+                discovered_bytes={MERGED: 1000},
+                merged_splits={MERGED: SPLIT_CHECKPOINT},
+            )
+
+    def test_the_refusal_names_both_patterns(self) -> None:
+        with pytest.raises(PinError) as caught:
+            resolve_pins(
+                {GATE: 8, UP: 2},
+                make_map(merged_group()),
+                candidates=(8, 2),
+                runtime=None,
+                discovered_bytes={MERGED: 1000},
+                merged_splits={MERGED: SPLIT_CHECKPOINT},
+            )
+
+        assert f'"{GATE}=8"' in str(caught.value)
+        assert f'"{UP}=2"' in str(caught.value)
+
+    def test_one_width_on_the_two_spellings_lands(self) -> None:
+        pinned, _uncovered, _user = resolve_pins(
+            {GATE: 2, UP: 2},
+            make_map(merged_group()),
+            candidates=(8, 2),
+            runtime=None,
+            discovered_bytes={MERGED: 1000},
+            merged_splits={MERGED: SPLIT_CHECKPOINT},
+        )
+
+        assert pinned == {MERGED: 2}
+
+    def test_one_wildcard_sweeping_both_spellings_lands(self) -> None:
+        # One pattern names one width, so the spellings agree.
+        pinned, _uncovered, _user = resolve_pins(
+            {"model.layers.0.mlp.experts.*": 2},
+            make_map(merged_group()),
+            candidates=(8, 2),
+            runtime=None,
+            discovered_bytes={MERGED: 1000},
+            merged_splits={MERGED: SPLIT_CHECKPOINT},
+        )
+
+        assert pinned == {MERGED: 2}
+
+    def test_a_later_pattern_still_overrides_the_same_spelling(self) -> None:
+        # Ordinary pin override (ADR-0007) survives the new refusal.
+        pinned, _uncovered, _user = resolve_pins(
+            {"model.layers.0.mlp.experts.gate_*": 8, GATE: 2},
+            make_map(merged_group()),
+            candidates=(8, 2),
+            runtime=None,
+            discovered_bytes={MERGED: 1000},
+            merged_splits={MERGED: SPLIT_CHECKPOINT},
+        )
+
+        assert pinned == {MERGED: 2}
+
+
+class TestAPinUniverseNarrowedToTheFold:
+    """A spelling exists for a pin only where the plan folded one."""
+
+    def test_no_split_record_refuses_the_spelling(self) -> None:
+        with pytest.raises(PinError, match="matches no group"):
+            resolve_pins(
+                {GATE: 2},
+                make_map(merged_group()),
+                candidates=(8, 2),
+                runtime=None,
+                discovered_bytes={MERGED: 1000},
+            )
+
+    def test_no_size_source_refuses_the_spelling(self) -> None:
+        with pytest.raises(PinError, match="matches no group"):
+            resolve_pins(
+                {GATE: 2},
+                make_map(merged_group()),
+                candidates=(8, 2),
+                runtime=None,
+                discovered_bytes=None,
             )

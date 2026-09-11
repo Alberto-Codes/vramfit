@@ -40,8 +40,10 @@ validate` discovers `gate_up_proj` from the loaded model, so it folds
 the recipe's split rows back onto that name before it measures. When
 the rows do not share one precision the fold holds back, and
 `merge_mismatch` words the refusal that follows. `vramfit.domain.pins`
-reads the same table, so a pin may name a projection the recipe names
-and land on the group the plan prices.
+reads the split record, so a pin may name a projection the recipe
+names and land on the group the plan prices. Two pins that reach one
+projection at two widths refuse through `merged_pin_conflict`, which
+states the rule `merge_mismatch` states.
 
 Attributes:
     MERGED_PROJECTIONS (Mapping[str, tuple[str, ...]]): Loaded
@@ -402,6 +404,71 @@ def split_assignments(
     )
 
 
+def _one_precision_rule(holder: str, group: str, parts: Collection[str]) -> str:
+    """State why one merged projection takes one precision.
+
+    Two surfaces refuse on this rule, so they word it once. `plan`
+    refuses two pins that fold onto one projection, and `validate`
+    refuses a recipe that names the projections at two precisions.
+
+    Args:
+        holder: What holds the parameter, as the refusal's subject.
+        group: The merged projection's group name.
+        parts: The checkpoint projections it holds.
+
+    Returns:
+        The rule sentence, ending in a full stop.
+    """
+    return (
+        f'{holder} holds "{group}" as one parameter, so its {len(parts)} '
+        f"projections must share one precision."
+    )
+
+
+def merged_pin_conflict(
+    group: str,
+    parts: Collection[str],
+    held: tuple[str, int],
+    conflicting: tuple[str, int],
+) -> str:
+    """Word the refusal of two pins that fold onto one projection.
+
+    `plan --checkpoint` names the checkpoint's projections in the
+    recipe, so an operator reads two names and pins both. They reach
+    one group, and the last pin would silently discard the first.
+    The refusal states the rule `merge_mismatch` states on the
+    `validate` side.
+
+    Args:
+        group: The merged projection both pins reach.
+        parts: The checkpoint projections it holds.
+        held: The ``(pattern, bits)`` that reached the group first.
+        conflicting: The ``(pattern, bits)`` that disagrees with it.
+
+    Returns:
+        The `vramfit.domain.solver_errors.PinError` message.
+
+    Examples:
+        ```python
+        from vramfit.domain.projections import merged_pin_conflict
+
+        message = merged_pin_conflict(
+            "model.layers.0.mlp.experts.gate_up_proj",
+            ("gate_proj", "up_proj"),
+            ("model.layers.0.mlp.experts.gate_proj", 4),
+            ("model.layers.0.mlp.experts.up_proj", 2),
+        )
+        assert "one precision" in message
+        ```
+    """
+    rule = _one_precision_rule("The map", group, parts)
+    return (
+        f'pins "{held[0]}={held[1]}" and "{conflicting[0]}={conflicting[1]}" '
+        f"name projections of one merged parameter. {rule} Pin them to one "
+        f"precision (#576)"
+    )
+
+
 def merge_mismatch(
     assigned: Collection[str], discovered: Collection[str]
 ) -> str | None:
@@ -412,7 +479,8 @@ def merge_mismatch(
     caller then refuses the recipe. The general advice — check the
     model path and the granularity — closes no gap here, because no
     scan on this `transformers` names the projections apart. This
-    states the real cause and the two actions that do close it.
+    states the real cause and the two actions that do close it. It
+    words the rule `merged_pin_conflict` words on the `plan` side.
 
     Args:
         assigned: The recipe's group names, folded as far as
@@ -439,11 +507,10 @@ def merge_mismatch(
             continue
         if not any(part in named for part in parts):
             continue
+        rule = _one_precision_rule("The loaded model", group, parts)
         return (
-            f'The loaded model holds "{group}" as one parameter, so its '
-            f"{len(parts)} projections must share one precision. Validate on "
-            f"the transformers version that names them apart, or pin them to "
-            f"one precision and re-plan (#576)"
+            f"{rule} Validate on the transformers version that names them "
+            f"apart, or pin them to one precision and re-plan (#576)"
         )
     return None
 
