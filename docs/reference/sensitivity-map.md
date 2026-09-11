@@ -122,9 +122,10 @@ below remain, the sub-4-bit pricing claims do not.
   unique across the map, and the loader refuses a duplicate.
   `vramfit plan` keys assignments on this name, and `--pin` matches
   against it.
-- **`groups[].tensors`** — the full names of the checkpoint tensors
+- **`groups[].tensors`** — the full names of the loaded parameters
   the group quantizes together, as the scan discovered them
-  (`model.layers.0.self_attn.v_proj.weight`). The loader requires a
+  (`model.layers.0.self_attn.v_proj.weight`). They carry the same
+  naming root as `groups[].name`. The loader requires a
   list of strings. `tensor_bytes` keys on these names, and
   `--protect` and `--exclude-imatrix` match against them.
 - **`sensitivity`** — divergence of the perturbed model's output from the
