@@ -231,9 +231,9 @@ below remain, the sub-4-bit pricing claims do not.
     groups root at `model.`, apart from `lm_head`. Discovery keeps a
     floating-point parameter of two or more dimensions. It then
     drops every class a quantizer refuses, which is `mixer.gate` and
-    `mixer.conv1d` on this target (#204). That filter, not expert
-    fusion, is why discovery reports fewer groups than the load
-    reports parameters. The load fuses each projection's routed
+    `mixer.conv1d` on this target (#204). Those two filters, not
+    expert fusion, are why discovery reports fewer groups than the
+    load reports parameters. The load fuses each projection's routed
     experts into one parameter, so `tensor` reaches no finer key
     than `stack` here. It loads no MTP parameters, so no count above
     covers the MTP block. The on-disk checkpoint carries that block
@@ -285,11 +285,14 @@ below remain, the sub-4-bit pricing claims do not.
         rows refuse the 256 super-block prices through the ADR-0028
         table. That table holds no type between 2.25 and 4.25 bits
         per weight. So such a group raises a `PackError` at nominal
-        3. `mixer.in_proj` on this target carries 2688-wide rows,
-        which the 256 super-block refuses.
+        3. The 46 routed-expert stacks hold such rows, at 2688 and
+        1856 ([ADR-0018](../adr/0018-kquant-within-group-method.md),
+        #159, #189). They carry 93.0 % of the parameters.
+        `mixer.in_proj` holds 2688-wide rows too.
         [ADR-0012](../adr/0012-gguf-type-mapping.md)'s 2026-08-20
         amendment rules the class table and that exclusion, and
-        #368 landed it.
+        #368 landed it. The measured width decides, never the class
+        name (ADR-0028, #515).
 
         The backend also refuses a recipe naming two layer stacks.
         GGUF numbers one stack `blk.<n>.`, so a multimodal

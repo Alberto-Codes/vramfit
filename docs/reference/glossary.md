@@ -389,9 +389,10 @@ change.
     two-word compound. Not "missing group" or "unscanned group".
 
 **Naming root**
-:   The first segment of a checkpoint's parameter names —
-    `backbone.` in the 30B target's on-disk checkpoint, `model.` in a
-    llama-family checkpoint. A map repeats the root the loaded
+:   The first segment of a parameter name. The on-disk checkpoint
+    and the loaded module tree can spell it differently. The 30B
+    target's checkpoint roots at `backbone.`, and its loaded module
+    tree roots at `model.`. A map repeats the root the loaded
     model's module tree names, because the scan normalizes none. The
     size source keys its own sums under `model.`, so a domain table
     reconciles the two before a tensor reaches a group.
