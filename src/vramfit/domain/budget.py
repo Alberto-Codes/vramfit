@@ -300,13 +300,11 @@ def _layer_token_bytes(layer: KVLayer, kv_dtype: str, kv_value_dtype: str) -> in
     if layer.shares_kv:
         return 0
     # The runtime allocates the K cache first, then the V cache, so
-    # the storage factor walks the pair in that order (#431). One
+    # the storage factor selects a prefix of the pair (#431). One
     # tensor prices the key alone. Equal dtypes reproduce the
-    # pre-#424 product for every storage factor.
-    roles = (kv_dtype, kv_value_dtype)
-    element_bytes = sum(
-        KV_DTYPE_BYTES[roles[index % 2]] for index in range(layer.kv_tensors)
-    )
+    # pre-#424 product.
+    pair = (KV_DTYPE_BYTES[kv_dtype], KV_DTYPE_BYTES[kv_value_dtype])
+    element_bytes = sum(pair[: layer.kv_tensors])
     return layer.kv_heads * layer.head_dim * element_bytes
 
 
