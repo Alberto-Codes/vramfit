@@ -280,15 +280,20 @@ below remain, the sub-4-bit pricing claims do not.
           and `mixer.o_proj`.
         - `model.embeddings` and `lm_head`.
 
-        So a whole-model `stack`-keyed recipe for that target
-        packs. [ADR-0012](../adr/0012-gguf-type-mapping.md)'s
-        2026-08-20 amendment rules the class table, and #368 landed
-        it.
+        A mapped group still refuses one precision. A group whose
+        rows refuse the 256 super-block prices through the ADR-0028
+        table. That table holds no type between 2.25 and 4.25 bits
+        per weight. So such a group raises a `PackError` at nominal
+        3. `mixer.in_proj` on this target carries 2688-wide rows,
+        which the 256 super-block refuses.
+        [ADR-0012](../adr/0012-gguf-type-mapping.md)'s 2026-08-20
+        amendment rules the class table and that exclusion, and
+        #368 landed it.
 
         The backend also refuses a recipe naming two layer stacks.
-        GGUF numbers one stack `blk.<n>.`, so the target's
-        `mtp.layers.<n>` and a multimodal checkpoint's vision tower
-        each collide with the backbone. Scan one stack at a time.
+        GGUF numbers one stack `blk.<n>.`, so a multimodal
+        checkpoint's vision tower collides with the decoder stack.
+        Scan one stack at a time.
 
 ## Unknown fields
 
