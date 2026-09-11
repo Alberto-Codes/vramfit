@@ -342,6 +342,8 @@ Pin semantics: patterns are case-sensitive `fnmatch` globs matched
 against the full group name (`--pin "model.layers.0.*=8"`). With
 `--checkpoint` the match universe is every discovered group, and
 without it the map's groups (the 2026-08-22 ADR-0007 amendment). A
+fold this run made adds each merged projection's checkpoint
+spellings, under the rules stated above. A
 pin may name any width the target runtime serves, beyond the map's
 candidates, and a width the map never measured records 0.0 damage. A
 pattern that matches no group is an error (typo detection). Later
@@ -580,7 +582,13 @@ before any weight changes.
 Use the scan's calibration file and token budget — damage values are
 only comparable within one calibration set. The command refuses a
 recipe whose groups do not match the model's discovered groups (wrong
-model or wrong `--group-by`). A `--model` that differs from the
+model or wrong `--group-by`). The pass loads the same `transformers`
+the scan did, so a recipe's split-group rows fold back onto the
+merged name the model reports before that match (#576). A merged
+projection the recipe names at two precisions cannot fold. That
+refusal states the one-precision rule instead of the general advice,
+because no scan on this `transformers` names the projections apart.
+A `--model` that differs from the
 recipe's `model_id` prints a warning — the comparison assumes the
 scanned model. An `--imatrix` that differs from the recipe's recorded
 imatrix path also prints a warning — a different file contaminates
