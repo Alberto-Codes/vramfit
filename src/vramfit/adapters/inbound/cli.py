@@ -386,6 +386,14 @@ def plan(
     warning naming the map, the group, and the tensors (ADR-0029
     open question 2, ruled 2026-09-04).
 
+    The same read reconciles the map's group names against the
+    checkpoint's. The installed ``transformers`` decides how many of
+    the checkpoint's projections one loaded parameter holds, so a
+    merged projection such as ``mlp.experts.gate_up_proj`` splits
+    into one group per checkpoint projection (#576). Each split group
+    takes its bytes from the checkpoint and inherits the merged
+    group's damage curve, and the command echoes every split it made.
+
     A map field the reader does not know draws a warning too, and the
     plan continues (#261). The warning names the JSON path and states
     that a save drops the field.
@@ -457,6 +465,10 @@ def plan(
         )
 
     groups = discovered_groups(checkpoint, map_, sensitivity_map)
+    # The map reconciled against the checkpoint's names (#576). Every
+    # step below prices, pins, and protects the names the pack
+    # addresses, not the names the loaded model happened to merge.
+    map_ = groups.sensitivity_map
     sizes = groups.bytes
 
     try:

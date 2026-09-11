@@ -18,6 +18,13 @@ leaves a map-source disagreement unruled, and this is not one — a
 total miss is the wrong directory. Continuing would price both views
 of the model and roughly double it.
 
+The map and the checkpoint also disagree on leaf names whenever the
+installed ``transformers`` loads several of the checkpoint's
+projections as one parameter (issue #576).
+[vramfit.domain.projections][] reconciles those names, and this
+module reports the split it made. The reconciled map is what the
+plan prices, so the coverage line below counts the reconciled names.
+
 One disagreement is ruled (ADR-0029 open question 2, 2026-09-04). A
 map scanned before the discovery skip (#204) under ``layer``
 granularity folds an unquantizable-class tensor into its layer group,
@@ -53,6 +60,7 @@ import typer
 from vramfit.adapters.outbound.safetensors_sizes import SafetensorsSizes
 from vramfit.domain.errors import VramfitError
 from vramfit.domain.model import SensitivityMap
+from vramfit.domain.projections import split_merged_projections
 from vramfit.domain.sizes import (
     discovered_group_bytes,
     discovered_group_rows,
@@ -74,17 +82,22 @@ class CheckpointGroups:
             the 256 super-block decision reaches (issue #515), or
             None when the caller passed no ``--checkpoint``. The
             solver's refusal tells the two causes apart from it.
+        sensitivity_map (SensitivityMap): The map reconciled against
+            the checkpoint (issue #576) — the one the plan prices.
+            It is the map the caller passed when the two name sets
+            already agree.
 
     Examples:
         ```python
         from vramfit.adapters.inbound.cli_plan_sizes import CheckpointGroups
 
-        groups = CheckpointGroups(bytes=None, rows=None)
+        groups = CheckpointGroups(bytes=None, rows=None, sensitivity_map=map_)
         ```
     """
 
     bytes: Mapping[str, int] | None
     rows: Mapping[str, int] | None
+    sensitivity_map: SensitivityMap
 
 
 def discovered_groups(
@@ -108,8 +121,10 @@ def discovered_groups(
             count warning.
 
     Returns:
-        The group bytes and row widths. Both are None when no
-        checkpoint was given.
+        The group bytes, the row widths, and the map reconciled
+        against the checkpoint (#576). The bytes and widths are None
+        when no checkpoint was given, and the map is then the one
+        passed in.
 
     Raises:
         typer.Exit: With code 1 when the checkpoint cannot be read or
@@ -124,7 +139,7 @@ def discovered_groups(
             f"no --checkpoint: this plan prices the {len(map_.groups)} groups "
             f"the map carries and reads no other size source (ADR-0029)"
         )
-        return CheckpointGroups(bytes=None, rows=None)
+        return CheckpointGroups(bytes=None, rows=None, sensitivity_map=map_)
 
     source: TensorSizeSource = SafetensorsSizes(checkpoint)
     try:
@@ -137,6 +152,23 @@ def discovered_groups(
     except OSError as exc:
         typer.echo(f"error: {checkpoint}: {exc}", err=True)
         raise typer.Exit(code=1) from exc
+
+    # The leaf half of the name reconciliation (#576), before the
+    # coverage match reads either name set. A merged group the
+    # checkpoint keeps apart would otherwise hold every half at
+    # reference precision and advise a scan that cannot produce the
+    # names it asks for.
+    map_, split = split_merged_projections(map_, groups)
+    if split:
+        first, parts = split[0]
+        noun = "group" if len(split) == 1 else "groups"
+        typer.echo(
+            f"reconciled {len(split)} merged {noun} the loaded model held as "
+            f'one parameter each, starting with "{first}" -> '
+            f"{', '.join(parts)}. The plan prices the checkpoint's "
+            f"{sum(len(names) for _, names in split)} groups instead, and "
+            f"each inherits its merged group's measured damage curve (#576)"
+        )
 
     covered = [g.name for g in map_.groups]
     held = uncovered_groups(groups, covered)
@@ -179,4 +211,4 @@ def discovered_groups(
             f"Re-scan to remove the double count (ADR-0029)",
             err=True,
         )
-    return CheckpointGroups(bytes=groups, rows=rows)
+    return CheckpointGroups(bytes=groups, rows=rows, sensitivity_map=map_)

@@ -246,6 +246,34 @@ groups and requests a scan of them. It states no coverage mismatch.
 Issue #564 carries this defect. Issue #554 owns the general root
 question.
 
+The coverage match reconciles the leaf. `vramfit scan` names a group
+from the loaded `transformers` model, and the installed version
+decides how many of the checkpoint's projections one parameter holds.
+Qwen3-MoE on `transformers` 5.16.1 loads gate and up as one
+`mlp.experts.gate_up_proj`, while the checkpoint keeps
+`mlp.experts.gate_proj` and `mlp.experts.up_proj` apart (#576). The
+plan splits each such **merged projection** into one **split group**
+per checkpoint projection, against an explicit table and never a
+prefix wildcard. It rewrites the name's last segment only, so one
+tower's projection can never name another's.
+
+The split fires only where the checkpoint states every half and holds
+no merged name of its own, and where the map measures no half
+already. A split group takes its bytes from the checkpoint and its
+damage curve from the merged group, verbatim — the scan perturbed the
+merged parameter, so one measurement covers both halves. The command
+echoes every split it made, and the reconciled map records them under
+`derived`, so a reader tells an inherited curve from a measured one.
+Two consequences follow. The solver may assign the halves different
+precisions, because it sees two groups whose curves agree. And
+`predicted_damage` counts the merged measurement once per half, which
+over-states it.
+
+The merge is a `transformers`-version property and not a model
+property, so the same checkpoint scanned on an older `transformers`
+needs no split. A version bound would hide the gap rather than close
+it.
+
 A group the checkpoint holds and the map does not measure is
 *uncovered*. It prices at reference precision, and the recipe assigns
 it there at nominal 16, the F16 passthrough. Both halves matter.
