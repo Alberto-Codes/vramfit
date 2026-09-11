@@ -20,13 +20,17 @@ from vramfit.domain.model import (
     ScanMeta,
     SensitivityMap,
 )
+from vramfit.domain.pins import resolve_pins
 from vramfit.domain.projections import (
     MERGED_PROJECTIONS,
+    merge_mismatch,
     merged_assignments,
     merged_parts,
     reconcile_merged_projections,
     split_assignments,
 )
+from vramfit.domain.sizes import SizeSourceError
+from vramfit.domain.solver_errors import PinError
 
 pytestmark = pytest.mark.unit
 
@@ -211,15 +215,15 @@ class TestTheFoldHoldsBack:
         assert reconciled.sensitivity_map is map_
         assert reconciled.splits == {}
 
-    def test_halves_of_two_row_widths_fold_nothing(self) -> None:
+    def test_halves_of_two_row_widths_refuse_with_the_real_cause(self) -> None:
         # One group packs under one type (ADR-0028, issue #515), so
-        # two widths have no single answer and the fold stands back.
-        reconciled = reconcile_merged_projections(
-            make_map(merged_group()), SPLIT_CHECKPOINT, {GATE: 2688, UP: 2048}
-        )
-
-        assert reconciled.splits == {}
-        assert dict(reconciled.bytes) == SPLIT_CHECKPOINT
+        # two widths have no single answer. Standing back would land
+        # the halves at reference precision and advise naming another
+        # checkpoint, which closes nothing.
+        with pytest.raises(SizeSourceError, match="one width must describe it"):
+            reconcile_merged_projections(
+                make_map(merged_group()), SPLIT_CHECKPOINT, {GATE: 2688, UP: 2048}
+            )
 
 
 class TestSplitAssignments:
@@ -299,3 +303,86 @@ class TestMergedAssignments:
 
     def test_a_recipe_that_already_names_the_merged_group_is_untouched(self) -> None:
         assert merged_assignments({MERGED: 4}, [MERGED]) == {MERGED: 4}
+
+
+class TestMergeMismatch:
+    """The advice a merged projection's refusal carries."""
+
+    def test_a_recipe_naming_the_projections_gets_the_merge_advice(self) -> None:
+        advice = merge_mismatch([GATE, UP], [MERGED])
+
+        assert advice is not None
+        assert MERGED in advice
+        assert "one parameter" in advice
+
+    def test_a_recipe_naming_one_projection_gets_the_merge_advice(self) -> None:
+        advice = merge_mismatch([GATE], [MERGED])
+
+        assert advice is not None
+        assert MERGED in advice
+
+    def test_a_mismatch_no_merge_explains_gets_no_advice(self) -> None:
+        # The caller keeps its general advice, which closes that gap.
+        assert merge_mismatch(["model.layers.9"], ["model.layers.0"]) is None
+
+    def test_a_model_reporting_the_projections_gets_no_advice(self) -> None:
+        assert merge_mismatch([GATE, UP], [GATE, UP]) is None
+
+    def test_a_recipe_already_naming_the_merged_group_gets_no_advice(self) -> None:
+        assert merge_mismatch([MERGED], [MERGED]) is None
+
+
+class TestPinningAMergedProjection:
+    """A pin may name what the recipe names (#576)."""
+
+    def test_a_pin_on_a_projection_lands_on_the_group_the_plan_prices(self) -> None:
+        # `plan --checkpoint` writes `gate_proj` into the recipe, so
+        # refusing that name would refuse what the tool emitted.
+        pinned, uncovered, user_pinned = resolve_pins(
+            {GATE: 2},
+            make_map(merged_group()),
+            candidates=(8, 2),
+            runtime=None,
+            discovered_bytes={MERGED: 1000},
+        )
+
+        assert pinned == {MERGED: 2}
+        assert uncovered == {}
+        assert user_pinned == frozenset({MERGED})
+
+    def test_a_checkpoint_that_keeps_the_projection_apart_pins_it_alone(self) -> None:
+        # Then the name is a group, not a spelling of one, so the pin
+        # must not reach its sibling.
+        gate = LayerGroup(name=GATE, tensors=(GATE,), bytes_fp16=400, sensitivity=CURVE)
+        up = LayerGroup(name=UP, tensors=(UP,), bytes_fp16=600, sensitivity=CURVE)
+
+        pinned, _uncovered, _user = resolve_pins(
+            {GATE: 2},
+            make_map(gate, up),
+            candidates=(8, 2),
+            runtime=None,
+            discovered_bytes=SPLIT_CHECKPOINT,
+        )
+
+        assert pinned == {GATE: 2}
+
+    def test_a_pin_on_the_merged_name_still_lands(self) -> None:
+        pinned, _uncovered, _user = resolve_pins(
+            {MERGED: 2},
+            make_map(merged_group()),
+            candidates=(8, 2),
+            runtime=None,
+            discovered_bytes={MERGED: 1000},
+        )
+
+        assert pinned == {MERGED: 2}
+
+    def test_a_pattern_matching_no_spelling_still_refuses(self) -> None:
+        with pytest.raises(PinError, match="matches no group"):
+            resolve_pins(
+                {"model.layers.9.mlp.experts.gate_proj": 2},
+                make_map(merged_group()),
+                candidates=(8, 2),
+                runtime=None,
+                discovered_bytes={MERGED: 1000},
+            )

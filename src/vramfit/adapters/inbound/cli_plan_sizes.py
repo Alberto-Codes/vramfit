@@ -136,10 +136,15 @@ def discovered_groups(
         The bytes and widths are None when no checkpoint was given,
         and the map is then the one passed in.
 
+    The reconciliation runs inside the same read, so a checkpoint
+    that cannot fold one merged projection refuses with the source's
+    own wording (#576).
+
     Raises:
-        typer.Exit: With code 1 when the checkpoint cannot be read or
-            priced, and when no map group appears in it. The source's
-            own message carries the reason for the first.
+        typer.Exit: With code 1 when the checkpoint cannot be read,
+            priced, or reconciled, and when no map group appears in
+            it. The source's own message carries the reason for the
+            first three.
     """
     if checkpoint is None:
         # The runtime filter reports its narrowing on this channel for
@@ -156,6 +161,12 @@ def discovered_groups(
         sizes = source.tensor_sizes()
         groups = discovered_group_bytes(sizes, map_.scan.group_by)
         rows = discovered_group_rows(sizes, map_.scan.group_by)
+        # The leaf half of the name reconciliation (#576), before the
+        # coverage match reads either name set. A merged group the
+        # checkpoint keeps apart would otherwise hold every half at
+        # reference precision and advise a scan that cannot produce
+        # the names it asks for.
+        reconciled = reconcile_merged_projections(map_, groups, rows)
     except VramfitError as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(code=1) from exc
@@ -163,12 +174,6 @@ def discovered_groups(
         typer.echo(f"error: {checkpoint}: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
-    # The leaf half of the name reconciliation (#576), before the
-    # coverage match reads either name set. A merged group the
-    # checkpoint keeps apart would otherwise hold every half at
-    # reference precision and advise a scan that cannot produce the
-    # names it asks for.
-    reconciled = reconcile_merged_projections(map_, groups, rows)
     map_ = reconciled.sensitivity_map
     groups = dict(reconciled.bytes)
     rows = dict(reconciled.rows)

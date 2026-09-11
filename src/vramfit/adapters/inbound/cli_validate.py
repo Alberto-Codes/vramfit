@@ -18,7 +18,10 @@ imatrix.
 The pass loads the same ``transformers`` the scan did, so it reports
 a merged projection under the name the scan measured.
 `vramfit.domain.projections.merged_assignments` folds the recipe's
-split rows back onto that name before the group match (#576).
+split rows back onto that name before the group match (#576). A
+recipe that names the projections at two precisions cannot fold, and
+`merge_mismatch` words that refusal — the general advice asks for a
+scan this ``transformers`` cannot produce.
 The comparison logic is pure and lives in
 [vramfit.domain.validation][]. Every failure halts with a clean
 ``error:`` line. Failures after the run log opens also emit a
@@ -58,7 +61,7 @@ from vramfit.adapters.outbound.json_common import ArtifactError
 from vramfit.adapters.outbound.recipe_json import load_recipe
 from vramfit.adapters.outbound.run_log_jsonl import JsonlRunLogFile
 from vramfit.domain.model import Recipe
-from vramfit.domain.projections import merged_assignments
+from vramfit.domain.projections import merge_mismatch, merged_assignments
 from vramfit.domain.scan import (
     ASSISTED_METHODS,
     KQUANT_IMX_METHOD,
@@ -240,6 +243,11 @@ def _check_groups(
     event carries the stage and the mismatch detail, with no cell
     count — the validation pass has no scan grid.
 
+    A merged projection the recipe does not name at one precision
+    gets its own advice (#576). The general advice closes no gap
+    there, because no scan on this ``transformers`` names the
+    projections apart.
+
     Args:
         meter: The loaded meter, holding the discovered groups.
         assigned: The recipe's group names, already folded onto the
@@ -262,9 +270,11 @@ def _check_groups(
     if missing:
         parts.append(f'the recipe misses discovered groups (first: "{missing[0]}")')
     detail = " and ".join(parts)
+    advice = merge_mismatch(assigned, discovered) or (
+        "Check the model path and --group-by against the scan"
+    )
     typer.echo(
-        f"error: recipe groups do not match the model's groups — {detail}. "
-        "Check the model path and --group-by against the scan",
+        f"error: recipe groups do not match the model's groups — {detail}. {advice}",
         err=True,
     )
     run_log.emit(

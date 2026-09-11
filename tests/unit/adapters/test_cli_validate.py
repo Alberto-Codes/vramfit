@@ -765,3 +765,40 @@ class TestARecipeSplitAgainstAMergingModel:
 
         assert result.exit_code == 1
         assert GATE_GROUP in result.output
+
+    def test_the_refusal_names_the_merge_instead_of_unfollowable_advice(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        # No scan on this `transformers` names the projections apart,
+        # so checking the model path and --group-by closes no gap.
+        install_meter(
+            monkeypatch,
+            MemoryDamageMeter(specs=MERGED_SPECS, damages={(MERGED_GROUP, 4): 0.01}),
+        )
+        recipe_path = tmp_path / "recipe.json"
+        save_recipe(
+            make_recipe(((GATE_GROUP, 4, 0.01), (UP_GROUP, 2, 0.0))), recipe_path
+        )
+
+        result = invoke_validate(tmp_path, recipe_path)
+
+        assert result.exit_code == 1
+        assert "--group-by against the scan" not in result.output
+        assert f'holds "{MERGED_GROUP}" as one parameter' in result.output
+        assert "pin them to one precision and re-plan" in result.output
+
+    def test_a_mismatch_no_merge_explains_keeps_the_general_advice(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        # A recipe planned for another model still gets the advice
+        # that does close its gap.
+        install_meter(
+            monkeypatch, MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES))
+        )
+        recipe_path = tmp_path / "recipe.json"
+        save_recipe(make_recipe((("model.layers.9", 4, 0.01),)), recipe_path)
+
+        result = invoke_validate(tmp_path, recipe_path)
+
+        assert result.exit_code == 1
+        assert "Check the model path and --group-by against the scan" in result.output

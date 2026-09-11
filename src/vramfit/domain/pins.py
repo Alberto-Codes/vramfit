@@ -13,6 +13,15 @@ one group refuses. A pattern that resolves to more than one group
 skips the held group instead, and `held_pin_skips` names each skip
 for the caller to warn about (ADR-0007, 2026-09-04 amendment, #371).
 
+The match universe also carries the checkpoint spelling of every
+merged projection (issue #576). `plan --checkpoint` prices such a
+projection as one group and names the checkpoint's projections in
+the recipe, so an operator reads those names and pins them. The
+universe folds each back onto the group the plan prices, through
+`vramfit.domain.projections.merged_parts` and no second table. A
+checkpoint that carries a projection by itself keeps it, because
+then the name is a group rather than a spelling of one.
+
 Examples:
     Resolve dense pins at nominal 8 beside a stack-keyed map:
 
@@ -41,9 +50,42 @@ from collections.abc import Mapping
 
 from vramfit.domain.model import LayerGroup, SensitivityMap
 from vramfit.domain.pin_skips import HeldPinSkip, match_pattern
+from vramfit.domain.projections import merged_parts
 from vramfit.domain.runtime import RUNTIME_CAPABILITIES, unquantizable_filter
 from vramfit.domain.sizes import REFERENCE_BITS
 from vramfit.domain.solver_errors import PinError
+
+
+def _match_universe(
+    sensitivity_map: SensitivityMap, discovered_bytes: Mapping[str, int] | None
+) -> tuple[list[str], dict[str, str]]:
+    """Build the names a pin pattern matches, and where each lands.
+
+    The map's groups and the checkpoint's groups are the universe
+    (the 2026-08-22 ADR-0007 amendment). A merged projection adds the
+    checkpoint spelling of each projection it holds, because the
+    recipe names the projections and an operator pins what the recipe
+    names (#576). A spelling the universe already holds as a group
+    stays a group.
+
+    Args:
+        sensitivity_map: The map whose groups are matched.
+        discovered_bytes: Bytes per checkpoint-discovered group, or
+            None.
+
+    Returns:
+        The sorted match universe, and the mapping from an added
+        spelling to the group it lands on. The mapping is empty when
+        no merged projection is in play.
+    """
+    names = {g.name for g in sensitivity_map.groups} | set(discovered_bytes or {})
+    folded = {
+        part: name
+        for name in sorted(names)
+        for part in merged_parts(name)
+        if part not in names
+    }
+    return sorted(names | set(folded)), folded
 
 
 def _expand_pins(
@@ -61,7 +103,9 @@ def _expand_pins(
     candidate set still bounds the width, and without a size source
     the map's groups still bound the match. A pattern that resolves
     to more than one group skips the unquantizable-class groups it
-    sweeps (ADR-0007, 2026-09-04 amendment, #371).
+    sweeps (ADR-0007, 2026-09-04 amendment, #371). A pattern that
+    names a merged projection's checkpoint spelling lands on the
+    group the plan prices (`_match_universe`, #576).
 
     Args:
         pins: Ordered mapping of glob pattern to forced precision.
@@ -89,9 +133,7 @@ def _expand_pins(
     # Sorted, so the expansion order is structural rather than an
     # accident of set iteration — recipes stay deterministic
     # (ADR-0007).
-    names = sorted(
-        {g.name for g in sensitivity_map.groups} | set(discovered_bytes or {})
-    )
+    names, folded = _match_universe(sensitivity_map, discovered_bytes)
     pinned: dict[str, int] = {}
     for pattern, bits in pins.items():
         if bits not in allowed:
@@ -104,7 +146,7 @@ def _expand_pins(
         if not matched and not _skipped:
             raise PinError(f'pin "{pattern}={bits}" matches no group')
         for name in matched:
-            pinned[name] = bits
+            pinned[folded.get(name, name)] = bits
     return pinned
 
 
@@ -262,18 +304,25 @@ def held_pin_skips(
         discovered_bytes: Bytes per checkpoint-discovered group, or
             None.
 
+    The match universe is `_match_universe`, the one `resolve_pins`
+    uses, so a pattern resolves to the same groups in both. A skip
+    reports the group a merged projection's spelling lands on (#576).
+
     Returns:
         One entry per skipped group, in pattern order and then name
         order. A group two patterns sweep appears once per pattern.
     """
-    names = sorted(
-        {g.name for g in sensitivity_map.groups} | set(discovered_bytes or {})
-    )
+    names, folded = _match_universe(sensitivity_map, discovered_bytes)
     skips: list[HeldPinSkip] = []
     for pattern, bits in pins.items():
         _matched, skipped = match_pattern(pattern, names, runtime)
         skips.extend(
-            HeldPinSkip(group=name, pattern=pattern, bits=bits, filter=filter_name)
+            HeldPinSkip(
+                group=folded.get(name, name),
+                pattern=pattern,
+                bits=bits,
+                filter=filter_name,
+            )
             for name, filter_name in skipped
         )
     return tuple(skips)

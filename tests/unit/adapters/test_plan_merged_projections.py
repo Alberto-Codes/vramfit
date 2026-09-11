@@ -297,6 +297,54 @@ class TestAMergedMapAgainstASplitCheckpoint:
             recipe.plan.predicted_total_bytes
         )
 
+    def test_a_pin_naming_the_recipes_own_projection_lands(self, tmp_path) -> None:
+        # The command prints these names and writes them into the
+        # recipe, so an operator reads one and pins it. Refusing the
+        # name the tool itself emitted is the defect #576 filed.
+        out = tmp_path / "recipe.json"
+        gate, _up = split_groups(0)
+
+        result = plan(
+            write_map(tmp_path),
+            out,
+            MODEL_BYTES,
+            "--checkpoint",
+            str(write_checkpoint(tmp_path)),
+            "--pin",
+            f"{gate}=4",
+        )
+
+        assert result.exit_code == 0, result.output
+        assigned = {a.group: a.bits for a in load_recipe(out).assignments}
+        assert assigned[gate] == 4
+        # One parameter carries both projections, so the pin moves
+        # the pair.
+        assert assigned[_up] == 4
+
+    def test_a_checkpoint_that_keeps_a_projection_apart_pins_it_alone(
+        self, tmp_path
+    ) -> None:
+        # An older `transformers` names gate and up apart, so the
+        # names are groups rather than spellings of one group. The
+        # pin must then move only the group it names.
+        out = tmp_path / "recipe.json"
+        gate, up = split_groups(0)
+
+        result = plan(
+            write_map(tmp_path, merged=False),
+            out,
+            MODEL_BYTES,
+            "--checkpoint",
+            str(write_checkpoint(tmp_path)),
+            "--pin",
+            f"{gate}=4",
+        )
+
+        assert result.exit_code == 0, result.output
+        assigned = {a.group: a.bits for a in load_recipe(out).assignments}
+        assert assigned[gate] == 4
+        assert assigned[up] == 8
+
     def test_a_pin_on_the_experts_now_reaches_gate_and_up(self, tmp_path) -> None:
         # "Scan them to spend it" became followable, and so did a pin
         # over the same names.

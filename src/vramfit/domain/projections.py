@@ -37,7 +37,11 @@ invent a number the scan never measured.
 
 `merged_assignments` runs the same table the other way. `vramfit
 validate` discovers `gate_up_proj` from the loaded model, so it folds
-the recipe's split rows back onto that name before it measures.
+the recipe's split rows back onto that name before it measures. When
+the rows do not share one precision the fold holds back, and
+`merge_mismatch` words the refusal that follows. `vramfit.domain.pins`
+reads the same table, so a pin may name a projection the recipe names
+and land on the group the plan prices.
 
 Attributes:
     MERGED_PROJECTIONS (Mapping[str, tuple[str, ...]]): Loaded
@@ -77,6 +81,7 @@ from types import MappingProxyType
 from typing import Final
 
 from vramfit.domain.model import Assignment, Recipe, SensitivityMap
+from vramfit.domain.sizes import SizeSourceError
 
 # Transformers loads Qwen3-MoE gate and up as one 3-D parameter, and
 # the checkpoint keeps them apart (#576). The table is closed on
@@ -163,28 +168,21 @@ def merged_parts(group: str) -> tuple[str, ...]:
 
 
 def _foldable(
-    group: str,
-    discovered_bytes: Mapping[str, int],
-    row_widths: Mapping[str, int],
-    covered: frozenset[str],
+    group: str, discovered_bytes: Mapping[str, int], covered: frozenset[str]
 ) -> tuple[str, ...]:
     """Decide whether one map group folds this checkpoint's halves.
 
-    Five conditions hold together. The name carries a merged leaf.
+    Three conditions hold together. The name carries a merged leaf.
     The checkpoint does not carry the merged name itself, because a
     checkpoint that stores the parameter merged already agrees with
-    the map. The checkpoint carries every half, so the fold never
-    reads a name no checkpoint states. The map carries none of the
-    halves, because a map holding both spellings measures them and
-    the fold would discard a measurement. And the halves state one
-    row width or none, because one group packs under one type
-    (ADR-0028, issue #515).
+    the map. And the checkpoint carries every half while the map
+    carries none of them, because a map holding a half measures it
+    and the fold would discard a measurement.
 
     Args:
         group: One map group's name.
         discovered_bytes: Bytes at reference precision per group the
             checkpoint holds.
-        row_widths: Elements per row per group the checkpoint holds.
         covered: Every group name the map carries.
 
     Returns:
@@ -196,10 +194,42 @@ def _foldable(
         return ()
     if any(part not in discovered_bytes or part in covered for part in parts):
         return ()
-    measured = [row_widths[part] for part in parts if part in row_widths]
-    if measured and (len(measured) != len(parts) or len(set(measured)) != 1):
-        return ()
     return parts
+
+
+def _merged_width(
+    group: str, parts: tuple[str, ...], row_widths: Mapping[str, int]
+) -> int | None:
+    """Read the row width the folded projections share.
+
+    `vramfit.domain.sizes.discovered_group_rows` refuses two widths
+    inside one discovered group, because one group packs under one
+    type. A merged projection is one group, so it refuses the same
+    way rather than picking a width the checkpoint does not state.
+
+    Args:
+        group: The merged projection's group name.
+        parts: The checkpoint projections it holds.
+        row_widths: Elements per row per group the checkpoint holds.
+
+    Returns:
+        The shared row width, or None when the checkpoint states
+        none — a group the super-block decision does not reach.
+
+    Raises:
+        SizeSourceError: If the projections state two row widths.
+    """
+    measured = {part: row_widths[part] for part in parts if part in row_widths}
+    widths = set(measured.values())
+    if len(widths) > 1:
+        raise SizeSourceError(
+            f'merged projection "{group}" holds rows of '
+            f"{sorted(widths)} elements across {sorted(measured)}. The "
+            f"loaded model holds them as one parameter, and one group packs "
+            f"under one type, so one width must describe it (ADR-0028, "
+            f"issue #515)"
+        )
+    return widths.pop() if widths else None
 
 
 def reconcile_merged_projections(
@@ -233,6 +263,11 @@ def reconcile_merged_projections(
         The reconciled map, the folded checkpoint sizes and widths,
         and the split record `split_assignments` reads.
 
+    Raises:
+        SizeSourceError: If one merged projection's halves state two
+            row widths. One group packs under one type (ADR-0028,
+            issue #515).
+
     Examples:
         ```python
         from vramfit.domain.projections import reconcile_merged_projections
@@ -251,15 +286,17 @@ def reconcile_merged_projections(
     rows = dict(row_widths)
     splits: dict[str, Mapping[str, int]] = {}
     for group in sensitivity_map.groups:
-        parts = _foldable(group.name, discovered_bytes, row_widths, covered)
+        parts = _foldable(group.name, discovered_bytes, covered)
         if not parts:
             continue
+        width = _merged_width(group.name, parts, row_widths)
         splits[group.name] = {part: discovered_bytes[part] for part in parts}
         sizes[group.name] = sum(splits[group.name].values())
         for part in parts:
             del sizes[part]
-            if part in rows:
-                rows[group.name] = rows.pop(part)
+            rows.pop(part, None)
+        if width is not None:
+            rows[group.name] = width
     if not splits:
         return MergedReconciliation(
             sensitivity_map, discovered_bytes, row_widths, splits
@@ -363,6 +400,52 @@ def split_assignments(
         imatrix=recipe.imatrix,
         protected_tensors=recipe.protected_tensors,
     )
+
+
+def merge_mismatch(
+    assigned: Collection[str], discovered: Collection[str]
+) -> str | None:
+    """Explain a group mismatch one merged projection caused.
+
+    `merged_assignments` holds back when the recipe does not name
+    every projection of a merged parameter at one precision, and the
+    caller then refuses the recipe. The general advice — check the
+    model path and the granularity — closes no gap here, because no
+    scan on this `transformers` names the projections apart. This
+    states the real cause and the two actions that do close it.
+
+    Args:
+        assigned: The recipe's group names, folded as far as
+            `merged_assignments` could fold them.
+        discovered: Group names the loaded model reports.
+
+    Returns:
+        The advice sentence, or None when no merged projection
+        explains the mismatch.
+
+    Examples:
+        ```python
+        from vramfit.domain.projections import merge_mismatch
+
+        merged = "model.layers.0.mlp.experts.gate_up_proj"
+        gate = "model.layers.0.mlp.experts.gate_proj"
+        assert merge_mismatch([gate], [merged]) is not None
+        ```
+    """
+    named = set(assigned)
+    for group in sorted(discovered):
+        parts = merged_parts(group)
+        if not parts or group in named:
+            continue
+        if not any(part in named for part in parts):
+            continue
+        return (
+            f'The loaded model holds "{group}" as one parameter, so its '
+            f"{len(parts)} projections must share one precision. Validate on "
+            f"the transformers version that names them apart, or pin them to "
+            f"one precision and re-plan (#576)"
+        )
+    return None
 
 
 def merged_assignments(

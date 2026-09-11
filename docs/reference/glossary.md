@@ -87,7 +87,8 @@ change.
     and sum to its predicted bytes. The first row carries the
     measured damage, and the rest carry 0.0, because one perturbation
     measured one curve. `vramfit validate` folds the rows back onto
-    the merged name before it measures.
+    the merged name before it measures, and `--pin` folds a split
+    name onto the group the plan prices.
 
 **Routing mass**
 :   The share of a layer's imatrix counts held by the experts a recipe

@@ -273,6 +273,12 @@ measured damage, and the rest carry 0.0 — the value a recipe records
 for a row no measurement prices. The command echoes every
 reconciliation it made.
 
+`--pin` reaches the pair under either spelling. The recipe names the
+checkpoint's projections, so an operator reads those names and pins
+them. Such a pin lands on the group the plan prices, through the same
+table the fold reads. A checkpoint that carries a projection by
+itself keeps it as a group instead.
+
 The reconciled map records the fold under `derived`, and no artifact
 carries that note. `plan` writes a recipe, and the recipe schema has
 no provenance field for it. Read the command's echo, or the recipe's
