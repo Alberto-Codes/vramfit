@@ -67,6 +67,31 @@ change.
 > the form and conforms. ADR-0026 decision 2 (demoted 2026-08-14)
 > prices a stack as one cell and never writes the compound.
 
+**Merged projection**
+:   One loaded parameter that holds two or more of the checkpoint's
+    projections, because the installed `transformers` merges them.
+    Qwen3-MoE on `transformers` 5.16.1 loads gate and up as one
+    `mlp.experts.gate_up_proj`, and the checkpoint keeps
+    `mlp.experts.gate_proj` and `mlp.experts.up_proj` apart (#576).
+    `vramfit scan` names the merged group and measures it once, so
+    `plan --checkpoint` folds the checkpoint's halves onto that name
+    and prices them as one group. The command echoes every fold, and
+    no artifact records one. The merge is a
+    `transformers`-version property and not a model property. Not
+    "fused projection" — **Expert stack** owns "fused".
+
+**Split group**
+:   One recipe row `plan --checkpoint` derived from a **merged
+    projection**, named as the checkpoint names it. `pack` addresses
+    each projection separately, so the recipe cannot name the merged
+    parameter. The rows of one merged projection share its precision
+    and sum to its predicted bytes. The first row carries the
+    measured damage, and the rest carry 0.0, because one perturbation
+    measured one curve. `vramfit validate` folds the rows back onto
+    the merged name before it measures, and `--pin` folds a split
+    name onto the group the plan prices. Two pins that leave one
+    parameter's projections at two widths refuse.
+
 **Routing mass**
 :   The share of a layer's imatrix counts held by the experts a recipe
     assigns one precision. It measures what a bit budget reaches, not

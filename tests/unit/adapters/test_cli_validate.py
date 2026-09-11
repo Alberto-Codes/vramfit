@@ -693,3 +693,112 @@ class TestValidateCommand:
 
         assert result.exit_code == 2
         assert "--runlog" in result.output
+
+
+MERGED_GROUP = "model.layers.0.mlp.experts.gate_up_proj"
+GATE_GROUP = "model.layers.0.mlp.experts.gate_proj"
+UP_GROUP = "model.layers.0.mlp.experts.up_proj"
+MERGED_SPECS = (
+    GroupSpec(name=MERGED_GROUP, tensors=(f"{MERGED_GROUP}.weight",), bytes_fp16=1000),
+)
+
+
+class TestARecipeSplitAgainstAMergingModel:
+    """`validate` on the transformers version that fuses gate and up.
+
+    `plan --checkpoint` names the checkpoint's projections, because
+    `pack` addresses them separately (#159). The meter loads the same
+    `transformers` the scan did and reports one `gate_up_proj`
+    parameter, so the rows fold back before the group match (#576).
+    Without the fold the pass exits 1 and advises a scan no version
+    on this `transformers` can produce.
+    """
+
+    def test_the_split_rows_measure_under_the_models_merged_name(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        meter = MemoryDamageMeter(specs=MERGED_SPECS, damages={(MERGED_GROUP, 4): 0.01})
+        install_meter(monkeypatch, meter)
+        recipe_path = tmp_path / "recipe.json"
+        save_recipe(
+            make_recipe(((GATE_GROUP, 4, 0.01), (UP_GROUP, 4, 0.0))), recipe_path
+        )
+
+        result = invoke_validate(tmp_path, recipe_path)
+
+        assert result.exit_code == 0, result.output
+        assert meter.recipe_calls == [{MERGED_GROUP: 4}]
+
+    def test_the_prediction_counts_the_shared_measurement_once(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        # The merged parameter was perturbed once, so the pass
+        # compares one measurement against one predicted damage.
+        install_meter(
+            monkeypatch,
+            MemoryDamageMeter(specs=MERGED_SPECS, damages={(MERGED_GROUP, 4): 0.01}),
+        )
+        recipe_path = tmp_path / "recipe.json"
+        save_recipe(
+            make_recipe(((GATE_GROUP, 4, 0.01), (UP_GROUP, 4, 0.0))), recipe_path
+        )
+
+        result = invoke_validate(tmp_path, recipe_path)
+
+        assert result.exit_code == 0, result.output
+        assert "summed marginal damage (predicted)  0.010000" in result.output
+        assert "whole-recipe damage (measured)      0.010000" in result.output
+
+    def test_halves_at_two_precisions_still_refuse(self, tmp_path, monkeypatch) -> None:
+        # The model holds one parameter, so two precisions have no
+        # single answer and the group match refuses the recipe.
+        install_meter(
+            monkeypatch,
+            MemoryDamageMeter(specs=MERGED_SPECS, damages={(MERGED_GROUP, 4): 0.01}),
+        )
+        recipe_path = tmp_path / "recipe.json"
+        save_recipe(
+            make_recipe(((GATE_GROUP, 4, 0.01), (UP_GROUP, 2, 0.0))), recipe_path
+        )
+
+        result = invoke_validate(tmp_path, recipe_path)
+
+        assert result.exit_code == 1
+        assert GATE_GROUP in result.output
+
+    def test_the_refusal_names_the_merge_instead_of_unfollowable_advice(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        # No scan on this `transformers` names the projections apart,
+        # so checking the model path and --group-by closes no gap.
+        install_meter(
+            monkeypatch,
+            MemoryDamageMeter(specs=MERGED_SPECS, damages={(MERGED_GROUP, 4): 0.01}),
+        )
+        recipe_path = tmp_path / "recipe.json"
+        save_recipe(
+            make_recipe(((GATE_GROUP, 4, 0.01), (UP_GROUP, 2, 0.0))), recipe_path
+        )
+
+        result = invoke_validate(tmp_path, recipe_path)
+
+        assert result.exit_code == 1
+        assert "--group-by against the scan" not in result.output
+        assert f'holds "{MERGED_GROUP}" as one parameter' in result.output
+        assert "pin them to one precision and re-plan" in result.output
+
+    def test_a_mismatch_no_merge_explains_keeps_the_general_advice(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        # A recipe planned for another model still gets the advice
+        # that does close its gap.
+        install_meter(
+            monkeypatch, MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES))
+        )
+        recipe_path = tmp_path / "recipe.json"
+        save_recipe(make_recipe((("model.layers.9", 4, 0.01),)), recipe_path)
+
+        result = invoke_validate(tmp_path, recipe_path)
+
+        assert result.exit_code == 1
+        assert "Check the model path and --group-by against the scan" in result.output

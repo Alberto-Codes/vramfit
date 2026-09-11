@@ -18,6 +18,16 @@ leaves a map-source disagreement unruled, and this is not one — a
 total miss is the wrong directory. Continuing would price both views
 of the model and roughly double it.
 
+The map and the checkpoint also disagree on leaf names whenever the
+installed ``transformers`` loads several of the checkpoint's
+projections as one parameter (issue #576).
+[vramfit.domain.projections][] reconciles those names, and this
+module reports each reconciliation. The checkpoint's halves fold onto
+the merged name the map measured, so the coverage line below counts
+one group per merged projection and the solver prices one
+measurement once. The map passes through untouched, and the echo is
+the only place the reconciliation reaches a reader.
+
 One disagreement is ruled (ADR-0029 open question 2, 2026-09-04). A
 map scanned before the discovery skip (#204) under ``layer``
 granularity folds an unquantizable-class tensor into its layer group,
@@ -53,6 +63,7 @@ import typer
 from vramfit.adapters.outbound.safetensors_sizes import SafetensorsSizes
 from vramfit.domain.errors import VramfitError
 from vramfit.domain.model import SensitivityMap
+from vramfit.domain.projections import reconcile_merged_projections
 from vramfit.domain.sizes import (
     discovered_group_bytes,
     discovered_group_rows,
@@ -74,17 +85,23 @@ class CheckpointGroups:
             the 256 super-block decision reaches (issue #515), or
             None when the caller passed no ``--checkpoint``. The
             solver's refusal tells the two causes apart from it.
+        splits (Mapping[str, Mapping[str, int]]): Merged group name to
+            the checkpoint projections it holds and their reference
+            bytes (#576). `vramfit.domain.projections` names these in
+            the recipe after the solve. Empty when the two name sets
+            already agree.
 
     Examples:
         ```python
         from vramfit.adapters.inbound.cli_plan_sizes import CheckpointGroups
 
-        groups = CheckpointGroups(bytes=None, rows=None)
+        groups = CheckpointGroups(bytes=None, rows=None, splits={})
         ```
     """
 
     bytes: Mapping[str, int] | None
     rows: Mapping[str, int] | None
+    splits: Mapping[str, Mapping[str, int]]
 
 
 def discovered_groups(
@@ -108,13 +125,19 @@ def discovered_groups(
             count warning.
 
     Returns:
-        The group bytes and row widths. Both are None when no
-        checkpoint was given.
+        The group bytes, the row widths, and the merged projections
+        the reconciliation folded (#576). The bytes and widths are
+        None when no checkpoint was given.
+
+    The reconciliation runs inside the same read, so a checkpoint
+    that cannot fold one merged projection refuses with the source's
+    own wording (#576).
 
     Raises:
-        typer.Exit: With code 1 when the checkpoint cannot be read or
-            priced, and when no map group appears in it. The source's
-            own message carries the reason for the first.
+        typer.Exit: With code 1 when the checkpoint cannot be read,
+            priced, or reconciled, and when no map group appears in
+            it. The source's own message carries the reason for the
+            first three.
     """
     if checkpoint is None:
         # The runtime filter reports its narrowing on this channel for
@@ -124,19 +147,39 @@ def discovered_groups(
             f"no --checkpoint: this plan prices the {len(map_.groups)} groups "
             f"the map carries and reads no other size source (ADR-0029)"
         )
-        return CheckpointGroups(bytes=None, rows=None)
+        return CheckpointGroups(bytes=None, rows=None, splits={})
 
     source: TensorSizeSource = SafetensorsSizes(checkpoint)
     try:
         sizes = source.tensor_sizes()
         groups = discovered_group_bytes(sizes, map_.scan.group_by)
         rows = discovered_group_rows(sizes, map_.scan.group_by)
+        # The leaf half of the name reconciliation (#576), before the
+        # coverage match reads either name set. A merged group the
+        # checkpoint keeps apart would otherwise hold every half at
+        # reference precision and advise a scan that cannot produce
+        # the names it asks for.
+        reconciled = reconcile_merged_projections(map_, groups, rows)
     except VramfitError as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(code=1) from exc
     except OSError as exc:
         typer.echo(f"error: {checkpoint}: {exc}", err=True)
         raise typer.Exit(code=1) from exc
+
+    groups = dict(reconciled.bytes)
+    rows = dict(reconciled.rows)
+    splits = reconciled.splits
+    if splits:
+        first = next(iter(splits))
+        noun = "projection" if len(splits) == 1 else "projections"
+        typer.echo(
+            f"reconciled {len(splits)} merged {noun} the loaded model held as "
+            f'one parameter each, starting with "{first}" -> '
+            f"{', '.join(splits[first])}. The plan prices each as one group, "
+            f"so its one measured damage curve counts once, and the recipe "
+            f"names the checkpoint's projections (#576)"
+        )
 
     covered = [g.name for g in map_.groups]
     held = uncovered_groups(groups, covered)
@@ -179,4 +222,4 @@ def discovered_groups(
             f"Re-scan to remove the double count (ADR-0029)",
             err=True,
         )
-    return CheckpointGroups(bytes=groups, rows=rows)
+    return CheckpointGroups(bytes=groups, rows=rows, splits=splits)

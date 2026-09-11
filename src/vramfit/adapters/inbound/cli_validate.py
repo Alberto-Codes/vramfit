@@ -15,6 +15,13 @@ warning — a different file contaminates the comparison (ADR-0020).
 Both assisted tokens resolve this way: ``kquant-imx`` measures
 through ``kquant`` and ``q0-imx`` through ``q0``, each with the
 imatrix.
+The pass loads the same ``transformers`` the scan did, so it reports
+a merged projection under the name the scan measured.
+`vramfit.domain.projections.merged_assignments` folds the recipe's
+split rows back onto that name before the group match (#576). A
+recipe that names the projections at two precisions cannot fold, and
+`merge_mismatch` words that refusal — the general advice asks for a
+scan this ``transformers`` cannot produce.
 The comparison logic is pure and lives in
 [vramfit.domain.validation][]. Every failure halts with a clean
 ``error:`` line. Failures after the run log opens also emit a
@@ -36,6 +43,7 @@ See Also:
 from __future__ import annotations
 
 import time
+from collections.abc import Collection
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -53,6 +61,7 @@ from vramfit.adapters.outbound.json_common import ArtifactError
 from vramfit.adapters.outbound.recipe_json import load_recipe
 from vramfit.adapters.outbound.run_log_jsonl import JsonlRunLogFile
 from vramfit.domain.model import Recipe
+from vramfit.domain.projections import merge_mismatch, merged_assignments
 from vramfit.domain.scan import (
     ASSISTED_METHODS,
     KQUANT_IMX_METHOD,
@@ -224,7 +233,9 @@ def _load_recipe(path: Path) -> Recipe:
         raise typer.Exit(code=1) from exc
 
 
-def _check_groups(meter: DamageMeter, recipe: Recipe, run_log: SafeRunLog) -> None:
+def _check_groups(
+    meter: DamageMeter, assigned: Collection[str], run_log: SafeRunLog
+) -> None:
     """Refuse a recipe whose groups differ from the model's.
 
     A mismatch means the recipe was planned for a different model or
@@ -232,9 +243,15 @@ def _check_groups(meter: DamageMeter, recipe: Recipe, run_log: SafeRunLog) -> No
     event carries the stage and the mismatch detail, with no cell
     count — the validation pass has no scan grid.
 
+    A merged projection the recipe does not name at one precision
+    gets its own advice (#576). The general advice closes no gap
+    there, because no scan on this ``transformers`` names the
+    projections apart.
+
     Args:
         meter: The loaded meter, holding the discovered groups.
-        recipe: The recipe under validation.
+        assigned: The recipe's group names, already folded onto the
+            names the loaded model reports (#576).
         run_log: Sink for the ``validation_halted`` event.
 
     Raises:
@@ -242,7 +259,7 @@ def _check_groups(meter: DamageMeter, recipe: Recipe, run_log: SafeRunLog) -> No
             first differing groups on each side.
     """
     discovered = {spec.name for spec in meter.groups()}
-    assigned = {a.group for a in recipe.assignments}
+    assigned = set(assigned)
     missing = sorted(discovered - assigned)
     unexpected = sorted(assigned - discovered)
     if not missing and not unexpected:
@@ -253,9 +270,11 @@ def _check_groups(meter: DamageMeter, recipe: Recipe, run_log: SafeRunLog) -> No
     if missing:
         parts.append(f'the recipe misses discovered groups (first: "{missing[0]}")')
     detail = " and ".join(parts)
+    advice = merge_mismatch(assigned, discovered) or (
+        "Check the model path and --group-by against the scan"
+    )
     typer.echo(
-        f"error: recipe groups do not match the model's groups — {detail}. "
-        "Check the model path and --group-by against the scan",
+        f"error: recipe groups do not match the model's groups — {detail}. {advice}",
         err=True,
     )
     run_log.emit(
@@ -344,7 +363,11 @@ def validate(
     the model must be a local safetensors directory (ADR-0015).
     Pass the ``--group-by`` the scan used. A recipe priced on a
     ``stack``-keyed map names groups the other granularities never
-    produce, so a mismatch surfaces as an unknown group.
+    produce, so a mismatch surfaces as an unknown group. A recipe
+    names the checkpoint's projections where the loaded model merges
+    them, so those rows fold back onto the model's own name before
+    the group match (#576). A pair the recipe assigns two precisions
+    stays split, because the model holds one parameter for it.
 
     Raises:
         typer.BadParameter: If ``--group-by``, ``--within-group``, or
@@ -439,9 +462,14 @@ def validate(
         prefix="validation",
     )
     echo_imatrix_coverage(meter)
-    _check_groups(meter, recipe, run_log)
+    # The recipe names the checkpoint's projections and this model
+    # merges them, so the rows fold back before the match (#576).
+    assignments = merged_assignments(
+        {a.group: a.bits for a in recipe.assignments},
+        [spec.name for spec in meter.groups()],
+    )
+    _check_groups(meter, assignments, run_log)
 
-    assignments = {a.group: a.bits for a in recipe.assignments}
     started = time.monotonic()
     try:
         measured = meter.measure_recipe(assignments)

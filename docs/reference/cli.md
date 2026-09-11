@@ -246,6 +246,56 @@ groups and requests a scan of them. It states no coverage mismatch.
 Issue #564 carries this defect. Issue #554 owns the general root
 question.
 
+The coverage match reconciles the leaf. `vramfit scan` names a group
+from the loaded `transformers` model, and the installed version
+decides how many of the checkpoint's projections one parameter holds.
+Qwen3-MoE on `transformers` 5.16.1 loads gate and up as one
+`mlp.experts.gate_up_proj`, while the checkpoint keeps
+`mlp.experts.gate_proj` and `mlp.experts.up_proj` apart (#576). The
+plan folds the checkpoint's halves onto each such **merged
+projection**, against an explicit table and never a prefix wildcard.
+It reads the name's last segment only, so one tower's projection can
+never name another's.
+
+The fold fires only where the checkpoint states every half and holds
+no merged name of its own, where the map measures no half already,
+and where the halves state one row width. One perturbation measured
+one damage curve, so the plan prices the merged projection as one
+group. The solver counts that measurement once and ranks the pair as
+one unit of damage-per-byte. Nothing divides the curve, which would
+invent a number the scan never measured.
+
+The recipe then names the checkpoint's projections, because `pack`
+addresses `ffn_gate_exps` and `ffn_up_exps` separately. Each such
+**split group** is one recipe row. The rows share the pair's
+precision and sum to the merged prediction. The first row carries the
+measured damage, and the rest carry 0.0 — the value a recipe records
+for a row no measurement prices. The command echoes every
+reconciliation it made.
+
+`--pin` reaches a folded pair under either spelling. The recipe names
+the checkpoint's projections, so an operator reads those names and
+pins them. Such a pin lands on the group the plan prices. Only a fold
+this run made adds a spelling, so a plan without `--checkpoint`
+refuses one with the ordinary `matches no group`. A checkpoint that
+carries a projection by itself keeps it as a group instead.
+
+Two pins that leave one parameter's projections at two widths
+refuse. One parameter takes one precision, so keeping the later pin
+would discard the earlier one without a word. The refusal reads the
+widths that survive the usual override, so a later sweep that carries
+every projection to one width lands.
+
+The map itself passes through untouched. `plan` writes a recipe, and
+the recipe schema carries no provenance field for the fold. Read the
+command's echo, or the recipe's 0.0 damage rows, to tell an inherited
+curve from a measured one.
+
+The merge is a `transformers`-version property and not a model
+property, so the same checkpoint scanned on an older `transformers`
+needs no fold. A version bound would hide the gap rather than close
+it.
+
 A group the checkpoint holds and the map does not measure is
 *uncovered*. It prices at reference precision, and the recipe assigns
 it there at nominal 16, the F16 passthrough. Both halves matter.
@@ -292,6 +342,8 @@ Pin semantics: patterns are case-sensitive `fnmatch` globs matched
 against the full group name (`--pin "model.layers.0.*=8"`). With
 `--checkpoint` the match universe is every discovered group, and
 without it the map's groups (the 2026-08-22 ADR-0007 amendment). A
+fold this run made adds each merged projection's checkpoint
+spellings, under the rules stated above. A
 pin may name any width the target runtime serves, beyond the map's
 candidates, and a width the map never measured records 0.0 damage. A
 pattern that matches no group is an error (typo detection). Later
@@ -530,7 +582,13 @@ before any weight changes.
 Use the scan's calibration file and token budget — damage values are
 only comparable within one calibration set. The command refuses a
 recipe whose groups do not match the model's discovered groups (wrong
-model or wrong `--group-by`). A `--model` that differs from the
+model or wrong `--group-by`). The pass loads the same `transformers`
+the scan did, so a recipe's split-group rows fold back onto the
+merged name the model reports before that match (#576). A merged
+projection the recipe names at two precisions cannot fold. That
+refusal states the one-precision rule instead of the general advice,
+because no scan on this `transformers` names the projections apart.
+A `--model` that differs from the
 recipe's `model_id` prints a warning — the comparison assumes the
 scanned model. An `--imatrix` that differs from the recipe's recorded
 imatrix path also prints a warning — a different file contaminates

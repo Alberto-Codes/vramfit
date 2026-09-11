@@ -120,6 +120,15 @@ below remain, the sub-4-bit pricing claims do not.
   packed file holds it there (#409). `damage` is the
   *measured* value at the assigned precision — an all-8-bit recipe still
   carries the measured 8-bit damage.
+
+  A [merged projection](glossary.md) breaks the one-row-per-map-group
+  rule (#576). `plan --checkpoint` prices it as the one group the map
+  measured. The recipe then carries one **split group** row per
+  checkpoint projection, in the merged group's place, because `pack`
+  addresses each projection by name. The split rows share the merged
+  group's precision and sum to its `bytes`. The first row carries the
+  measured `damage`, and the rest carry 0.0. See
+  [`vramfit plan`](cli.md) for the fold and the command's echo.
 - **`predicted_damage`** — sum of per-group damage at the chosen precisions.
   A *prediction* from marginal measurements, not a guarantee —
   `vramfit validate` measures the whole recipe against it
