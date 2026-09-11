@@ -1172,13 +1172,21 @@ class TestNativeTargetDiscovery:
     ``backbone.`` keys to ``model.`` and fuses each layer's routed
     experts. The meta device builds that module tree and allocates no
     weights, so the committed config alone (#427) reproduces the
-    inventory without the 60 GiB checkpoint. If this fails, either
-    discovery regressed or the how-to lies.
+    inventory without the 60 GiB checkpoint.
+
+    Each test asserts against ``discover_groups`` output, never against
+    the page's text. A wrong edit to the page's numbers still passes.
+    A failure here has three causes. Discovery regressed. The how-to
+    states a figure the code never produced. Or the installed
+    transformers builds a different module tree than the version these
+    figures came from.
     """
 
     @staticmethod
     def _native_stack_groups() -> dict[str, list[str]]:
-        pytest.importorskip("transformers", reason="scan extra not installed")
+        transformers = pytest.importorskip(
+            "transformers", reason="scan extra not installed"
+        )
         from pathlib import Path
 
         from transformers import AutoConfig, AutoModelForCausalLM
@@ -1191,8 +1199,15 @@ class TestNativeTargetDiscovery:
             / "nemotron-3.5-lightning-30b-a3b"
             / "config.json"
         )
+        try:
+            loaded = AutoConfig.from_pretrained(config)
+        except ValueError as exc:
+            pytest.skip(
+                f"transformers {transformers.__version__} does not implement "
+                f"the target's architecture: {exc}"
+            )
         with torch.device("meta"):
-            model = AutoModelForCausalLM.from_config(AutoConfig.from_pretrained(config))
+            model = AutoModelForCausalLM.from_config(loaded)
         return discover_groups(model, "stack")
 
     def test_stack_discovery_counts_the_documented_groups(self) -> None:
