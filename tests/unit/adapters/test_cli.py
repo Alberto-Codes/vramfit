@@ -664,7 +664,9 @@ class TestBudgetCommand:
         )
 
         assert result.exit_code == 2
-        assert "--kv-value-dtype" in result.output
+        # click 8.2+ keeps the streams apart, so assert the channel the
+        # refusal must reach rather than the merged view.
+        assert "--kv-value-dtype" in result.stderr
 
     def test_omitted_kv_value_dtype_reads_exactly_as_today(self) -> None:
         args = [
@@ -680,9 +682,10 @@ class TestBudgetCommand:
         default = runner.invoke(app, args)
         matched = runner.invoke(app, [*args, "--kv-value-dtype", "fp16"])
 
-        assert default.exit_code == 0, default.output
-        assert default.output == matched.output
-        assert "KV grows 200704 bytes/token, fp16" in default.output
+        assert default.exit_code == 0, default.stderr
+        assert default.stdout == matched.stdout
+        assert default.stderr == matched.stderr
+        assert "KV grows 200704 bytes/token, fp16" in default.stdout
 
     def test_fp8_value_cache_shrinks_the_kv_line(self) -> None:
         result = runner.invoke(

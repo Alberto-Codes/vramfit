@@ -43,7 +43,8 @@ Each attention layer prices its own cache (`KVLayer`, #421). Per layer
 and sequence:
 
 ```
-layer_kv_bytes = n_kv_heads × head_dim × (key_bytes + value_bytes) × cached_tokens
+element_bytes  = the first kv_tensors of (key_bytes, value_bytes), summed
+layer_kv_bytes = n_kv_heads × head_dim × element_bytes × cached_tokens
 ```
 
 Three mechanisms decide `cached_tokens`, and one constant decides
@@ -57,10 +58,11 @@ which caches the layer pays for:
 - A **shared-KV** layer reuses an earlier layer's cache and allocates
   nothing (`num_kv_shared_layers`).
 - `kv_tensors` is 2: the runtime allocates a K and a V cache for every
-  layer, so the layer pays `key_bytes + value_bytes`. The constant
-  selects a prefix of the pair, and a value of 1 prices the key cache
-  alone. Where the model declares `attention_k_eq_v` the runtime fills
-  V with K but still allocates both, so the price stays 2 (#431).
+  layer, so `element_bytes` is the whole pair. A value of 1 prices the
+  key cache alone. The field admits 1 or 2 and `KVLayer` refuses
+  anything else, because a silent prefix would under-price the cache.
+  Where the model declares `attention_k_eq_v` the runtime fills V with
+  K but still allocates both, so the price stays 2 (#431).
 
 The stack's total therefore splits into two terms: **KV growth**
 (`kv_growth_bytes_per_token`, the global layers' bytes per context
@@ -69,7 +71,7 @@ layers' saturated bytes per sequence). For a uniform full-attention
 stack the pool is zero and the formula collapses to one product:
 
 ```
-kv_growth_bytes_per_token = n_attention_layers × n_kv_heads × head_dim × (key_bytes + value_bytes)
+kv_growth_bytes_per_token = n_attention_layers × n_kv_heads × head_dim × element_bytes
 ```
 
 Multiply by context length × concurrent sequences. A matched pair

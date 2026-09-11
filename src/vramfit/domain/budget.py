@@ -19,6 +19,8 @@ Every KV function prices the key cache and the value cache as a pair
 symmetric-only budget could not describe a configuration the packed
 target already runs. A caller that names one dtype prices both at it,
 which is the reading every caller had before the pair landed.
+`KVLayer` bounds its storage factor at 1 or 2, so pricing selects a
+prefix of that pair and never truncates it silently.
 
 The pair is a run-wide assignment, not a per-layer one. A per-layer KV
 type map stays parked, and the trigger to build it is: a ruled runtime
@@ -194,11 +196,10 @@ class KVLayer:
             token: 2 for the K and V caches. The ruled runtime
             allocates both even under ``attention_k_eq_v`` and fills
             V with K (#431). A value of 1 prices the key cache
-            alone, and no adapter emits one since #431. The field's
-            domain is 1 or 2. Pricing selects that many entries of
-            the key/value pair, so a value above 2 selects the pair
-            and names no third cache — the prefix rule rests on this
-            bound (#424).
+            alone, and no adapter emits one since #431. Pricing
+            selects that many entries of the key/value pair, so the
+            field admits 1 or 2 and `__post_init__` refuses anything
+            else. A silent slice would under-price a budget (#424).
         shares_kv (bool): True when the layer reuses another layer's
             cache and allocates no KV of its own
             (``num_kv_shared_layers``).
@@ -218,6 +219,20 @@ class KVLayer:
     window: int | None = None
     kv_tensors: int = 2
     shares_kv: bool = False
+
+    def __post_init__(self) -> None:
+        """Enforce the storage factor's domain.
+
+        Pricing selects `kv_tensors` entries of the key/value pair.
+        A count of 0 would price the layer at zero and a count above
+        2 would truncate to the pair, so both would under-price the
+        cache and return a budget no record defines (#424).
+
+        Raises:
+            ValueError: If ``kv_tensors`` is not 1 or 2.
+        """
+        if self.kv_tensors not in (1, 2):
+            raise ValueError(f"kv_tensors must be 1 or 2, not {self.kv_tensors}")
 
 
 @dataclass(frozen=True, slots=True)
@@ -293,6 +308,10 @@ def resolve_kv_dtypes(kv_dtype: str, kv_value_dtype: str | None) -> tuple[str, s
 def _layer_token_bytes(layer: KVLayer, kv_dtype: str, kv_value_dtype: str) -> int:
     """Compute one layer's KV bytes per cached token.
 
+    The layer's storage factor selects a prefix of the dtype pair.
+    `KVLayer` admits only 1 or 2, so the slice always names a real
+    cache.
+
     Args:
         layer: The layer's KV geometry.
         kv_dtype: Key-cache element dtype.
@@ -305,7 +324,8 @@ def _layer_token_bytes(layer: KVLayer, kv_dtype: str, kv_value_dtype: str) -> in
         return 0
     # The runtime allocates the K cache first, then the V cache, so
     # the storage factor selects a prefix of the pair (#431). One
-    # tensor prices the key alone. Equal dtypes reproduce the
+    # tensor prices the key alone. `KVLayer` bounds the factor at 1
+    # or 2, so the slice never truncates. Equal dtypes reproduce the
     # pre-#424 product.
     pair = (KV_DTYPE_BYTES[kv_dtype], KV_DTYPE_BYTES[kv_value_dtype])
     element_bytes = sum(pair[: layer.kv_tensors])

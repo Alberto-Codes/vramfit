@@ -452,8 +452,11 @@ class TestKvValueDtype:
         default = runner.invoke(app, args)
         matched = runner.invoke(app, [*args, "--kv-value-dtype", "fp16"])
 
-        assert default.exit_code == 0, default.output
-        assert default.output == matched.output
+        assert default.exit_code == 0, default.stderr
+        # click 8.2+ keeps the streams apart. Comparing each one catches
+        # a regression that moves a line between them.
+        assert default.stdout == matched.stdout
+        assert default.stderr == matched.stderr
 
     def test_fp8_value_cache_raises_the_max_context(self, tmp_path) -> None:
         recipe = save_capacity_recipe(tmp_path)
@@ -462,9 +465,9 @@ class TestKvValueDtype:
         symmetric = runner.invoke(app, args)
         split = runner.invoke(app, [*args, "--kv-value-dtype", "fp8"])
 
-        assert split.exit_code == 0, split.output
-        assert "fp16 keys / fp8 values" in split.output
-        assert context_tokens(split.output) > context_tokens(symmetric.output)
+        assert split.exit_code == 0, split.stderr
+        assert "fp16 keys / fp8 values" in split.stdout
+        assert context_tokens(split.stdout) > context_tokens(symmetric.stdout)
 
     def test_unknown_value_dtype_exits_two(self, tmp_path) -> None:
         recipe = save_capacity_recipe(tmp_path)
@@ -475,12 +478,12 @@ class TestKvValueDtype:
         )
 
         assert result.exit_code == 2
-        assert "--kv-value-dtype" in result.output
+        assert "--kv-value-dtype" in result.stderr
 
 
-def context_tokens(output: str) -> int:
+def context_tokens(stdout: str) -> int:
     """Read the ``max context`` line's token count out of a readout."""
-    for line in output.splitlines():
+    for line in stdout.splitlines():
         if line.startswith("max context"):
             return int(line.split()[2])
-    raise AssertionError(f"no max context line in:\n{output}")
+    raise AssertionError(f"no max context line in:\n{stdout}")
