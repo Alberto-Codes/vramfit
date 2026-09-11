@@ -83,13 +83,12 @@ context length gained.
 ### The two caches carry their own dtypes
 
 The key cache and the value cache are priced as a **KV dtype pair**
-(#424). llama.cpp already serves the two at separate types — an 8-bit
-key cache beside a 4-bit value cache is an ordinary setting — so a
-budget with one shared dtype could not describe a configuration the
-target already runs. `--kv-dtype` names the key dtype and prices the
-value cache at it too, which is the symmetric reading the budget has
-always had. `--kv-value-dtype` splits the pair. Half the pair at half
-the width costs three quarters of the symmetric total, not half.
+(#424). llama.cpp already serves the two at separate types, so a
+budget with one shared dtype cannot describe an asymmetric cache at
+all. `--kv-dtype` names the key dtype and prices the value cache at it
+too, which is the symmetric reading the budget has always had.
+`--kv-value-dtype` splits the pair. Half the pair at half the width
+costs three quarters of the symmetric total, not half.
 
 Two limits are deliberate, and both are conditions rather than
 silences:
@@ -101,7 +100,9 @@ silences:
 - **The dtype table holds whole-byte element widths**, so it names no
   block-quantized cache type. llama.cpp's `q8_0` (8.5 bits/element)
   and `q4_0` (4.5 bits/element) cannot be priced until the table
-  carries sub-byte widths (#575).
+  carries sub-byte widths (#575). So the pair the runtime serves most
+  often — an 8-bit key cache beside a 4-bit value cache — stays out of
+  reach. The pair above splits the *mechanism*, not yet those types.
 
 ### Worked example: Gemma 4 31B (mixed sliding/global)
 

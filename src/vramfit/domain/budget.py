@@ -194,7 +194,11 @@ class KVLayer:
             token: 2 for the K and V caches. The ruled runtime
             allocates both even under ``attention_k_eq_v`` and fills
             V with K (#431). A value of 1 prices the key cache
-            alone, and no adapter emits one since #431.
+            alone, and no adapter emits one since #431. The field's
+            domain is 1 or 2. Pricing selects that many entries of
+            the key/value pair, so a value above 2 selects the pair
+            and names no third cache — the prefix rule rests on this
+            bound (#424).
         shares_kv (bool): True when the layer reuses another layer's
             cache and allocates no KV of its own
             (``num_kv_shared_layers``).
