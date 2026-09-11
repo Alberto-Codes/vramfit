@@ -392,8 +392,9 @@ def plan(
     open question 2, ruled 2026-09-04).
 
     ``--pin`` reaches a folded projection under the name the recipe
-    gives it. Two pins that give one parameter's projections two
-    widths refuse, because one parameter takes one precision.
+    gives it. Two pins that leave one parameter's projections at two
+    widths refuse, because one parameter takes one precision. The
+    command echoes every fold it made, and no artifact records one.
 
     The same read reconciles the map's group names against the
     checkpoint's. The installed ``transformers`` decides how many of
@@ -475,11 +476,10 @@ def plan(
         )
 
     groups = discovered_groups(checkpoint, map_, sensitivity_map)
-    # The map reconciled against the checkpoint (#576). A merged
-    # projection keeps the one group the scan measured, and the
-    # checkpoint's halves fold onto it, so the solve prices that
+    # The checkpoint reconciled against the map's names (#576). A
+    # merged projection keeps the one group the scan measured, and
+    # the checkpoint's halves fold onto it, so the solve prices that
     # measurement once.
-    map_ = groups.sensitivity_map
     sizes = groups.bytes
 
     try:

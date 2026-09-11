@@ -52,10 +52,6 @@ Attributes:
         `CHECKPOINT_ROOTS`. A prefix wildcard would map one
         projection onto another family's (#177), so each new merge
         costs one entry.
-    DERIVED_NOTE (str): The sentence the reconciled map records
-        under `SensitivityMap.derived`, before the merged group
-        names. The note reaches the `plan` echo and no artifact —
-        the recipe schema carries no provenance field for it.
 
 Examples:
     Name the checkpoint projections one merged parameter holds:
@@ -93,24 +89,15 @@ MERGED_PROJECTIONS: Final[Mapping[str, tuple[str, ...]]] = MappingProxyType(
     {"gate_up_proj": ("gate_proj", "up_proj")}
 )
 
-DERIVED_NOTE: Final[str] = (
-    "Derived by vramfit plan --checkpoint: reconciled merged projections the "
-    "loaded model fused and the checkpoint keeps apart (#576). The plan "
-    "prices each merged projection as one group, so its one measurement "
-    "counts once, and the recipe names the checkpoint's projections. Not a "
-    "scan artifact. Merged projections: "
-)
-
 
 @dataclass(frozen=True, slots=True)
 class MergedReconciliation:
-    """A map and a checkpoint, reconciled on their merged projections.
+    """A checkpoint's sizes, folded onto the map's merged names.
+
+    The map itself needs no reconciling. Its merged group is the one
+    the solver prices, so the fold moves the checkpoint onto it.
 
     Attributes:
-        sensitivity_map (SensitivityMap): The map, carrying
-            `DERIVED_NOTE` when anything was reconciled. Its groups
-            are untouched: the merged name is the one the solver
-            prices.
         bytes (Mapping[str, int]): Bytes at reference precision per
             checkpoint group, with each merged projection's halves
             summed under the merged name.
@@ -124,11 +111,10 @@ class MergedReconciliation:
     Examples:
         ```python
         reconciled = reconcile_merged_projections(map_, bytes_, rows)
-        recipe = split_assignments(solve(reconciled.sensitivity_map), ...)
+        recipe = split_assignments(solve(map_), reconciled.splits)
         ```
     """
 
-    sensitivity_map: SensitivityMap
     bytes: Mapping[str, int]
     rows: Mapping[str, int]
     splits: Mapping[str, Mapping[str, int]]
@@ -248,10 +234,9 @@ def reconcile_merged_projections(
     the pair as one unit of damage-per-byte, and
     `plan.predicted_damage` counts the measurement once.
 
-    The map records the reconciliation under
-    `SensitivityMap.derived`, appending to a note the map already
-    carried. A map with nothing to reconcile returns unchanged,
-    `derived` included.
+    The map passes through untouched. `plan` echoes every fold it
+    made, and that echo is the only provenance surface — `plan`
+    writes a recipe and no map.
 
     Args:
         sensitivity_map: The map `plan` loaded.
@@ -262,8 +247,8 @@ def reconcile_merged_projections(
             from `vramfit.domain.sizes.discovered_group_rows`.
 
     Returns:
-        The reconciled map, the folded checkpoint sizes and widths,
-        and the split record `split_assignments` reads.
+        The folded checkpoint sizes and widths, and the split record
+        `split_assignments` reads.
 
     Raises:
         SizeSourceError: If one merged projection's halves state two
@@ -300,19 +285,8 @@ def reconcile_merged_projections(
         if width is not None:
             rows[group.name] = width
     if not splits:
-        return MergedReconciliation(
-            sensitivity_map, discovered_bytes, row_widths, splits
-        )
-    note = f"{DERIVED_NOTE}{', '.join(splits)}."
-    if sensitivity_map.derived is not None:
-        note = f"{sensitivity_map.derived} {note}"
-    reconciled = SensitivityMap(
-        model_id=sensitivity_map.model_id,
-        scan=sensitivity_map.scan,
-        groups=sensitivity_map.groups,
-        derived=note,
-    )
-    return MergedReconciliation(reconciled, sizes, rows, splits)
+        return MergedReconciliation(discovered_bytes, row_widths, splits)
+    return MergedReconciliation(sizes, rows, splits)
 
 
 def _split_row(

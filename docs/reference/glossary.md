@@ -75,7 +75,8 @@ change.
     `mlp.experts.gate_proj` and `mlp.experts.up_proj` apart (#576).
     `vramfit scan` names the merged group and measures it once, so
     `plan --checkpoint` folds the checkpoint's halves onto that name
-    and prices them as one group. The merge is a
+    and prices them as one group. The command echoes every fold, and
+    no artifact records one. The merge is a
     `transformers`-version property and not a model property. Not
     "fused projection" — **Expert stack** owns "fused".
 
@@ -88,8 +89,8 @@ change.
     measured damage, and the rest carry 0.0, because one perturbation
     measured one curve. `vramfit validate` folds the rows back onto
     the merged name before it measures, and `--pin` folds a split
-    name onto the group the plan prices. Two pins that give one
-    parameter's projections two widths refuse.
+    name onto the group the plan prices. Two pins that leave one
+    parameter's projections at two widths refuse.
 
 **Routing mass**
 :   The share of a layer's imatrix counts held by the experts a recipe

@@ -388,6 +388,53 @@ class TestAMergedMapAgainstASplitCheckpoint:
         assert assigned[gate] == 4
         assert assigned[up] == 4
 
+    def test_a_sweep_then_a_narrower_width_refuses(self, tmp_path) -> None:
+        # The sweep pinned gate at 8 and nothing later moves it, so
+        # landing the pair at 2 would drop that pin with no word.
+        # The unmerged group in the same sweep proves the sweep bound.
+        out = tmp_path / "recipe.json"
+        _gate, up = split_groups(0)
+
+        result = plan(
+            write_map(tmp_path),
+            out,
+            MODEL_BYTES,
+            "--checkpoint",
+            str(write_checkpoint(tmp_path)),
+            "--pin",
+            "model.layers.0.mlp.experts.*=8",
+            "--pin",
+            f"{up}=2",
+        )
+
+        assert result.exit_code == 1
+        assert "must share one precision" in result.output
+        assert not out.exists()
+
+    def test_a_narrower_width_then_a_sweep_lands(self, tmp_path) -> None:
+        # Reversed, the sweep carries both projections to one width,
+        # so one parameter does take one precision.
+        out = tmp_path / "recipe.json"
+        gate, up = split_groups(0)
+
+        result = plan(
+            write_map(tmp_path),
+            out,
+            MODEL_BYTES,
+            "--checkpoint",
+            str(write_checkpoint(tmp_path)),
+            "--pin",
+            f"{up}=8",
+            "--pin",
+            "model.layers.0.mlp.experts.*=2",
+        )
+
+        assert result.exit_code == 0, result.output
+        assigned = {a.group: a.bits for a in load_recipe(out).assignments}
+        assert assigned[gate] == 2
+        assert assigned[up] == 2
+        assert assigned["model.layers.0.mlp.experts.down_proj"] == 2
+
     def test_a_checkpoint_that_keeps_a_projection_apart_pins_it_alone(
         self, tmp_path
     ) -> None:

@@ -280,14 +280,16 @@ this run made adds a spelling, so a plan without `--checkpoint`
 refuses one with the ordinary `matches no group`. A checkpoint that
 carries a projection by itself keeps it as a group instead.
 
-Two pins that name one parameter's projections at two widths refuse.
-One parameter takes one precision, so keeping the later pin would
-discard the earlier one without a word. Pin them to one precision.
+Two pins that leave one parameter's projections at two widths
+refuse. One parameter takes one precision, so keeping the later pin
+would discard the earlier one without a word. The refusal reads the
+widths that survive the usual override, so a later sweep that carries
+every projection to one width lands.
 
-The reconciled map records the fold under `derived`, and no artifact
-carries that note. `plan` writes a recipe, and the recipe schema has
-no provenance field for it. Read the command's echo, or the recipe's
-0.0 damage rows, to tell an inherited curve from a measured one.
+The map itself passes through untouched. `plan` writes a recipe, and
+the recipe schema carries no provenance field for the fold. Read the
+command's echo, or the recipe's 0.0 damage rows, to tell an inherited
+curve from a measured one.
 
 The merge is a `transformers`-version property and not a model
 property, so the same checkpoint scanned on an older `transformers`

@@ -25,7 +25,8 @@ projections as one parameter (issue #576).
 module reports each reconciliation. The checkpoint's halves fold onto
 the merged name the map measured, so the coverage line below counts
 one group per merged projection and the solver prices one
-measurement once.
+measurement once. The map passes through untouched, and the echo is
+the only place the reconciliation reaches a reader.
 
 One disagreement is ruled (ADR-0029 open question 2, 2026-09-04). A
 map scanned before the discovery skip (#204) under ``layer``
@@ -84,10 +85,6 @@ class CheckpointGroups:
             the 256 super-block decision reaches (issue #515), or
             None when the caller passed no ``--checkpoint``. The
             solver's refusal tells the two causes apart from it.
-        sensitivity_map (SensitivityMap): The map reconciled against
-            the checkpoint (issue #576) — the one the plan prices.
-            It is the map the caller passed when the two name sets
-            already agree.
         splits (Mapping[str, Mapping[str, int]]): Merged group name to
             the checkpoint projections it holds and their reference
             bytes (#576). `vramfit.domain.projections` names these in
@@ -98,15 +95,12 @@ class CheckpointGroups:
         ```python
         from vramfit.adapters.inbound.cli_plan_sizes import CheckpointGroups
 
-        groups = CheckpointGroups(
-            bytes=None, rows=None, sensitivity_map=map_, splits={}
-        )
+        groups = CheckpointGroups(bytes=None, rows=None, splits={})
         ```
     """
 
     bytes: Mapping[str, int] | None
     rows: Mapping[str, int] | None
-    sensitivity_map: SensitivityMap
     splits: Mapping[str, Mapping[str, int]]
 
 
@@ -131,10 +125,9 @@ def discovered_groups(
             count warning.
 
     Returns:
-        The group bytes, the row widths, the map reconciled against
-        the checkpoint, and the merged projections it folded (#576).
-        The bytes and widths are None when no checkpoint was given,
-        and the map is then the one passed in.
+        The group bytes, the row widths, and the merged projections
+        the reconciliation folded (#576). The bytes and widths are
+        None when no checkpoint was given.
 
     The reconciliation runs inside the same read, so a checkpoint
     that cannot fold one merged projection refuses with the source's
@@ -154,7 +147,7 @@ def discovered_groups(
             f"no --checkpoint: this plan prices the {len(map_.groups)} groups "
             f"the map carries and reads no other size source (ADR-0029)"
         )
-        return CheckpointGroups(bytes=None, rows=None, sensitivity_map=map_, splits={})
+        return CheckpointGroups(bytes=None, rows=None, splits={})
 
     source: TensorSizeSource = SafetensorsSizes(checkpoint)
     try:
@@ -174,7 +167,6 @@ def discovered_groups(
         typer.echo(f"error: {checkpoint}: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
-    map_ = reconciled.sensitivity_map
     groups = dict(reconciled.bytes)
     rows = dict(reconciled.rows)
     splits = reconciled.splits
@@ -230,6 +222,4 @@ def discovered_groups(
             f"Re-scan to remove the double count (ADR-0029)",
             err=True,
         )
-    return CheckpointGroups(
-        bytes=groups, rows=rows, sensitivity_map=map_, splits=splits
-    )
+    return CheckpointGroups(bytes=groups, rows=rows, splits=splits)

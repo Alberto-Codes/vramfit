@@ -134,14 +134,6 @@ class TestTheFold:
         assert dict(reconciled.bytes) == {MERGED: 1000}
         assert reconciled.splits == {MERGED: SPLIT_CHECKPOINT}
 
-    def test_the_map_keeps_the_groups_and_curves_the_scan_wrote(self) -> None:
-        map_ = make_map(merged_group())
-
-        reconciled = reconcile_merged_projections(map_, SPLIT_CHECKPOINT, {})
-
-        assert [g.name for g in reconciled.sensitivity_map.groups] == [MERGED]
-        assert dict(reconciled.sensitivity_map.groups[0].sensitivity) == CURVE
-
     def test_the_halves_row_width_carries_to_the_merged_name(self) -> None:
         # `refuse_unmeasured_rows` reads the width under the name the
         # solver prices, so the fold moves it there (issue #515).
@@ -150,27 +142,6 @@ class TestTheFold:
         )
 
         assert dict(reconciled.rows) == {MERGED: 2688}
-
-    def test_the_reconciled_map_records_the_merge_under_derived(self) -> None:
-        reconciled = reconcile_merged_projections(
-            make_map(merged_group()), SPLIT_CHECKPOINT, {}
-        )
-
-        derived = reconciled.sensitivity_map.derived
-        assert derived is not None
-        assert MERGED in derived
-        assert "counts once" in derived
-
-    def test_a_map_that_was_already_derived_keeps_its_own_note(self) -> None:
-        reconciled = reconcile_merged_projections(
-            make_map(merged_group(), derived="Hand-edited for the 2-bit probe."),
-            SPLIT_CHECKPOINT,
-            {},
-        )
-
-        derived = reconciled.sensitivity_map.derived
-        assert derived is not None
-        assert derived.startswith("Hand-edited for the 2-bit probe.")
 
     def test_groups_the_table_does_not_reach_pass_through(self) -> None:
         down = LayerGroup(name=DOWN, tensors=(DOWN,), bytes_fp16=500, sensitivity=CURVE)
@@ -212,7 +183,7 @@ class TestTheFoldHoldsBack:
 
         reconciled = reconcile_merged_projections(map_, SPLIT_CHECKPOINT, {})
 
-        assert reconciled.sensitivity_map is map_
+        assert dict(reconciled.bytes) == SPLIT_CHECKPOINT
         assert reconciled.splits == {}
 
     def test_halves_of_two_row_widths_refuse_with_the_real_cause(self) -> None:
@@ -480,3 +451,46 @@ class TestAPinUniverseNarrowedToTheFold:
                 runtime=None,
                 discovered_bytes=None,
             )
+
+
+class TestPinOverrideAcrossSpellings:
+    """The widths that survive the ADR-0007 override decide."""
+
+    def test_a_sweep_then_a_narrower_width_refuses(self) -> None:
+        # The sweep pinned gate at 8 and nothing later moves it, so
+        # keeping up at 2 would drop the sweep's gate pin in silence.
+        with pytest.raises(PinError, match="must share one precision"):
+            resolve_pins(
+                {"model.layers.0.mlp.experts.*": 8, UP: 2},
+                make_map(merged_group()),
+                candidates=(8, 2),
+                runtime=None,
+                discovered_bytes={MERGED: 1000},
+                merged_splits={MERGED: SPLIT_CHECKPOINT},
+            )
+
+    def test_a_narrow_width_then_a_sweep_lands(self) -> None:
+        # The sweep carries every spelling to one width, so one
+        # parameter does take one precision.
+        pinned, _uncovered, _user = resolve_pins(
+            {UP: 8, "model.layers.0.mlp.experts.*": 2},
+            make_map(merged_group()),
+            candidates=(8, 2),
+            runtime=None,
+            discovered_bytes={MERGED: 1000},
+            merged_splits={MERGED: SPLIT_CHECKPOINT},
+        )
+
+        assert pinned == {MERGED: 2}
+
+    def test_both_spellings_then_a_sweep_lands(self) -> None:
+        pinned, _uncovered, _user = resolve_pins(
+            {GATE: 8, UP: 8, "model.layers.0.mlp.experts.*": 2},
+            make_map(merged_group()),
+            candidates=(8, 2),
+            runtime=None,
+            discovered_bytes={MERGED: 1000},
+            merged_splits={MERGED: SPLIT_CHECKPOINT},
+        )
+
+        assert pinned == {MERGED: 2}

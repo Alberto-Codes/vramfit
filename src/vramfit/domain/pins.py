@@ -20,9 +20,13 @@ the checkpoint's projections in the recipe, so an operator reads
 those names and pins them. The split record
 `vramfit.domain.projections.reconcile_merged_projections` produced
 says which spellings exist and where each lands, so a run that
-folded nothing refuses an unknown spelling the ordinary way. Two
-pins that reach one projection at two widths refuse, because the
-last one would discard the first without a word.
+folded nothing refuses an unknown spelling the ordinary way. Later
+patterns override earlier ones per spelling, the way they do per
+group. The refusal reads the widths that survive that override: two
+spellings of one parameter that still disagree refuse, because the
+last pin would otherwise discard the other without a word. A later
+sweep that carries every spelling to one width lands, because one
+parameter then does take one precision.
 
 Examples:
     Resolve dense pins at nominal 8 beside a stack-keyed map:
@@ -116,10 +120,9 @@ def _expand_pins(
     to more than one group skips the unquantizable-class groups it
     sweeps (ADR-0007, 2026-09-04 amendment, #371). A pattern that
     names a merged projection's checkpoint spelling lands on the
-    group the plan prices (`_match_universe`, #576). Two patterns
-    that name two of one projection's spellings at two widths refuse
-    together, because one parameter takes one precision and the
-    later pattern would otherwise discard the earlier one.
+    group the plan prices (`_match_universe`, #576). Every spelling
+    takes the last width a pattern gave it, and `_refuse_split_pins`
+    then reads what survives.
 
     Args:
         pins: Ordered mapping of glob pattern to forced precision.
@@ -141,8 +144,8 @@ def _expand_pins(
 
     Raises:
         PinError: If a pin uses a precision neither scanned nor
-            runtime-servable, matches no group, or disagrees with an
-            earlier pin about one merged projection's precision.
+            runtime-servable, matches no group, or leaves two
+            spellings of one merged projection at two widths.
     """
     if not pins:
         return {}
@@ -152,7 +155,7 @@ def _expand_pins(
     # (ADR-0007).
     names, folded = _match_universe(sensitivity_map, discovered_bytes, merged_splits)
     pinned: dict[str, int] = {}
-    claimed: dict[str, tuple[str, str, int]] = {}
+    spelled: dict[str, dict[str, tuple[str, int]]] = {}
     for pattern, bits in pins.items():
         if bits not in allowed:
             raise PinError(
@@ -168,19 +171,44 @@ def _expand_pins(
             if group is None:
                 pinned[name] = bits
                 continue
-            prior = claimed.get(group)
-            if prior is not None and prior[0] != name and prior[2] != bits:
-                raise PinError(
-                    merged_pin_conflict(
-                        group,
-                        (merged_splits or {})[group],
-                        (prior[1], prior[2]),
-                        (pattern, bits),
-                    )
-                )
-            claimed[group] = (name, pattern, bits)
+            spelled.setdefault(group, {})[name] = (pattern, bits)
             pinned[group] = bits
+    _refuse_split_pins(spelled, merged_splits or {})
     return pinned
+
+
+def _refuse_split_pins(
+    spelled: Mapping[str, Mapping[str, tuple[str, int]]],
+    merged_splits: Mapping[str, Mapping[str, int]],
+) -> None:
+    """Refuse pins that leave one parameter at two precisions.
+
+    The widths read here are the ones that survived the ADR-0007
+    override, so a later sweep that carries every spelling to one
+    width raises nothing. Two spellings that still disagree refuse:
+    the pin the solver would drop is an instruction the operator
+    gave, and dropping it in silence is the defect this closes
+    (#576).
+
+    Args:
+        spelled: Merged group name to each pinned spelling and the
+            ``(pattern, bits)`` that last claimed it.
+        merged_splits: The merged projections the plan folded, whose
+            projection counts the refusal states.
+
+    Raises:
+        PinError: If two spellings of one merged projection carry
+            two widths. The message names both patterns, in spelling
+            order, so one input produces one refusal.
+    """
+    for group, claims in spelled.items():
+        if len({bits for _pattern, bits in claims.values()}) < 2:  # noqa: PLR2004 - one width is agreement
+            continue
+        held, *rest = sorted(claims.items())
+        conflicting = next(claim for claim in rest if claim[1][1] != held[1][1])
+        raise PinError(
+            merged_pin_conflict(group, merged_splits[group], held[1], conflicting[1])
+        )
 
 
 def _hold_unquantizable(
