@@ -1,9 +1,14 @@
 """Hermetic tests for ``scripts/frame_calibration.py`` (#423, #437).
 
-The script frames calibration prose for a channel-locked target. The
-real tokenizer needs the scan extra, so these tests drive
-``build_framed_text`` with a fake that models the parts the script
-reads: plain encode, decode, ``all_special_ids``, ``bos_token_id``.
+The script frames calibration prose for a channel-locked target. It
+reads the frame from the checkpoint's own chat template, so these
+tests drive it with fakes of three shapes: a Gemma-shaped template, a
+ChatML-shaped template, and a checkpoint with no template. The real
+tokenizer needs the scan extra, so each fake models the parts the
+script reads: plain encode, decode, ``all_special_tokens``,
+``all_special_ids``, ``added_tokens_decoder``, ``bos_token``,
+``bos_token_id``, ``chat_template``, and ``apply_chat_template``
+under both ``add_generation_prompt`` settings.
 """
 
 from __future__ import annotations
@@ -11,6 +16,7 @@ from __future__ import annotations
 import importlib.util
 import re
 import sys
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from types import ModuleType
 
@@ -32,6 +38,129 @@ fc = _load_script()
 
 pytestmark = pytest.mark.unit
 
+Messages = Sequence[dict[str, str]]
+Renderer = Callable[..., str]
+
+GEMMA_SPECIALS = ("<bos>", "<|turn>", "<turn|>", "<|channel>", "<channel|>")
+CHATML_SPECIALS = ("<|im_start|>", "<|im_end|>", "<think>", "</think>")
+
+
+GEMMA_GENERATION_PROMPT = "<|turn>model\n<|channel>thought\n<channel|>"
+
+
+def render_gemma(messages: Messages, add_generation_prompt: bool = False) -> str:
+    """Render a Gemma-shaped conversation.
+
+    The generation prompt opens the thought channel, the way
+    google/gemma-4-31B-it-qat-q4_0-unquantized does.
+    """
+    turns = "".join(f"<|turn>{m['role']}\n{m['content']}<turn|>\n" for m in messages)
+    tail = GEMMA_GENERATION_PROMPT if add_generation_prompt else ""
+    return f"<bos>{turns}{tail}"
+
+
+def render_chatml(messages: Messages, add_generation_prompt: bool = False) -> str:
+    """Render a ChatML-shaped conversation."""
+    turns = "".join(
+        f"<|im_start|>{m['role']}\n{m['content']}<|im_end|>\n" for m in messages
+    )
+    tail = "<|im_start|>assistant\n" if add_generation_prompt else ""
+    return f"{turns}{tail}"
+
+
+def _chatml_thinking(messages: Messages, answered: str) -> str:
+    """Render ChatML turns whose model turn carries a thought block."""
+    return "".join(
+        f"<|im_start|>{m['role']}\n"
+        + (answered if m["role"] == "assistant" else "")
+        + f"{m['content']}<|im_end|>\n"
+        for m in messages
+    )
+
+
+def render_thinking_chatml(
+    messages: Messages, add_generation_prompt: bool = False
+) -> str:
+    """Render a thinking ChatML template that closes what it opens.
+
+    The generation prompt opens the thought channel, the way
+    nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16 does. The
+    completed turn instead shows the channel opened and closed.
+    """
+    tail = "<|im_start|>assistant\n<think>\n" if add_generation_prompt else ""
+    return _chatml_thinking(messages, "<think></think>") + tail
+
+
+def render_open_channel_chatml(
+    messages: Messages, add_generation_prompt: bool = False
+) -> str:
+    """Render a thinking template that closes the channel in neither form."""
+    tail = "<|im_start|>assistant\n<think>\n" if add_generation_prompt else ""
+    return _chatml_thinking(messages, "<think>") + tail
+
+
+def render_open_generation_chatml(
+    messages: Messages, add_generation_prompt: bool = False
+) -> str:
+    """Render a template whose generation prompt alone opens a channel.
+
+    The completed turn carries no thought block, so it adds no
+    control token the generation prompt lacks. Only the completed
+    turn balances.
+    """
+    tail = "<|im_start|>assistant\n<think>\n" if add_generation_prompt else ""
+    return render_chatml(messages) + tail
+
+
+HARMONY_SPECIALS = (
+    "<|start|>",
+    "<|end|>",
+    "<|message|>",
+    "<|channel|>",
+    "<|return|>",
+)
+
+
+def render_harmony(messages: Messages, add_generation_prompt: bool = False) -> str:
+    """Render a Harmony-shaped conversation.
+
+    Every control token names a different word, so none of them pairs
+    with another. The model turn carries an answer-channel header the
+    generation prompt stops short of.
+    """
+    turns = "".join(
+        f"<|start|>{m['role']}<|channel|>final<|message|>{m['content']}<|end|>"
+        if m["role"] == "assistant"
+        else f"<|start|>{m['role']}<|message|>{m['content']}<|end|>"
+        for m in messages
+    )
+    tail = "<|start|>assistant" if add_generation_prompt else ""
+    return turns + tail
+
+
+def render_open_turn_gemma(
+    messages: Messages, add_generation_prompt: bool = False
+) -> str:
+    """Render a Gemma-shaped template that never closes the model turn."""
+    turns = "".join(f"<|turn>{m['role']}\n{m['content']}" for m in messages)
+    tail = "<|turn>model\n" if add_generation_prompt else ""
+    return f"<bos>{turns}{tail}"
+
+
+def render_bos_chatml(messages: Messages, add_generation_prompt: bool = False) -> str:
+    """Render ChatML turns behind the document's bos token.
+
+    A ChatML fine-tune on a Mistral-shaped vocabulary renders this
+    way: the template writes `{{ bos_token }}` and then ChatML turns.
+    """
+    return "<s>" + render_chatml(messages, add_generation_prompt)
+
+
+class _AddedToken:
+    def __init__(self, content: str, special: bool) -> None:
+        self.content = content
+        self.special = special
+
 
 class _Batch:
     def __init__(self, ids: list[int]) -> None:
@@ -39,33 +168,53 @@ class _Batch:
 
 
 class FakeTokenizer:
-    """Word-level tokenizer with single-id frame markers.
+    """Word-level tokenizer with single-id special tokens.
 
-    Markers encode to one id each. Every other whitespace-separated
-    word gets its own id on first sight. ``special`` controls which
-    marker ids count as special.
+    Special tokens encode to one id each. Every other
+    whitespace-separated word gets its own id on first sight.
     """
 
     def __init__(
         self,
-        markers: tuple[str, ...] = fc.FRAME_MARKERS,
-        special: tuple[str, ...] | None = None,
+        specials: tuple[str, ...] = GEMMA_SPECIALS,
+        render: Renderer | None = render_gemma,
+        added_non_special: tuple[str, ...] = (),
+        plain: tuple[str, ...] = (),
         extra_special_words: tuple[str, ...] = (),
+        bos: str | None = "<bos>",
+        bos_token_id: int | None = -1,
     ) -> None:
-        """Build the vocabulary from markers and extra special words."""
+        """Build the vocabulary from the special tokens and extra words."""
         self._vocab: dict[str, int] = {}
-        for marker in markers:
-            self._vocab[marker] = len(self._vocab)
-        for word in extra_special_words:
-            self._vocab[word] = len(self._vocab)
-        special_tokens = markers if special is None else special
-        self.all_special_ids = [
-            self._vocab[t] for t in (*special_tokens, *extra_special_words)
-        ]
-        self.bos_token_id = self._vocab.get("<bos>")
+        for token in (*specials, *added_non_special, *plain, *extra_special_words):
+            self._vocab[token] = len(self._vocab)
+        self.all_special_tokens = [*specials, *extra_special_words]
+        self.all_special_ids = [self._vocab[t] for t in self.all_special_tokens]
+        # `plain` tokens stay out of the added-token table: the
+        # vocabulary holds them, but they are prose, not controls.
+        self.added_tokens_decoder = {
+            self._vocab[t]: _AddedToken(t, t in self.all_special_tokens)
+            for t in (*specials, *added_non_special, *extra_special_words)
+        }
+        self.bos_token = bos
+        self.eos_token: str | None = None
+        self.bos_token_id = (
+            self._vocab.get(bos or "") if bos_token_id == -1 else bos_token_id
+        )
+        self.chat_template = "{# fake #}" if render is not None else None
+        self._render = render
         self._pattern = re.compile(
             "(" + "|".join(re.escape(m) for m in self._vocab) + ")"
         )
+
+    def apply_chat_template(
+        self,
+        messages: Messages,
+        tokenize: bool = True,
+        add_generation_prompt: bool = False,
+    ) -> str:
+        assert self._render is not None
+        return self._render(messages, add_generation_prompt=add_generation_prompt)
 
     def __call__(self, text: str, add_special_tokens: bool = True) -> _Batch:
         ids: list[int] = []
@@ -84,62 +233,514 @@ class FakeTokenizer:
         return " ".join(rev[i] for i in ids)
 
 
-def test_build_framed_text_prose_survives_in_order() -> None:
-    tok = FakeTokenizer()
-    prose = " ".join(f"w{i}" for i in range(40))
-    framed = fc.build_framed_text(tok, prose, block_tokens=20)
-    ids = tok(framed).input_ids
-    frame_ids = set(tok(fc.FRAME_PREFIX).input_ids) | set(
-        tok(fc.FRAME_SUFFIX).input_ids
-    )
-    prose_ids = tok(prose).input_ids
-    kept = [i for i in ids if i not in frame_ids]
-    assert kept == prose_ids
+def _frame(tok: FakeTokenizer) -> tuple[str, str]:
+    """Build and verify a frame the way ``main`` does."""
+    prefix, suffix = fc.build_frame(tok)
+    markers = fc.frame_markers(tok, prefix, suffix)
+    fc.verify_frame(tok, markers, prefix, suffix)
+    return prefix, suffix
 
 
-def test_build_framed_text_every_block_carries_the_frame() -> None:
+def _framed(tok: FakeTokenizer, prose: str, block_tokens: int) -> str:
+    prefix, suffix = _frame(tok)
+    return fc.build_framed_text(tok, prose, block_tokens, prefix, suffix)
+
+
+# --- the frame comes from the checkpoint's own template ---------------
+
+
+def test_build_frame_gemma_template_yields_gemma_markers() -> None:
     tok = FakeTokenizer()
-    prose = " ".join(f"w{i}" for i in range(40))
-    frame_len = len(tok(fc.FRAME_PREFIX).input_ids) + len(
-        tok(fc.FRAME_SUFFIX).input_ids
+    prefix, suffix = _frame(tok)
+    assert prefix == (
+        "<bos><|turn>user\nContinue the passage.<turn|>\n"
+        "<|turn>model\n<|channel>thought\n<channel|>"
     )
+    assert suffix == "<turn|>\n"
+    assert set(fc.frame_markers(tok, prefix, suffix)) == set(GEMMA_SPECIALS)
+
+
+def test_build_frame_keeps_the_generation_prompt_not_the_turn_header() -> None:
+    """The frame opens the channel the checkpoint opens (#423)."""
+    tok = FakeTokenizer()
+    prefix, _ = _frame(tok)
+    assert prefix.endswith(GEMMA_GENERATION_PROMPT)
+    assert not prefix.endswith("<|turn>assistant\n")
+
+
+def test_build_frame_template_ignoring_generation_prompt_refuses() -> None:
+    """A conversion whose template never reads ``add_generation_prompt``.
+
+    Such a template renders the same text under both settings, so the
+    prefix would be the user turn alone and every block would close a
+    model turn it never opened.
+    """
+
+    def render(messages: Messages, add_generation_prompt: bool = False) -> str:
+        return render_gemma(messages)
+
+    hi = [{"role": "user", "content": "hi"}]
+    tok = FakeTokenizer(render=render)
+    assert tok.apply_chat_template(hi, add_generation_prompt=True) == (
+        tok.apply_chat_template(hi, add_generation_prompt=False)
+    )
+    with pytest.raises(ValueError, match="no model-turn generation prompt"):
+        fc.build_frame(tok)
+
+
+def test_build_frame_chatml_template_yields_chatml_markers() -> None:
+    tok = FakeTokenizer(specials=CHATML_SPECIALS, render=render_chatml, bos=None)
+    prefix, suffix = _frame(tok)
+    assert prefix == (
+        "<|im_start|>user\nContinue the passage.<|im_end|>\n<|im_start|>assistant\n"
+    )
+    assert suffix == "<|im_end|>\n"
+    assert "<|turn>" not in prefix
+
+
+def test_frame_markers_lists_only_the_markers_the_frame_uses() -> None:
+    tok = FakeTokenizer(specials=CHATML_SPECIALS, render=render_chatml, bos=None)
+    prefix, suffix = fc.build_frame(tok)
+    markers = fc.frame_markers(tok, prefix, suffix)
+    # `<think>` and `</think>` belong to the vocabulary, not to this frame.
+    assert set(markers) == {"<|im_start|>", "<|im_end|>"}
+
+
+def test_build_frame_thinking_template_takes_the_closed_model_turn() -> None:
+    """The completed render closes the thought the generation prompt opens.
+
+    Nemotron 3.5 Lightning 30B-A3B renders exactly this disagreement:
+    its generation prompt opens the thought channel and its completed
+    turn shows that channel opened and closed. The block must price
+    the prose as the answer, not as reasoning in a channel nothing
+    closes.
+    """
+    tok = FakeTokenizer(
+        specials=CHATML_SPECIALS, render=render_thinking_chatml, bos=None
+    )
+    generation = tok.apply_chat_template(
+        [{"role": "user", "content": fc.FRAME_USER_TURN}], add_generation_prompt=True
+    )
+    prefix, suffix = _frame(tok)
+    assert generation.endswith("<think>\n")
+    assert prefix != generation
+    assert prefix.endswith("<think></think>")
+    block = fc.build_framed_text(tok, "w0 w1 w2 w3", 64, prefix, suffix)
+    assert block.count("<think>") == block.count("</think>")
+
+
+def test_build_frame_closed_thought_keeps_the_generation_prompt() -> None:
+    """Gemma's generation prompt carries an empty, closed thought block.
+
+    The completed render writes no control token the generation
+    prompt omits, and the generation prompt closes every channel it
+    opens. Both rules therefore keep it. That is the frame behind the
+    published #423 figure, so it stays.
+    """
+    tok = FakeTokenizer()
+    generation = tok.apply_chat_template(
+        [{"role": "user", "content": fc.FRAME_USER_TURN}], add_generation_prompt=True
+    )
+    prefix, suffix = _frame(tok)
+    assert prefix == generation
+    assert prefix.endswith(GEMMA_GENERATION_PROMPT)
+    assert fc.unbalanced_pair(tok, prefix, suffix) is None
+
+
+def test_build_frame_agreeing_renders_keep_the_generation_prompt() -> None:
+    """Qwen3-Coder renders the same model-turn opening either way."""
+    tok = FakeTokenizer(specials=CHATML_SPECIALS, render=render_chatml, bos=None)
+    user = [{"role": "user", "content": fc.FRAME_USER_TURN}]
+    generation = tok.apply_chat_template(user, add_generation_prompt=True)
+    answered, _, _ = tok.apply_chat_template(
+        [*user, {"role": "assistant", "content": fc.PROSE_SLOT}]
+    ).partition(fc.PROSE_SLOT)
+    prefix, _ = _frame(tok)
+    assert generation == answered
+    assert prefix == generation
+
+
+def test_verify_frame_channel_pair_holding_the_eos_token_still_counts() -> None:
+    """An eos token can also close a real channel, so it stays paired.
+
+    An instruct checkpoint often names its turn close as eos. Dropping
+    every pair that holds the eos token would stop counting the turn
+    itself, so a template that never closes the model turn would pass.
+    """
+    tok = FakeTokenizer(render=render_open_turn_gemma)
+    tok.eos_token = "<turn|>"  # noqa: S105 - a turn marker, not a secret
+    assert ("<turn|>", "<|turn>") in fc.control_pairs(tok)
+
+    prefix, suffix = fc.build_frame(tok)
+    markers = fc.frame_markers(tok, prefix, suffix)
+
+    assert "<turn|>" not in prefix + suffix
+    with pytest.raises(ValueError, match="leaves that channel unbalanced"):
+        fc.verify_frame(tok, markers, prefix, suffix)
+
+
+def test_build_frame_bos_without_eos_frames_rather_than_refuses() -> None:
+    """A bos token brackets the document, so it opens no channel.
+
+    A ChatML fine-tune on a Mistral-shaped vocabulary carries `<s>`
+    and `</s>`, which name one word with different delimiters. Every
+    block legitimately writes `<s>` once and `</s>` never, so pairing
+    them would refuse a frame that is sound. This checkpoint names a
+    different token as eos, so the bos token alone must break the
+    pair.
+    """
+    tok = FakeTokenizer(
+        specials=("<s>", "</s>", "<|im_start|>", "<|im_end|>"),
+        render=render_bos_chatml,
+        bos="<s>",
+    )
+    tok.eos_token = "<|im_end|>"  # noqa: S105 - a turn marker, not a secret
+    assert fc.control_core("<s>") == fc.control_core("</s>")
+    assert fc.control_pairs(tok) == ()
+
+    prefix, suffix = _frame(tok)
+
+    assert prefix.startswith("<s>")
+    assert prefix.endswith("<|im_start|>assistant\n")
+    frame_len = len(fc.encode(tok, prefix)) + len(fc.encode(tok, suffix))
+    framed = fc.build_framed_text(
+        tok, " ".join(f"w{i}" for i in range(12)), frame_len + 6, prefix, suffix
+    )
+    blocks = framed.count(prefix)
+    assert blocks == 2
+    assert framed.count("<s>") == blocks
+    assert "</s>" not in framed
+
+
+def test_build_frame_unpaired_vocabulary_takes_the_answer_channel_header() -> None:
+    """No control token pairs, so the balance test decides nothing.
+
+    A Harmony-shaped vocabulary spells each control token one way, so
+    the block carries no open/close pair to count. The completed turn
+    still writes an answer-channel header the generation prompt
+    omits, and the prose must sit after that header.
+    """
+    tok = FakeTokenizer(specials=HARMONY_SPECIALS, render=render_harmony, bos=None)
+    user = [{"role": "user", "content": fc.FRAME_USER_TURN}]
+    generation = tok.apply_chat_template(user, add_generation_prompt=True)
+    answered, _, expected_suffix = tok.apply_chat_template(
+        [*user, {"role": "assistant", "content": fc.PROSE_SLOT}]
+    ).partition(fc.PROSE_SLOT)
+    assert fc.control_pairs(tok) == ()
+    assert fc.unbalanced_pair(tok, generation, expected_suffix) is None
+    assert generation.endswith("<|start|>assistant")
+
+    prefix, suffix = _frame(tok)
+
+    assert prefix == answered
+    assert prefix.endswith("<|start|>assistant<|channel|>final<|message|>")
+    framed = fc.build_framed_text(
+        tok, " ".join(f"w{i}" for i in range(12)), 24, prefix, suffix
+    )
+    blocks = framed.count(prefix)
+    assert blocks > 1
+    assert framed.count("<|channel|>final<|message|>") == blocks
+
+
+def test_build_frame_open_generation_prompt_takes_the_completed_turn() -> None:
+    """The completed turn balances, so the checkpoint is framed, not refused.
+
+    The completed render writes no control token the generation
+    prompt omits, so the header rule keeps the generation prompt. The
+    generation prompt leaves a channel open, so the fallback takes
+    the completed turn instead of refusing a checkpoint that frames
+    cleanly.
+    """
+    tok = FakeTokenizer(
+        specials=CHATML_SPECIALS, render=render_open_generation_chatml, bos=None
+    )
+    user = [{"role": "user", "content": fc.FRAME_USER_TURN}]
+    generation = tok.apply_chat_template(user, add_generation_prompt=True)
+    answered, _, expected_suffix = tok.apply_chat_template(
+        [*user, {"role": "assistant", "content": fc.PROSE_SLOT}]
+    ).partition(fc.PROSE_SLOT)
+    assert set(fc.frame_markers(tok, answered, "")) <= set(
+        fc.frame_markers(tok, generation, "")
+    )
+    assert fc.unbalanced_pair(tok, generation, expected_suffix) is not None
+
+    prefix, suffix = _frame(tok)
+
+    assert prefix == answered
+    assert fc.unbalanced_pair(tok, prefix, suffix) is None
+    block = fc.build_framed_text(tok, "w0 w1 w2 w3", 64, prefix, suffix)
+    assert block.count("<think>") == block.count("</think>") == 0
+
+
+def test_verify_frame_channel_open_in_both_renders_refuses() -> None:
+    """Neither render closes the thought, so no prefix choice saves it."""
+    tok = FakeTokenizer(
+        specials=CHATML_SPECIALS, render=render_open_channel_chatml, bos=None
+    )
+    prefix, suffix = fc.build_frame(tok)
+    markers = fc.frame_markers(tok, prefix, suffix)
+    assert "<think>" in prefix
+    assert "</think>" not in prefix + suffix
+    with pytest.raises(ValueError, match="leaves that channel unbalanced") as caught:
+        fc.verify_frame(tok, markers, prefix, suffix)
+    message = str(caught.value)
+    assert message.index("'<think>'") < message.index("'</think>'")
+    assert fc.unbalanced_pair(tok, prefix, suffix) == ("<think>", "</think>", 1, 0)
+
+
+def test_build_frame_no_chat_template_refuses_with_the_cause() -> None:
+    tok = FakeTokenizer(render=None)
+    with pytest.raises(ValueError, match="carries no chat template"):
+        fc.build_frame(tok)
+
+
+def test_build_frame_template_drops_the_answer_refuses() -> None:
+    tok = FakeTokenizer(
+        render=lambda messages, add_generation_prompt=False: (
+            "<bos><|turn>user\n<turn|>\n"
+            + ("<|turn>model\n" if add_generation_prompt else "")
+        )
+    )
+    with pytest.raises(ValueError, match="dropped the assistant answer"):
+        fc.build_frame(tok)
+
+
+def test_build_frame_template_raises_refuses() -> None:
+    def explode(messages: Messages, add_generation_prompt: bool = False) -> str:
+        raise RuntimeError("unknown role")
+
+    tok = FakeTokenizer(render=explode)
+    with pytest.raises(ValueError, match="did not render"):
+        fc.build_frame(tok)
+
+
+# --- the one-special-id rule still holds ------------------------------
+
+
+def test_verify_frame_marker_typed_as_prose_raises() -> None:
+    """A conversion that ships a marker as a normal token (#423)."""
+    tok = FakeTokenizer(
+        specials=tuple(m for m in GEMMA_SPECIALS if m != "<|turn>"),
+        plain=("<|turn>",),
+    )
+    prefix, suffix = fc.build_frame(tok)
+    markers = (*fc.frame_markers(tok, prefix, suffix), "<|turn>")
+    with pytest.raises(ValueError, match="not one control id"):
+        fc.verify_frame(tok, markers, prefix, suffix)
+
+
+def test_verify_frame_added_token_absent_from_special_ids_passes() -> None:
+    """Nemotron 30B-A3B ships `<|im_start|>` outside `all_special_ids`."""
+    tok = FakeTokenizer(
+        specials=("<|im_end|>",),
+        added_non_special=("<|im_start|>", "<think>", "</think>"),
+        render=render_chatml,
+        bos=None,
+    )
+    prefix, suffix = fc.build_frame(tok)
+    markers = fc.frame_markers(tok, prefix, suffix)
+    assert set(markers) == {"<|im_start|>", "<|im_end|>"}
+    fc.verify_frame(tok, markers, prefix, suffix)
+
+
+def test_verify_frame_template_marker_missing_from_vocabulary_raises() -> None:
+    """A re-upload whose ChatML template outlived its added-token table.
+
+    Discovery never returns ``<|im_start|>`` here, so only the residue
+    check stands between this checkpoint and a calibration file whose
+    turn headers are spelled out as prose.
+    """
+    tok = FakeTokenizer(specials=("<|im_end|>",), render=render_chatml, bos=None)
+    prefix, suffix = fc.build_frame(tok)
+    markers = fc.frame_markers(tok, prefix, suffix)
+    assert "<|im_start|>" in prefix
+    assert "<|im_start|>" not in markers
+    with pytest.raises(ValueError, match=r"reads as prose rather than"):
+        fc.verify_frame(tok, markers, prefix, suffix)
+
+
+def test_verify_frame_healthy_chatml_frame_leaves_no_residue() -> None:
+    """The same shape, with the added-token table intact, passes."""
+    tok = FakeTokenizer(
+        specials=("<|im_end|>",),
+        added_non_special=("<|im_start|>",),
+        render=render_chatml,
+        bos=None,
+    )
+    prefix, suffix = fc.build_frame(tok)
+    markers = fc.frame_markers(tok, prefix, suffix)
+    assert fc.unparsed_markers(tok, markers, prefix, suffix) == []
+    fc.verify_frame(tok, markers, prefix, suffix)
+
+
+def test_verify_frame_marker_of_several_tokens_raises() -> None:
+    """Property 1: a frame marker must encode to exactly one token."""
+    tok = FakeTokenizer()
+    prefix, suffix = fc.build_frame(tok)
+    split_marker = "<|turn> <turn|>"
+    assert len(fc.encode(tok, split_marker)) > 1
+    markers = (*fc.frame_markers(tok, prefix, suffix), split_marker)
+    with pytest.raises(ValueError, match="not one control id"):
+        fc.verify_frame(tok, markers, prefix, suffix)
+
+
+def test_verify_frame_marker_of_one_unregistered_id_raises() -> None:
+    """Property 2: that one token must be a control the checkpoint registers."""
+    tok = FakeTokenizer(plain=("<|thought|>",))
+    prefix, suffix = fc.build_frame(tok)
+    assert len(fc.encode(tok, "<|thought|>")) == 1
+    assert "<|thought|>" not in fc.control_tokens(tok)
+    markers = (*fc.frame_markers(tok, prefix, suffix), "<|thought|>")
+    with pytest.raises(ValueError, match="not one control id"):
+        fc.verify_frame(tok, markers, prefix, suffix)
+
+
+def test_verify_frame_marker_absent_from_vocabulary_raises() -> None:
+    tok = FakeTokenizer(specials=tuple(m for m in GEMMA_SPECIALS if m != "<bos>"))
+    prefix, suffix = fc.build_frame(tok)
+    markers = (*fc.frame_markers(tok, prefix, suffix), "<bos>")
+    with pytest.raises(ValueError, match="not one control id"):
+        fc.verify_frame(tok, markers, prefix, suffix)
+
+
+def test_verify_frame_bos_id_disagreement_raises() -> None:
+    tok = FakeTokenizer(bos_token_id=999)
+    prefix, suffix = fc.build_frame(tok)
+    markers = fc.frame_markers(tok, prefix, suffix)
+    with pytest.raises(ValueError, match="bos_token_id is 999"):
+        fc.verify_frame(tok, markers, prefix, suffix)
+
+
+def test_verify_frame_without_special_markers_raises() -> None:
+    tok = FakeTokenizer(
+        render=lambda messages, add_generation_prompt=False: (
+            f"user: {messages[-1]['content']}"
+            + ("\nmodel: " if add_generation_prompt else "")
+        )
+    )
+    prefix, suffix = fc.build_frame(tok)
+    with pytest.raises(ValueError, match="frames nothing"):
+        fc.verify_frame(tok, fc.frame_markers(tok, prefix, suffix), prefix, suffix)
+
+
+# --- block assembly ---------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("specials", "render", "bos"),
+    [
+        (GEMMA_SPECIALS, render_gemma, "<bos>"),
+        (CHATML_SPECIALS, render_chatml, None),
+    ],
+    ids=["gemma", "chatml"],
+)
+def test_build_framed_text_prose_survives_in_order(
+    specials: tuple[str, ...],
+    render: Renderer,
+    bos: str | None,
+) -> None:
+    tok = FakeTokenizer(specials=specials, render=render, bos=bos)
+    prefix, suffix = _frame(tok)
+    prose = " ".join(f"w{i}" for i in range(40))
+    framed = fc.build_framed_text(tok, prose, 20, prefix, suffix)
+    frame_ids = set(tok(prefix).input_ids) | set(tok(suffix).input_ids)
+    kept = [i for i in tok(framed).input_ids if i not in frame_ids]
+    assert kept == tok(prose).input_ids
+
+
+@pytest.mark.parametrize(
+    ("specials", "render", "bos"),
+    [
+        (GEMMA_SPECIALS, render_gemma, "<bos>"),
+        (CHATML_SPECIALS, render_chatml, None),
+    ],
+    ids=["gemma", "chatml"],
+)
+def test_build_framed_text_every_block_carries_the_frame(
+    specials: tuple[str, ...],
+    render: Renderer,
+    bos: str | None,
+) -> None:
+    tok = FakeTokenizer(specials=specials, render=render, bos=bos)
+    prefix, suffix = _frame(tok)
+    frame_len = len(tok(prefix).input_ids) + len(tok(suffix).input_ids)
     chunk_len = 20 - frame_len
-    framed = fc.build_framed_text(tok, prose, block_tokens=20)
+    framed = fc.build_framed_text(
+        tok, " ".join(f"w{i}" for i in range(40)), 20, *_frame(tok)
+    )
     expected_blocks = -(-40 // chunk_len)
-    assert framed.count(fc.FRAME_PREFIX) == expected_blocks
+    assert framed.count(prefix) == expected_blocks
     # The user turn inside the prefix also closes with the suffix text.
-    assert framed.count(fc.FRAME_SUFFIX) == 2 * expected_blocks
-    assert framed.endswith(fc.FRAME_SUFFIX)
-
-
-def test_build_framed_text_marker_not_special_raises() -> None:
-    tok = FakeTokenizer(special=tuple(m for m in fc.FRAME_MARKERS if m != "<|turn>"))
-    with pytest.raises(ValueError, match="not one special id"):
-        fc.build_framed_text(tok, "some prose", block_tokens=64)
-
-
-def test_build_framed_text_marker_multi_id_raises() -> None:
-    tok = FakeTokenizer(markers=tuple(m for m in fc.FRAME_MARKERS if m != "<|channel>"))
-    with pytest.raises(ValueError, match="not one special id"):
-        fc.build_framed_text(tok, "some prose", block_tokens=64)
+    assert framed.count(suffix) == 2 * expected_blocks
+    assert framed.endswith(suffix)
 
 
 def test_build_framed_text_empty_prose_raises() -> None:
     tok = FakeTokenizer()
     with pytest.raises(ValueError, match="prose is empty"):
-        fc.build_framed_text(tok, "   ", block_tokens=64)
+        _framed(tok, "   ", 64)
 
 
 def test_build_framed_text_prose_with_special_id_raises() -> None:
     tok = FakeTokenizer(extra_special_words=("<eos>",))
-    with pytest.raises(ValueError, match="special ids"):
-        fc.build_framed_text(tok, "prose then <eos> more", block_tokens=64)
+    with pytest.raises(ValueError, match="control ids"):
+        _framed(tok, "prose then <eos> more", 64)
+
+
+def test_build_framed_text_prose_with_added_non_special_id_raises() -> None:
+    """Nemotron 30B-A3B keeps `<|im_start|>` out of `all_special_ids` (#423)."""
+    tok = FakeTokenizer(
+        specials=("<|im_end|>",),
+        added_non_special=("<|im_start|>", "<think>", "</think>"),
+        render=render_chatml,
+        bos=None,
+    )
+    assert fc.encode(tok, "<|im_start|>")[0] not in tok.all_special_ids
+    with pytest.raises(ValueError, match="control ids"):
+        _framed(tok, "prose then <|im_start|> more", 64)
 
 
 def test_build_framed_text_frame_fills_block_raises() -> None:
     tok = FakeTokenizer()
-    frame_len = len(tok(fc.FRAME_PREFIX).input_ids) + len(
-        tok(fc.FRAME_SUFFIX).input_ids
-    )
+    prefix, suffix = _frame(tok)
+    frame_len = len(tok(prefix).input_ids) + len(tok(suffix).input_ids)
     with pytest.raises(ValueError, match="leaves no room"):
-        fc.build_framed_text(tok, "some prose", block_tokens=frame_len + 1)
+        _framed(tok, "some prose", frame_len + 1)
+
+
+# --- the re-encode check ----------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("specials", "render", "bos"),
+    [
+        (GEMMA_SPECIALS, render_gemma, "<bos>"),
+        (CHATML_SPECIALS, render_chatml, None),
+    ],
+    ids=["gemma", "chatml"],
+)
+def test_check_reencode_clean_frame_reports_no_problem(
+    specials: tuple[str, ...],
+    render: Renderer,
+    bos: str | None,
+) -> None:
+    tok = FakeTokenizer(specials=specials, render=render, bos=bos)
+    prefix, suffix = _frame(tok)
+    markers = fc.frame_markers(tok, prefix, suffix)
+    framed = fc.build_framed_text(
+        tok, " ".join(f"w{i}" for i in range(40)), 20, prefix, suffix
+    )
+    assert fc.check_reencode(tok, framed, markers, tok(framed).input_ids) is None
+
+
+def test_check_reencode_missing_marker_id_reports_the_marker() -> None:
+    tok = FakeTokenizer()
+    prefix, suffix = _frame(tok)
+    markers = fc.frame_markers(tok, prefix, suffix)
+    framed = fc.build_framed_text(
+        tok, " ".join(f"w{i}" for i in range(40)), 20, prefix, suffix
+    )
+    ids = [i for i in tok(framed).input_ids if i != tok("<bos>").input_ids[0]]
+    problem = fc.check_reencode(tok, framed, markers, ids)
+    assert problem is not None
+    assert "controls did not parse" in problem

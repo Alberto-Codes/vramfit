@@ -303,14 +303,87 @@ uv run python scripts/frame_calibration.py \
   --model ./model --text calibration.txt --out calibration-framed.txt
 ```
 
-The script wraps ~512-token blocks in the checkpoint's own chat
-template. It refuses a vocabulary where a frame marker is not one
-special id, and refuses prose that itself encodes to special ids.
+The script reads the frame from the checkpoint's own chat
+template, then wraps ~512-token blocks in it. It hard-codes no
+family's markers, so each checkpoint gets the frame that checkpoint
+defines.
+
+The template renders the model turn two ways. The script takes the
+completed turn when that render writes a control token the generation
+prompt omits. Such a token is a header the template puts in front of
+an answer. The script otherwise keeps the generation prompt. It falls
+back to the other render when the one it chose leaves a channel open.
+The prose then lands where the template puts an answer. The script
+refuses a checkpoint when neither render closes what it opens.
+
+Each row below is the `frame markers:` line the script printed for
+that checkpoint's cached tokenizer on 2026-09-11, copied in the order
+it printed. Re-measure a row before you trust it against a different
+revision. The cells escape each `|` as `\|`, which the renderer needs
+inside a table. The markers themselves carry no backslash.
+
+| Checkpoint | Frame markers, as printed |
+| --- | --- |
+| Gemma 4 31B IT-QAT | `<channel\|>, <\|channel>, <turn\|>, <\|turn>, <bos>` |
+| Nemotron 3.5 Lightning 30B-A3B | `<\|im_start\|>, <\|im_end\|>, </think>, <think>` |
+| Qwen3-Coder-30B-A3B-Instruct | `<\|im_start\|>, <\|im_end\|>` |
+
+The script prints the frame it built. Rule 1 below says where to
+record that text.
+
+The script refuses rather than guesses. It cannot frame a checkpoint
+that carries no chat template — no `chat_template.jinja`, and no
+`chat_template` entry in `tokenizer_config.json`. A base checkpoint
+is the usual case. The script names the checkpoint and the missing
+template, writes no file, and exits 1. Do not work around that
+refusal with a frame borrowed from another checkpoint: a guessed
+frame prices every cell against a distribution the model never
+serves.
+
+It also refuses a vocabulary where a frame marker is not one control
+id, and refuses prose that itself encodes to a control id. The
+[glossary](../reference/glossary.md) defines a control token and its
+control id. Nemotron 3.5 Lightning 30B-A3B shows why the script reads
+the added-token table too: it ships `<|im_start|>` as an added special
+token that its `all_special_ids` omits, and ships `<think>` and
+`</think>` as added tokens flagged non-special. That checkpoint's
+model turn opens with `<think>`, so `all_special_ids` alone refuses
+its own frame.
+
+It also refuses a frame that writes a marker the vocabulary lost. A
+re-upload can keep a chat template that names `<|im_start|>` after
+its added-token table drops it. The tokenizer then reads that turn
+header as prose, and the frame no longer frames anything. The script
+removes the control tokens the tokenizer emitted from the frame text,
+then refuses whatever control-shaped text remains.
+
+That check reaches one class of loss, not every class. It builds the
+shape it looks for from the delimiters of the control tokens the
+checkpoint still carries. A lost marker whose delimiters no surviving
+control token uses stays invisible. A Mistral-family re-upload that
+drops `[INST]` and `[/INST]` while keeping `<s>` is the case to
+watch: the surviving tokens spell only `<`…`>`, so the script never
+looks for `[`…`]`. Read the printed frame before you trust a scan.
+
+The channel check has its own reach. It counts the channels the
+checkpoint's own vocabulary spells as a matched open/close pair —
+two control tokens naming one word with different delimiters, as
+`<think>` and `</think>` do. A vocabulary that spells each control
+token once carries no such pair, so the check counts nothing. A turn
+header whose two halves name different words, as `<|im_start|>` and
+`<|im_end|>` do, is not counted either. The tokenizer's bos token
+brackets a document rather than a channel, so the script drops any
+pair holding it. The eos token stays paired, because a checkpoint
+often names a real channel close as eos. Read the printed frame here
+too.
+
 Then pass the framed file as `--calibration`. Four rules keep the
 numbers comparable:
 
 1. The frame holds constant across the reference, every arm, and
-   any baseline. Record the frame text beside the map.
+   any baseline. Record the frame text the script prints beside the
+   map. A template that renders a date or a tool list produces a
+   frame that moves between runs — pin the text you used.
 2. Instruments slice a raw token stream, so windows cross block
    boundaries. State that convention beside every published number.
 3. `llama-imatrix` needs `--parse-special` to see the frame.
