@@ -4,8 +4,9 @@ A channel-locked instruct checkpoint prices raw prose at degenerate
 perplexity and the same prose inside its serving frame at sane values
 (vramfit issue #423). This script builds the framed calibration file
 for such a target. It wraps the prose in repeated blocks. Each block
-renders one complete conversation: a fixed user turn, then the model
-turn's opening, then a prose chunk as the answer, then the turn close.
+renders one complete conversation: a fixed user turn, then the
+model-turn generation prompt, then a prose chunk as the answer, then
+the turn close.
 
 The script reads the frame from the checkpoint's own chat template, so
 each checkpoint gets the frame that checkpoint defines. A checkpoint
@@ -18,7 +19,7 @@ instruments slice a raw token stream, so windows cross block
 boundaries. State that convention beside every published number.
 
 The script verifies its output. It checks each frame marker encodes
-to one special id, re-encodes the framed file, and reports block
+to one control id, re-encodes the framed file, and reports block
 count and token totals.
 
 Examples:
@@ -52,8 +53,10 @@ def encode(tokenizer: Any, text: str) -> list[int]:
 def build_frame(tokenizer: Any) -> tuple[str, str]:
     """Render the checkpoint's own model-turn frame.
 
-    The frame comes from the checkpoint's chat template, never from a
-    table of per-family marker strings.
+    The prefix is the checkpoint's user turn plus its model-turn
+    generation prompt. The suffix is what the template writes after
+    the answer. Both come from the chat template, never from a table
+    of per-family marker strings.
 
     Args:
         tokenizer: The target model's tokenizer.
@@ -64,7 +67,8 @@ def build_frame(tokenizer: Any) -> tuple[str, str]:
 
     Raises:
         ValueError: If the checkpoint carries no chat template, the
-            template fails to render, or the render drops the answer.
+            template fails to render, the template writes no
+            generation prompt, or the render drops the answer.
     """
     if not getattr(tokenizer, "chat_template", None):
         raise ValueError(
@@ -72,15 +76,20 @@ def build_frame(tokenizer: Any) -> tuple[str, str]:
             " A framed scan needs chat_template.jinja, or a chat_template"
             " entry in tokenizer_config.json"
         )
-    messages = [
-        {"role": "user", "content": FRAME_USER_TURN},
-        {"role": "assistant", "content": PROSE_SLOT},
-    ]
+    user_turn = {"role": "user", "content": FRAME_USER_TURN}
+    answer_turn = {"role": "assistant", "content": PROSE_SLOT}
     try:
-        rendered = tokenizer.apply_chat_template(messages, tokenize=False)
+        prefix = tokenizer.apply_chat_template(
+            [user_turn], tokenize=False, add_generation_prompt=True
+        )
+        rendered = tokenizer.apply_chat_template(
+            [user_turn, answer_turn], tokenize=False
+        )
     except Exception as err:  # any template failure refuses the checkpoint
         raise ValueError(f"the chat template did not render: {err}") from err
-    prefix, found, suffix = rendered.partition(PROSE_SLOT)
+    if not prefix:
+        raise ValueError("the chat template wrote no model-turn generation prompt")
+    _, found, suffix = rendered.partition(PROSE_SLOT)
     if not found:
         raise ValueError("the chat template dropped the assistant answer")
     return prefix, suffix
@@ -113,7 +122,11 @@ def control_tokens(tokenizer: Any) -> dict[str, int]:
 
 
 def frame_markers(tokenizer: Any, prefix: str, suffix: str) -> tuple[str, ...]:
-    """List the control tokens the frame uses.
+    """List the control tokens the frame emits.
+
+    The tokenizer decides. Encoding the frame and reading back the
+    control ids reports what the frame emits, where a text scan would
+    also report a vocabulary token the frame only contains.
 
     Args:
         tokenizer: The target model's tokenizer.
@@ -121,12 +134,13 @@ def frame_markers(tokenizer: Any, prefix: str, suffix: str) -> tuple[str, ...]:
         suffix: The frame suffix.
 
     Returns:
-        Each control token the frame carries, longest first, without
+        Each control token the frame emits, longest first, without
         duplicates. Longest first so a marker that contains a shorter
         marker matches ahead of it.
     """
-    frame = prefix + suffix
-    found = {t for t in control_tokens(tokenizer) if t in frame}
+    by_id = {i: t for t, i in control_tokens(tokenizer).items()}
+    ids = encode(tokenizer, prefix) + encode(tokenizer, suffix)
+    found = {by_id[i] for i in ids if i in by_id}
     return tuple(sorted(found, key=lambda t: (-len(t), t)))
 
 
@@ -180,7 +194,7 @@ def build_framed_text(
         The framed calibration text.
 
     Raises:
-        ValueError: If the prose encodes to a special id, the prose is
+        ValueError: If the prose encodes to a control id, the prose is
             empty, or the frame alone reaches ``block_tokens``.
     """
     frame_len = len(encode(tokenizer, prefix)) + len(encode(tokenizer, suffix))
@@ -190,9 +204,9 @@ def build_framed_text(
     prose_ids = encode(tokenizer, prose)
     if not prose_ids:
         raise ValueError("prose is empty")
-    stray = sorted(set(prose_ids) & set(tokenizer.all_special_ids))
+    stray = sorted(set(prose_ids) & set(control_tokens(tokenizer).values()))
     if stray:
-        raise ValueError(f"prose encodes to special ids {stray}")
+        raise ValueError(f"prose encodes to control ids {stray}")
     blocks = []
     for start in range(0, len(prose_ids), chunk_len):
         chunk = tokenizer.decode(prose_ids[start : start + chunk_len])

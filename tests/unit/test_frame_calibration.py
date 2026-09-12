@@ -6,8 +6,9 @@ tests drive it with fakes of three shapes: a Gemma-shaped template, a
 ChatML-shaped template, and a checkpoint with no template. The real
 tokenizer needs the scan extra, so each fake models the parts the
 script reads: plain encode, decode, ``all_special_tokens``,
-``all_special_ids``, ``bos_token``, ``bos_token_id``,
-``chat_template``, and ``apply_chat_template``.
+``all_special_ids``, ``added_tokens_decoder``, ``bos_token``,
+``bos_token_id``, ``chat_template``, and ``apply_chat_template``
+under both ``add_generation_prompt`` settings.
 """
 
 from __future__ import annotations
@@ -38,22 +39,33 @@ fc = _load_script()
 pytestmark = pytest.mark.unit
 
 Messages = Sequence[dict[str, str]]
+Renderer = Callable[..., str]
 
 GEMMA_SPECIALS = ("<bos>", "<|turn>", "<turn|>", "<|channel>", "<channel|>")
 CHATML_SPECIALS = ("<|im_start|>", "<|im_end|>", "<think>", "</think>")
 
 
-def render_gemma(messages: Messages) -> str:
-    """Render a Gemma-shaped conversation."""
+GEMMA_GENERATION_PROMPT = "<|turn>model\n<|channel>thought\n<channel|>"
+
+
+def render_gemma(messages: Messages, add_generation_prompt: bool = False) -> str:
+    """Render a Gemma-shaped conversation.
+
+    The generation prompt opens the thought channel, the way
+    google/gemma-4-31B-it-qat-q4_0-unquantized does.
+    """
     turns = "".join(f"<|turn>{m['role']}\n{m['content']}<turn|>\n" for m in messages)
-    return f"<bos>{turns}"
+    tail = GEMMA_GENERATION_PROMPT if add_generation_prompt else ""
+    return f"<bos>{turns}{tail}"
 
 
-def render_chatml(messages: Messages) -> str:
+def render_chatml(messages: Messages, add_generation_prompt: bool = False) -> str:
     """Render a ChatML-shaped conversation."""
-    return "".join(
+    turns = "".join(
         f"<|im_start|>{m['role']}\n{m['content']}<|im_end|>\n" for m in messages
     )
+    tail = "<|im_start|>assistant\n" if add_generation_prompt else ""
+    return f"{turns}{tail}"
 
 
 class _AddedToken:
@@ -77,7 +89,7 @@ class FakeTokenizer:
     def __init__(
         self,
         specials: tuple[str, ...] = GEMMA_SPECIALS,
-        render: Callable[[Messages], str] | None = render_gemma,
+        render: Renderer | None = render_gemma,
         added_non_special: tuple[str, ...] = (),
         plain: tuple[str, ...] = (),
         extra_special_words: tuple[str, ...] = (),
@@ -106,9 +118,14 @@ class FakeTokenizer:
             "(" + "|".join(re.escape(m) for m in self._vocab) + ")"
         )
 
-    def apply_chat_template(self, messages: Messages, tokenize: bool = True) -> str:
+    def apply_chat_template(
+        self,
+        messages: Messages,
+        tokenize: bool = True,
+        add_generation_prompt: bool = False,
+    ) -> str:
         assert self._render is not None
-        return self._render(messages)
+        return self._render(messages, add_generation_prompt=add_generation_prompt)
 
     def __call__(self, text: str, add_special_tokens: bool = True) -> _Batch:
         ids: list[int] = []
@@ -144,11 +161,32 @@ def _framed(tok: FakeTokenizer, prose: str, block_tokens: int) -> str:
 
 
 def test_build_frame_gemma_template_yields_gemma_markers() -> None:
-    prefix, suffix = _frame(FakeTokenizer())
+    tok = FakeTokenizer()
+    prefix, suffix = _frame(tok)
     assert prefix == (
-        "<bos><|turn>user\nContinue the passage.<turn|>\n<|turn>assistant\n"
+        "<bos><|turn>user\nContinue the passage.<turn|>\n"
+        "<|turn>model\n<|channel>thought\n<channel|>"
     )
     assert suffix == "<turn|>\n"
+    assert set(fc.frame_markers(tok, prefix, suffix)) == set(GEMMA_SPECIALS)
+
+
+def test_build_frame_keeps_the_generation_prompt_not_the_turn_header() -> None:
+    """The frame opens the channel the checkpoint opens (#423)."""
+    tok = FakeTokenizer()
+    prefix, _ = _frame(tok)
+    assert prefix.endswith(GEMMA_GENERATION_PROMPT)
+    assert not prefix.endswith("<|turn>assistant\n")
+
+
+def test_build_frame_template_without_generation_prompt_refuses() -> None:
+    tok = FakeTokenizer(
+        render=lambda messages, add_generation_prompt=False: (
+            "" if add_generation_prompt else f"<bos>{messages[-1]['content']}<turn|>\n"
+        )
+    )
+    with pytest.raises(ValueError, match="no model-turn generation prompt"):
+        fc.build_frame(tok)
 
 
 def test_build_frame_chatml_template_yields_chatml_markers() -> None:
@@ -176,13 +214,17 @@ def test_build_frame_no_chat_template_refuses_with_the_cause() -> None:
 
 
 def test_build_frame_template_drops_the_answer_refuses() -> None:
-    tok = FakeTokenizer(render=lambda messages: "<bos><|turn>user\n<turn|>\n")
+    tok = FakeTokenizer(
+        render=lambda messages, add_generation_prompt=False: (
+            "<bos><|turn>user\n<turn|>\n"
+        )
+    )
     with pytest.raises(ValueError, match="dropped the assistant answer"):
         fc.build_frame(tok)
 
 
 def test_build_frame_template_raises_refuses() -> None:
-    def explode(messages: Messages) -> str:
+    def explode(messages: Messages, add_generation_prompt: bool = False) -> str:
         raise RuntimeError("unknown role")
 
     tok = FakeTokenizer(render=explode)
@@ -219,6 +261,28 @@ def test_verify_frame_added_token_absent_from_special_ids_passes() -> None:
     fc.verify_frame(tok, markers, prefix)
 
 
+def test_verify_frame_marker_of_several_tokens_raises() -> None:
+    """Property 1: a frame marker must encode to exactly one token."""
+    tok = FakeTokenizer()
+    prefix, suffix = fc.build_frame(tok)
+    split_marker = "<|turn> <turn|>"
+    assert len(fc.encode(tok, split_marker)) > 1
+    markers = (*fc.frame_markers(tok, prefix, suffix), split_marker)
+    with pytest.raises(ValueError, match="not one control id"):
+        fc.verify_frame(tok, markers, prefix)
+
+
+def test_verify_frame_marker_of_one_unregistered_id_raises() -> None:
+    """Property 2: that one token must be a control the checkpoint registers."""
+    tok = FakeTokenizer(plain=("<|thought|>",))
+    prefix, suffix = fc.build_frame(tok)
+    assert len(fc.encode(tok, "<|thought|>")) == 1
+    assert "<|thought|>" not in fc.control_tokens(tok)
+    markers = (*fc.frame_markers(tok, prefix, suffix), "<|thought|>")
+    with pytest.raises(ValueError, match="not one control id"):
+        fc.verify_frame(tok, markers, prefix)
+
+
 def test_verify_frame_marker_absent_from_vocabulary_raises() -> None:
     tok = FakeTokenizer(specials=tuple(m for m in GEMMA_SPECIALS if m != "<bos>"))
     prefix, suffix = fc.build_frame(tok)
@@ -236,7 +300,11 @@ def test_verify_frame_bos_id_disagreement_raises() -> None:
 
 
 def test_verify_frame_without_special_markers_raises() -> None:
-    tok = FakeTokenizer(render=lambda messages: f"user: {messages[-1]['content']}")
+    tok = FakeTokenizer(
+        render=lambda messages, add_generation_prompt=False: (
+            f"user: {messages[-1]['content']}"
+        )
+    )
     prefix, suffix = fc.build_frame(tok)
     with pytest.raises(ValueError, match="frames nothing"):
         fc.verify_frame(tok, fc.frame_markers(tok, prefix, suffix), prefix)
@@ -255,7 +323,7 @@ def test_verify_frame_without_special_markers_raises() -> None:
 )
 def test_build_framed_text_prose_survives_in_order(
     specials: tuple[str, ...],
-    render: Callable[[Messages], str],
+    render: Renderer,
     bos: str | None,
 ) -> None:
     tok = FakeTokenizer(specials=specials, render=render, bos=bos)
@@ -277,7 +345,7 @@ def test_build_framed_text_prose_survives_in_order(
 )
 def test_build_framed_text_every_block_carries_the_frame(
     specials: tuple[str, ...],
-    render: Callable[[Messages], str],
+    render: Renderer,
     bos: str | None,
 ) -> None:
     tok = FakeTokenizer(specials=specials, render=render, bos=bos)
@@ -302,8 +370,21 @@ def test_build_framed_text_empty_prose_raises() -> None:
 
 def test_build_framed_text_prose_with_special_id_raises() -> None:
     tok = FakeTokenizer(extra_special_words=("<eos>",))
-    with pytest.raises(ValueError, match="special ids"):
+    with pytest.raises(ValueError, match="control ids"):
         _framed(tok, "prose then <eos> more", 64)
+
+
+def test_build_framed_text_prose_with_added_non_special_id_raises() -> None:
+    """Nemotron 30B-A3B keeps `<|im_start|>` out of `all_special_ids` (#423)."""
+    tok = FakeTokenizer(
+        specials=("<|im_end|>",),
+        added_non_special=("<|im_start|>", "<think>", "</think>"),
+        render=render_chatml,
+        bos=None,
+    )
+    assert fc.encode(tok, "<|im_start|>")[0] not in tok.all_special_ids
+    with pytest.raises(ValueError, match="control ids"):
+        _framed(tok, "prose then <|im_start|> more", 64)
 
 
 def test_build_framed_text_frame_fills_block_raises() -> None:
@@ -327,7 +408,7 @@ def test_build_framed_text_frame_fills_block_raises() -> None:
 )
 def test_check_reencode_clean_frame_reports_no_problem(
     specials: tuple[str, ...],
-    render: Callable[[Messages], str],
+    render: Renderer,
     bos: str | None,
 ) -> None:
     tok = FakeTokenizer(specials=specials, render=render, bos=bos)
