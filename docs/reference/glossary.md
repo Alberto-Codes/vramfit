@@ -306,28 +306,12 @@ change.
 :   The whole apparatus a damage number is measured inside: process,
     quantization path, calibration text, token count, and
     instrument.
-    Damage values compare only within one frame. Two observations
-    measured how far a value moves outside its frame, and they
-    disagree.
-    On the reference box, offloaded, with the `rtn-block32`
-    within-group method, cross-process re-measurement of identical
-    cells moved values 2.7–4.1x (the
+    Damage values compare only within one frame. On the reference
+    box, cross-process re-measurement of identical cells moved
+    values 2.7–4.1x. That figure comes from two RTN re-measurements
+    of stored RTN-map cells (the
     [ninth data point](../explanation/evaluating-packed-models.md)).
-    On the rented-GPU lane, with the `q0-imx` within-group method,
-    the C6 control arm re-measured a published map. It ran in a new
-    process, on a different pod, on a later day, and its run log
-    recorded `offloaded_groups: 0`. It reproduced the stored values
-    to the last digit, in 32 of 32 cells
-    ([the C6 control arm](../explanation/sensitivity-scanning.md#cross-process-re-measurement-two-readings)).
-    That arm did not record an instrument match with the published
-    map.
-    Reuse a published damage value only when the instrument matches
-    and the checkpoint stays resident. The quantization path, the
-    calibration text, and the token count must match as well. A new
-    process and a new day do not block reuse, and the C6 arm varied
-    both. Establish the instrument match yourself
-    ([ADR-0027](../adr/0027-instrument-frame-matching.md)
-    decision 1).
+    It scopes to that observation, not to the meter.
     The **scan frame** is the meter's apparatus:
     perturb weights inside the bf16 model, measure calibration KL.
     The **runtime frame** is the packed artifact under the runtime's
