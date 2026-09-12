@@ -371,9 +371,11 @@ two control tokens naming one word with different delimiters, as
 `<think>` and `</think>` do. A vocabulary that spells each control
 token once carries no such pair, so the check counts nothing. A turn
 header whose two halves name different words, as `<|im_start|>` and
-`<|im_end|>` do, is not counted either. The tokenizer's bos and eos
-tokens bracket a document rather than a channel, so the script does
-not pair them. Read the printed frame here too.
+`<|im_end|>` do, is not counted either. The tokenizer's bos token
+brackets a document rather than a channel, so the script drops any
+pair holding it. The eos token stays paired, because a checkpoint
+often names a real channel close as eos. Read the printed frame here
+too.
 
 Then pass the framed file as `--calibration`. Four rules keep the
 numbers comparable:

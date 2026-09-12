@@ -6,8 +6,10 @@ perplexity and the same prose inside its serving frame at sane values
 for such a target. It wraps the prose in repeated blocks. Each block
 renders one complete conversation: a fixed user turn, then the
 model-turn opening the template answers in, then a prose chunk as the
-answer, then the turn close. The block closes every channel it
-opens.
+answer, then the turn close. The block closes the channels the
+checkpoint's own vocabulary spells as a matched open/close pair. A
+vocabulary that spells each control token once carries no such pair,
+so the block is not balance-checked.
 
 The script reads the frame from the checkpoint's own chat template, so
 each checkpoint gets the frame that checkpoint defines. A checkpoint
@@ -21,8 +23,9 @@ boundaries. State that convention beside every published number.
 
 The script verifies its output. It checks each frame marker encodes
 to one control id, refuses a frame that writes a marker the
-vocabulary lost, re-encodes the framed file, and reports block count
-and token totals.
+vocabulary lost, refuses a block that leaves a paired channel open,
+re-encodes the framed file, and reports block count and token
+totals.
 
 Examples:
     Build a framed file and verify it:
@@ -264,10 +267,12 @@ def control_pairs(tokenizer: Any) -> tuple[tuple[str, str], ...]:
     ambiguous, so both stay unpaired. The pair carries no direction.
     The caller reads which one opens from the frame that writes it.
 
-    The tokenizer's own bos and eos tokens bracket a document, not a
-    channel. A frame writes bos once per block and no eos, so a pair
-    holding either never balances. The function reads both off the
-    tokenizer and drops every pair that holds one.
+    The tokenizer's own bos token brackets a document, not a channel.
+    A frame writes it once per block and never closes it, so a pair
+    holding it never balances. The function reads the bos token off
+    the tokenizer and drops every pair that holds it. The eos token
+    stays paired: an instruct checkpoint often names a real channel
+    close, such as its turn close, as eos.
 
     Args:
         tokenizer: The target model's tokenizer.
@@ -275,14 +280,8 @@ def control_pairs(tokenizer: Any) -> tuple[tuple[str, str], ...]:
     Returns:
         Each pair of control tokens, sorted inside the pair.
     """
-    document = {
-        token
-        for token in (
-            getattr(tokenizer, "bos_token", None),
-            getattr(tokenizer, "eos_token", None),
-        )
-        if isinstance(token, str) and token
-    }
+    bos = getattr(tokenizer, "bos_token", None)
+    document = {bos} if isinstance(bos, str) and bos else set()
     cores: dict[str, set[str]] = {}
     for token in control_tokens(tokenizer):
         core = control_core(token)
@@ -337,9 +336,17 @@ def verify_frame(
 
     Each marker must encode to exactly one id, and that id must be the
     control token's own. The frame must leave no control-shaped text
-    the tokenizer read as prose, and must close every channel it
-    opens. A marker that splits into pieces is prose to the model, not
-    a frame.
+    the tokenizer read as prose. It must also close every channel the
+    vocabulary spells as a matched open/close pair. A marker that
+    splits into pieces is prose to the model, not a frame.
+
+    The acceptance set is the checkpoint's registered control tokens,
+    not ``all_special_ids``. That list is not a sufficient test: a
+    checkpoint can register a frame marker as special and still omit
+    it from the list, and can register a live marker as non-special.
+    Testing against the list alone would refuse a sound frame. The
+    identity match here is the stronger rule, because the marker must
+    encode to that marker's own id rather than to any special id.
 
     Args:
         tokenizer: The target model's tokenizer.

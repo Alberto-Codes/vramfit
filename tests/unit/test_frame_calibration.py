@@ -138,6 +138,15 @@ def render_harmony(messages: Messages, add_generation_prompt: bool = False) -> s
     return turns + tail
 
 
+def render_open_turn_gemma(
+    messages: Messages, add_generation_prompt: bool = False
+) -> str:
+    """Render a Gemma-shaped template that never closes the model turn."""
+    turns = "".join(f"<|turn>{m['role']}\n{m['content']}" for m in messages)
+    tail = "<|turn>model\n" if add_generation_prompt else ""
+    return f"<bos>{turns}{tail}"
+
+
 def render_bos_chatml(messages: Messages, add_generation_prompt: bool = False) -> str:
     """Render ChatML turns behind the document's bos token.
 
@@ -349,6 +358,25 @@ def test_build_frame_agreeing_renders_keep_the_generation_prompt() -> None:
     prefix, _ = _frame(tok)
     assert generation == answered
     assert prefix == generation
+
+
+def test_verify_frame_channel_pair_holding_the_eos_token_still_counts() -> None:
+    """An eos token can also close a real channel, so it stays paired.
+
+    An instruct checkpoint often names its turn close as eos. Dropping
+    every pair that holds the eos token would stop counting the turn
+    itself, so a template that never closes the model turn would pass.
+    """
+    tok = FakeTokenizer(render=render_open_turn_gemma)
+    tok.eos_token = "<turn|>"  # noqa: S105 - a turn marker, not a secret
+    assert ("<turn|>", "<|turn>") in fc.control_pairs(tok)
+
+    prefix, suffix = fc.build_frame(tok)
+    markers = fc.frame_markers(tok, prefix, suffix)
+
+    assert "<turn|>" not in prefix + suffix
+    with pytest.raises(ValueError, match="leaves that channel unbalanced"):
+        fc.verify_frame(tok, markers, prefix, suffix)
 
 
 def test_build_frame_bos_without_eos_frames_rather_than_refuses() -> None:
