@@ -4,7 +4,9 @@ The two commands build the same meter, so their overlapping options
 follow one rule each: the ``--gpu-memory`` cap parses with the
 project size grammar and requires ``--device auto``, and
 ``--imatrix`` pairs with the kquant or q0 within-group method
-(ADR-0018, ADR-0020) — RTN has no weighted C counterpart.
+(ADR-0018, ADR-0020) — RTN has no weighted C counterpart. The
+scan's ``--within-group`` parser lives here beside that pairing
+rule, which it calls.
 Both reject before any model load burns an hour. The
 imatrix coverage echo lives here too — the scan and the validation
 pass report the split identically.
@@ -26,10 +28,20 @@ See Also:
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 import typer
 
 from vramfit.domain.budget import parse_size
+from vramfit.domain.scan import (
+    KQUANT_IMX_METHOD,
+    KQUANT_METHOD,
+    KQUANT_PRECISIONS,
+    Q0_IMX_METHOD,
+    Q0_REF_METHOD,
+    Q0_REF_PRECISIONS,
+    SCAN_METHOD,
+)
 from vramfit.ports.outbound import DamageMeter
 
 
@@ -112,3 +124,47 @@ def parse_gpu_memory(gpu_memory: str | None, device: str) -> int | None:
         return parse_size(gpu_memory)
     except ValueError as exc:
         raise typer.BadParameter(f"--gpu-memory: {exc}") from exc
+
+
+def parse_within_group(
+    text: str, precisions: tuple[int, ...], imatrix: Path | None
+) -> tuple[Literal["rtn", "kquant", "q0"], str]:
+    """Validate the ``--within-group`` choice against the precisions.
+
+    Args:
+        text: The flag value.
+        precisions: The parsed candidate precisions.
+        imatrix: The ``--imatrix`` path, or None for unassisted.
+
+    Returns:
+        The validated method name and its fingerprint token — the
+        token is the vocabulary run logs and maps share (ADR-0018).
+        An imatrix turns the kquant or q0 token into its assisted
+        one (ADR-0018, ADR-0020).
+
+    Raises:
+        typer.BadParameter: If the method is unknown, ``kquant`` or
+            ``q0`` is combined with precisions outside its port
+            coverage (ADR-0018), ``--imatrix`` arrives with the rtn
+            method, or the imatrix file does not exist — each
+            rejected before the model load burns an hour.
+    """
+    if text not in ("rtn", "kquant", "q0"):
+        raise typer.BadParameter(
+            f'--within-group: expected "rtn", "kquant", or "q0", got "{text}"'
+        )
+    check_imatrix(imatrix, text)
+    covered = {"kquant": KQUANT_PRECISIONS, "q0": Q0_REF_PRECISIONS}.get(text)
+    if covered is not None:
+        uncovered = [p for p in precisions if p not in covered]
+        if uncovered:
+            raise typer.BadParameter(
+                f"--within-group {text} covers precisions "
+                f"{sorted(covered, reverse=True)} (ADR-0018) — "
+                f"remove {uncovered} from --precisions"
+            )
+    if text == "rtn":
+        return text, SCAN_METHOD
+    if text == "q0":
+        return text, Q0_REF_METHOD if imatrix is None else Q0_IMX_METHOD
+    return text, KQUANT_METHOD if imatrix is None else KQUANT_IMX_METHOD

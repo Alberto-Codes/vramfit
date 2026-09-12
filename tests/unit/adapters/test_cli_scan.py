@@ -6,6 +6,7 @@ from tests.fakes import MemoryDamageMeter
 from tests.unit.adapters.conftest import (
     DAMAGES,
     SPECS,
+    calibration_content,
     install_meter,
     invoke_scan,
 )
@@ -458,11 +459,45 @@ def test_rtn_checkpoint_refuses_a_kquant_rerun(tmp_path, monkeypatch) -> None:
     assert "different scan" in second.output
 
 
+def test_scan_records_the_calibration_content_in_the_map(tmp_path, monkeypatch) -> None:
+    install_meter(
+        monkeypatch, MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES), tokens=64)
+    )
+    digest, n_bytes = calibration_content(tmp_path)
+
+    result, out = invoke_scan(tmp_path)
+
+    assert result.exit_code == 0, result.output
+    scan = load_sensitivity_map(out).scan
+    assert scan.calibration_sha256 == digest
+    assert scan.calibration_bytes == n_bytes
+
+
+def test_reissued_calibration_file_refuses_the_old_checkpoint(
+    tmp_path, monkeypatch
+) -> None:
+    # The path does not move and the token count does not change. Only
+    # the bytes change, and the scan must refuse to resume — a resumed
+    # run would mix damage values measured against two corpora.
+    install_meter(
+        monkeypatch, MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES), tokens=64)
+    )
+    first, _ = invoke_scan(tmp_path)
+    assert first.exit_code == 0, first.output
+    second, _ = invoke_scan(tmp_path, calibration_text="re-issued calibration text")
+
+    assert second.exit_code == 1
+    assert "different scan" in second.output
+
+
 def cli_fingerprint(tmp_path) -> str:
+    digest, n_bytes = calibration_content(tmp_path)
     meta = ScanMeta(
         metric="kl_divergence",
         calibration=str(tmp_path / "calib.txt"),
         calibration_tokens=64,
+        calibration_sha256=digest,
+        calibration_bytes=n_bytes,
         precisions=(8, 4),
         group_by="layer",
         started_at="unused",

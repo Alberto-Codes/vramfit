@@ -35,6 +35,18 @@ def make_meta(**overrides) -> ScanMeta:
     return ScanMeta(**fields)
 
 
+DIGEST = "74f2665d6e6925fc2c17dec644bec9e87df478a0f1836822125e8acbb3777806"
+OTHER_DIGEST = "a" * 64
+
+
+def make_pinned_meta(**overrides) -> ScanMeta:
+    pinned: dict[str, Any] = {
+        "calibration_sha256": DIGEST,
+        "calibration_bytes": 772386,
+    }
+    return make_meta(**(pinned | overrides))
+
+
 SPECS = (
     GroupSpec(name="g0", tensors=("g0.w",), bytes_fp16=1000),
     GroupSpec(name="g1", tensors=("g1.w", "g1.v"), bytes_fp16=2000),
@@ -184,11 +196,42 @@ class TestScanFingerprint:
     def test_fingerprint_format_is_pinned(self) -> None:
         # On-disk checkpoints key on this exact string — a format
         # drift silently invalidates every resumable scan in flight.
-        # The trailing field is the imatrix path, empty when
-        # unassisted (ADR-0020).
-        expected = "m|kl_divergence|calib.txt|1024|layer|8,4|rtn-block32|"
+        # The two empty fields after the token count are the
+        # calibration digest and byte count, empty when the scan
+        # records no content identity. The trailing field is the
+        # imatrix path, empty when unassisted (ADR-0020).
+        expected = "m|kl_divergence|calib.txt|1024|||layer|8,4|rtn-block32|"
 
         assert scan_fingerprint("m", make_meta()) == expected
+
+    def test_pinned_format_carries_the_calibration_content(self) -> None:
+        expected = (
+            f"m|kl_divergence|calib.txt|1024|{DIGEST}|772386|layer|8,4|rtn-block32|"
+        )
+
+        assert scan_fingerprint("m", make_pinned_meta()) == expected
+
+    def test_a_reissued_calibration_file_changes_the_fingerprint(self) -> None:
+        # The same path, the same token count, different bytes: the
+        # scan must refuse the old checkpoint rather than mix damage
+        # values measured against two corpora.
+        reissued = make_pinned_meta(calibration_sha256=OTHER_DIGEST)
+
+        assert scan_fingerprint("m", make_pinned_meta()) != scan_fingerprint(
+            "m", reissued
+        )
+
+    def test_calibration_byte_count_changes_the_fingerprint(self) -> None:
+        assert scan_fingerprint("m", make_pinned_meta()) != scan_fingerprint(
+            "m", make_pinned_meta(calibration_bytes=772387)
+        )
+
+    def test_recording_the_content_changes_the_fingerprint(self) -> None:
+        # A scan that records the digest and one that does not are
+        # two different scans: one can prove its corpus.
+        assert scan_fingerprint("m", make_meta()) != scan_fingerprint(
+            "m", make_pinned_meta()
+        )
 
     def test_assisted_fingerprint_carries_the_imatrix_path(self) -> None:
         meta = make_meta(within_group="kquant-imx", imatrix="im.gguf")
@@ -216,6 +259,40 @@ class TestScanFingerprint:
     def test_imatrix_without_the_assisted_token_raises(self) -> None:
         with pytest.raises(ValueError, match="kquant-imx"):
             make_meta(within_group="kquant-ref", imatrix="im.gguf")
+
+    @pytest.mark.parametrize(
+        "override",
+        [
+            {"calibration_sha256": DIGEST},
+            {"calibration_bytes": 772386},
+        ],
+        ids=["digest-only", "bytes-only"],
+    )
+    def test_half_a_calibration_identity_raises(self, override: dict) -> None:
+        with pytest.raises(ValueError, match="pair"):
+            make_meta(**override)
+
+    @pytest.mark.parametrize(
+        "digest",
+        ["a" * 63, "A" * 64, "z" * 64, ""],
+        ids=["short", "uppercase", "non-hex", "empty"],
+    )
+    def test_malformed_calibration_digest_raises(self, digest: str) -> None:
+        with pytest.raises(ValueError, match="calibration_sha256"):
+            make_meta(calibration_sha256=digest, calibration_bytes=1)
+
+    @pytest.mark.parametrize("size", [0, -1], ids=["zero", "negative"])
+    def test_nonpositive_calibration_bytes_raises(self, size: int) -> None:
+        with pytest.raises(ValueError, match="calibration_bytes"):
+            make_meta(calibration_sha256=DIGEST, calibration_bytes=size)
+
+    def test_an_unrecorded_calibration_identity_is_allowed(self) -> None:
+        # NOT RECORDED is the honest record when the scan's own
+        # calibration file did not survive. Nothing back-fills it.
+        meta = make_meta()
+
+        assert meta.calibration_sha256 is None
+        assert meta.calibration_bytes is None
 
     def test_empty_imatrix_raises(self) -> None:
         with pytest.raises(ValueError, match="imatrix"):

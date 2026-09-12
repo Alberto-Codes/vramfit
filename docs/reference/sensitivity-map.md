@@ -14,12 +14,14 @@ The sensitivity map is the output of `vramfit scan` and the input to
 
 ```json
 {
-  "vramfit_schema": 3,
+  "vramfit_schema": 4,
   "model_id": "nvidia/Nemotron-Super-49B",
   "scan": {
     "metric": "kl_divergence",
-    "calibration": "wikitext",
+    "calibration": "/work/calibration.txt",
     "calibration_tokens": 131072,
+    "calibration_sha256": "74f2665d6e6925fc2c17dec644bec9e87df478a0f1836822125e8acbb3777806",
+    "calibration_bytes": 772386,
     "precisions": [8, 4, 3, 2],
     "group_by": "layer",
     "started_at": "2026-07-27T00:00:00Z",
@@ -60,12 +62,15 @@ The sensitivity map is the output of `vramfit scan` and the input to
 [ADR-0020](../adr/0020-imatrix-assisted-pricing.md): the fields
 below remain, the sub-4-bit pricing claims do not.
 
-- **`vramfit_schema`** — the writer emits 3 since `group_by` gained
-  the `stack` value (#161). The reader accepts 2 and 3, because
-  version 3 only widened that enum: every version-2 map is already a
-  valid version-3 document, and the
+- **`vramfit_schema`** — the writer emits 4 since `scan` gained the
+  calibration file's content identity. The reader accepts 2, 3, and
+  4, because each bump only added: version 3 widened `group_by` with
+  the `stack` value (#161), and version 4 added two optional fields.
+  Every older map is already a valid version-4 document that records
+  no content identity, and the
   [published maps dataset](https://huggingface.co/datasets/Alberto-Codes/Llama-3_3-Nemotron-Super-49B-v1_5-sensitivity-maps)
-  ships version 2. Version 2 dates from the envelope key rename with
+  ships version 2, which records neither. Version 2 dates from the
+  envelope key rename with
   the tool (#118). The reader accepts only the new key. A schema-1
   map migrates with a key rename plus a version bump, or a re-scan.
   The #134 ruling froze
@@ -80,6 +85,15 @@ below remain, the sub-4-bit pricing claims do not.
   calibration, and imatrix paths as the invocation spelled them, so
   a resume must reproduce the original command line. A rename of any
   of those paths invalidates every checkpoint that names them.
+
+    The fingerprint also stores the calibration file's SHA-256 and
+    byte count. Every checkpoint written before that change refuses
+    to resume — pass `--no-resume` to discard it and start over.
+    From that change on, re-issued calibration bytes behind an
+    unchanged path refuse the old checkpoint too, which is the
+    point. The digest pins the corpus, not the chunking: the
+    tokenizer stays unpinned, so the same corpus through two
+    tokenizers still measures two `calibration_tokens` counts.
 - **`model_id`** — the scanned model as the `vramfit scan` invocation
   spelled its `MODEL` argument: a Hub id or a local path. The loader
   requires a non-empty string and reads nothing else from it. The
@@ -91,13 +105,49 @@ below remain, the sub-4-bit pricing claims do not.
   [ADR-0006](../adr/0006-sensitivity-metric.md). The loader requires a
   non-empty string. The checkpoint fingerprint includes it.
 - **`scan.calibration`** — the calibration text's path as the
-  invocation spelled it. Damage is relative to this text, so two maps
-  compare only when the field matches. The loader requires a non-empty
-  string. The published maps record the reference box's absolute path.
+  invocation spelled it. `vramfit scan` takes a file, so the field
+  records a path, never a corpus nickname — a nickname names no
+  bytes. Damage is relative to this text, so two maps compare only
+  when the field matches. The loader requires a non-empty string.
+  The published maps record the reference box's absolute path.
 - **`scan.calibration_tokens`** — the count of calibration tokens the
   meter measured, which the `--max-tokens` budget caps. The loader
   requires a positive integer. The published dataset's file names
   carry the same count in short form (`64k` is 65,536).
+- **`scan.calibration_sha256`** and **`scan.calibration_bytes`** —
+  the SHA-256 hex digest of the calibration file's bytes, and the
+  file's size in bytes. A path proves which file a scan named. These
+  two prove which bytes it measured, so a reader can reproduce a
+  damage value against the same corpus rather than against whatever
+  now carries that name. The published calibration text is
+  `74f2665d…3777806` at 772,386 bytes, and the
+  [maps dataset](https://huggingface.co/datasets/Alberto-Codes/Llama-3_3-Nemotron-Super-49B-v1_5-sensitivity-maps)
+  ships the file itself. The two fields pair: the loader requires
+  both or neither, 64 lowercase hex digits for the digest, and a
+  positive integer for the count. The fields are additive, so the
+  loader accepts them absent — see NOT RECORDED below. The
+  checkpoint fingerprint includes both.
+
+    They pin the corpus, not the chunking. The tokenizer stays
+    unpinned. One corpus through two tokenizers measures two
+    `calibration_tokens` counts, and a digest match does not promise
+    the same count.
+
+    !!! warning "NOT RECORDED is the honest record"
+
+        Absent or null means the scan recorded no content identity.
+        Read that as NOT RECORDED, never as "the bytes were the
+        ones that file carries today". Hashing a file now records
+        today's bytes. It proves nothing about a run from months
+        ago. Where the run's own calibration file survives in that
+        run's root, hash it and mark the value recovered rather
+        than scanned. Where it does not survive, leave the record
+        NOT RECORDED. Never compute a digest from a fresh download
+        and write it into a map as that run's input. `vramfit`
+        itself never back-fills these fields: the loader does not
+        hash, and a save writes null rather than inventing a
+        value.
+
 - **`scan.precisions`** — the candidate bit-widths the scan measured,
   as `--precisions` listed them. The loader requires a non-empty list
   of distinct positive integers in strictly descending order, and it

@@ -381,11 +381,13 @@ change.
 
 **Fingerprint**
 :   The identity string that ties a scan checkpoint to one scan's
-    recorded provenance: model, metric, calibration, token count,
-    grouping, precisions, within-group method, and imatrix path. It
-    identifies
-    provenance, not content — swapping weights or calibration text
-    under an unchanged path defeats it.
+    recorded provenance: model, metric, calibration path, token
+    count, calibration SHA-256 and byte count, grouping, precisions,
+    within-group method, and imatrix path. The calibration text
+    enters by content, so re-issued bytes behind an unchanged path
+    refuse the checkpoint. Every other input enters by path, so
+    swapping weights or an imatrix under an unchanged path defeats
+    it.
 
 ## Budgeting
 

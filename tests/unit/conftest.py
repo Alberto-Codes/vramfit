@@ -25,7 +25,7 @@ def make_map(
         "model_id": model_id,
         "scan": {
             "metric": "kl_divergence",
-            "calibration": "wikitext",
+            "calibration": "/work/calibration.txt",
             "calibration_tokens": 131072,
             "precisions": list(precisions),
             "group_by": "layer",

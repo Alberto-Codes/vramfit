@@ -48,13 +48,26 @@ Every finished (group x precision) cell lands in
 `sensitivity.checkpoint.json` immediately. Rerun the same command after
 a crash and the scan continues at the first unmeasured cell. The
 checkpoint carries the scan's fingerprint — change the model id,
-calibration path, token count, grouping, precisions, method, or
-imatrix path, and the scan refuses the old checkpoint. Pass
-`--no-resume` to discard it.
+calibration path, token count, calibration bytes, grouping,
+precisions, method, or imatrix path, and the scan refuses the old
+checkpoint. Pass `--no-resume` to discard it.
 
-The fingerprint records provenance, not content. It cannot detect new
-weights or edited calibration text behind an unchanged path — do not
-change either between a crash and its resume.
+The fingerprint records the calibration text by content: its SHA-256
+and its byte count. A corpus re-issued behind an unchanged path
+refuses the old checkpoint, rather than resuming into a map that
+mixes two corpora. Every other input stays an identity by path. The
+fingerprint cannot detect new weights or a new imatrix behind an
+unchanged path — do not change either between a crash and its
+resume.
+
+The digest pins the corpus, not the chunking. The tokenizer stays
+unpinned. The same corpus through two tokenizers measures two token
+counts.
+
+Checkpoints written before the calibration digest do not resume: the
+fingerprint gained the calibration file's SHA-256 and byte count.
+The scan rejects the old file — pass `--no-resume` to discard it and
+start over.
 
 Checkpoints written before the vramfit rename do not resume: the
 checkpoint schema bumped with the envelope key (#118). The scan
