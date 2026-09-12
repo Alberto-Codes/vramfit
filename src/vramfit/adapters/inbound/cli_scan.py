@@ -7,7 +7,7 @@ must each pair with precisions their port covers, ADR-0018, and
 ``--imatrix`` pairs with the kquant or q0 method, ADR-0018 and
 ADR-0020 — the within-group parser lives in
 [vramfit.adapters.inbound.cli_options][], beside the pairing rule it
-calls), reads the calibration file's content identity, builds
+calls), builds
 the
 torch-backed
 meter (lazily, so the base install never imports torch), drives the
@@ -19,7 +19,9 @@ fingerprint, and the run log — relative spellings must not split
 or mix checkpoint identities. The calibration text is the one input
 recorded by content: the map and the fingerprint carry its SHA-256
 and byte count, so re-issued bytes behind an unchanged path refuse
-the old checkpoint.
+the old checkpoint. The meter build reads that identity first, so an
+unreadable or empty file halts through the run log before the model
+load.
 ``--groups`` restricts a run to named groups, so a caller that wants
 46 of 164 groups pays for 46 (#282). Only the list shape checks here.
 `resolve_grid` matches each name against the loaded meter's groups,
@@ -164,6 +166,26 @@ def _build_meter(
         within_group=within_group,
         imatrix_path=imatrix,
     )
+
+
+def _read_calibration_identity(calibration: Path) -> tuple[str, int]:
+    """Read the calibration file's content identity for the record.
+
+    Args:
+        calibration: The UTF-8 calibration text file.
+
+    Returns:
+        The SHA-256 hex digest and the byte count.
+
+    Raises:
+        OSError: If the file cannot be read.
+        ValueError: If the file holds no bytes. An empty corpus
+            measures no damage, and `ScanMeta` refuses a zero count.
+    """
+    sha256, n_bytes = calibration_identity(calibration)
+    if n_bytes == 0:
+        raise ValueError(f"--calibration: {calibration} holds no bytes")
+    return sha256, n_bytes
 
 
 def _open_run_log(out: Path, runlog: Path | None) -> SafeRunLog:
@@ -387,9 +409,8 @@ def scan(
             precisions its port does not cover, ``--imatrix`` is
             given with ``--within-group rtn`` or is not a file, or the
             ``--out`` or ``--runlog`` directory does not exist.
-        OSError: If the calibration file cannot be read — the
-            command hashes it before the model load.
         typer.Exit: With code 1 when the scan extra is missing, the
+            calibration file cannot be read or holds no bytes, the
             model or calibration cannot load, a ``--groups`` name
             matches no discovered group, the checkpoint belongs to
             a different scan, a measurement fails, a checkpoint write
@@ -420,14 +441,40 @@ def scan(
     # and the first calibration pass has burned an hour.
     if not out.parent.is_dir():
         raise typer.BadParameter(f"--out: directory {out.parent} does not exist")
-    # Read the calibration text's content identity before the load,
-    # for the same reason. The digest enters the fingerprint, so a
-    # re-issued file behind an unchanged path refuses the old
-    # checkpoint instead of mixing two corpora in one map.
-    calibration_sha256, calibration_bytes = calibration_identity(calibration)
     gpu_memory_bytes = parse_gpu_memory(gpu_memory, device)
 
     run_log = _open_run_log(out, runlog)
+    # The build reads the calibration's content identity first, before
+    # the model load. That keeps an unreadable or empty file inside
+    # `start_run`'s halt path, and the digest reaches the fingerprint,
+    # so a re-issued file behind an unchanged path refuses the old
+    # checkpoint instead of mixing two corpora in one map.
+    identity: list[tuple[str, int]] = []
+
+    def build() -> DamageMeter:
+        """Read the calibration identity, then load the meter.
+
+        Returns:
+            The loaded meter. The identity lands in `identity`.
+
+        Raises:
+            OSError: If the calibration or the model cannot be read.
+            ValueError: If the calibration file holds no bytes, or
+                the meter rejects its inputs.
+        """
+        identity.append(_read_calibration_identity(calibration))
+        return _build_meter(
+            model,
+            calibration,
+            max_tokens=max_tokens,
+            group_by=group_by,
+            device=device,
+            trust_remote_code=trust_remote_code,
+            gpu_memory=gpu_memory_bytes,
+            within_group=parsed_within_group,
+            imatrix=imatrix,
+        )
+
     meter = start_run(
         run_log,
         {
@@ -441,19 +488,10 @@ def scan(
             "imatrix": None if imatrix is None else str(imatrix),
             "groups": list(parsed_groups) or None,
         },
-        lambda: _build_meter(
-            model,
-            calibration,
-            max_tokens=max_tokens,
-            group_by=group_by,
-            device=device,
-            trust_remote_code=trust_remote_code,
-            gpu_memory=gpu_memory_bytes,
-            within_group=parsed_within_group,
-            imatrix=imatrix,
-        ),
+        build,
     )
     echo_imatrix_coverage(meter)
+    calibration_sha256, calibration_bytes = identity[0]
 
     meta = ScanMeta(
         metric="kl_divergence",

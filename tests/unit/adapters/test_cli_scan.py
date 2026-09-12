@@ -490,6 +490,44 @@ def test_reissued_calibration_file_refuses_the_old_checkpoint(
     assert "different scan" in second.output
 
 
+def test_missing_calibration_file_halts_through_the_run_log(
+    tmp_path, monkeypatch
+) -> None:
+    captured = install_meter(
+        monkeypatch, MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES), tokens=64)
+    )
+
+    result, _ = invoke_scan(tmp_path, "--calibration", str(tmp_path / "typo.txt"))
+
+    assert result.exit_code == 1
+    assert "error:" in result.output
+    assert captured == {}
+    events = read_run_log(tmp_path / "sensitivity.runlog.jsonl")
+    assert events[0]["event"] == "scan_started"
+    assert events[-1]["event"] == "scan_halted"
+    assert events[-1]["stage"] == "meter_build"
+
+
+def test_empty_calibration_file_halts_before_the_model_loads(
+    tmp_path, monkeypatch
+) -> None:
+    # A zero-byte file hashes fine, so only a positive byte count
+    # refuses it — and it must refuse before the load is paid for.
+    captured = install_meter(
+        monkeypatch, MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES), tokens=64)
+    )
+
+    result, out = invoke_scan(tmp_path, calibration_text="")
+
+    assert result.exit_code == 1
+    assert "holds no bytes" in result.output
+    assert captured == {}
+    assert not out.exists()
+    events = read_run_log(tmp_path / "sensitivity.runlog.jsonl")
+    assert events[-1]["event"] == "scan_halted"
+    assert events[-1]["stage"] == "meter_build"
+
+
 def cli_fingerprint(tmp_path) -> str:
     digest, n_bytes = calibration_content(tmp_path)
     meta = ScanMeta(

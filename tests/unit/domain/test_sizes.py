@@ -240,7 +240,7 @@ def _map(
 ) -> SensitivityMap:
     return SensitivityMap(
         model_id="test/model",
-        scan=ScanMeta("kl_divergence", "wikitext", 1, (8,), group_by, "t"),
+        scan=ScanMeta("kl_divergence", "/work/calibration.txt", 1, (8,), group_by, "t"),
         groups=tuple(
             LayerGroup(name=name, tensors=tensors, bytes_fp16=8, sensitivity={8: 0.0})
             for name, tensors in groups
