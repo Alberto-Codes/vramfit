@@ -63,6 +63,42 @@ guards additivity, not the frame transfer
   `plan`, guarding the additivity assumption.
 - **Task eval** — once, on the final packed model, as ground truth.
 
+## Cross-process re-measurement: two readings
+
+A damage value belongs to its measurement frame. How far it moves
+when the frame changes is not one number. Two observations on this
+project point opposite ways, and their conditions differ.
+
+**The reference box, offloaded, RTN within-group method.** Two
+re-measurements of stored cells read 2.7–4.1x their map values in a
+fresh process on the same box (the
+[ninth data point](evaluating-packed-models.md)). That pair is the
+source of the standing warning that absolute damages do not transfer
+across processes.
+
+**A rented H100 pod, resident, `q0-imx` within-group method.** The C6
+calibration-diversity campaign ran on 2026-09-11 against NVIDIA
+Nemotron 3.5 Lightning 30B-A3B. Its control arm re-measured the
+published `sensitivity-32k-q0-imx-stacks` map on the rented-GPU lane:
+the same calibration text, the same 32,768 tokens, the same pinned
+bartowski importance matrix, the same `q0-imx` within-group method,
+the same stack naming. The arm covered 16 groups at a depth spread,
+32 cells, at nominal 4 and nominal 2. All 32 cells came back
+bit-identical to the published stored values. Maximum relative
+deviation was 0.0, and Spearman was 1.000000 at both precisions. The
+run log recorded `offloaded_groups: 0`, so nothing offloaded. The arm
+ran in a new process, on a different pod, on a different day from the
+published map.
+
+**What the pair supports, and what it does not.** The two
+observations differ in offload state, within-group method,
+instrument, and target. The variance appears to track offload state
+and within-group method, and neither observation isolates one cause.
+The control arm is one campaign, one target, and one arm, on a
+16-group sample rather than all 46 groups. A reader whose conditions
+match neither observation gets no rule from the pair, and falls back
+on the rule that damage values compare only within one frame.
+
 ## Open questions
 
 1. **Granularity** — per-layer groups (fast, coarse) vs per-tensor (slow,
