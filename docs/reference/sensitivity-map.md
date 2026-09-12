@@ -139,15 +139,9 @@ below remain, the sub-4-bit pricing claims do not.
         Read that as NOT RECORDED, never as "the bytes were the
         ones that file carries today". Hashing a file now records
         today's bytes. It proves nothing about a run from months
-        ago. Where the run's own calibration file survives in that
-        run's root, hash it, and record in the notes that accompany
-        the map that the value is RECOVERED from the surviving file
-        rather than measured by the scan. The map carries no field
-        for that distinction: `calibration_sha256` reads the same
-        whether a scan measured it or an editor recovered it, so the
-        note is the only place the difference lives. Where the file
-        does not survive, leave the record
-        NOT RECORDED. Never compute a digest from a fresh download
+        ago. Leave the record NOT RECORDED, whether or not the run's
+        own calibration file survives.
+        Never compute a digest from a fresh download
         and write it into a map as that run's input. `vramfit`
         itself never back-fills these fields: the loader does not
         hash, and a save writes null rather than inventing a
