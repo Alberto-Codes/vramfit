@@ -555,14 +555,16 @@ def _check_schema_version(
         path: JSON path of the artifact root.
         expected: The schema version this artifact's adapter writes.
             Versions advance per artifact (ADR-0013) — the recipe
-            writes 6 while the sensitivity map writes 3. Every
+            writes 6 while the sensitivity map writes 4. Every
             caller passes its own constant, so no artifact silently
             validates against another's version.
         also_reads: Older versions this adapter still reads. Pass a
             version here only when its documents are already valid
-            under ``expected`` — the sensitivity map reads 2 because
-            version 3 only widened an enum (#161). Default empty, so
-            an adapter reads one version until it states otherwise.
+            under ``expected`` — the sensitivity map reads 2 and 3,
+            because version 3 only widened an enum (#161) and
+            version 4 only added two optional fields. Default empty,
+            so an adapter reads one version until it states
+            otherwise.
 
     Raises:
         ArtifactError: If the version is missing or unsupported — the

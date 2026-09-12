@@ -2218,9 +2218,12 @@ Hashes answer a different question and must not be confused with
 quality. Hugging Face stores SHA-256 per file, and GGUF embeds
 metadata in-file — those prove *this is the exact file*. vramfit's
 fingerprint proves less: it ties a scan checkpoint to that scan's
-recorded provenance, not to content — swapping weights under an
-unchanged path defeats it, and no content evidence covers that gap
-today. None of these proves the artifact is any good. The project's claim is
+recorded provenance, and one input covers content. The calibration
+corpus enters by its SHA-256 and byte count, so re-issued bytes
+behind an unchanged path refuse the checkpoint. That pins the
+corpus, not the tokenizer. Weights and the imatrix still enter by
+path, so swapping either under an unchanged path defeats it.
+None of these proves the artifact is any good. The project's claim is
 that a publication should carry both: provenance (hashes,
 fingerprint, run log) and evidence (the three tiers above). Shipping
 either alone is the current ecosystem's failure mode — evidence

@@ -379,6 +379,22 @@ change.
     mixes with it. Decided in
     [ADR-0011](../adr/0011-run-logs-and-error-root.md).
 
+**Content identity**
+:   The pair that names a file by its bytes instead of its path: the
+    SHA-256 hex digest and the byte count. `vramfit scan` records the
+    calibration file's content identity in the sensitivity map and
+    folds it into the **Fingerprint**. It pins the corpus, not the
+    tokenizer — the same bytes through two tokenizers still measure
+    two token counts. Not "hash" or "checksum" alone, which name the
+    digest without the count.
+
+**NOT RECORDED**
+:   The state of a content identity a scan did not record: both
+    fields absent or null. It is the absence of a claim, never the
+    claim that the bytes match whatever carries that path today. The
+    loader never hashes a file to fill the pair, and a save writes
+    null rather than inventing a digest.
+
 **Fingerprint**
 :   The identity string that ties a scan checkpoint to one scan's
     recorded provenance: model, metric, calibration path, token

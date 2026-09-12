@@ -43,6 +43,11 @@
     The sensitivity-map schema bumped to 3 for the new value. Readers
     accept 2 and 3, because version 3 only widened the enum.
 
+- **Note (2026-09-12):** the amendment above records the schema at 3.
+  The schema has since bumped to 4, and readers accept 2, 3, and 4.
+  Version 4 only added two optional fields, the calibration file's
+  SHA-256 and byte count.
+
 ## Context
 
 Models worth running (Nemotron Super 49B class) exceed a 24 GiB card at any

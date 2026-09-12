@@ -38,6 +38,11 @@
   holds a group unquantized. It is not a quantization type the scan
   measures. One consequence: a map that scanned 16 can carry a
   `--pin "*=16"` through `servable_precisions`. No map does today.
+- **Note (2026-09-12):** the 2026-08-11 amendment above states that
+  the sensitivity map writes 3 and reads 2 and 3. The map now writes
+  4 and reads 2, 3, and 4. Version 4 only added two optional fields,
+  the calibration file's SHA-256 and byte count. That is the same
+  widening the amendment describes.
 
 ## Context
 

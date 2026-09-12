@@ -1,8 +1,9 @@
 """JSON file adapter for the sensitivity-map artifact.
 
 Owns (de)serialization and validation of the map schema, including the
-``vramfit_schema`` envelope (`MAP_SCHEMA_VERSION` — schema versions
-advance per artifact, ADR-0013). The adapter writes version 4 and
+``vramfit_schema`` envelope (`MAP_SCHEMA_VERSION` and
+`MAP_SCHEMA_ALSO_READS` — schema versions advance per artifact,
+ADR-0013). The adapter writes version 4 and
 also reads versions 2 and 3, because each later version only added
 to the one before it: version 3 widened ``group_by`` with the
 ``stack`` value (#161), and version 4 added the calibration file's
@@ -80,7 +81,7 @@ from vramfit.domain.model import (
 from vramfit.domain.scan import ASSISTED_METHODS, SCAN_METHOD
 
 # The sensitivity-map schema version. Versions advance per artifact
-# (ADR-0013) — the recipe sits at 6 while the map sits at 3.
+# (ADR-0013), so this constant moves on its own.
 MAP_SCHEMA_VERSION: Final[int] = 4
 # Older versions this adapter still reads. Each bump only added:
 # version 3 widened ``group_by`` with the ``stack`` value (#161), and
