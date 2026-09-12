@@ -308,11 +308,13 @@ template, then wraps ~512-token blocks in it. It hard-codes no
 family's markers, so each checkpoint gets the frame that checkpoint
 defines.
 
-The template renders the model turn two ways. The script prefers the
-generation prompt. It takes the completed turn when the generation
-prompt leaves a channel open. The prose then lands where the template
-puts an answer. Every block closes every channel it opens, and the
-script refuses a checkpoint whose template closes neither way.
+The template renders the model turn two ways. The script takes the
+completed turn when that render writes a control token the generation
+prompt omits. Such a token is a header the template puts in front of
+an answer. The script otherwise keeps the generation prompt. It falls
+back to the other render when the one it chose leaves a channel open.
+The prose then lands where the template puts an answer. The script
+refuses a checkpoint when neither render closes what it opens.
 
 Each row below is the `frame markers:` line the script printed for
 that checkpoint's cached tokenizer on 2026-09-11, copied in the order
@@ -362,6 +364,16 @@ control token uses stays invisible. A Mistral-family re-upload that
 drops `[INST]` and `[/INST]` while keeping `<s>` is the case to
 watch: the surviving tokens spell only `<`…`>`, so the script never
 looks for `[`…`]`. Read the printed frame before you trust a scan.
+
+The channel check has its own reach. It counts the channels the
+checkpoint's own vocabulary spells as a matched open/close pair —
+two control tokens naming one word with different delimiters, as
+`<think>` and `</think>` do. A vocabulary that spells each control
+token once carries no such pair, so the check counts nothing. A turn
+header whose two halves name different words, as `<|im_start|>` and
+`<|im_end|>` do, is not counted either. The tokenizer's bos and eos
+tokens bracket a document rather than a channel, so the script does
+not pair them. Read the printed frame here too.
 
 Then pass the framed file as `--calibration`. Four rules keep the
 numbers comparable:

@@ -138,6 +138,15 @@ def render_harmony(messages: Messages, add_generation_prompt: bool = False) -> s
     return turns + tail
 
 
+def render_bos_chatml(messages: Messages, add_generation_prompt: bool = False) -> str:
+    """Render ChatML turns behind the document's bos token.
+
+    A ChatML fine-tune on a Mistral-shaped vocabulary renders this
+    way: the template writes `{{ bos_token }}` and then ChatML turns.
+    """
+    return "<s>" + render_chatml(messages, add_generation_prompt)
+
+
 class _AddedToken:
     def __init__(self, content: str, special: bool) -> None:
         self.content = content
@@ -179,6 +188,7 @@ class FakeTokenizer:
             for t in (*specials, *added_non_special, *extra_special_words)
         }
         self.bos_token = bos
+        self.eos_token: str | None = None
         self.bos_token_id = (
             self._vocab.get(bos or "") if bos_token_id == -1 else bos_token_id
         )
@@ -339,6 +349,39 @@ def test_build_frame_agreeing_renders_keep_the_generation_prompt() -> None:
     prefix, _ = _frame(tok)
     assert generation == answered
     assert prefix == generation
+
+
+def test_build_frame_bos_without_eos_frames_rather_than_refuses() -> None:
+    """A bos token brackets the document, so it opens no channel.
+
+    A ChatML fine-tune on a Mistral-shaped vocabulary carries `<s>`
+    and `</s>`, which name one word with different delimiters. Every
+    block legitimately writes `<s>` once and `</s>` never, so pairing
+    them would refuse a frame that is sound. This checkpoint names a
+    different token as eos, so the bos token alone must break the
+    pair.
+    """
+    tok = FakeTokenizer(
+        specials=("<s>", "</s>", "<|im_start|>", "<|im_end|>"),
+        render=render_bos_chatml,
+        bos="<s>",
+    )
+    tok.eos_token = "<|im_end|>"  # noqa: S105 - a turn marker, not a secret
+    assert fc.control_core("<s>") == fc.control_core("</s>")
+    assert fc.control_pairs(tok) == ()
+
+    prefix, suffix = _frame(tok)
+
+    assert prefix.startswith("<s>")
+    assert prefix.endswith("<|im_start|>assistant\n")
+    frame_len = len(fc.encode(tok, prefix)) + len(fc.encode(tok, suffix))
+    framed = fc.build_framed_text(
+        tok, " ".join(f"w{i}" for i in range(12)), frame_len + 6, prefix, suffix
+    )
+    blocks = framed.count(prefix)
+    assert blocks == 2
+    assert framed.count("<s>") == blocks
+    assert "</s>" not in framed
 
 
 def test_build_frame_unpaired_vocabulary_takes_the_answer_channel_header() -> None:

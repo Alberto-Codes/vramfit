@@ -264,18 +264,35 @@ def control_pairs(tokenizer: Any) -> tuple[tuple[str, str], ...]:
     ambiguous, so both stay unpaired. The pair carries no direction.
     The caller reads which one opens from the frame that writes it.
 
+    The tokenizer's own bos and eos tokens bracket a document, not a
+    channel. A frame writes bos once per block and no eos, so a pair
+    holding either never balances. The function reads both off the
+    tokenizer and drops every pair that holds one.
+
     Args:
         tokenizer: The target model's tokenizer.
 
     Returns:
         Each pair of control tokens, sorted inside the pair.
     """
+    document = {
+        token
+        for token in (
+            getattr(tokenizer, "bos_token", None),
+            getattr(tokenizer, "eos_token", None),
+        )
+        if isinstance(token, str) and token
+    }
     cores: dict[str, set[str]] = {}
     for token in control_tokens(tokenizer):
         core = control_core(token)
         if core and core != token:
             cores.setdefault(core, set()).add(token)
-    pairs = [tuple(sorted(m)) for m in cores.values() if len(m) == 2]  # noqa: PLR2004
+    pairs = [
+        tuple(sorted(members))
+        for members in cores.values()
+        if len(members) == 2 and not members & document  # noqa: PLR2004
+    ]
     return tuple(sorted(pairs))  # ty: ignore[invalid-return-type]
 
 

@@ -160,8 +160,10 @@ change.
     wrapper is the target's own user turn plus one model-turn
     render. The template offers two: the generation prompt, and the
     completed model turn it writes before an answer. The builder
-    prefers the generation prompt. It takes the completed turn when
-    the generation prompt leaves a **control token** channel open. A
+    takes the completed turn when that render writes a **control
+    token** the generation prompt omits. It otherwise keeps the
+    generation prompt. It falls back to the other render when the
+    one it chose leaves a channel open. A
     channel-locked target measures in-frame on both sides of every
     comparison, and the frame text is recorded with the map. Built
     by `scripts/frame_calibration.py`. Not "measurement frame" —
