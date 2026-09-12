@@ -58,10 +58,15 @@ def build_frame(tokenizer: Any) -> tuple[str, str]:
     The template renders the model turn two ways. The generation
     prompt asks the model to answer. The completed render shows the
     template's own finished turn, which the function splits at the
-    prose slot. The function prefers the generation prompt. It takes
-    the completed render's half when the generation prompt leaves a
-    channel open, because the completed turn is what the template
-    writes before a real answer.
+    prose slot.
+
+    The function takes the completed render's half when that half
+    writes a control token the generation prompt omits. Such a token
+    is a header the template puts in front of a real answer. The
+    function otherwise prefers the generation prompt. It then falls
+    back to the other half when the preferred half leaves a channel
+    open. ``verify_frame`` refuses the checkpoint when neither half
+    closes what it opens.
 
     The suffix always comes from the completed render. Both halves
     come from the chat template, never from a table of per-family
@@ -109,9 +114,15 @@ def build_frame(tokenizer: Any) -> tuple[str, str]:
     answered, found, suffix = rendered.partition(PROSE_SLOT)
     if not found:
         raise ValueError("the chat template dropped the assistant answer")
-    if unbalanced_pair(tokenizer, generation, suffix) is None:
-        return generation, suffix
-    return answered, suffix
+    closes = set(frame_markers(tokenizer, answered, "")) - set(
+        frame_markers(tokenizer, generation, "")
+    )
+    preferred, other = (answered, generation) if closes else (generation, answered)
+    if unbalanced_pair(tokenizer, preferred, suffix) is None:
+        return preferred, suffix
+    if unbalanced_pair(tokenizer, other, suffix) is None:
+        return other, suffix
+    return preferred, suffix
 
 
 def control_tokens(tokenizer: Any) -> dict[str, int]:
@@ -247,11 +258,11 @@ def control_pairs(tokenizer: Any) -> tuple[tuple[str, str], ...]:
     """Pair the control tokens that open and close the same channel.
 
     Two control tokens pair when they name the same word and spell
-    their delimiters differently. The pair carries no direction: the
-    caller reads which one opens from the frame that writes it. The checkpoint's own vocabulary
+    their delimiters differently. The checkpoint's own vocabulary
     supplies both spellings, so no family table is needed. A word
     with one spelling opens nothing, and a word with three is
-    ambiguous, so both stay unpaired.
+    ambiguous, so both stay unpaired. The pair carries no direction.
+    The caller reads which one opens from the frame that writes it.
 
     Args:
         tokenizer: The target model's tokenizer.

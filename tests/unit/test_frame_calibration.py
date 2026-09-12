@@ -112,6 +112,32 @@ def render_open_generation_chatml(
     return render_chatml(messages) + tail
 
 
+HARMONY_SPECIALS = (
+    "<|start|>",
+    "<|end|>",
+    "<|message|>",
+    "<|channel|>",
+    "<|return|>",
+)
+
+
+def render_harmony(messages: Messages, add_generation_prompt: bool = False) -> str:
+    """Render a Harmony-shaped conversation.
+
+    Every control token names a different word, so none of them pairs
+    with another. The model turn carries an answer-channel header the
+    generation prompt stops short of.
+    """
+    turns = "".join(
+        f"<|start|>{m['role']}<|channel|>final<|message|>{m['content']}<|end|>"
+        if m["role"] == "assistant"
+        else f"<|start|>{m['role']}<|message|>{m['content']}<|end|>"
+        for m in messages
+    )
+    tail = "<|start|>assistant" if add_generation_prompt else ""
+    return turns + tail
+
+
 class _AddedToken:
     def __init__(self, content: str, special: bool) -> None:
         self.content = content
@@ -266,8 +292,9 @@ def test_build_frame_thinking_template_takes_the_closed_model_turn() -> None:
 
     Nemotron 3.5 Lightning 30B-A3B renders exactly this disagreement:
     its generation prompt opens the thought channel and its completed
-    turn shows that channel opened and closed. The block must price the prose as the
-    answer, not as reasoning in a channel nothing closes.
+    turn shows that channel opened and closed. The block must price
+    the prose as the answer, not as reasoning in a channel nothing
+    closes.
     """
     tok = FakeTokenizer(
         specials=CHATML_SPECIALS, render=render_thinking_chatml, bos=None
@@ -286,9 +313,10 @@ def test_build_frame_thinking_template_takes_the_closed_model_turn() -> None:
 def test_build_frame_closed_thought_keeps_the_generation_prompt() -> None:
     """Gemma's generation prompt carries an empty, closed thought block.
 
-    The completed render carries no thought block at all, so the
-    generation prompt adds control tokens rather than missing any.
-    That is the frame behind the published #423 figure, so it stays.
+    The completed render writes no control token the generation
+    prompt omits, and the generation prompt closes every channel it
+    opens. Both rules therefore keep it. That is the frame behind the
+    published #423 figure, so it stays.
     """
     tok = FakeTokenizer()
     generation = tok.apply_chat_template(
@@ -313,12 +341,44 @@ def test_build_frame_agreeing_renders_keep_the_generation_prompt() -> None:
     assert prefix == generation
 
 
+def test_build_frame_unpaired_vocabulary_takes_the_answer_channel_header() -> None:
+    """No control token pairs, so the balance test decides nothing.
+
+    A Harmony-shaped vocabulary spells each control token one way, so
+    the block carries no open/close pair to count. The completed turn
+    still writes an answer-channel header the generation prompt
+    omits, and the prose must sit after that header.
+    """
+    tok = FakeTokenizer(specials=HARMONY_SPECIALS, render=render_harmony, bos=None)
+    user = [{"role": "user", "content": fc.FRAME_USER_TURN}]
+    generation = tok.apply_chat_template(user, add_generation_prompt=True)
+    answered, _, expected_suffix = tok.apply_chat_template(
+        [*user, {"role": "assistant", "content": fc.PROSE_SLOT}]
+    ).partition(fc.PROSE_SLOT)
+    assert fc.control_pairs(tok) == ()
+    assert fc.unbalanced_pair(tok, generation, expected_suffix) is None
+    assert generation.endswith("<|start|>assistant")
+
+    prefix, suffix = _frame(tok)
+
+    assert prefix == answered
+    assert prefix.endswith("<|start|>assistant<|channel|>final<|message|>")
+    framed = fc.build_framed_text(
+        tok, " ".join(f"w{i}" for i in range(12)), 24, prefix, suffix
+    )
+    blocks = framed.count(prefix)
+    assert blocks > 1
+    assert framed.count("<|channel|>final<|message|>") == blocks
+
+
 def test_build_frame_open_generation_prompt_takes_the_completed_turn() -> None:
     """The completed turn balances, so the checkpoint is framed, not refused.
 
-    The completed render adds no control token the generation prompt
-    lacks, so a marker-set comparison alone would keep the unbalanced
-    generation prompt and refuse a checkpoint that frames cleanly.
+    The completed render writes no control token the generation
+    prompt omits, so the header rule keeps the generation prompt. The
+    generation prompt leaves a channel open, so the fallback takes
+    the completed turn instead of refusing a checkpoint that frames
+    cleanly.
     """
     tok = FakeTokenizer(
         specials=CHATML_SPECIALS, render=render_open_generation_chatml, bos=None
