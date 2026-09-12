@@ -303,14 +303,44 @@ uv run python scripts/frame_calibration.py \
   --model ./model --text calibration.txt --out calibration-framed.txt
 ```
 
-The script wraps ~512-token blocks in the checkpoint's own chat
-template. It refuses a vocabulary where a frame marker is not one
-special id, and refuses prose that itself encodes to special ids.
+The script reads the frame from the checkpoint's own chat
+template, then wraps ~512-token blocks in it. It hard-codes no
+family's markers, so each checkpoint gets the frame that checkpoint
+defines. Verified frames:
+
+| Checkpoint | Frame markers |
+| --- | --- |
+| Gemma 4 31B IT-QAT | `<bos>`, `<|turn>`, `<turn|>` |
+| Nemotron 3.5 Lightning 30B-A3B | `<|im_start|>`, `<|im_end|>`, `<think>`, `</think>` |
+| Qwen3-Coder-30B-A3B-Instruct | `<|im_start|>`, `<|im_end|>` |
+
+The script prints the frame it built. Record that text beside the
+map.
+
+The script refuses rather than guesses. It cannot frame a checkpoint
+that carries no chat template — no `chat_template.jinja`, and no
+`chat_template` entry in `tokenizer_config.json`. A base checkpoint
+is the usual case. The script names the checkpoint and the missing
+template, writes no file, and exits 1. Do not work around that
+refusal with a frame borrowed from another checkpoint: a guessed
+frame prices every cell against a distribution the model never
+serves.
+
+It also refuses a vocabulary where a frame marker is not one control
+id, and refuses prose that itself encodes to a control id. A control
+id is one the tokenizer holds in its added-token table or names as a
+special token. Read both: Nemotron 3.5 Lightning 30B-A3B ships
+`<|im_start|>` as an added special token that its `all_special_ids`
+omits, and ships `<think>` and `</think>` as added tokens flagged
+non-special.
+
 Then pass the framed file as `--calibration`. Four rules keep the
 numbers comparable:
 
 1. The frame holds constant across the reference, every arm, and
-   any baseline. Record the frame text beside the map.
+   any baseline. Record the frame text the script prints beside the
+   map. A template that renders a date or a tool list produces a
+   frame that moves between runs — pin the text you used.
 2. Instruments slice a raw token stream, so windows cross block
    boundaries. State that convention beside every published number.
 3. `llama-imatrix` needs `--parse-special` to see the frame.
