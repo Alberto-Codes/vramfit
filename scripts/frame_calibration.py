@@ -120,8 +120,9 @@ def control_tokens(tokenizer: Any) -> dict[str, int]:
 
     A control token is one the tokenizer holds in its added-token
     table, or names as a special token. Both kinds encode atomically.
-    Some checkpoints omit a frame marker from ``all_special_ids``
-    while the added-token table still carries it, so read both.
+    Membership in ``all_special_ids`` alone is not a sufficient test:
+    a checkpoint can register a frame marker as special and still
+    omit it from that list, so read the added-token table too.
 
     Args:
         tokenizer: The target model's tokenizer.
@@ -130,6 +131,9 @@ def control_tokens(tokenizer: Any) -> dict[str, int]:
         Each control token's text against its id.
     """
     tokens: dict[str, int] = {}
+    # Nemotron 3.5 Lightning 30B-A3B registers <|im_start|> as special
+    # yet leaves additional_special_tokens null, so all_special_ids
+    # omits it. Reading only that list would refuse the checkpoint.
     for token_id, token in getattr(tokenizer, "added_tokens_decoder", {}).items():
         content = getattr(token, "content", token)
         if isinstance(content, str) and content:
@@ -244,7 +248,8 @@ def control_pairs(tokenizer: Any) -> tuple[tuple[str, str], ...]:
     """Pair the control tokens that open and close the same channel.
 
     Two control tokens pair when they name the same word and spell
-    their delimiters differently. The checkpoint's own vocabulary
+    their delimiters differently. The pair carries no direction: the
+    caller reads which one opens from the frame that writes it. The checkpoint's own vocabulary
     supplies both spellings, so no family table is needed. A word
     with one spelling opens nothing, and a word with three is
     ambiguous, so both stay unpaired.
@@ -276,17 +281,25 @@ def unbalanced_pair(
 
     Returns:
         The first pair the block spells an unequal number of times,
-        with each count, or ``None`` when every pair balances.
+        ordered as the block writes them, with each count. ``None``
+        when every pair balances.
     """
     pairs = control_pairs(tokenizer)
     if not pairs:
         return None
+    block = prefix + suffix
     known = sorted(control_tokens(tokenizer), key=lambda t: (-len(t), t))
     pattern = re.compile("|".join(re.escape(t) for t in known))
-    counts = Counter(pattern.findall(prefix + suffix))
-    for opener, closer in pairs:
-        if counts[opener] != counts[closer]:
-            return opener, closer, counts[opener], counts[closer]
+    counts = Counter(pattern.findall(block))
+
+    def written_at(token: str) -> int:
+        at = block.find(token)
+        return at if at >= 0 else len(block)
+
+    for pair in pairs:
+        first, second = sorted(pair, key=written_at)
+        if counts[first] != counts[second]:
+            return first, second, counts[first], counts[second]
     return None
 
 
@@ -330,10 +343,11 @@ def verify_frame(
         )
     unbalanced = unbalanced_pair(tokenizer, prefix, suffix)
     if unbalanced:
-        opener, closer, opened, closed = unbalanced
+        first, second, wrote_first, wrote_second = unbalanced
         raise ValueError(
-            f"the frame writes {opener!r} {opened} times against {closer!r}"
-            f" {closed} times, so the block leaves a channel open"
+            f"the frame writes {first!r} (count {wrote_first}) against"
+            f" {second!r} (count {wrote_second}), so the block leaves that"
+            " channel unbalanced"
         )
     bos = getattr(tokenizer, "bos_token", None)
     bos_id = getattr(tokenizer, "bos_token_id", None)

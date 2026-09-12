@@ -68,7 +68,7 @@ def render_chatml(messages: Messages, add_generation_prompt: bool = False) -> st
     return f"{turns}{tail}"
 
 
-def _chatml_thinking(messages: Messages, opened: str, answered: str) -> str:
+def _chatml_thinking(messages: Messages, answered: str) -> str:
     """Render ChatML turns whose model turn carries a thought block."""
     return "".join(
         f"<|im_start|>{m['role']}\n"
@@ -88,7 +88,7 @@ def render_thinking_chatml(
     completed turn instead shows the channel opened and closed.
     """
     tail = "<|im_start|>assistant\n<think>\n" if add_generation_prompt else ""
-    return _chatml_thinking(messages, "<think>\n", "<think></think>") + tail
+    return _chatml_thinking(messages, "<think></think>") + tail
 
 
 def render_open_channel_chatml(
@@ -96,7 +96,7 @@ def render_open_channel_chatml(
 ) -> str:
     """Render a thinking template that closes the channel in neither form."""
     tail = "<|im_start|>assistant\n<think>\n" if add_generation_prompt else ""
-    return _chatml_thinking(messages, "<think>\n", "<think>") + tail
+    return _chatml_thinking(messages, "<think>") + tail
 
 
 class _AddedToken:
@@ -309,8 +309,11 @@ def test_verify_frame_channel_open_in_both_renders_refuses() -> None:
     markers = fc.frame_markers(tok, prefix, suffix)
     assert "<think>" in prefix
     assert "</think>" not in prefix + suffix
-    with pytest.raises(ValueError, match="leaves a channel open"):
+    with pytest.raises(ValueError, match="leaves that channel unbalanced") as caught:
         fc.verify_frame(tok, markers, prefix, suffix)
+    message = str(caught.value)
+    assert message.index("'<think>'") < message.index("'</think>'")
+    assert fc.unbalanced_pair(tok, prefix, suffix) == ("<think>", "</think>", 1, 0)
 
 
 def test_build_frame_no_chat_template_refuses_with_the_cause() -> None:

@@ -318,13 +318,14 @@ way.
 Each row below is the `frame markers:` line the script printed for
 that checkpoint's cached tokenizer on 2026-09-11, copied in the order
 it printed. Re-measure a row before you trust it against a different
-revision.
+revision. The cells escape each `|` as `\|`, which the renderer needs
+inside a table. The markers themselves carry no backslash.
 
 | Checkpoint | Frame markers, as printed |
 | --- | --- |
-| Gemma 4 31B IT-QAT | `<channel|>, <|channel>, <turn|>, <|turn>, <bos>` |
-| Nemotron 3.5 Lightning 30B-A3B | `<|im_start|>, <|im_end|>, </think>, <think>` |
-| Qwen3-Coder-30B-A3B-Instruct | `<|im_start|>, <|im_end|>` |
+| Gemma 4 31B IT-QAT | `<channel\|>, <\|channel>, <turn\|>, <\|turn>, <bos>` |
+| Nemotron 3.5 Lightning 30B-A3B | `<\|im_start\|>, <\|im_end\|>, </think>, <think>` |
+| Qwen3-Coder-30B-A3B-Instruct | `<\|im_start\|>, <\|im_end\|>` |
 
 The script prints the frame it built. Record that text beside the
 map.
@@ -341,7 +342,10 @@ serves.
 It also refuses a vocabulary where a frame marker is not one control
 id, and refuses prose that itself encodes to a control id. A control
 id is one the tokenizer holds in its added-token table or names as a
-special token. Read both: Nemotron 3.5 Lightning 30B-A3B ships
+special token. The script reads both, because a checkpoint can
+register a frame marker as special and still leave it out of
+`all_special_ids`. That list alone would refuse a checkpoint whose
+frame is sound. Read both: Nemotron 3.5 Lightning 30B-A3B ships
 `<|im_start|>` as an added special token that its `all_special_ids`
 omits, and ships `<think>` and `</think>` as added tokens flagged
 non-special. That checkpoint's model turn opens with `<think>`, so
