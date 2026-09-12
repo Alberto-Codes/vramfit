@@ -306,9 +306,20 @@ change.
 :   The whole apparatus a damage number is measured inside: process,
     quantization path, calibration text, token count, and
     instrument.
-    Damage values compare only within one frame — cross-process
+    Damage values compare only within one frame. How far a value
+    moves outside its frame depends on the lane, and two lanes
+    gave opposite results.
+    On the reference box's offloaded RTN lane, cross-process
     re-measurement of identical cells moved values 2.7–4.1x (the
     [ninth data point](../explanation/evaluating-packed-models.md)).
+    On the rented `q0` lane with the checkpoint resident
+    (`offloaded_groups: 0`), a new process on a new pod on a later
+    day reproduced a published map to the last stored digit, in 32
+    of 32 cells (the C6 calibration campaign, 2026-09-11, one
+    target).
+    So reuse a published damage value when your conditions match
+    that resident `q0` lane. Re-measure when they match the
+    offloaded RTN lane.
     The **scan frame** is the meter's apparatus:
     perturb weights inside the bf16 model, measure calibration KL.
     The **runtime frame** is the packed artifact under the runtime's
