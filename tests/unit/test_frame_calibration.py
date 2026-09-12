@@ -99,6 +99,19 @@ def render_open_channel_chatml(
     return _chatml_thinking(messages, "<think>") + tail
 
 
+def render_open_generation_chatml(
+    messages: Messages, add_generation_prompt: bool = False
+) -> str:
+    """Render a template whose generation prompt alone opens a channel.
+
+    The completed turn carries no thought block, so it adds no
+    control token the generation prompt lacks. Only the completed
+    turn balances.
+    """
+    tail = "<|im_start|>assistant\n<think>\n" if add_generation_prompt else ""
+    return render_chatml(messages) + tail
+
+
 class _AddedToken:
     def __init__(self, content: str, special: bool) -> None:
         self.content = content
@@ -298,6 +311,34 @@ def test_build_frame_agreeing_renders_keep_the_generation_prompt() -> None:
     prefix, _ = _frame(tok)
     assert generation == answered
     assert prefix == generation
+
+
+def test_build_frame_open_generation_prompt_takes_the_completed_turn() -> None:
+    """The completed turn balances, so the checkpoint is framed, not refused.
+
+    The completed render adds no control token the generation prompt
+    lacks, so a marker-set comparison alone would keep the unbalanced
+    generation prompt and refuse a checkpoint that frames cleanly.
+    """
+    tok = FakeTokenizer(
+        specials=CHATML_SPECIALS, render=render_open_generation_chatml, bos=None
+    )
+    user = [{"role": "user", "content": fc.FRAME_USER_TURN}]
+    generation = tok.apply_chat_template(user, add_generation_prompt=True)
+    answered, _, expected_suffix = tok.apply_chat_template(
+        [*user, {"role": "assistant", "content": fc.PROSE_SLOT}]
+    ).partition(fc.PROSE_SLOT)
+    assert set(fc.frame_markers(tok, answered, "")) <= set(
+        fc.frame_markers(tok, generation, "")
+    )
+    assert fc.unbalanced_pair(tok, generation, expected_suffix) is not None
+
+    prefix, suffix = _frame(tok)
+
+    assert prefix == answered
+    assert fc.unbalanced_pair(tok, prefix, suffix) is None
+    block = fc.build_framed_text(tok, "w0 w1 w2 w3", 64, prefix, suffix)
+    assert block.count("<think>") == block.count("</think>") == 0
 
 
 def test_verify_frame_channel_open_in_both_renders_refuses() -> None:

@@ -58,10 +58,10 @@ def build_frame(tokenizer: Any) -> tuple[str, str]:
     The template renders the model turn two ways. The generation
     prompt asks the model to answer. The completed render shows the
     template's own finished turn, which the function splits at the
-    prose slot. The function reads the control tokens of each, then
-    takes the completed render's half when that half carries a
-    control token the generation prompt lacks. Such a token is the
-    template closing what the generation prompt left open.
+    prose slot. The function prefers the generation prompt. It takes
+    the completed render's half when the generation prompt leaves a
+    channel open, because the completed turn is what the template
+    writes before a real answer.
 
     The suffix always comes from the completed render. Both halves
     come from the chat template, never from a table of per-family
@@ -109,10 +109,9 @@ def build_frame(tokenizer: Any) -> tuple[str, str]:
     answered, found, suffix = rendered.partition(PROSE_SLOT)
     if not found:
         raise ValueError("the chat template dropped the assistant answer")
-    closes = set(frame_markers(tokenizer, answered, "")) - set(
-        frame_markers(tokenizer, generation, "")
-    )
-    return (answered if closes else generation), suffix
+    if unbalanced_pair(tokenizer, generation, suffix) is None:
+        return generation, suffix
+    return answered, suffix
 
 
 def control_tokens(tokenizer: Any) -> dict[str, int]:

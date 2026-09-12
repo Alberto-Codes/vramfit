@@ -156,13 +156,26 @@ change.
 
 **Model-turn frame**
 :   A fixed chat-template wrapper around every calibration or
-    evaluation chunk: the target's own user turn plus model-turn
-    generation prompt, with the chunk in the answer position. A
+    evaluation chunk, with the chunk in the answer position. The
+    wrapper is the target's own user turn plus one model-turn
+    render. The template offers two: the generation prompt, and the
+    completed model turn it writes before an answer. The builder
+    prefers the generation prompt. It takes the completed turn when
+    the generation prompt leaves a **control token** channel open. A
     channel-locked target measures in-frame on both sides of every
     comparison, and the frame text is recorded with the map. Built
     by `scripts/frame_calibration.py`. Not "measurement frame" —
     that term names the whole apparatus, and the model-turn frame
     is one property of its calibration text.
+
+**Control token**
+:   A token the tokenizer holds in its added-token table, or names
+    as a special token. A control token encodes to exactly one id.
+    That id is its control id. Read both sources. A checkpoint can
+    register a frame marker as special and still omit it from
+    `all_special_ids`, so membership in that list is not a
+    sufficient test. A **model-turn frame** carries control tokens
+    around the chunk, never marker text the model reads as prose.
 
 **Channel-locked**
 :   A checkpoint that prices raw prose at degenerate perplexity and

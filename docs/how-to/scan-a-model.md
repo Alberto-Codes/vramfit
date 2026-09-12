@@ -308,12 +308,11 @@ template, then wraps ~512-token blocks in it. It hard-codes no
 family's markers, so each checkpoint gets the frame that checkpoint
 defines.
 
-The template renders the model turn two ways. The script compares
-them, then takes the completed turn when that turn closes a channel
-the generation prompt leaves open. The prose then lands where the
-template puts an answer. Every block closes every channel it opens,
-and the script refuses a checkpoint whose template closes neither
-way.
+The template renders the model turn two ways. The script prefers the
+generation prompt. It takes the completed turn when the generation
+prompt leaves a channel open. The prose then lands where the template
+puts an answer. Every block closes every channel it opens, and the
+script refuses a checkpoint whose template closes neither way.
 
 Each row below is the `frame markers:` line the script printed for
 that checkpoint's cached tokenizer on 2026-09-11, copied in the order
@@ -340,16 +339,14 @@ frame prices every cell against a distribution the model never
 serves.
 
 It also refuses a vocabulary where a frame marker is not one control
-id, and refuses prose that itself encodes to a control id. A control
-id is one the tokenizer holds in its added-token table or names as a
-special token. The script reads both, because a checkpoint can
-register a frame marker as special and still leave it out of
-`all_special_ids`. That list alone would refuse a checkpoint whose
-frame is sound. Read both: Nemotron 3.5 Lightning 30B-A3B ships
-`<|im_start|>` as an added special token that its `all_special_ids`
-omits, and ships `<think>` and `</think>` as added tokens flagged
-non-special. That checkpoint's model turn opens with `<think>`, so
-`all_special_ids` alone refuses its own frame.
+id, and refuses prose that itself encodes to a control id. The
+[glossary](../reference/glossary.md) defines a control token and its
+control id. Nemotron 3.5 Lightning 30B-A3B shows why the script reads
+the added-token table too: it ships `<|im_start|>` as an added special
+token that its `all_special_ids` omits, and ships `<think>` and
+`</think>` as added tokens flagged non-special. That checkpoint's
+model turn opens with `<think>`, so `all_special_ids` alone refuses
+its own frame.
 
 It also refuses a frame that writes a marker the vocabulary lost. A
 re-upload can keep a chat template that names `<|im_start|>` after
