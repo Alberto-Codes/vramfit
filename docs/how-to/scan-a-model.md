@@ -328,8 +328,8 @@ inside a table. The markers themselves carry no backslash.
 | Nemotron 3.5 Lightning 30B-A3B | `<\|im_start\|>, <\|im_end\|>, </think>, <think>` |
 | Qwen3-Coder-30B-A3B-Instruct | `<\|im_start\|>, <\|im_end\|>` |
 
-The script prints the frame it built. Record that text beside the
-map.
+The script prints the frame it built. Rule 1 below says where to
+record that text.
 
 The script refuses rather than guesses. It cannot frame a checkpoint
 that carries no chat template — no `chat_template.jinja`, and no
