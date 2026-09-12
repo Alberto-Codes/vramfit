@@ -43,11 +43,12 @@ Each attention layer prices its own cache (`KVLayer`, #421). Per layer
 and sequence:
 
 ```
-layer_kv_bytes = kv_tensors × n_kv_heads × head_dim × bytes_per_elem × cached_tokens
+element_bytes  = the first kv_tensors of (key_bytes, value_bytes), summed
+layer_kv_bytes = n_kv_heads × head_dim × element_bytes × cached_tokens
 ```
 
-Three mechanisms decide `cached_tokens`, and one constant sets
-`kv_tensors`:
+Three mechanisms decide `cached_tokens`, and one constant decides
+which caches the layer pays for:
 
 - A **global** layer caches `context` tokens — it grows with context.
 - A **sliding** layer caches `min(context, window + 512)` tokens. The
@@ -57,23 +58,53 @@ Three mechanisms decide `cached_tokens`, and one constant sets
 - A **shared-KV** layer reuses an earlier layer's cache and allocates
   nothing (`num_kv_shared_layers`).
 - `kv_tensors` is 2: the runtime allocates a K and a V cache for every
-  layer. Where the model declares `attention_k_eq_v` it fills V with K
-  but still allocates both, so the price stays 2 (#431).
+  layer, so `element_bytes` is the whole pair. A value of 1 prices the
+  key cache alone. The field admits 1 or 2 and `KVLayer` refuses
+  anything else, because a silent prefix would under-price the cache.
+  Where the model declares `attention_k_eq_v` the runtime fills V with
+  K but still allocates both, so the price stays 2 (#431).
 
 The stack's total therefore splits into two terms: **KV growth**
 (`kv_growth_bytes_per_token`, the global layers' bytes per context
 token) and the **window pool** (`kv_window_pool_bytes`, the sliding
 layers' saturated bytes per sequence). For a uniform full-attention
-stack the pool is zero and the familiar formula holds:
+stack the pool is zero and the formula collapses to one product:
 
 ```
-kv_growth_bytes_per_token = 2 × n_attention_layers × n_kv_heads × head_dim × bytes_per_elem
+kv_growth_bytes_per_token = n_attention_layers × n_kv_heads × head_dim × element_bytes
 ```
 
-(2 = keys + values.) Multiply by context length × concurrent sequences.
-Grouped-query attention (small `n_kv_heads`) is what makes long context
-affordable; FP8 KV cache halves it again. This is why the budget must be
-planned *jointly*: every GiB saved on weights is context length gained.
+Multiply by context length × concurrent sequences. A matched pair
+reduces the last term to `2 × bytes_per_elem`, which is the familiar
+shortcut — it holds only while the key and the value cache share a
+dtype. Grouped-query attention (small `n_kv_heads`) is what makes long
+context affordable, and an fp8 pair halves the term again. This is why
+the budget must be planned *jointly*: every GiB saved on weights is
+context length gained.
+
+### The two caches carry their own dtypes
+
+The key cache and the value cache are priced as a **KV dtype pair**
+(#424). llama.cpp already serves the two at separate types, so a
+budget with one shared dtype cannot describe an asymmetric cache at
+all. `--kv-dtype` names the key dtype and prices the value cache at it
+too, which is the symmetric reading the budget has always had.
+`--kv-value-dtype` splits the pair. Half the pair at half the width
+costs three quarters of the symmetric total, not half.
+
+Two limits are deliberate, and both are conditions rather than
+silences:
+
+- **The pair is run-wide, not per-layer.** A per-layer KV type map is
+  parked until a ruled runtime accepts per-layer KV types. No runtime
+  reads such a map today, so the map would emit an output nothing can
+  consume. The trigger is the condition to build it, not a date.
+- **The dtype table holds whole-byte element widths**, so it names no
+  block-quantized cache type. llama.cpp's `q8_0` (8.5 bits/element)
+  and `q4_0` (4.5 bits/element) cannot be priced until the table
+  carries sub-byte widths (#575). So the pair the runtime serves most
+  often — an 8-bit key cache beside a 4-bit value cache — stays out of
+  reach. The pair above splits the *mechanism*, not yet those types.
 
 ### Worked example: Gemma 4 31B (mixed sliding/global)
 
@@ -83,8 +114,8 @@ heads × width 512, `attention_k_eq_v`). The runtime allocates a K and
 V pair on every layer (#431). At fp16, one sequence, measured on the
 ruled instrument:
 
-- KV growth: `10 × 4 × 512 × 2 × 2` = **81,920 B/token**;
-- window pool: `50 × 16 × 256 × 2 × 2 × (1024 + 512)` = **1,200 MiB**;
+- KV growth: `10 × 4 × 512 × (2 + 2)` = **81,920 B/token**;
+- window pool: `50 × 16 × 256 × (2 + 2) × (1024 + 512)` = **1,200 MiB**;
 - total: **11.17 GiB at 128k context**, **21.17 GiB at 256k**.
 
 Past ~1.5k tokens the card pays 80 KiB per extra token instead of the

@@ -8,10 +8,11 @@ live in [vramfit.adapters.inbound.cli_scan][],
 [vramfit.adapters.inbound.cli_validate][], and
 [vramfit.adapters.inbound.cli_capacity][] to keep this module under
 the size cap. ``budget`` reports KV growth per token, plus the
-window pool on a mixed sliding/global stack (#421), and subtracts
-the measured ``--vision-line`` when the model card claims vision
-(ADR-0030 decision 3). ``capacity``
-runs the same ledger in reverse from a packed recipe (#422).
+window pool on a mixed sliding/global stack (#421), prices the key
+and value caches at the ``--kv-dtype`` / ``--kv-value-dtype`` pair
+(#424), and subtracts the measured ``--vision-line`` when the model
+card claims vision (ADR-0030 decision 3). ``capacity`` runs the same
+ledger in reverse from a packed recipe (#422).
 The CLI wires outbound adapters to the pure domain, typing
 them against the ports so the seams stay explicit. Every IO boundary —
 artifact and config reads, checkpoint and artifact writes, and model
@@ -72,7 +73,7 @@ from vramfit.adapters.inbound import cli_capacity, cli_pack, cli_scan, cli_valid
 from vramfit.adapters.inbound.cli_plan_sizes import discovered_groups
 from vramfit.adapters.inbound.cli_protection_warnings import warn_protection_gaps
 from vramfit.adapters.inbound.cli_shape import (
-    check_kv_dtype,
+    check_kv_dtypes,
     kv_detail,
     parse_size_option,
     resolve_shape,
@@ -164,8 +165,16 @@ def budget(
         int, typer.Option(min=1, help="Context length in tokens.")
     ] = 16384,
     kv_dtype: Annotated[
-        str, typer.Option(help="KV-cache dtype: fp16, bf16, or fp8.")
+        str, typer.Option(help="Key-cache dtype: fp16, bf16, or fp8.")
     ] = "fp16",
+    kv_value_dtype: Annotated[
+        str | None,
+        typer.Option(
+            help="Value-cache dtype, priced apart from the key cache: "
+            "fp16, bf16, or fp8. Default: the --kv-dtype value, which "
+            "then prices both caches."
+        ),
+    ] = None,
     sequences: Annotated[int, typer.Option(min=1, help="Concurrent sequences.")] = 1,
     overhead: Annotated[
         str, typer.Option(help="Runtime overhead reservation.")
@@ -205,7 +214,10 @@ def budget(
     derives from ``vramfit.domain.budget.DEFAULT_RUNTIME_OVERHEAD_BYTES``.
     The first output line reports KV growth per context token, plus
     the saturated per-sequence window pool when the shape has sliding
-    layers (#421). The KV-cache line sums both terms at ``--context``
+    layers (#421). ``--kv-dtype`` prices both caches on its own.
+    ``--kv-value-dtype`` prices the value cache apart from the key
+    cache, the way llama.cpp serves the two at separate types
+    (#424). The KV-cache line sums both terms at ``--context``
     and ``--sequences``. The ledger subtracts ``--vision-line`` only
     when the card claims vision, and a card that claims no vision
     draws a stated absence instead (ADR-0030 decision 3) — the shared
@@ -224,18 +236,26 @@ def budget(
         ```console
         $ vramfit budget --model-config config.json --vram 24GiB --kv-dtype fp8
         ```
+
+        Budget an fp8 value cache behind fp16 keys:
+
+        ```console
+        $ vramfit budget --model-config config.json --kv-dtype fp16 --kv-value-dtype fp8
+        ```
     """
-    check_kv_dtype(kv_dtype)
+    check_kv_dtypes(kv_dtype, kv_value_dtype)
     shape = resolve_shape(model_config, attn_layers, kv_heads, head_dim)
     vision_bytes, vision_note = resolve_vision_line(model_config, vision_line)
 
     ledger = Budget(
         vram_total_bytes=parse_size_option(vram, "--vram"),
-        kv_cache_bytes=kv_cache_bytes(shape, context, kv_dtype, sequences),
+        kv_cache_bytes=kv_cache_bytes(
+            shape, context, kv_dtype, sequences, kv_value_dtype
+        ),
         runtime_overhead_bytes=parse_size_option(overhead, "--overhead"),
         vision_bytes=vision_bytes,
     )
-    detail = kv_detail(shape, kv_dtype)
+    detail = kv_detail(shape, kv_dtype, kv_value_dtype)
     typer.echo(f"attention layers      {len(shape.kv_layers)}  ({detail})")
     typer.echo(f"VRAM total            {format_size(ledger.vram_total_bytes)}")
     typer.echo(

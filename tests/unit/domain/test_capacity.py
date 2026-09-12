@@ -129,6 +129,37 @@ class TestMaxSequences:
             max_sequences(UNIFORM, 1000, context=10, kv_dtype="fp4")
 
 
+class TestKvDtypePair:
+    def test_matching_pair_reads_as_the_single_dtype(self) -> None:
+        assert max_context_tokens(
+            MIXED, 100_000, kv_dtype="fp8", kv_value_dtype="fp8"
+        ) == max_context_tokens(MIXED, 100_000, kv_dtype="fp8")
+
+    def test_cheaper_value_cache_never_lowers_the_context_capacity(self) -> None:
+        symmetric = max_context_tokens(MIXED, 100_000, kv_dtype="fp16")
+        split = max_context_tokens(
+            MIXED, 100_000, kv_dtype="fp16", kv_value_dtype="fp8"
+        )
+
+        assert symmetric is not None and split is not None
+        assert split > symmetric
+
+    def test_cheaper_value_cache_never_lowers_the_sequence_capacity(self) -> None:
+        symmetric = max_sequences(UNIFORM, 100_000, context=64, kv_dtype="fp16")
+        split = max_sequences(
+            UNIFORM, 100_000, context=64, kv_dtype="fp16", kv_value_dtype="fp8"
+        )
+
+        assert symmetric is not None and split is not None
+        assert split > symmetric
+
+    def test_split_pair_still_reads_unbounded_on_an_all_shared_stack(self) -> None:
+        assert (
+            max_context_tokens(ALL_SHARED, 1000, kv_dtype="fp16", kv_value_dtype="fp8")
+            is None
+        )
+
+
 class TestImageCapacity:
     def test_divides_tokens_by_the_image_token_cost(self) -> None:
         assert image_capacity(1000, image_token_cost=256) == 3

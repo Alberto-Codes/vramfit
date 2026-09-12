@@ -647,6 +647,65 @@ class TestBudgetCommand:
 
         assert result.exit_code == 2
 
+    def test_unknown_kv_value_dtype_exits_two(self) -> None:
+        result = runner.invoke(
+            app,
+            [
+                "budget",
+                "--attn-layers",
+                "1",
+                "--kv-heads",
+                "1",
+                "--head-dim",
+                "1",
+                "--kv-value-dtype",
+                "int4",
+            ],
+        )
+
+        assert result.exit_code == 2
+        # click 8.2+ keeps the streams apart, so assert the channel the
+        # refusal must reach rather than the merged view.
+        assert "--kv-value-dtype" in result.stderr
+
+    def test_omitted_kv_value_dtype_reads_exactly_as_today(self) -> None:
+        args = [
+            "budget",
+            "--attn-layers",
+            "49",
+            "--kv-heads",
+            "8",
+            "--head-dim",
+            "128",
+        ]
+
+        default = runner.invoke(app, args)
+        matched = runner.invoke(app, [*args, "--kv-value-dtype", "fp16"])
+
+        assert default.exit_code == 0, default.stderr
+        assert default.stdout == matched.stdout
+        assert default.stderr == matched.stderr
+        assert "KV grows 200704 bytes/token, fp16" in default.stdout
+
+    def test_fp8_value_cache_shrinks_the_kv_line(self) -> None:
+        result = runner.invoke(
+            app,
+            [
+                "budget",
+                "--attn-layers",
+                "49",
+                "--kv-heads",
+                "8",
+                "--head-dim",
+                "128",
+                "--kv-value-dtype",
+                "fp8",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "KV grows 150528 bytes/token, fp16 keys / fp8 values" in result.output
+
     def test_negative_weight_budget_exits_one(self) -> None:
         result = runner.invoke(
             app,

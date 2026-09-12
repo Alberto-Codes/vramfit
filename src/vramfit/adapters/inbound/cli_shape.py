@@ -3,10 +3,10 @@
 Both commands resolve the attention geometry from exactly one source
 — ``--model-config`` through the `ModelShapeSource` port, or the
 manual ``--attn-layers --kv-heads --head-dim`` triple — and validate
-the same ``--kv-dtype`` set. Both resolve ``--vision-line`` the same
-way: the card's vision claim licenses the subtraction (ADR-0030
-decision 3). ``plan`` shares the size-option rule.
-Each rule lives here once.
+the same ``--kv-dtype`` and ``--kv-value-dtype`` set. Both resolve
+``--vision-line`` the same way: the card's vision claim licenses the
+subtraction (ADR-0030 decision 3). ``plan`` shares the size-option
+rule. Each rule lives here once.
 
 Examples:
     Resolve a manual shape the way both commands do:
@@ -37,6 +37,7 @@ from vramfit.domain.budget import (
     kv_growth_bytes_per_token,
     kv_window_pool_bytes,
     parse_size,
+    resolve_kv_dtypes,
 )
 from vramfit.ports.outbound import ModelShapeSource
 
@@ -60,20 +61,42 @@ def parse_size_option(value: str, option: str) -> int:
         raise typer.BadParameter(f"{option}: {exc}") from exc
 
 
-def check_kv_dtype(kv_dtype: str) -> None:
-    """Refuse a ``--kv-dtype`` outside the KV dtype table.
+def check_kv_dtype(kv_dtype: str, option: str = "--kv-dtype") -> None:
+    """Refuse a KV dtype option outside the KV dtype table.
 
     Args:
         kv_dtype: The raw option value.
+        option: The option name the refusal names.
 
     Raises:
         typer.BadParameter: If the dtype is not in `KV_DTYPE_BYTES`.
     """
     if kv_dtype not in KV_DTYPE_BYTES:
         raise typer.BadParameter(
-            f"--kv-dtype: unknown dtype {kv_dtype!r} — "
+            f"{option}: unknown dtype {kv_dtype!r} — "
             f"choose from {sorted(KV_DTYPE_BYTES)}"
         )
+
+
+def check_kv_dtypes(kv_dtype: str, kv_value_dtype: str | None) -> None:
+    """Refuse either half of the KV dtype pair.
+
+    Both commands take one ``--kv-dtype`` and an optional
+    ``--kv-value-dtype`` that prices the value cache apart from the
+    key cache (#424). Each half validates against the same table,
+    and the refusal names the option the operator typed.
+
+    Args:
+        kv_dtype: The raw ``--kv-dtype`` value.
+        kv_value_dtype: The raw ``--kv-value-dtype`` value, or None.
+
+    Raises:
+        typer.BadParameter: If either dtype is not in
+            `KV_DTYPE_BYTES`.
+    """
+    check_kv_dtype(kv_dtype)
+    if kv_value_dtype is not None:
+        check_kv_dtype(kv_value_dtype, "--kv-value-dtype")
 
 
 def resolve_shape(
@@ -181,21 +204,29 @@ def resolve_vision_line(
     return line_bytes, None
 
 
-def kv_detail(shape: ModelShape, kv_dtype: str) -> str:
+def kv_detail(
+    shape: ModelShape, kv_dtype: str, kv_value_dtype: str | None = None
+) -> str:
     """Render the KV growth and window-pool note both commands print.
 
     Args:
         shape: The resolved attention shape.
-        kv_dtype: The validated KV dtype.
+        kv_dtype: The validated key dtype.
+        kv_value_dtype: The validated value dtype, or None when one
+            dtype prices both caches.
 
     Returns:
         A note like ``"KV grows 81920 bytes/token, fp16, + 1.17 GiB
         window pool per sequence"`` — the pool clause only when the
-        shape has sliding layers (#421).
+        shape has sliding layers (#421). A split pair reads
+        ``"fp16 keys / fp8 values"`` in place of the single name
+        (#424).
     """
-    per_token = kv_growth_bytes_per_token(shape, kv_dtype)
-    pool = kv_window_pool_bytes(shape, kv_dtype)
-    detail = f"KV grows {per_token} bytes/token, {kv_dtype}"
+    per_token = kv_growth_bytes_per_token(shape, kv_dtype, kv_value_dtype)
+    pool = kv_window_pool_bytes(shape, kv_dtype, kv_value_dtype)
+    key, value = resolve_kv_dtypes(kv_dtype, kv_value_dtype)
+    named = key if key == value else f"{key} keys / {value} values"
+    detail = f"KV grows {per_token} bytes/token, {named}"
     if pool:
         detail += f", + {format_size(pool)} window pool per sequence"
     return detail

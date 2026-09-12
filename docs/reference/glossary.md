@@ -516,12 +516,27 @@ change.
     1,200 MiB on Gemma 4 31B at fp16, measured on #431. Not "sliding
     cache" or "SWA buffer".
 
+**KV dtype pair**
+:   The key-cache dtype and the value-cache dtype the budget prices a
+    run at (`--kv-dtype`, `--kv-value-dtype`, `resolve_kv_dtypes`).
+    llama.cpp serves the two caches at separate types, so one shared
+    dtype could not describe a configuration the packed target already
+    runs (#424). A caller that names one dtype prices both halves at
+    it. The pair is run-wide: the budget assigns no per-layer KV type
+    until a ruled runtime accepts one. Both halves take a whole-byte
+    element width, so the pair names no block-quantized cache type
+    such as llama.cpp's `q8_0` or `q4_0` (#575). Not "KV precision"
+    or "cache type".
+
 **Storage factor**
 :   KV tensors the runtime allocates per cached token (field
     `kv_tensors`). The field prices the runtime's allocation, not
     the model's storage semantics. The ruled runtime allocates a K
     and a V cache even under `attention_k_eq_v`, so every layer
-    prices 2 (#431). Not "KV factor".
+    prices 2 (#431). The factor selects that many entries of the
+    **KV dtype pair**, so 1 prices the key cache alone (`KVLayer`,
+    [VRAM budget math](../explanation/vram-budget.md)). Not "KV
+    factor".
 
 **Capacity readout**
 :   The budget ledger run in reverse
