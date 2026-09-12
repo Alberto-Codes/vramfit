@@ -306,9 +306,12 @@ change.
 :   The whole apparatus a damage number is measured inside: process,
     quantization path, calibration text, token count, and
     instrument.
-    Damage values compare only within one frame — cross-process
-    re-measurement of identical cells moved values 2.7–4.1x (the
+    Damage values compare only within one frame. On the reference
+    box, cross-process re-measurement of identical cells moved
+    values 2.7–4.1x. That figure comes from two RTN re-measurements
+    of stored RTN-map cells (the
     [ninth data point](../explanation/evaluating-packed-models.md)).
+    It scopes to that observation, not to the meter.
     The **scan frame** is the meter's apparatus:
     perturb weights inside the bf16 model, measure calibration KL.
     The **runtime frame** is the packed artifact under the runtime's
