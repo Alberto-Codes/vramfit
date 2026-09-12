@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.6.0](https://github.com/Alberto-Codes/vramfit/compare/v0.5.0...v0.6.0) (2026-09-12)
+
+
+### Features
+
+* **domain:** price the KV key and value caches as a dtype pair ([#578](https://github.com/Alberto-Codes/vramfit/issues/578)) ([d29fa92](https://github.com/Alberto-Codes/vramfit/commit/d29fa928792acb24ddea2565dd7d07c9e06a87ba))
+
+
+### Bug Fixes
+
+* **cli:** pluralize the plan checkpoint overlap warning ([#568](https://github.com/Alberto-Codes/vramfit/issues/568)) ([29011a8](https://github.com/Alberto-Codes/vramfit/commit/29011a865ad6bbd602e07e5a52b20a0b07000c10))
+* **pack:** catch unmappable expert projections during preflight ([#567](https://github.com/Alberto-Codes/vramfit/issues/567)) ([37cbc32](https://github.com/Alberto-Codes/vramfit/commit/37cbc32c76b8ddcebdfa6b888d56eb5d8a301c38))
+* **plan:** reconcile merged expert projections between scan and checkpoint ([#579](https://github.com/Alberto-Codes/vramfit/issues/579)) ([8341e37](https://github.com/Alberto-Codes/vramfit/commit/8341e3718e21a460bc47643b244244382b93b768))
+* **scan:** read the calibration frame from the checkpoint's chat template ([#580](https://github.com/Alberto-Codes/vramfit/issues/580)) ([91ed55a](https://github.com/Alberto-Codes/vramfit/commit/91ed55a1ee73b15e48ee227d097d0cca3a6f2ae0))
+* **scan:** refuse shard index entries outside the model directory ([#573](https://github.com/Alberto-Codes/vramfit/issues/573)) ([04b3a42](https://github.com/Alberto-Codes/vramfit/commit/04b3a429865d603841d421d724c540344c66d6a2))
+
 ## [0.5.0](https://github.com/Alberto-Codes/vramfit/compare/v0.4.0...v0.5.0) (2026-09-05)
 
 
