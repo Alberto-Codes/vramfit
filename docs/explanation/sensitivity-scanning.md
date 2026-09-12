@@ -69,8 +69,8 @@ A damage value belongs to its measurement frame. How far it moves
 when the frame changes is not one number. Two observations on this
 project point opposite ways, and their conditions differ.
 
-**The reference box, offloaded, RTN within-group method.** Two
-re-measurements of stored cells read 2.7–4.1x their map values in a
+**The reference box, offloaded, `rtn-block32` within-group method.**
+Two re-measurements of stored cells read 2.7–4.1x their map values in a
 fresh process on the same box (the
 [ninth data point](evaluating-packed-models.md)). That pair is the
 source of the standing warning that absolute damages do not transfer
@@ -88,7 +88,21 @@ bit-identical to the published stored values. Maximum relative
 deviation was 0.0, and Spearman was 1.000000 at both precisions. The
 run log recorded `offloaded_groups: 0`, so nothing offloaded. The arm
 ran in a new process, on a different pod, on a different day from the
-published map.
+published map. Its run record names one NVIDIA H100 80GB HBM3, driver
+580.126.09, torch 2.13.0+cu130, and the container image
+`runpod/pytorch:1.0.2-cu1281-torch280-ubuntu2404`.
+
+**The instrument match is unproven.**
+[ADR-0027](../adr/0027-instrument-frame-matching.md) decision 1
+defines an instrument as the accelerator, its
+streaming-multiprocessor count, the build identity, and the offload
+split. The C6 record holds the accelerator and the arm's own torch
+build. It does not record the streaming-multiprocessor count, and it
+does not establish that the build identity matched the published
+map's. So this section does not claim the two runs shared an
+instrument. The agreeing numbers are the observation under
+explanation, not evidence about the hardware. A reader must establish
+all four parts before reusing a published damage value.
 
 **What the pair supports, and what it does not.** The two
 observations differ in offload state, within-group method,

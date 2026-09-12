@@ -309,27 +309,25 @@ change.
     Damage values compare only within one frame. Two observations
     measured how far a value moves outside its frame, and they
     disagree.
-    On the reference box, offloaded, with the RTN within-group
-    method, cross-process re-measurement of identical cells moved
-    values 2.7–4.1x (the
+    On the reference box, offloaded, with the `rtn-block32`
+    within-group method, cross-process re-measurement of identical
+    cells moved values 2.7–4.1x (the
     [ninth data point](../explanation/evaluating-packed-models.md)).
-    On the rented-GPU lane, the C6 control arm re-measured a
-    published map in a new process on a later day. It used the
-    `q0-imx` within-group method, and its run log recorded
-    `offloaded_groups: 0`. It reproduced the stored values to the
-    last digit, in 32 of 32 cells
+    On the rented-GPU lane, with the `q0-imx` within-group method,
+    the C6 control arm re-measured a published map. It ran in a new
+    process, on a different pod, on a later day, and its run log
+    recorded `offloaded_groups: 0`. It reproduced the stored values
+    to the last digit, in 32 of 32 cells
     ([the C6 control arm](../explanation/sensitivity-scanning.md#cross-process-re-measurement-two-readings)).
-    The two observations differ in offload state, within-group
-    method, instrument, and target. The variance appears to track
-    offload state and within-group method.
-    Reuse a published damage value only under four conditions. The
-    conditions are the same instrument, a new process, a new day,
-    and the checkpoint resident rather than offloaded.
-    [ADR-0027](../adr/0027-instrument-frame-matching.md) fixes the
-    instrument condition. Re-measure when the checkpoint offloads.
-    A reader whose conditions match neither observation gets no rule
-    from the pair. That reader falls back on the rule that damage
-    values compare only within one frame.
+    That arm did not record an instrument match with the published
+    map.
+    Reuse a published damage value only when the instrument matches
+    and the checkpoint stays resident. The quantization path, the
+    calibration text, and the token count must match as well. A new
+    process and a new day do not block reuse, and the C6 arm varied
+    both. Establish the instrument match yourself
+    ([ADR-0027](../adr/0027-instrument-frame-matching.md)
+    decision 1).
     The **scan frame** is the meter's apparatus:
     perturb weights inside the bf16 model, measure calibration KL.
     The **runtime frame** is the packed artifact under the runtime's
