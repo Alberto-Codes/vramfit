@@ -148,7 +148,7 @@ def _frame(tok: FakeTokenizer) -> tuple[str, str]:
     """Build and verify a frame the way ``main`` does."""
     prefix, suffix = fc.build_frame(tok)
     markers = fc.frame_markers(tok, prefix, suffix)
-    fc.verify_frame(tok, markers, prefix)
+    fc.verify_frame(tok, markers, prefix, suffix)
     return prefix, suffix
 
 
@@ -179,11 +179,21 @@ def test_build_frame_keeps_the_generation_prompt_not_the_turn_header() -> None:
     assert not prefix.endswith("<|turn>assistant\n")
 
 
-def test_build_frame_template_without_generation_prompt_refuses() -> None:
-    tok = FakeTokenizer(
-        render=lambda messages, add_generation_prompt=False: (
-            "" if add_generation_prompt else f"<bos>{messages[-1]['content']}<turn|>\n"
-        )
+def test_build_frame_template_ignoring_generation_prompt_refuses() -> None:
+    """A conversion whose template never reads ``add_generation_prompt``.
+
+    Such a template renders the same text under both settings, so the
+    prefix would be the user turn alone and every block would close a
+    model turn it never opened.
+    """
+
+    def render(messages: Messages, add_generation_prompt: bool = False) -> str:
+        return render_gemma(messages)
+
+    hi = [{"role": "user", "content": "hi"}]
+    tok = FakeTokenizer(render=render)
+    assert tok.apply_chat_template(hi, add_generation_prompt=True) == (
+        tok.apply_chat_template(hi, add_generation_prompt=False)
     )
     with pytest.raises(ValueError, match="no model-turn generation prompt"):
         fc.build_frame(tok)
@@ -217,6 +227,7 @@ def test_build_frame_template_drops_the_answer_refuses() -> None:
     tok = FakeTokenizer(
         render=lambda messages, add_generation_prompt=False: (
             "<bos><|turn>user\n<turn|>\n"
+            + ("<|turn>model\n" if add_generation_prompt else "")
         )
     )
     with pytest.raises(ValueError, match="dropped the assistant answer"):
@@ -244,7 +255,7 @@ def test_verify_frame_marker_typed_as_prose_raises() -> None:
     prefix, suffix = fc.build_frame(tok)
     markers = (*fc.frame_markers(tok, prefix, suffix), "<|turn>")
     with pytest.raises(ValueError, match="not one control id"):
-        fc.verify_frame(tok, markers, prefix)
+        fc.verify_frame(tok, markers, prefix, suffix)
 
 
 def test_verify_frame_added_token_absent_from_special_ids_passes() -> None:
@@ -258,7 +269,37 @@ def test_verify_frame_added_token_absent_from_special_ids_passes() -> None:
     prefix, suffix = fc.build_frame(tok)
     markers = fc.frame_markers(tok, prefix, suffix)
     assert set(markers) == {"<|im_start|>", "<|im_end|>"}
-    fc.verify_frame(tok, markers, prefix)
+    fc.verify_frame(tok, markers, prefix, suffix)
+
+
+def test_verify_frame_template_marker_missing_from_vocabulary_raises() -> None:
+    """A re-upload whose ChatML template outlived its added-token table.
+
+    Discovery never returns ``<|im_start|>`` here, so only the residue
+    check stands between this checkpoint and a calibration file whose
+    turn headers are spelled out as prose.
+    """
+    tok = FakeTokenizer(specials=("<|im_end|>",), render=render_chatml, bos=None)
+    prefix, suffix = fc.build_frame(tok)
+    markers = fc.frame_markers(tok, prefix, suffix)
+    assert "<|im_start|>" in prefix
+    assert "<|im_start|>" not in markers
+    with pytest.raises(ValueError, match=r"reads as prose rather than"):
+        fc.verify_frame(tok, markers, prefix, suffix)
+
+
+def test_verify_frame_healthy_chatml_frame_leaves_no_residue() -> None:
+    """The same shape, with the added-token table intact, passes."""
+    tok = FakeTokenizer(
+        specials=("<|im_end|>",),
+        added_non_special=("<|im_start|>",),
+        render=render_chatml,
+        bos=None,
+    )
+    prefix, suffix = fc.build_frame(tok)
+    markers = fc.frame_markers(tok, prefix, suffix)
+    assert fc.unparsed_markers(tok, markers, prefix, suffix) == []
+    fc.verify_frame(tok, markers, prefix, suffix)
 
 
 def test_verify_frame_marker_of_several_tokens_raises() -> None:
@@ -269,7 +310,7 @@ def test_verify_frame_marker_of_several_tokens_raises() -> None:
     assert len(fc.encode(tok, split_marker)) > 1
     markers = (*fc.frame_markers(tok, prefix, suffix), split_marker)
     with pytest.raises(ValueError, match="not one control id"):
-        fc.verify_frame(tok, markers, prefix)
+        fc.verify_frame(tok, markers, prefix, suffix)
 
 
 def test_verify_frame_marker_of_one_unregistered_id_raises() -> None:
@@ -280,7 +321,7 @@ def test_verify_frame_marker_of_one_unregistered_id_raises() -> None:
     assert "<|thought|>" not in fc.control_tokens(tok)
     markers = (*fc.frame_markers(tok, prefix, suffix), "<|thought|>")
     with pytest.raises(ValueError, match="not one control id"):
-        fc.verify_frame(tok, markers, prefix)
+        fc.verify_frame(tok, markers, prefix, suffix)
 
 
 def test_verify_frame_marker_absent_from_vocabulary_raises() -> None:
@@ -288,7 +329,7 @@ def test_verify_frame_marker_absent_from_vocabulary_raises() -> None:
     prefix, suffix = fc.build_frame(tok)
     markers = (*fc.frame_markers(tok, prefix, suffix), "<bos>")
     with pytest.raises(ValueError, match="not one control id"):
-        fc.verify_frame(tok, markers, prefix)
+        fc.verify_frame(tok, markers, prefix, suffix)
 
 
 def test_verify_frame_bos_id_disagreement_raises() -> None:
@@ -296,18 +337,19 @@ def test_verify_frame_bos_id_disagreement_raises() -> None:
     prefix, suffix = fc.build_frame(tok)
     markers = fc.frame_markers(tok, prefix, suffix)
     with pytest.raises(ValueError, match="bos_token_id is 999"):
-        fc.verify_frame(tok, markers, prefix)
+        fc.verify_frame(tok, markers, prefix, suffix)
 
 
 def test_verify_frame_without_special_markers_raises() -> None:
     tok = FakeTokenizer(
         render=lambda messages, add_generation_prompt=False: (
             f"user: {messages[-1]['content']}"
+            + ("\nmodel: " if add_generation_prompt else "")
         )
     )
     prefix, suffix = fc.build_frame(tok)
     with pytest.raises(ValueError, match="frames nothing"):
-        fc.verify_frame(tok, fc.frame_markers(tok, prefix, suffix), prefix)
+        fc.verify_frame(tok, fc.frame_markers(tok, prefix, suffix), prefix, suffix)
 
 
 # --- block assembly ---------------------------------------------------

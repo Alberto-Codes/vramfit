@@ -308,7 +308,11 @@ template, then wraps ~512-token blocks in it. It hard-codes no
 family's markers, so each checkpoint gets the frame that checkpoint
 defines. The prefix is the checkpoint's user turn plus its model-turn
 generation prompt, so a template that opens a thought channel opens
-it here too. Verified frames:
+it here too.
+
+Each row below records the `frame markers:` line the script printed
+for that checkpoint's own tokenizer on 2026-09-11. Re-measure a row
+before you trust it against a different revision.
 
 | Checkpoint | Frame markers |
 | --- | --- |
@@ -336,6 +340,13 @@ special token. Read both: Nemotron 3.5 Lightning 30B-A3B ships
 omits, and ships `<think>` and `</think>` as added tokens flagged
 non-special. That checkpoint's generation prompt ends with `<think>`,
 so `all_special_ids` alone refuses its own frame.
+
+It also refuses a frame that writes a marker the vocabulary lost. A
+re-upload can keep a chat template that names `<|im_start|>` after
+its added-token table drops it. The tokenizer then reads that turn
+header as prose, and the frame no longer frames anything. The script
+removes the control tokens the tokenizer emitted from the frame text,
+then refuses whatever control-shaped text remains.
 
 Then pass the framed file as `--calibration`. Four rules keep the
 numbers comparable:

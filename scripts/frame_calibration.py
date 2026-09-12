@@ -19,8 +19,9 @@ instruments slice a raw token stream, so windows cross block
 boundaries. State that convention beside every published number.
 
 The script verifies its output. It checks each frame marker encodes
-to one control id, re-encodes the framed file, and reports block
-count and token totals.
+to one control id, refuses a frame that writes a marker the
+vocabulary lost, re-encodes the framed file, and reports block count
+and token totals.
 
 Examples:
     Build a framed file and verify it:
@@ -56,7 +57,9 @@ def build_frame(tokenizer: Any) -> tuple[str, str]:
     The prefix is the checkpoint's user turn plus its model-turn
     generation prompt. The suffix is what the template writes after
     the answer. Both come from the chat template, never from a table
-    of per-family marker strings.
+    of per-family marker strings. A template that ignores
+    ``add_generation_prompt`` renders the same text either way, which
+    opens no model turn, so the function refuses it.
 
     Args:
         tokenizer: The target model's tokenizer.
@@ -82,13 +85,19 @@ def build_frame(tokenizer: Any) -> tuple[str, str]:
         prefix = tokenizer.apply_chat_template(
             [user_turn], tokenize=False, add_generation_prompt=True
         )
+        user_only = tokenizer.apply_chat_template(
+            [user_turn], tokenize=False, add_generation_prompt=False
+        )
         rendered = tokenizer.apply_chat_template(
             [user_turn, answer_turn], tokenize=False
         )
     except Exception as err:  # any template failure refuses the checkpoint
         raise ValueError(f"the chat template did not render: {err}") from err
-    if not prefix:
-        raise ValueError("the chat template wrote no model-turn generation prompt")
+    if not prefix or prefix == user_only:
+        raise ValueError(
+            "the chat template wrote no model-turn generation prompt, so the"
+            " frame would close a model turn it never opened"
+        )
     _, found, suffix = rendered.partition(PROSE_SLOT)
     if not found:
         raise ValueError("the chat template dropped the assistant answer")
@@ -144,21 +153,85 @@ def frame_markers(tokenizer: Any, prefix: str, suffix: str) -> tuple[str, ...]:
     return tuple(sorted(found, key=lambda t: (-len(t), t)))
 
 
-def verify_frame(tokenizer: Any, markers: tuple[str, ...], prefix: str) -> None:
-    """Check every frame marker against the vocabulary.
+def control_shape(tokenizer: Any) -> re.Pattern[str] | None:
+    """Build the pattern this checkpoint spells its control tokens in.
+
+    The shape comes from the checkpoint's own control tokens: each one
+    contributes the pair of delimiters it opens and closes with. A
+    token that opens or closes on a letter or a digit contributes
+    nothing, because that pair also matches ordinary prose.
+
+    Args:
+        tokenizer: The target model's tokenizer.
+
+    Returns:
+        A pattern that matches control-token spellings, or ``None``
+        when the vocabulary spells none of them with delimiters.
+    """
+    pairs = {
+        (token[0], token[-1])
+        for token in control_tokens(tokenizer)
+        if len(token) > 1 and not token[0].isalnum() and not token[-1].isalnum()
+    }
+    if not pairs:
+        return None
+    return re.compile(
+        "|".join(
+            f"{re.escape(opener)}[^{re.escape(closer)}]*{re.escape(closer)}"
+            for opener, closer in sorted(pairs)
+        )
+    )
+
+
+def unparsed_markers(
+    tokenizer: Any, markers: tuple[str, ...], prefix: str, suffix: str
+) -> list[str]:
+    """Find frame markers the tokenizer never emitted as control ids.
+
+    ``markers`` holds what the tokenizer did emit. Removing those from
+    the frame text leaves whatever the template wrote and the
+    tokenizer read as prose. Any control-shaped text left over is a
+    marker this vocabulary lost.
+
+    Args:
+        tokenizer: The target model's tokenizer.
+        markers: The control tokens the frame emitted, longest first.
+        prefix: The frame prefix.
+        suffix: The frame suffix.
+
+    Returns:
+        Each control-shaped string the frame writes but does not
+        encode, in the order it appears.
+    """
+    shape = control_shape(tokenizer)
+    if shape is None:
+        return []
+    leftover = prefix + suffix
+    for marker in markers:
+        leftover = leftover.replace(marker, " ")
+    return shape.findall(leftover)
+
+
+def verify_frame(
+    tokenizer: Any, markers: tuple[str, ...], prefix: str, suffix: str
+) -> None:
+    """Check the frame against the vocabulary.
 
     Each marker must encode to exactly one id, and that id must be the
-    control token's own. A marker that splits into pieces is prose to
-    the model, not a frame.
+    control token's own. The frame must also leave no control-shaped
+    text the tokenizer read as prose. A marker that splits into pieces
+    is prose to the model, not a frame.
 
     Args:
         tokenizer: The target model's tokenizer.
         markers: The frame's control tokens.
         prefix: The frame prefix, which carries any opening bos token.
+        suffix: The frame suffix.
 
     Raises:
         ValueError: If the frame carries no control token, a marker is
-            not one control id, or the bos marker disagrees with
+            not one control id, the frame writes a marker the
+            vocabulary lost, or the bos marker disagrees with
             ``bos_token_id``.
     """
     if not markers:
@@ -170,6 +243,12 @@ def verify_frame(tokenizer: Any, markers: tuple[str, ...], prefix: str) -> None:
             raise ValueError(
                 f"frame marker {marker!r} is not one control id in this vocabulary"
             )
+    unparsed = unparsed_markers(tokenizer, markers, prefix, suffix)
+    if unparsed:
+        raise ValueError(
+            f"the chat template writes {unparsed[0]!r}, which this vocabulary"
+            " reads as prose rather than as one control id"
+        )
     bos = getattr(tokenizer, "bos_token", None)
     bos_id = getattr(tokenizer, "bos_token_id", None)
     if bos and bos_id is not None and bos in prefix:
@@ -272,7 +351,7 @@ def main() -> int:
         tokenizer = AutoTokenizer.from_pretrained(args.model)
         prefix, suffix = build_frame(tokenizer)
         markers = frame_markers(tokenizer, prefix, suffix)
-        verify_frame(tokenizer, markers, prefix)
+        verify_frame(tokenizer, markers, prefix, suffix)
         prose = args.text.read_text(encoding="utf-8")
         framed = build_framed_text(tokenizer, prose, args.block_tokens, prefix, suffix)
     except (ValueError, OSError) as err:
