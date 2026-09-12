@@ -5,8 +5,9 @@ perplexity and the same prose inside its serving frame at sane values
 (vramfit issue #423). This script builds the framed calibration file
 for such a target. It wraps the prose in repeated blocks. Each block
 renders one complete conversation: a fixed user turn, then the
-model-turn generation prompt, then a prose chunk as the answer, then
-the turn close.
+model-turn opening the template answers in, then a prose chunk as the
+answer, then the turn close. The block closes every channel it
+opens.
 
 The script reads the frame from the checkpoint's own chat template, so
 each checkpoint gets the frame that checkpoint defines. A checkpoint
@@ -54,12 +55,19 @@ def encode(tokenizer: Any, text: str) -> list[int]:
 def build_frame(tokenizer: Any) -> tuple[str, str]:
     """Render the checkpoint's own model-turn frame.
 
-    The prefix is the checkpoint's user turn plus its model-turn
-    generation prompt. The suffix is what the template writes after
-    the answer. Both come from the chat template, never from a table
-    of per-family marker strings. A template that ignores
-    ``add_generation_prompt`` renders the same text either way, which
-    opens no model turn, so the function refuses it.
+    The template renders the model turn two ways. The generation
+    prompt asks the model to answer. The completed render shows the
+    template's own finished turn, which the function splits at the
+    prose slot. The function reads the control tokens of each, then
+    takes the completed render's half when that half carries a
+    control token the generation prompt lacks. Such a token is the
+    template closing what the generation prompt left open.
+
+    The suffix always comes from the completed render. Both halves
+    come from the chat template, never from a table of per-family
+    marker strings. A template that ignores ``add_generation_prompt``
+    renders the same text either way, which opens no model turn, so
+    the function refuses it.
 
     Args:
         tokenizer: The target model's tokenizer.
@@ -82,7 +90,7 @@ def build_frame(tokenizer: Any) -> tuple[str, str]:
     user_turn = {"role": "user", "content": FRAME_USER_TURN}
     answer_turn = {"role": "assistant", "content": PROSE_SLOT}
     try:
-        prefix = tokenizer.apply_chat_template(
+        generation = tokenizer.apply_chat_template(
             [user_turn], tokenize=False, add_generation_prompt=True
         )
         user_only = tokenizer.apply_chat_template(
@@ -93,15 +101,18 @@ def build_frame(tokenizer: Any) -> tuple[str, str]:
         )
     except Exception as err:  # any template failure refuses the checkpoint
         raise ValueError(f"the chat template did not render: {err}") from err
-    if not prefix or prefix == user_only:
+    if not generation or generation == user_only:
         raise ValueError(
             "the chat template wrote no model-turn generation prompt, so the"
             " frame would close a model turn it never opened"
         )
-    _, found, suffix = rendered.partition(PROSE_SLOT)
+    answered, found, suffix = rendered.partition(PROSE_SLOT)
     if not found:
         raise ValueError("the chat template dropped the assistant answer")
-    return prefix, suffix
+    closes = set(frame_markers(tokenizer, answered, "")) - set(
+        frame_markers(tokenizer, generation, "")
+    )
+    return (answered if closes else generation), suffix
 
 
 def control_tokens(tokenizer: Any) -> dict[str, int]:
@@ -212,15 +223,83 @@ def unparsed_markers(
     return shape.findall(leftover)
 
 
+def control_core(token: str) -> str:
+    """Strip a control token down to the word it names.
+
+    Args:
+        token: One control token's text.
+
+    Returns:
+        The token without its leading and trailing delimiters.
+    """
+    start, end = 0, len(token)
+    while start < end and not token[start].isalnum():
+        start += 1
+    while end > start and not token[end - 1].isalnum():
+        end -= 1
+    return token[start:end]
+
+
+def control_pairs(tokenizer: Any) -> tuple[tuple[str, str], ...]:
+    """Pair the control tokens that open and close the same channel.
+
+    Two control tokens pair when they name the same word and spell
+    their delimiters differently. The checkpoint's own vocabulary
+    supplies both spellings, so no family table is needed. A word
+    with one spelling opens nothing, and a word with three is
+    ambiguous, so both stay unpaired.
+
+    Args:
+        tokenizer: The target model's tokenizer.
+
+    Returns:
+        Each pair of control tokens, sorted inside the pair.
+    """
+    cores: dict[str, set[str]] = {}
+    for token in control_tokens(tokenizer):
+        core = control_core(token)
+        if core and core != token:
+            cores.setdefault(core, set()).add(token)
+    pairs = [tuple(sorted(m)) for m in cores.values() if len(m) == 2]  # noqa: PLR2004
+    return tuple(sorted(pairs))  # ty: ignore[invalid-return-type]
+
+
+def unbalanced_pair(
+    tokenizer: Any, prefix: str, suffix: str
+) -> tuple[str, str, int, int] | None:
+    """Find a channel the assembled block opens but never closes.
+
+    Args:
+        tokenizer: The target model's tokenizer.
+        prefix: The frame prefix.
+        suffix: The frame suffix.
+
+    Returns:
+        The first pair the block spells an unequal number of times,
+        with each count, or ``None`` when every pair balances.
+    """
+    pairs = control_pairs(tokenizer)
+    if not pairs:
+        return None
+    known = sorted(control_tokens(tokenizer), key=lambda t: (-len(t), t))
+    pattern = re.compile("|".join(re.escape(t) for t in known))
+    counts = Counter(pattern.findall(prefix + suffix))
+    for opener, closer in pairs:
+        if counts[opener] != counts[closer]:
+            return opener, closer, counts[opener], counts[closer]
+    return None
+
+
 def verify_frame(
     tokenizer: Any, markers: tuple[str, ...], prefix: str, suffix: str
 ) -> None:
     """Check the frame against the vocabulary.
 
     Each marker must encode to exactly one id, and that id must be the
-    control token's own. The frame must also leave no control-shaped
-    text the tokenizer read as prose. A marker that splits into pieces
-    is prose to the model, not a frame.
+    control token's own. The frame must leave no control-shaped text
+    the tokenizer read as prose, and must close every channel it
+    opens. A marker that splits into pieces is prose to the model, not
+    a frame.
 
     Args:
         tokenizer: The target model's tokenizer.
@@ -231,8 +310,8 @@ def verify_frame(
     Raises:
         ValueError: If the frame carries no control token, a marker is
             not one control id, the frame writes a marker the
-            vocabulary lost, or the bos marker disagrees with
-            ``bos_token_id``.
+            vocabulary lost, the block leaves a channel open, or the
+            bos marker disagrees with ``bos_token_id``.
     """
     if not markers:
         raise ValueError("the frame carries no control token, so it frames nothing")
@@ -248,6 +327,13 @@ def verify_frame(
         raise ValueError(
             f"the chat template writes {unparsed[0]!r}, which this vocabulary"
             " reads as prose rather than as one control id"
+        )
+    unbalanced = unbalanced_pair(tokenizer, prefix, suffix)
+    if unbalanced:
+        opener, closer, opened, closed = unbalanced
+        raise ValueError(
+            f"the frame writes {opener!r} {opened} times against {closer!r}"
+            f" {closed} times, so the block leaves a channel open"
         )
     bos = getattr(tokenizer, "bos_token", None)
     bos_id = getattr(tokenizer, "bos_token_id", None)

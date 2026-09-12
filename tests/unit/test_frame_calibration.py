@@ -68,6 +68,37 @@ def render_chatml(messages: Messages, add_generation_prompt: bool = False) -> st
     return f"{turns}{tail}"
 
 
+def _chatml_thinking(messages: Messages, opened: str, answered: str) -> str:
+    """Render ChatML turns whose model turn carries a thought block."""
+    return "".join(
+        f"<|im_start|>{m['role']}\n"
+        + (answered if m["role"] == "assistant" else "")
+        + f"{m['content']}<|im_end|>\n"
+        for m in messages
+    )
+
+
+def render_thinking_chatml(
+    messages: Messages, add_generation_prompt: bool = False
+) -> str:
+    """Render a thinking ChatML template that closes what it opens.
+
+    The generation prompt opens the thought channel, the way
+    nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16 does. The
+    completed turn instead shows the channel opened and closed.
+    """
+    tail = "<|im_start|>assistant\n<think>\n" if add_generation_prompt else ""
+    return _chatml_thinking(messages, "<think>\n", "<think></think>") + tail
+
+
+def render_open_channel_chatml(
+    messages: Messages, add_generation_prompt: bool = False
+) -> str:
+    """Render a thinking template that closes the channel in neither form."""
+    tail = "<|im_start|>assistant\n<think>\n" if add_generation_prompt else ""
+    return _chatml_thinking(messages, "<think>\n", "<think>") + tail
+
+
 class _AddedToken:
     def __init__(self, content: str, special: bool) -> None:
         self.content = content
@@ -215,6 +246,71 @@ def test_frame_markers_lists_only_the_markers_the_frame_uses() -> None:
     markers = fc.frame_markers(tok, prefix, suffix)
     # `<think>` and `</think>` belong to the vocabulary, not to this frame.
     assert set(markers) == {"<|im_start|>", "<|im_end|>"}
+
+
+def test_build_frame_thinking_template_takes_the_closed_model_turn() -> None:
+    """The completed render closes the thought the generation prompt opens.
+
+    Nemotron 3.5 Lightning 30B-A3B renders exactly this disagreement:
+    its generation prompt opens the thought channel and its completed
+    turn shows that channel opened and closed. The block must price the prose as the
+    answer, not as reasoning in a channel nothing closes.
+    """
+    tok = FakeTokenizer(
+        specials=CHATML_SPECIALS, render=render_thinking_chatml, bos=None
+    )
+    generation = tok.apply_chat_template(
+        [{"role": "user", "content": fc.FRAME_USER_TURN}], add_generation_prompt=True
+    )
+    prefix, suffix = _frame(tok)
+    assert generation.endswith("<think>\n")
+    assert prefix != generation
+    assert prefix.endswith("<think></think>")
+    block = fc.build_framed_text(tok, "w0 w1 w2 w3", 64, prefix, suffix)
+    assert block.count("<think>") == block.count("</think>")
+
+
+def test_build_frame_closed_thought_keeps_the_generation_prompt() -> None:
+    """Gemma's generation prompt carries an empty, closed thought block.
+
+    The completed render carries no thought block at all, so the
+    generation prompt adds control tokens rather than missing any.
+    That is the frame behind the published #423 figure, so it stays.
+    """
+    tok = FakeTokenizer()
+    generation = tok.apply_chat_template(
+        [{"role": "user", "content": fc.FRAME_USER_TURN}], add_generation_prompt=True
+    )
+    prefix, suffix = _frame(tok)
+    assert prefix == generation
+    assert prefix.endswith(GEMMA_GENERATION_PROMPT)
+    assert fc.unbalanced_pair(tok, prefix, suffix) is None
+
+
+def test_build_frame_agreeing_renders_keep_the_generation_prompt() -> None:
+    """Qwen3-Coder renders the same model-turn opening either way."""
+    tok = FakeTokenizer(specials=CHATML_SPECIALS, render=render_chatml, bos=None)
+    user = [{"role": "user", "content": fc.FRAME_USER_TURN}]
+    generation = tok.apply_chat_template(user, add_generation_prompt=True)
+    answered, _, _ = tok.apply_chat_template(
+        [*user, {"role": "assistant", "content": fc.PROSE_SLOT}]
+    ).partition(fc.PROSE_SLOT)
+    prefix, _ = _frame(tok)
+    assert generation == answered
+    assert prefix == generation
+
+
+def test_verify_frame_channel_open_in_both_renders_refuses() -> None:
+    """Neither render closes the thought, so no prefix choice saves it."""
+    tok = FakeTokenizer(
+        specials=CHATML_SPECIALS, render=render_open_channel_chatml, bos=None
+    )
+    prefix, suffix = fc.build_frame(tok)
+    markers = fc.frame_markers(tok, prefix, suffix)
+    assert "<think>" in prefix
+    assert "</think>" not in prefix + suffix
+    with pytest.raises(ValueError, match="leaves a channel open"):
+        fc.verify_frame(tok, markers, prefix, suffix)
 
 
 def test_build_frame_no_chat_template_refuses_with_the_cause() -> None:

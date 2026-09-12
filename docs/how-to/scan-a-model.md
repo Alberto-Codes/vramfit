@@ -306,19 +306,25 @@ uv run python scripts/frame_calibration.py \
 The script reads the frame from the checkpoint's own chat
 template, then wraps ~512-token blocks in it. It hard-codes no
 family's markers, so each checkpoint gets the frame that checkpoint
-defines. The prefix is the checkpoint's user turn plus its model-turn
-generation prompt, so a template that opens a thought channel opens
-it here too.
+defines.
 
-Each row below records the `frame markers:` line the script printed
-for that checkpoint's own tokenizer on 2026-09-11. Re-measure a row
-before you trust it against a different revision.
+The template renders the model turn two ways. The script compares
+them, then takes the completed turn when that turn closes a channel
+the generation prompt leaves open. The prose then lands where the
+template puts an answer. Every block closes every channel it opens,
+and the script refuses a checkpoint whose template closes neither
+way.
 
-| Checkpoint | Frame markers |
+Each row below is the `frame markers:` line the script printed for
+that checkpoint's cached tokenizer on 2026-09-11, copied in the order
+it printed. Re-measure a row before you trust it against a different
+revision.
+
+| Checkpoint | Frame markers, as printed |
 | --- | --- |
-| Gemma 4 31B IT-QAT | `<bos>`, `<|turn>`, `<turn|>`, `<|channel>`, `<channel|>` |
-| Nemotron 3.5 Lightning 30B-A3B | `<|im_start|>`, `<|im_end|>`, `<think>` |
-| Qwen3-Coder-30B-A3B-Instruct | `<|im_start|>`, `<|im_end|>` |
+| Gemma 4 31B IT-QAT | `<channel|>, <|channel>, <turn|>, <|turn>, <bos>` |
+| Nemotron 3.5 Lightning 30B-A3B | `<|im_start|>, <|im_end|>, </think>, <think>` |
+| Qwen3-Coder-30B-A3B-Instruct | `<|im_start|>, <|im_end|>` |
 
 The script prints the frame it built. Record that text beside the
 map.
@@ -338,8 +344,8 @@ id is one the tokenizer holds in its added-token table or names as a
 special token. Read both: Nemotron 3.5 Lightning 30B-A3B ships
 `<|im_start|>` as an added special token that its `all_special_ids`
 omits, and ships `<think>` and `</think>` as added tokens flagged
-non-special. That checkpoint's generation prompt ends with `<think>`,
-so `all_special_ids` alone refuses its own frame.
+non-special. That checkpoint's model turn opens with `<think>`, so
+`all_special_ids` alone refuses its own frame.
 
 It also refuses a frame that writes a marker the vocabulary lost. A
 re-upload can keep a chat template that names `<|im_start|>` after
@@ -347,6 +353,14 @@ its added-token table drops it. The tokenizer then reads that turn
 header as prose, and the frame no longer frames anything. The script
 removes the control tokens the tokenizer emitted from the frame text,
 then refuses whatever control-shaped text remains.
+
+That check reaches one class of loss, not every class. It builds the
+shape it looks for from the delimiters of the control tokens the
+checkpoint still carries. A lost marker whose delimiters no surviving
+control token uses stays invisible. A Mistral-family re-upload that
+drops `[INST]` and `[/INST]` while keeping `<s>` is the case to
+watch: the surviving tokens spell only `<`…`>`, so the script never
+looks for `[`…`]`. Read the printed frame before you trust a scan.
 
 Then pass the framed file as `--calibration`. Four rules keep the
 numbers comparable:
