@@ -66,8 +66,11 @@ change.
     digest already names.
     A `re_derived` digest says *these are the bytes the pinned
     revision carries*. It does not say *these are the bytes that run
-    measured*. The reader refuses a digest that carries no mark. Not
-    "provenance" alone, which names the whole class of run records.
+    measured*. The reader refuses a digest that carries no mark.
+    Inside a corpus reference the field that carries the mark is
+    spelled `provenance`. The bare word keeps its general sense
+    elsewhere in this project, where it names the whole class of run
+    records.
 
 **Analysis artifact**
 :   The JSON record of a derivation across two or more evaluated

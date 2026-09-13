@@ -330,6 +330,8 @@ class Tier1Result:
     Attributes:
         date (str): Run date, ``YYYY-MM-DD``.
         dataset (str): The held-out text, e.g. ``wikitext-2-test``.
+            Free text, except where `EvalsSidecar.corpora` is present,
+            which makes it a key that must resolve in that map.
         chunks (int): Chunk count the estimate ran over.
         ppl (float): Final perplexity estimate.
         ppl_stderr (float): Its standard error.
@@ -425,7 +427,9 @@ class Tier2Result:
 
     Attributes:
         reference (str): The reference logits' precision, e.g. ``f16``.
-        dataset (str): The held-out text the windows run over.
+        dataset (str): The held-out text the windows run over. Free
+            text, except where `EvalsSidecar.corpora` is present,
+            which makes it a key that must resolve in that map.
         windows (tuple[Tier2Window, ...]): Measured windows, unique
             chunk counts.
 
