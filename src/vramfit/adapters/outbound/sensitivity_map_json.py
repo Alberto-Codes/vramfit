@@ -351,8 +351,10 @@ def _parse_scan_meta(obj: dict[str, Any]) -> ScanMeta:
             None), or the calibration content identity is malformed
             — the digest must hold 64 lowercase hex digits, the byte
             count must be positive, and the two must pair (absent or
-            null on both means NOT RECORDED). A field the section
-            does not carry reports and loads (#261).
+            null on both means NOT RECORDED). A malformed field
+            reports at its own JSON path, never at the section's. A
+            field the section does not carry reports and loads
+            (#261).
     """
     path = "$.scan"
     _warn_unknown_fields(obj, path, SCAN_FIELDS)
@@ -414,17 +416,22 @@ def _parse_scan_meta(obj: dict[str, Any]) -> ScanMeta:
         "imatrix provenance requires an assisted within_group "
         f'({", ".join(ASSISTED_METHODS)}), got "{within_group}" (ADR-0020)',
     )
+    metric = _get_str(obj, "metric", path)
+    calibration = _get_str(obj, "calibration", path)
+    started_at = _get_str(obj, "started_at", path)
     # The calibration content rules live in the domain, so the reader
     # states them once. A `ValueError` translates here, as the
-    # imatrix count summary's does (#260).
+    # imatrix count summary's does (#260). Only the constructor sits
+    # inside the try, or a field's own `ArtifactError` would come back
+    # out relabelled at this block's path.
     try:
         return ScanMeta(
-            metric=_get_str(obj, "metric", path),
-            calibration=_get_str(obj, "calibration", path),
+            metric=metric,
+            calibration=calibration,
             calibration_tokens=tokens,
             precisions=tuple(precisions),
             group_by=cast('Literal["layer", "tensor", "stack"]', group_by),
-            started_at=_get_str(obj, "started_at", path),
+            started_at=started_at,
             within_group=within_group,
             imatrix=imatrix,
             calibration_sha256=digest,

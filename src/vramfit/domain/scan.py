@@ -373,7 +373,7 @@ def scan_fingerprint(model_id: str, meta: ScanMeta) -> str:
     Every other input stays an identity by path. The fingerprint
     cannot detect weights or imatrix content changing under an
     unchanged path. A scan that records no calibration digest folds
-    an empty field, so it identifies its calibration by path alone.
+    two empty fields, so it identifies its calibration by path alone.
 
     Args:
         model_id: The scanned model's identifier.
@@ -400,6 +400,9 @@ def scan_fingerprint(model_id: str, meta: ScanMeta) -> str:
         meta.calibration,
         str(meta.calibration_tokens),
         meta.calibration_sha256 or "",
+        # The byte count adds no discrimination the digest lacks. It
+        # stays so a refusal names what moved, and because content
+        # identity is the pair.
         "" if meta.calibration_bytes is None else str(meta.calibration_bytes),
         meta.group_by,
         precisions,

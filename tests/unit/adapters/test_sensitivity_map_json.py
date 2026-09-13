@@ -156,6 +156,16 @@ class TestSensitivityMap:
         assert excinfo.value.json_path == "$.scan"
         assert "metric" in excinfo.value.message
 
+    def test_empty_metric_reports_its_own_field_path(self) -> None:
+        raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
+        raw["scan"]["metric"] = ""
+
+        with pytest.raises(ArtifactError) as excinfo:
+            map_from_dict(raw)
+
+        assert excinfo.value.json_path == "$.scan.metric"
+        assert excinfo.value.message == "must not be empty"
+
     def test_wrong_schema_version_rejected(self) -> None:
         raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
         raw["vramfit_schema"] = 5
