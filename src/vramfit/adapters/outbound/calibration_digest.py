@@ -18,8 +18,7 @@ pipeline back-fills a digest from a fresh download.
 
 The digest pins the corpus, not the chunking. The tokenizer stays
 unpinned, so one corpus through two tokenizers still measures two
-token counts. The fingerprint folds that count, so a tokenizer
-change alone still refuses a checkpoint.
+token counts.
 
 Examples:
     Read the identity the scan records:

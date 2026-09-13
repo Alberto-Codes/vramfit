@@ -93,9 +93,7 @@ below remain, the sub-4-bit pricing claims do not.
     unchanged path refuse the old checkpoint too, which is the
     point. The digest pins the corpus, not the chunking: the
     tokenizer stays unpinned, so the same corpus through two
-    tokenizers still measures two `calibration_tokens` counts. The
-    fingerprint folds that count, so a tokenizer change alone still
-    refuses a checkpoint.
+    tokenizers still measures two `calibration_tokens` counts.
 - **`model_id`** — the scanned model as the `vramfit scan` invocation
   spelled its `MODEL` argument: a Hub id or a local path. The loader
   requires a non-empty string and reads nothing else from it. The
@@ -139,8 +137,7 @@ below remain, the sub-4-bit pricing claims do not.
     They pin the corpus, not the chunking. The tokenizer stays
     unpinned. One corpus through two tokenizers measures two
     `calibration_tokens` counts, and a digest match does not promise
-    the same count. The fingerprint folds that count, so a tokenizer
-    change alone still refuses a checkpoint.
+    the same count.
 
     !!! warning "NOT RECORDED is the honest record"
 
