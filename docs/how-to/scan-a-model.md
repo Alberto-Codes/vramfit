@@ -48,9 +48,9 @@ Every finished (group x precision) cell lands in
 `sensitivity.checkpoint.json` immediately. Rerun the same command after
 a crash and the scan continues at the first unmeasured cell. The
 checkpoint carries the scan's fingerprint — change the model id,
-calibration path, token count, calibration bytes, grouping,
-precisions, method, or imatrix path, and the scan refuses the old
-checkpoint. Pass `--no-resume` to discard it.
+calibration path, token count, calibration SHA-256 and byte count,
+grouping, precisions, method, or imatrix path, and the scan refuses
+the old checkpoint. Pass `--no-resume` to discard it.
 
 The fingerprint records the calibration text by content: its SHA-256
 and its byte count. A corpus re-issued behind an unchanged path
