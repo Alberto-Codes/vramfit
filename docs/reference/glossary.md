@@ -401,7 +401,9 @@ change.
     count, calibration SHA-256 and byte count, grouping, precisions,
     within-group method, and imatrix path. The calibration text
     enters by content, so re-issued bytes behind an unchanged path
-    refuse the checkpoint. Every other input enters by path, so
+    refuse the checkpoint. It pins the corpus, not the tokenizer —
+    the same bytes through two tokenizers still measure two token
+    counts. Every other input enters by path, so
     swapping weights or an imatrix under an unchanged path defeats
     it.
 

@@ -242,8 +242,10 @@ class TestSensitivityMap:
         raw["scan"]["calibration_sha256"] = "not-a-digest"
         raw["scan"]["calibration_bytes"] = 772386
 
-        with pytest.raises(ArtifactError, match="calibration_sha256"):
+        with pytest.raises(ArtifactError, match="calibration_sha256") as excinfo:
             map_from_dict(raw)
+
+        assert excinfo.value.json_path == "$.scan"
 
     def test_nonpositive_calibration_bytes_rejected(self) -> None:
         raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
@@ -258,8 +260,10 @@ class TestSensitivityMap:
         raw["scan"]["calibration_sha256"] = DIGEST
         raw["scan"]["calibration_bytes"] = "772386"
 
-        with pytest.raises(ArtifactError, match="calibration_bytes"):
+        with pytest.raises(ArtifactError, match="calibration_bytes") as excinfo:
             map_from_dict(raw)
+
+        assert excinfo.value.json_path == "$.scan.calibration_bytes"
 
     def test_pre_rename_envelope_key_rejected(self) -> None:
         raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])

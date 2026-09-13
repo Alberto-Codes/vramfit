@@ -351,8 +351,10 @@ def _parse_scan_meta(obj: dict[str, Any]) -> ScanMeta:
             None), or the calibration content identity is malformed
             — the digest must hold 64 lowercase hex digits, the byte
             count must be positive, and the two must pair (absent or
-            null on both means NOT RECORDED). A malformed field
-            reports at its own JSON path, never at the section's. A
+            null on both means NOT RECORDED). A mistyped field
+            reports at its own JSON path. The digest shape, the
+            positive byte count, and the pairing are domain
+            invariants, so they report at the section's path. A
             field the section does not carry reports and loads
             (#261).
     """

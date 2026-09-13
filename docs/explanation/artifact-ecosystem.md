@@ -229,6 +229,8 @@ budget) pair, never raw damage across scans.
 - **Content evidence in the fingerprint** (already in issue #8) becomes
   load-bearing the moment third parties submit maps. The calibration
   corpus landed: the fingerprint folds its SHA-256 and byte count.
+  It pins the corpus, not the tokenizer — the same bytes through two
+  tokenizers still measure two token counts.
   Weights and the imatrix still enter by path, and that half stays
   parked.
 
