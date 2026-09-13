@@ -535,7 +535,9 @@ def held_class_overlaps(
         )
         map_ = SensitivityMap(
             model_id="m",
-            scan=ScanMeta("kl_divergence", "wikitext", 1, (8,), "layer", "t"),
+            scan=ScanMeta(
+                "kl_divergence", "/work/calibration.txt", 1, (8,), "layer", "t"
+            ),
             groups=(group,),
         )
         discovered = {"model.layers.0": 8, "model.layers.0.mixer.conv1d": 8}

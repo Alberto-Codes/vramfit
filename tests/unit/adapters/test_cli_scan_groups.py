@@ -17,6 +17,7 @@ from tests.unit.adapters.conftest import (
     DAMAGES,
     SPECS,
     barren_meter,
+    calibration_content,
     full_meter,
     install_meter,
     invoke_scan,
@@ -48,12 +49,15 @@ def live_fingerprint(tmp_path) -> str:
     Returns:
         The identity string of the default invocation.
     """
+    digest, n_bytes = calibration_content(tmp_path)
     return scan_fingerprint(
         "test/model",
         ScanMeta(
             metric="kl_divergence",
             calibration=str(tmp_path / "calib.txt"),
             calibration_tokens=64,
+            calibration_sha256=digest,
+            calibration_bytes=n_bytes,
             precisions=(8, 4),
             group_by="layer",
             started_at="2026-08-18T00:00:00Z",

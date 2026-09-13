@@ -227,7 +227,12 @@ budget) pair, never raw damage across scans.
   sharding one scan across community GPUs plausible. Turns "scan the
   top 20 models" into a participatory event.
 - **Content evidence in the fingerprint** (already in issue #8) becomes
-  load-bearing the moment third parties submit maps.
+  load-bearing the moment third parties submit maps. The calibration
+  corpus landed: the fingerprint folds its SHA-256 and byte count.
+  It pins the corpus, not the tokenizer. A digest match does not
+  promise the same `calibration_tokens` count.
+  Weights and the imatrix still enter by path, and that half stays
+  parked.
 
 ## The window
 

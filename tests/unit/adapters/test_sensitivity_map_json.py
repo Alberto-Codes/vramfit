@@ -14,6 +14,8 @@ from vramfit.adapters.outbound.sensitivity_map_json import (
     save_sensitivity_map,
 )
 
+DIGEST = "74f2665d6e6925fc2c17dec644bec9e87df478a0f1836822125e8acbb3777806"
+
 
 @pytest.mark.unit
 class TestSensitivityMap:
@@ -154,11 +156,21 @@ class TestSensitivityMap:
         assert excinfo.value.json_path == "$.scan"
         assert "metric" in excinfo.value.message
 
+    def test_empty_metric_reports_its_own_field_path(self) -> None:
+        raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
+        raw["scan"]["metric"] = ""
+
+        with pytest.raises(ArtifactError) as excinfo:
+            map_from_dict(raw)
+
+        assert excinfo.value.json_path == "$.scan.metric"
+        assert excinfo.value.message == "must not be empty"
+
     def test_wrong_schema_version_rejected(self) -> None:
         raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
-        raw["vramfit_schema"] = 4
+        raw["vramfit_schema"] = 5
 
-        with pytest.raises(ArtifactError, match="unsupported schema version 4"):
+        with pytest.raises(ArtifactError, match="unsupported schema version 5"):
             map_from_dict(raw)
 
     def test_schema_version_two_map_still_reads(self) -> None:
@@ -176,10 +188,82 @@ class TestSensitivityMap:
 
         assert map_from_dict(raw).scan.group_by == "layer"
 
-    def test_writer_emits_schema_version_three(self) -> None:
+    def test_writer_emits_schema_version_four(self) -> None:
         raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
 
-        assert map_to_dict(map_from_dict(raw))["vramfit_schema"] == 3
+        assert map_to_dict(map_from_dict(raw))["vramfit_schema"] == 4
+
+    def test_absent_calibration_content_reads_as_not_recorded(self) -> None:
+        # A map written before the fields existed records no content
+        # identity. The loader never hashes a file to fill the gap.
+        raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
+        assert "calibration_sha256" not in raw["scan"]
+
+        map_ = map_from_dict(raw)
+
+        assert map_.scan.calibration_sha256 is None
+        assert map_.scan.calibration_bytes is None
+
+    def test_not_recorded_writes_as_null(self) -> None:
+        raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
+
+        written = map_to_dict(map_from_dict(raw))
+
+        assert written["scan"]["calibration_sha256"] is None
+        assert written["scan"]["calibration_bytes"] is None
+
+    def test_calibration_content_round_trips(self) -> None:
+        raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
+        raw["scan"]["calibration_sha256"] = DIGEST
+        raw["scan"]["calibration_bytes"] = 772386
+
+        map_ = map_from_dict(raw)
+        again = map_from_dict(map_to_dict(map_))
+
+        assert map_.scan.calibration_sha256 == DIGEST
+        assert map_.scan.calibration_bytes == 772386
+        assert again == map_
+
+    @pytest.mark.parametrize(
+        "digest,size",
+        [(DIGEST, None), (None, 772386)],
+        ids=["digest-only", "bytes-only"],
+    )
+    def test_half_a_calibration_identity_rejected(self, digest, size) -> None:
+        raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
+        raw["scan"]["calibration_sha256"] = digest
+        raw["scan"]["calibration_bytes"] = size
+
+        with pytest.raises(ArtifactError, match="pair"):
+            map_from_dict(raw)
+
+    def test_malformed_calibration_digest_rejected(self) -> None:
+        raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
+        raw["scan"]["calibration_sha256"] = "not-a-digest"
+        raw["scan"]["calibration_bytes"] = 772386
+
+        with pytest.raises(ArtifactError, match="calibration_sha256") as excinfo:
+            map_from_dict(raw)
+
+        assert excinfo.value.json_path == "$.scan"
+
+    def test_nonpositive_calibration_bytes_rejected(self) -> None:
+        raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
+        raw["scan"]["calibration_sha256"] = DIGEST
+        raw["scan"]["calibration_bytes"] = 0
+
+        with pytest.raises(ArtifactError, match="calibration_bytes"):
+            map_from_dict(raw)
+
+    def test_mistyped_calibration_bytes_rejected(self) -> None:
+        raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
+        raw["scan"]["calibration_sha256"] = DIGEST
+        raw["scan"]["calibration_bytes"] = "772386"
+
+        with pytest.raises(ArtifactError, match="calibration_bytes") as excinfo:
+            map_from_dict(raw)
+
+        assert excinfo.value.json_path == "$.scan.calibration_bytes"
 
     def test_pre_rename_envelope_key_rejected(self) -> None:
         raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])

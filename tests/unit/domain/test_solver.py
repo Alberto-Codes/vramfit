@@ -623,7 +623,7 @@ def make_protected_map(
         model_id="test/model",
         scan=ScanMeta(
             metric="kl_divergence",
-            calibration="wikitext",
+            calibration="/work/calibration.txt",
             calibration_tokens=1024,
             precisions=tuple(sorted(curve, reverse=True)),
             group_by="layer",

@@ -245,7 +245,7 @@ class TestSensitivityMapDerived:
             model_id="test/model",
             scan=ScanMeta(
                 metric="kl_divergence",
-                calibration="wikitext",
+                calibration="/work/calibration.txt",
                 calibration_tokens=1_024,
                 precisions=(8, 4),
                 group_by="layer",

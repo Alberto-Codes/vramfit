@@ -5,7 +5,9 @@ composition root: it validates every option up front (sizes parse
 with the project grammar, ``--within-group kquant`` and ``q0``
 must each pair with precisions their port covers, ADR-0018, and
 ``--imatrix`` pairs with the kquant or q0 method, ADR-0018 and
-ADR-0020), builds
+ADR-0020 — the within-group parser lives in
+[vramfit.adapters.inbound.cli_options][], beside the pairing rule it
+calls), builds
 the
 torch-backed
 meter (lazily, so the base install never imports torch), drives the
@@ -14,7 +16,12 @@ the finished measurements to the pure assembly logic in
 [vramfit.domain.scan][]. An assisted scan records the
 ``kquant-imx`` or ``q0-imx`` token and the resolved imatrix path in the map, the
 fingerprint, and the run log — relative spellings must not split
-or mix checkpoint identities.
+or mix checkpoint identities. The calibration text is the one input
+recorded by content: the map and the fingerprint carry its SHA-256
+and byte count, so re-issued bytes behind an unchanged path refuse
+the old checkpoint. The meter build reads that identity first, so an
+unreadable or empty file halts through the run log before the model
+load.
 ``--groups`` restricts a run to named groups, so a caller that wants
 46 of 164 groups pays for 46 (#282). Only the list shape checks here.
 `resolve_grid` matches each name against the loaded meter's groups,
@@ -46,9 +53,9 @@ from typing import Annotated, Literal
 import typer
 
 from vramfit.adapters.inbound.cli_options import (
-    check_imatrix,
     echo_imatrix_coverage,
     parse_gpu_memory,
+    parse_within_group,
 )
 from vramfit.adapters.inbound.scan_events import (
     SafeRunLog,
@@ -57,19 +64,13 @@ from vramfit.adapters.inbound.scan_events import (
     rss_hwm_gb,
     start_run,
 )
+from vramfit.adapters.outbound.calibration_digest import calibration_identity
 from vramfit.adapters.outbound.run_log_jsonl import JsonlRunLogFile
 from vramfit.adapters.outbound.scan_checkpoint_json import JsonScanCheckpointFile
 from vramfit.adapters.outbound.sensitivity_map_json import JsonSensitivityMapFile
 from vramfit.domain.errors import VramfitError
 from vramfit.domain.model import ScanMeta
 from vramfit.domain.scan import (
-    KQUANT_IMX_METHOD,
-    KQUANT_METHOD,
-    KQUANT_PRECISIONS,
-    Q0_IMX_METHOD,
-    Q0_REF_METHOD,
-    Q0_REF_PRECISIONS,
-    SCAN_METHOD,
     assemble_map,
     scan_fingerprint,
 )
@@ -167,6 +168,26 @@ def _build_meter(
     )
 
 
+def _read_calibration_identity(calibration: Path) -> tuple[str, int]:
+    """Read the calibration file's content identity for the record.
+
+    Args:
+        calibration: The UTF-8 calibration text file.
+
+    Returns:
+        The SHA-256 hex digest and the byte count.
+
+    Raises:
+        OSError: If the file cannot be read.
+        ValueError: If the file holds no bytes. An empty corpus
+            measures no damage, and `ScanMeta` refuses a zero count.
+    """
+    sha256, n_bytes = calibration_identity(calibration)
+    if n_bytes == 0:
+        raise ValueError(f"--calibration: {calibration} holds no bytes")
+    return sha256, n_bytes
+
+
 def _open_run_log(out: Path, runlog: Path | None) -> SafeRunLog:
     """Resolve, validate, and wrap the run-log destination.
 
@@ -257,50 +278,6 @@ def _parse_groups(text: str | None) -> tuple[str, ...]:
     return names
 
 
-def _parse_within_group(
-    text: str, precisions: tuple[int, ...], imatrix: Path | None
-) -> tuple[Literal["rtn", "kquant", "q0"], str]:
-    """Validate the ``--within-group`` choice against the precisions.
-
-    Args:
-        text: The flag value.
-        precisions: The parsed candidate precisions.
-        imatrix: The ``--imatrix`` path, or None for unassisted.
-
-    Returns:
-        The validated method name and its fingerprint token — the
-        token is the vocabulary run logs and maps share (ADR-0018).
-        An imatrix turns the kquant or q0 token into its assisted
-        one (ADR-0018, ADR-0020).
-
-    Raises:
-        typer.BadParameter: If the method is unknown, ``kquant`` or
-            ``q0`` is combined with precisions outside its port
-            coverage (ADR-0018), ``--imatrix`` arrives with the rtn
-            method, or the imatrix file does not exist — each
-            rejected before the model load burns an hour.
-    """
-    if text not in ("rtn", "kquant", "q0"):
-        raise typer.BadParameter(
-            f'--within-group: expected "rtn", "kquant", or "q0", got "{text}"'
-        )
-    check_imatrix(imatrix, text)
-    covered = {"kquant": KQUANT_PRECISIONS, "q0": Q0_REF_PRECISIONS}.get(text)
-    if covered is not None:
-        uncovered = [p for p in precisions if p not in covered]
-        if uncovered:
-            raise typer.BadParameter(
-                f"--within-group {text} covers precisions "
-                f"{sorted(covered, reverse=True)} (ADR-0018) — "
-                f"remove {uncovered} from --precisions"
-            )
-    if text == "rtn":
-        return text, SCAN_METHOD
-    if text == "q0":
-        return text, Q0_REF_METHOD if imatrix is None else Q0_IMX_METHOD
-    return text, KQUANT_METHOD if imatrix is None else KQUANT_IMX_METHOD
-
-
 def scan(
     model: Annotated[
         str, typer.Argument(help="Hugging Face model id or local checkpoint path.")
@@ -370,6 +347,15 @@ def scan(
     Every finished cell lands in a checkpoint file next to ``--out``
     (``<stem>.checkpoint.json``), so a crashed scan resumes instead
     of restarting. ``--no-resume`` discards any existing checkpoint.
+    The command reads the calibration file's SHA-256 and byte count
+    before the model loads, records both in the map, and folds both
+    into the fingerprint. So a corpus re-issued behind an unchanged
+    ``--calibration`` path refuses the old checkpoint instead of
+    resuming into a map that mixes two corpora. Checkpoints written
+    before that change do not resume — pass ``--no-resume``. The
+    digest pins the corpus, not the chunking: the tokenizer stays
+    unpinned. A digest match does not promise the same
+    ``calibration_tokens`` count.
     ``--gpu-memory`` caps the shards that ``auto`` sharding places on
     GPU 0 (parsed with the project size grammar, validated up front),
     keeping workspace free for activations and logits. Every run
@@ -424,6 +410,7 @@ def scan(
             given with ``--within-group rtn`` or is not a file, or the
             ``--out`` or ``--runlog`` directory does not exist.
         typer.Exit: With code 1 when the scan extra is missing, the
+            calibration file cannot be read or holds no bytes, the
             model or calibration cannot load, a ``--groups`` name
             matches no discovered group, the checkpoint belongs to
             a different scan, a measurement fails, a checkpoint write
@@ -442,7 +429,7 @@ def scan(
         raise typer.BadParameter(
             f'--group-by: expected "layer", "tensor", or "stack", got "{group_by}"'
         )
-    parsed_within_group, method_token = _parse_within_group(
+    parsed_within_group, method_token = parse_within_group(
         within_group, parsed_precisions, imatrix
     )
     if imatrix is not None:
@@ -457,6 +444,37 @@ def scan(
     gpu_memory_bytes = parse_gpu_memory(gpu_memory, device)
 
     run_log = _open_run_log(out, runlog)
+    # The build reads the calibration's content identity first, before
+    # the model load. That keeps an unreadable or empty file inside
+    # `start_run`'s halt path, and the digest reaches the fingerprint,
+    # so a re-issued file behind an unchanged path refuses the old
+    # checkpoint instead of mixing two corpora in one map.
+    identity: list[tuple[str, int]] = []
+
+    def build() -> DamageMeter:
+        """Read the calibration identity, then load the meter.
+
+        Returns:
+            The loaded meter. The identity lands in `identity`.
+
+        Raises:
+            OSError: If the calibration or the model cannot be read.
+            ValueError: If the calibration file holds no bytes, or
+                the meter rejects its inputs.
+        """
+        identity.append(_read_calibration_identity(calibration))
+        return _build_meter(
+            model,
+            calibration,
+            max_tokens=max_tokens,
+            group_by=group_by,
+            device=device,
+            trust_remote_code=trust_remote_code,
+            gpu_memory=gpu_memory_bytes,
+            within_group=parsed_within_group,
+            imatrix=imatrix,
+        )
+
     meter = start_run(
         run_log,
         {
@@ -470,24 +488,17 @@ def scan(
             "imatrix": None if imatrix is None else str(imatrix),
             "groups": list(parsed_groups) or None,
         },
-        lambda: _build_meter(
-            model,
-            calibration,
-            max_tokens=max_tokens,
-            group_by=group_by,
-            device=device,
-            trust_remote_code=trust_remote_code,
-            gpu_memory=gpu_memory_bytes,
-            within_group=parsed_within_group,
-            imatrix=imatrix,
-        ),
+        build,
     )
     echo_imatrix_coverage(meter)
+    calibration_sha256, calibration_bytes = identity[0]
 
     meta = ScanMeta(
         metric="kl_divergence",
         calibration=str(calibration),
         calibration_tokens=meter.calibration_tokens(),
+        calibration_sha256=calibration_sha256,
+        calibration_bytes=calibration_bytes,
         precisions=parsed_precisions,
         group_by=group_by,
         started_at=datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),

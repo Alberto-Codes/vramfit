@@ -355,15 +355,25 @@ def scan_fingerprint(model_id: str, meta: ScanMeta) -> str:
     """Derive the identity string that guards checkpoint resume.
 
     Two scans share a fingerprint when their recorded provenance
-    matches: model identifier, metric, calibration path and size,
-    grouping, candidate precisions, within-group method, and the
-    imatrix path for assisted scans (empty when unassisted) — two
-    assisted scans with different imatrix files must never share a
-    checkpoint (ADR-0020). The fingerprint identifies provenance,
-    not content — it cannot detect weights, calibration text, or
-    imatrix content changing under an unchanged path. ``started_at``
-    is excluded — a resumed scan is a new invocation of the same
-    scan.
+    matches: model identifier, metric, calibration path, token
+    count, byte count and SHA-256, grouping, candidate precisions,
+    within-group method, and the imatrix path for assisted scans
+    (empty when unassisted) — two assisted scans with different
+    imatrix files must never share a checkpoint (ADR-0020).
+    ``started_at`` is excluded — a resumed scan is a new invocation
+    of the same scan.
+
+    The calibration text enters by content. A re-issued file behind
+    an unchanged path changes the digest, so the scan refuses the
+    old checkpoint instead of mixing damage values measured against
+    two different corpora. The digest pins the bytes, not the
+    chunking: the tokenizer stays unpinned. A digest match does not
+    promise the same ``calibration_tokens`` count.
+
+    Every other input stays an identity by path. The fingerprint
+    cannot detect weights or imatrix content changing under an
+    unchanged path. A scan that records no calibration digest folds
+    two empty fields, so it identifies its calibration by path alone.
 
     Args:
         model_id: The scanned model's identifier.
@@ -389,6 +399,11 @@ def scan_fingerprint(model_id: str, meta: ScanMeta) -> str:
         meta.metric,
         meta.calibration,
         str(meta.calibration_tokens),
+        meta.calibration_sha256 or "",
+        # The byte count adds no discrimination the digest lacks. It
+        # stays so a refusal names what moved, and because content
+        # identity is the pair.
+        "" if meta.calibration_bytes is None else str(meta.calibration_bytes),
         meta.group_by,
         precisions,
         meta.within_group,
