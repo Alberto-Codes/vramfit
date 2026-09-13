@@ -49,18 +49,26 @@ class TestCorpusReference:
         "sha", ["ab" * 31, "AB" * 32, "zz" * 32], ids=["short", "uppercase", "non-hex"]
     )
     def test_malformed_sha256_raises_value_error(self, sha) -> None:
-        with pytest.raises(ValueError, match="sha256"):
-            CorpusReference(sha256=sha, provenance="measured")
+        with pytest.raises(ValueError, match="64 lowercase hex digits"):
+            CorpusReference(sha256=sha, size_bytes=1_288_556, provenance="measured")
 
     def test_non_positive_size_raises_value_error(self) -> None:
-        with pytest.raises(ValueError, match="size_bytes"):
-            CorpusReference(size_bytes=0)
+        with pytest.raises(ValueError, match="size_bytes must be positive"):
+            CorpusReference(sha256="cd" * 32, size_bytes=0, provenance="measured")
+
+    def test_digest_without_a_byte_count_raises_value_error(self) -> None:
+        with pytest.raises(ValueError, match="sha256 and size_bytes must pair"):
+            CorpusReference(sha256="cd" * 32, provenance="measured")
+
+    def test_byte_count_without_a_digest_raises_value_error(self) -> None:
+        with pytest.raises(ValueError, match="sha256 and size_bytes must pair"):
+            CorpusReference(size_bytes=1_288_556)
 
     def test_digest_without_provenance_raises_value_error(self) -> None:
         # The whole point of the field: a digest nobody labelled can
         # be read as a measurement it is not.
         with pytest.raises(ValueError, match="sha256 and provenance must pair"):
-            CorpusReference(sha256="cd" * 32)
+            CorpusReference(sha256="cd" * 32, size_bytes=1_288_556)
 
     def test_provenance_without_a_digest_raises_value_error(self) -> None:
         with pytest.raises(ValueError, match="sha256 and provenance must pair"):
@@ -68,7 +76,11 @@ class TestCorpusReference:
 
     @pytest.mark.parametrize("mark", ["measured", "recovered", "re_derived"])
     def test_every_declared_provenance_is_accepted(self, mark) -> None:
-        assert CorpusReference(sha256="cd" * 32, provenance=mark).provenance == mark
+        corpus = CorpusReference(
+            sha256="cd" * 32, size_bytes=1_288_556, provenance=mark
+        )
+
+        assert corpus.provenance == mark
 
     @pytest.mark.parametrize(
         "mark",
@@ -77,7 +89,7 @@ class TestCorpusReference:
     )
     def test_undeclared_provenance_raises_value_error(self, mark) -> None:
         with pytest.raises(ValueError, match="provenance must be one of"):
-            CorpusReference(sha256="cd" * 32, provenance=mark)
+            CorpusReference(sha256="cd" * 32, size_bytes=1_288_556, provenance=mark)
 
     def test_empty_string_field_raises_value_error(self) -> None:
         with pytest.raises(ValueError, match="use None"):
@@ -267,6 +279,34 @@ class TestEvalsSidecarCorpora:
 
         with pytest.raises(TypeError):
             sidecar.corpora["wikitext-2-test"] = CORPUS
+
+    def test_task_corpus_without_a_map_raises_value_error(self) -> None:
+        # `Tier3Task.corpus` arrived with the map, so a task that
+        # names one and no map to resolve it names nothing.
+        task = Tier3Task(
+            "2026-08-09",
+            "gsm8k",
+            "3.0",
+            5,
+            1319,
+            "exact_match",
+            0.93,
+            0.007,
+            4847.2,
+            "gsm8k-main",
+        )
+        with pytest.raises(ValueError, match=r"tier3\.tasks\[0\]\.corpus"):
+            EvalsSidecar(
+                artifact=ARTIFACT,
+                toolchain=TIER3_TOOLCHAIN,
+                tier1=TIER1,
+                tier3=Tier3Result((task,)),
+            )
+
+    def test_tier1_dataset_without_a_map_is_exempt(self) -> None:
+        # The field predates the map, and a schema-2 document carries
+        # it with no map to resolve it.
+        assert self._tiers_1_and_2(None).tier1 is TIER1
 
     def test_empty_task_corpus_raises_value_error(self) -> None:
         with pytest.raises(ValueError, match="corpus must not be empty"):

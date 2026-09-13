@@ -442,6 +442,18 @@ class TestCorporaFromDict:
         assert caught.value.json_path == "$.corpora.wikitext-2-test"
         assert "expected a JSON object" in caught.value.message
 
+    def test_task_corpus_with_a_null_map_is_refused_at_the_root(self) -> None:
+        # A key into a map the document does not carry resolves
+        # against nothing.
+        data = sidecar_to_dict(pinned_sidecar())
+        data["corpora"] = None
+
+        with pytest.raises(ArtifactError) as caught:
+            sidecar_from_dict(data)
+
+        assert caught.value.json_path == "$"
+        assert "tier3.tasks[0].corpus" in caught.value.message
+
     def test_empty_corpora_map_is_refused_at_the_root(self) -> None:
         data = sidecar_to_dict(pinned_sidecar())
         data["corpora"] = {}
