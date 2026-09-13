@@ -41,12 +41,13 @@ change.
     revision, the file, and the **content identity**. An entry that
     carries the content identity records both halves, with the
     **provenance mark**. An entry that carries no content identity
-    names the corpus by id and revision alone. Two tiers that ran over
-    one corpus may name one entry, which states that identity once
-    instead of repeating a string. It pins the corpus, not the
-    tokenizer. A digest match does not promise the same chunk count.
-    No vramfit command computes one, because no in-repo producer
-    writes a sidecar. The schema carries the identity, and the reader
+    names the corpus by whichever of the id, the revision and the file
+    it recorded. Two tiers that ran over one corpus may name one
+    entry, which states that identity once instead of repeating a
+    string. It pins the corpus, not the tokenizer. A digest match does
+    not promise the same chunk count. No vramfit command computes one,
+    because no in-repo producer writes a sidecar. The schema carries
+    the identity, and where a sidecar carries the map the reader
     refuses a name the map does not resolve. Not "dataset entry".
 
 **Provenance mark**

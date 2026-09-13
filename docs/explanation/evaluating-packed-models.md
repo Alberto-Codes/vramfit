@@ -2225,14 +2225,20 @@ corpus, not the tokenizer. Weights and the imatrix still enter by
 path, so swapping either under an unchanged path defeats it.
 
 The evals sidecar names its own text the same way, and the machinery
-differs because the sidecar is written outside this repo. Its
-`corpora` map holds one entry per corpus. An entry records at least
-one of the dataset id, the revision, the file, and the content
-identity. An entry that carries the content identity records the
-SHA-256, the byte count and the provenance mark together. An entry
-that carries none of those three claims nothing about the bytes.
+differs because the sidecar is written outside this repo. Schema 3
+adds an optional `corpora` map. It enables corpus identity rather
+than guaranteeing it: a sidecar may record no map at all, and then
+its tiers carry the same bare strings they carried before and the
+reader resolves nothing. Everything that follows holds where a
+sidecar carries the map.
 
-Tier 1 and tier 2 name one entry when they ran over one corpus,
+The map holds one entry per corpus. An entry records at least one of
+the dataset id, the revision, the file, and the content identity. An
+entry that carries the content identity records the SHA-256, the byte
+count and the provenance mark together. An entry that carries none of
+those three claims nothing about the bytes.
+
+Tier 1 and tier 2 may name one entry when they ran over one corpus,
 instead of carrying two strings that happen to match. Tier 2 compares
 the packed model against the f16 reference over one corpus, and the
 entry that corpus names can record its bytes. A reader refuses a

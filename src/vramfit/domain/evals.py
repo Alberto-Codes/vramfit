@@ -95,10 +95,10 @@ class CorpusReference:
     one field. It can carry the content identity, and an entry that
     carries it records both halves, `sha256` and `size_bytes`, with
     the `provenance` mark. An entry that carries no content identity
-    names the corpus by `source` and `revision` alone, and it claims
-    nothing about the bytes. A save never invents what it did not
-    observe, the rule the sensitivity map's calibration digest
-    already fixes.
+    names the corpus by whichever of `source`, `revision` and `file`
+    it recorded, and it claims nothing about the bytes. A save never
+    invents what it did not observe, the rule the sensitivity map's
+    calibration digest already fixes.
 
     The two halves pair as `ScanMeta` pairs the calibration file's.
     Computing the digest reads every byte of the corpus, so a producer
