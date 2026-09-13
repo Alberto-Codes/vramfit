@@ -383,6 +383,18 @@ class TestCorporaFromDict:
         assert caught.value.json_path == "$.corpora.wikitext-2-test"
         assert "sha256 and provenance must pair" in caught.value.message
 
+    def test_mark_without_its_referent_names_its_entry(self) -> None:
+        # The fixture is re_derived, so dropping the revision leaves
+        # a mark asserting a derivation the record cannot name.
+        data = sidecar_to_dict(pinned_sidecar())
+        data["corpora"]["wikitext-2-test"]["revision"] = None
+
+        with pytest.raises(ArtifactError) as caught:
+            sidecar_from_dict(data)
+
+        assert caught.value.json_path == "$.corpora.wikitext-2-test"
+        assert 'provenance "re_derived" requires revision' in caught.value.message
+
     def test_undeclared_provenance_names_its_entry(self) -> None:
         data = sidecar_to_dict(pinned_sidecar())
         data["corpora"]["wikitext-2-test"]["provenance"] = "downloaded"

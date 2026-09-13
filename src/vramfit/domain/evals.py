@@ -7,8 +7,9 @@ printed — the sidecar exists so the model card never transcribes.
 Each tier block is optional, and at least one must be present: the
 i-quant baselines carry tiers 1-2 only, the certified pair carries
 all three. Invariants live in ``__post_init__`` (finite numbers,
-non-negative standard errors, a well-formed SHA-256). Serialization
-belongs to the JSON adapter (ADR-0008), never here.
+non-negative standard errors, a well-formed SHA-256, a provenance
+mark that names its referent). Serialization belongs to the JSON
+adapter (ADR-0008), never here.
 
 `corpora` maps each corpus name the tiers carry to one
 `CorpusReference`. Tier 1 and tier 2 name the same key when they ran
@@ -114,9 +115,16 @@ class CorpusReference:
     - `measured`: the process that produced the numbers hashed these
       bytes as it read them.
     - `recovered`: the run's own file survived and was hashed
-      afterwards — the same bytes, a later moment.
+      afterwards, the same bytes at a later moment. Requires `file`.
     - `re_derived`: the run's own file is gone, and these are the
-      pinned revision's bytes.
+      pinned revision's bytes. Requires `revision`.
+
+    A mark that asserts about something outside the digest names that
+    referent. `measured` asserts only about the bytes the producing
+    process read and hashed, which `sha256` already names, so it
+    requires neither field. `recovered` asserts that a file survived,
+    and `re_derived` asserts a revision the bytes came from. Each
+    names its referent, or no consumer can check the mark.
 
     A `re_derived` digest says *these are the bytes the pinned
     revision carries*. It does not say *these are the bytes that run
@@ -141,7 +149,8 @@ class CorpusReference:
             entry records no content identity. Pairs with `sha256`.
         provenance (str | None): One of `CORPUS_PROVENANCE`. Required
             wherever `sha256` is present, and refused where it is
-            absent.
+            absent. `recovered` requires `file`, and `re_derived`
+            requires `revision`.
 
     Examples:
         Name the pinned revision's bytes, re-derived after the run's
@@ -170,8 +179,9 @@ class CorpusReference:
 
         Raises:
             ValueError: If a string field is the empty string instead
-                of None, if the entry records nothing at all, or if
-                the content identity is malformed.
+                of None, if the entry records nothing at all, if the
+                content identity is malformed, or if a provenance
+                mark does not name its referent.
         """
         for name in _CORPUS_FIELDS:
             if getattr(self, name) == "":
@@ -182,6 +192,7 @@ class CorpusReference:
                 f"{', '.join(_CORPUS_FIELDS)}"
             )
         self._check_content_identity()
+        self._check_provenance_referent()
 
     def _check_content_identity(self) -> None:
         """Enforce the digest, its size, and its required label.
@@ -210,6 +221,25 @@ class CorpusReference:
         if self.provenance is not None and self.provenance not in CORPUS_PROVENANCE:
             raise ValueError(
                 f"provenance must be one of {', '.join(CORPUS_PROVENANCE)}"
+            )
+
+    def _check_provenance_referent(self) -> None:
+        """Enforce that a mark names the field its meaning depends on.
+
+        Raises:
+            ValueError: If `provenance` is ``recovered`` with no
+                ``file``, or ``re_derived`` with no ``revision``.
+        """
+        if self.provenance == "recovered" and self.file is None:
+            raise ValueError(
+                'provenance "recovered" requires file — the mark says '
+                "the run's own file survived, so the record must name it"
+            )
+        if self.provenance == "re_derived" and self.revision is None:
+            raise ValueError(
+                'provenance "re_derived" requires revision — the mark '
+                "says these are the pinned revision's bytes, so the "
+                "record must name the revision"
             )
 
 

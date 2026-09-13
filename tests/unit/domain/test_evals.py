@@ -74,13 +74,54 @@ class TestCorpusReference:
         with pytest.raises(ValueError, match="sha256 and provenance must pair"):
             CorpusReference(source="Salesforce/wikitext", provenance="measured")
 
-    @pytest.mark.parametrize("mark", ["measured", "recovered", "re_derived"])
-    def test_every_declared_provenance_is_accepted(self, mark) -> None:
+    @pytest.mark.parametrize(
+        "mark, referent",
+        [
+            ("measured", {}),
+            ("recovered", {"file": "wiki.test.raw"}),
+            ("re_derived", {"revision": "b08601e"}),
+        ],
+    )
+    def test_every_declared_provenance_is_accepted(self, mark, referent) -> None:
         corpus = CorpusReference(
-            sha256="cd" * 32, size_bytes=1_288_556, provenance=mark
+            sha256="cd" * 32, size_bytes=1_288_556, provenance=mark, **referent
         )
 
         assert corpus.provenance == mark
+
+    def test_measured_needs_no_referent(self) -> None:
+        # `measured` asserts only about the bytes the producing
+        # process hashed, which the digest already names.
+        corpus = CorpusReference(
+            sha256="cd" * 32, size_bytes=1_288_556, provenance="measured"
+        )
+
+        assert corpus.file is None
+        assert corpus.revision is None
+
+    def test_recovered_without_a_file_raises_value_error(self) -> None:
+        # The mark says the run's own file survived. With no file
+        # recorded, no consumer can check that claim.
+        with pytest.raises(ValueError, match='provenance "recovered" requires file'):
+            CorpusReference(
+                revision="b08601e",
+                sha256="cd" * 32,
+                size_bytes=1_288_556,
+                provenance="recovered",
+            )
+
+    def test_re_derived_without_a_revision_raises_value_error(self) -> None:
+        # The mark says these are the pinned revision's bytes, so the
+        # record must name the revision to be repeatable.
+        with pytest.raises(
+            ValueError, match='provenance "re_derived" requires revision'
+        ):
+            CorpusReference(
+                file="wiki.test.raw",
+                sha256="cd" * 32,
+                size_bytes=1_288_556,
+                provenance="re_derived",
+            )
 
     @pytest.mark.parametrize(
         "mark",

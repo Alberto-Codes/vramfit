@@ -56,6 +56,11 @@ change.
     own file survived, and someone hashed it afterwards.
     `re_derived`: the run's own file is gone, and these are the
     pinned revision's bytes.
+    A mark that asserts about something outside the digest names that
+    referent, so `recovered` requires the recorded `file` and
+    `re_derived` requires the recorded `revision`. `measured` asserts
+    only about the bytes the producing process hashed, which the
+    digest already names.
     A `re_derived` digest says *these are the bytes the pinned
     revision carries*. It does not say *these are the bytes that run
     measured*. The reader refuses a digest that carries no mark. Not

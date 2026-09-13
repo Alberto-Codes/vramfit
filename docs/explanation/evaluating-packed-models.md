@@ -2226,17 +2226,20 @@ path, so swapping either under an unchanged path defeats it.
 
 The evals sidecar names its own text the same way, and the machinery
 differs because the sidecar is written outside this repo. Its
-`corpora` map holds one entry per corpus. An entry can carry the
-content identity, and one that does records the SHA-256 and the byte
-count together, beside the dataset id and the revision. An entry that
-carries no content identity names the corpus by id and revision
-alone.
+`corpora` map holds one entry per corpus. An entry records at least
+one of the dataset id, the revision, the file, and the content
+identity. An entry that carries the content identity records the
+SHA-256, the byte count and the provenance mark together. An entry
+that carries none of those three claims nothing about the bytes.
 
 Tier 1 and tier 2 name one entry when they ran over one corpus,
 instead of carrying two strings that happen to match. Tier 2 compares
 the packed model against the f16 reference over one corpus, and the
-entry that corpus names records its bytes. A reader refuses a sidecar
-whose tier names an entry the map does not carry.
+entry that corpus names can record its bytes. A reader refuses a
+sidecar whose tier names an entry the map does not carry, and it
+refuses a digest that carries no mark. It never refuses an entry for
+recording no digest, so a schema-3 sidecar pins content only where a
+producer recorded it.
 
 Two limits bound what that buys, and both are worth stating plainly.
 No vramfit command computes an evaluation digest — no in-repo
