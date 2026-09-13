@@ -355,7 +355,8 @@ def scan(
     before that change do not resume — pass ``--no-resume``. The
     digest pins the corpus, not the chunking: the tokenizer stays
     unpinned, so one corpus through two tokenizers still measures
-    two token counts.
+    two token counts. The fingerprint folds that count, so a
+    tokenizer change alone still refuses a checkpoint.
     ``--gpu-memory`` caps the shards that ``auto`` sharding places on
     GPU 0 (parsed with the project size grammar, validated up front),
     keeping workspace free for activations and logits. Every run

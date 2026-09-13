@@ -5,7 +5,9 @@ module reads the file once and returns the SHA-256 hex digest with
 the byte count. `vramfit.domain.scan.scan_fingerprint` folds both, so
 a re-issued file behind an unchanged path refuses the old checkpoint,
 and the sensitivity map carries both so a reader can prove which
-bytes produced a damage value.
+file produced a damage value. The scan measures a prefix of that
+file, bounded by ``--max-tokens``, so the pair names the file and
+never the measured part.
 
 The digest records the bytes the scan read, at the moment it read
 them. It never certifies an earlier run: a file that has since
@@ -16,7 +18,8 @@ pipeline back-fills a digest from a fresh download.
 
 The digest pins the corpus, not the chunking. The tokenizer stays
 unpinned, so one corpus through two tokenizers still measures two
-token counts.
+token counts. The fingerprint folds that count, so a tokenizer
+change alone still refuses a checkpoint.
 
 Examples:
     Read the identity the scan records:

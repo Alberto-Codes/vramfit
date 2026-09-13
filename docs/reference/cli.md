@@ -475,7 +475,9 @@ any of those changed refuses the checkpoint instead of mixing numbers.
 The calibration text enters by content, so a re-issued corpus behind
 an unchanged path refuses the checkpoint. The digest pins the corpus,
 not the tokenizer — the same bytes through two tokenizers still
-measure two token counts. Checkpoints written before
+measure two token counts. The fingerprint folds that count, so a
+tokenizer change alone still refuses a checkpoint. Checkpoints
+written before
 that change do not resume — pass `--no-resume`. Every other input
 enters by path: do not swap weights or an imatrix under an unchanged
 path between resumes.

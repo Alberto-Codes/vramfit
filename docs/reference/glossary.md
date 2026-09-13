@@ -403,7 +403,9 @@ change.
     enters by content, so re-issued bytes behind an unchanged path
     refuse the checkpoint. It pins the corpus, not the tokenizer —
     the same bytes through two tokenizers still measure two token
-    counts. Every other input enters by path, so
+    counts. The fingerprint folds that count, so a tokenizer change
+    alone still refuses a checkpoint. Every other input enters by
+    path, so
     swapping weights or an imatrix under an unchanged path defeats
     it.
 

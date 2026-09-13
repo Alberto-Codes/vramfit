@@ -368,7 +368,9 @@ def scan_fingerprint(model_id: str, meta: ScanMeta) -> str:
     old checkpoint instead of mixing damage values measured against
     two different corpora. The digest pins the bytes, not the
     chunking: the tokenizer stays unpinned, and the same corpus
-    through two tokenizers still yields two token counts.
+    through two tokenizers still yields two token counts. The
+    fingerprint folds that count, so a tokenizer change alone still
+    refuses a checkpoint.
 
     Every other input stays an identity by path. The fingerprint
     cannot detect weights or imatrix content changing under an

@@ -62,7 +62,8 @@ resume.
 
 The digest pins the corpus, not the chunking. The tokenizer stays
 unpinned. The same corpus through two tokenizers measures two token
-counts.
+counts. The fingerprint folds that count, so a tokenizer change alone
+still refuses a checkpoint.
 
 Checkpoints written before the calibration digest do not resume: the
 fingerprint gained the calibration file's SHA-256 and byte count.

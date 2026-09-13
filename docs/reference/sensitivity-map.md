@@ -93,7 +93,9 @@ below remain, the sub-4-bit pricing claims do not.
     unchanged path refuse the old checkpoint too, which is the
     point. The digest pins the corpus, not the chunking: the
     tokenizer stays unpinned, so the same corpus through two
-    tokenizers still measures two `calibration_tokens` counts.
+    tokenizers still measures two `calibration_tokens` counts. The
+    fingerprint folds that count, so a tokenizer change alone still
+    refuses a checkpoint.
 - **`model_id`** — the scanned model as the `vramfit scan` invocation
   spelled its `MODEL` argument: a Hub id or a local path. The loader
   requires a non-empty string and reads nothing else from it. The
@@ -111,15 +113,21 @@ below remain, the sub-4-bit pricing claims do not.
   when the field matches. The loader requires a non-empty string.
   The published maps record the reference box's absolute path.
 - **`scan.calibration_tokens`** — the count of calibration tokens the
-  meter measured, which the `--max-tokens` budget caps. The loader
+  meter measured, which the `--max-tokens` budget caps. The meter
+  tokenizes the whole file and truncates to that cap, so this count
+  bounds the prefix the scan measured. The loader
   requires a positive integer. The published dataset's file names
   carry the same count in short form (`64k` is 65,536).
 - **`scan.calibration_sha256`** and **`scan.calibration_bytes`** —
   the SHA-256 hex digest of the calibration file's bytes, and the
   file's size in bytes. A path proves which file a scan named. These
-  two prove which bytes it measured, so a reader can reproduce a
-  damage value against the same corpus rather than against whatever
-  now carries that name. The published calibration text is
+  two prove which file it read, so a reader reproduces a damage
+  value against the same corpus rather than against whatever now
+  carries that name. They do not prove which part of that file the
+  scan measured. The meter truncates to `--max-tokens`, so the scan
+  measures a prefix bounded by `scan.calibration_tokens`. Two maps
+  that share a digest and record different token counts measured
+  different text. The published calibration text is
   `74f2665d…3777806` at 772,386 bytes, and the
   [maps dataset](https://huggingface.co/datasets/Alberto-Codes/Llama-3_3-Nemotron-Super-49B-v1_5-sensitivity-maps)
   ships the file itself. The two fields pair: the loader requires
@@ -131,7 +139,8 @@ below remain, the sub-4-bit pricing claims do not.
     They pin the corpus, not the chunking. The tokenizer stays
     unpinned. One corpus through two tokenizers measures two
     `calibration_tokens` counts, and a digest match does not promise
-    the same count.
+    the same count. The fingerprint folds that count, so a tokenizer
+    change alone still refuses a checkpoint.
 
     !!! warning "NOT RECORDED is the honest record"
 
