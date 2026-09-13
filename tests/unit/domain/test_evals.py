@@ -245,20 +245,9 @@ class TestEvalsSidecarCorpora:
                 corpora=CORPORA,
             )
 
-    def test_tier3_task_naming_an_absent_key_raises_value_error(self) -> None:
-        task = Tier3Task(
-            "2026-08-09", "mmlu", "2", 5, 14042, "acc", 0.78, 0.003, 3831.2, "mmlu-test"
-        )
-        with pytest.raises(ValueError, match=r"tier3.tasks\[0\].corpus"):
-            EvalsSidecar(
-                artifact=ARTIFACT,
-                toolchain=TIER3_TOOLCHAIN,
-                tier1=TIER1,
-                tier3=Tier3Result((task,)),
-                corpora=CORPORA,
-            )
-
-    def test_tier3_task_naming_no_corpus_needs_no_entry(self) -> None:
+    def test_tier3_needs_no_corpus_entry(self) -> None:
+        # Only tier 1 and tier 2 key into the map. A task slice names
+        # no corpus, so the map resolves without one.
         sidecar = EvalsSidecar(
             artifact=ARTIFACT,
             toolchain=TIER3_TOOLCHAIN,
@@ -268,7 +257,6 @@ class TestEvalsSidecarCorpora:
         )
 
         assert sidecar.tier3 is not None
-        assert sidecar.tier3.tasks[0].corpus is None
 
     def test_empty_corpora_raises_value_error(self) -> None:
         with pytest.raises(ValueError, match="corpora must not be empty"):
@@ -280,36 +268,7 @@ class TestEvalsSidecarCorpora:
         with pytest.raises(TypeError):
             sidecar.corpora["wikitext-2-test"] = CORPUS
 
-    def test_task_corpus_without_a_map_raises_value_error(self) -> None:
-        # `Tier3Task.corpus` arrived with the map, so a task that
-        # names one and no map to resolve it names nothing.
-        task = Tier3Task(
-            "2026-08-09",
-            "gsm8k",
-            "3.0",
-            5,
-            1319,
-            "exact_match",
-            0.93,
-            0.007,
-            4847.2,
-            "gsm8k-main",
-        )
-        with pytest.raises(ValueError, match=r"tier3\.tasks\[0\]\.corpus"):
-            EvalsSidecar(
-                artifact=ARTIFACT,
-                toolchain=TIER3_TOOLCHAIN,
-                tier1=TIER1,
-                tier3=Tier3Result((task,)),
-            )
-
     def test_tier1_dataset_without_a_map_is_exempt(self) -> None:
         # The field predates the map, and a schema-2 document carries
         # it with no map to resolve it.
         assert self._tiers_1_and_2(None).tier1 is TIER1
-
-    def test_empty_task_corpus_raises_value_error(self) -> None:
-        with pytest.raises(ValueError, match="corpus must not be empty"):
-            Tier3Task(
-                "2026-08-09", "mmlu", "2", 5, 14042, "acc", 0.78, 0.003, 3831.2, ""
-            )

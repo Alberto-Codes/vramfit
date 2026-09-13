@@ -4,23 +4,26 @@ Owns serialization of the sidecar schema, including the
 ``vramfit_schema`` envelope (`EVALS_SIDECAR_SCHEMA_VERSION` and
 `EVALS_SIDECAR_SCHEMA_ALSO_READS`). The adapter writes version 3 and
 also reads version 2, because version 3 only added the optional
-``corpora`` map and the tier-3 task's optional ``corpus`` key. Absent
-tiers serialize as JSON null, as do the toolchain's tier-3 fields and
-those two additions, so every schema-3 sidecar carries the same key
-set. The domain types (`vramfit.domain.evals`) enforce the value
-invariants, and the reader restates a domain refusal as an
-`ArtifactError` naming the JSON path.
+``corpora`` map. Absent tiers serialize as JSON null, as do the
+toolchain's tier-3 fields and that one addition, so every schema-3
+sidecar carries the same key set. The domain types
+(`vramfit.domain.evals`) enforce the value invariants, and the reader
+restates a domain refusal as an `ArtifactError` naming the JSON path.
 
-``corpora`` names each tier's corpus by content instead of by a bare
-string, and the reader refuses a document whose tier names an entry
-the map does not carry. Two limits bound what that buys. First,
-nothing in vramfit computes a corpus digest: no in-repo producer
-writes a sidecar, so this adapter can carry an identity and refuse a
-broken reference, and it cannot capture one the way `vramfit scan`
-captures the calibration file's. Second, an entry pins the corpus,
-not the tokenizer, so a digest match promises no chunk count.
-`CorpusReference.provenance` labels who hashed the bytes and when,
-and the reader refuses a digest that carries no label.
+``corpora`` maps each tier's corpus name to an entry that can carry
+the content identity, in place of a bare string that names no bytes.
+An entry that carries the identity records the digest, the byte count
+and the provenance mark together. An entry that carries none of them
+names the corpus by id and revision alone. The reader refuses a
+document whose tier names an entry the map does not carry, and it
+refuses a digest that carries no mark.
+
+Two limits bound what that buys. First, nothing in vramfit computes a
+corpus digest: no in-repo producer writes a sidecar, so this adapter
+can carry an identity and refuse a broken reference, and it cannot
+capture one the way `vramfit scan` captures the calibration file's.
+Second, an entry pins the corpus, not the tokenizer, so a digest
+match promises no chunk count.
 
 The reader landed with #137. The sidecar was the last published
 artifact with no reader, so nobody could verify the five shipped
@@ -86,10 +89,10 @@ from vramfit.domain.evals import (
 # and nothing else's.
 EVALS_SIDECAR_SCHEMA_VERSION: Final[int] = 3
 # Older versions this adapter still reads. Version 3 only added the
-# optional ``corpora`` map and the tier-3 task's optional ``corpus``
-# key, so every version-2 sidecar is already a valid version-3
-# document, and it records no corpus identity. The writer emits 3,
-# which tells a reader the producer could have recorded one.
+# optional ``corpora`` map, so every version-2 sidecar is already a
+# valid version-3 document, and it records no corpus identity. The
+# writer emits 3, which tells a reader the producer could have
+# recorded one.
 EVALS_SIDECAR_SCHEMA_ALSO_READS: Final[tuple[int, ...]] = (2,)
 
 # Every key the reader carries, per object (#261). A key outside these
@@ -133,7 +136,6 @@ TIER3_TASK_FIELDS: Final[frozenset[str]] = frozenset(
         "score",
         "stderr",
         "wall_clock_seconds",
-        "corpus",
     }
 )
 
@@ -208,9 +210,6 @@ def _tier2_to_dict(tier2: Tier2Result) -> dict[str, Any]:
 def _tier3_to_dict(tier3: Tier3Result) -> dict[str, Any]:
     """Serialize the tier-3 block.
 
-    A task's ``corpus`` key is written null when the task names no
-    corpus, so the key set never varies.
-
     Args:
         tier3: The tier-3 result.
 
@@ -229,7 +228,6 @@ def _tier3_to_dict(tier3: Tier3Result) -> dict[str, Any]:
                 "score": t.score,
                 "stderr": t.stderr,
                 "wall_clock_seconds": t.wall_clock_seconds,
-                "corpus": t.corpus,
             }
             for t in tier3.tasks
         ],
@@ -240,8 +238,8 @@ def sidecar_to_dict(sidecar: EvalsSidecar) -> dict[str, Any]:
     """Serialize a sidecar to a JSON dict with the schema envelope.
 
     Absent tiers serialize as JSON null, as do the toolchain's
-    tier-3 fields, the ``corpora`` map, and a tier-3 task's
-    ``corpus`` key — the key set never varies within schema 3.
+    tier-3 fields and the ``corpora`` map — the key set never varies
+    within schema 3.
 
     Args:
         sidecar: The sidecar to serialize.
@@ -490,10 +488,8 @@ def _tier3_task_from_dict(obj: dict[str, Any], path: str) -> Tier3Task:
     """Parse one ``tier3.tasks`` entry.
 
     Extracts every field first, then constructs. `_built` wraps the
-    constructor alone, so it never relabels a parse failure.
-
-    ``corpus`` arrived with version 3, so an absent key reads the
-    same as null: the task names no corpus.
+    constructor alone, so it never relabels a parse failure. Every
+    field is required, because a task row records a measured result.
 
     The reader reports a field the block does not carry, then loads
     it (#261).
@@ -518,11 +514,10 @@ def _tier3_task_from_dict(obj: dict[str, Any], path: str) -> Tier3Task:
     score = _get_float(obj, "score", path)
     stderr = _get_float(obj, "stderr", path)
     seconds = _get_float(obj, "wall_clock_seconds", path)
-    corpus = _get_opt_str(obj, "corpus", path) if "corpus" in obj else None
     return _built(
         path,
         lambda: Tier3Task(
-            date, name, version, few_shot, n, metric, score, stderr, seconds, corpus
+            date, name, version, few_shot, n, metric, score, stderr, seconds
         ),
     )
 

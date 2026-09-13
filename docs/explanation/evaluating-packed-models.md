@@ -2226,13 +2226,17 @@ path, so swapping either under an unchanged path defeats it.
 
 The evals sidecar names its own text the same way, and the machinery
 differs because the sidecar is written outside this repo. Its
-`corpora` map holds one entry per corpus, carrying the dataset id,
-the revision, and the SHA-256 of the bytes — each recorded or null.
-Tier 1 and tier 2 name one entry instead of carrying two strings that
-happen to match, which matters because the tier-2 KLD is measured
-against the tier-1 reference: the pairing means something only if
-both ran over the same bytes. A reader refuses a sidecar whose tier
-names an entry the map does not carry.
+`corpora` map holds one entry per corpus. An entry can carry the
+content identity, and one that does records the SHA-256 and the byte
+count together, beside the dataset id and the revision. An entry that
+carries no content identity names the corpus by id and revision
+alone.
+
+Tier 1 and tier 2 name one entry when they ran over one corpus,
+instead of carrying two strings that happen to match. Tier 2 compares
+the packed model against the f16 reference over one corpus, and the
+entry that corpus names records its bytes. A reader refuses a sidecar
+whose tier names an entry the map does not carry.
 
 Two limits bound what that buys, and both are worth stating plainly.
 No vramfit command computes an evaluation digest — no in-repo

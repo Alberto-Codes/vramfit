@@ -98,27 +98,22 @@ def pinned_sidecar() -> EvalsSidecar:
         toolchain=base.toolchain,
         tier1=base.tier1,
         tier2=base.tier2,
-        tier3=Tier3Result(
-            (
-                Tier3Task(
-                    "2026-08-09",
-                    "gsm8k",
-                    "3.0",
-                    5,
-                    1319,
-                    "exact_match,strict-match",
-                    0.93177,
-                    0.00695,
-                    4847.2,
-                    "gsm8k-main",
-                ),
-            )
-        ),
+        tier3=base.tier3,
+        corpora={"wikitext-2-test": WIKITEXT},
+    )
+
+
+def revision_only_sidecar() -> EvalsSidecar:
+    """A schema-3 sidecar whose entry records no content identity."""
+    base = tier1_only_sidecar()
+    return EvalsSidecar(
+        artifact=base.artifact,
+        toolchain=base.toolchain,
+        tier1=base.tier1,
         corpora={
-            "wikitext-2-test": WIKITEXT,
-            # A harness task fetches its data at run time, so this
-            # entry pins identity and revision with no digest.
-            "gsm8k-main": CorpusReference(source="openai/gsm8k", revision="e53f048"),
+            "wikitext-2-test": CorpusReference(
+                source="Salesforce/wikitext", revision="b08601e"
+            )
         },
     )
 
@@ -156,11 +151,6 @@ class TestSidecarToDict:
     def test_absent_corpora_serializes_as_null(self) -> None:
         assert sidecar_to_dict(full_sidecar())["corpora"] is None
 
-    def test_absent_task_corpus_serializes_as_null(self) -> None:
-        data = sidecar_to_dict(full_sidecar())
-
-        assert data["tier3"]["tasks"][0]["corpus"] is None
-
     def test_corpus_entry_serializes_every_field(self) -> None:
         entry = sidecar_to_dict(pinned_sidecar())["corpora"]["wikitext-2-test"]
 
@@ -174,10 +164,11 @@ class TestSidecarToDict:
         }
 
     def test_unrecorded_corpus_fields_serialize_as_null(self) -> None:
-        entry = sidecar_to_dict(pinned_sidecar())["corpora"]["gsm8k-main"]
+        entry = sidecar_to_dict(revision_only_sidecar())["corpora"]["wikitext-2-test"]
 
-        assert entry["source"] == "openai/gsm8k"
+        assert entry["source"] == "Salesforce/wikitext"
         assert entry["sha256"] is None
+        assert entry["size_bytes"] is None
         assert entry["provenance"] is None
 
     def test_both_tiers_name_the_same_corpus_key(self) -> None:
@@ -380,16 +371,6 @@ class TestCorporaFromDict:
         assert caught.value.json_path == "$"
         assert "tier2.dataset" in caught.value.message
 
-    def test_task_naming_an_unresolvable_key_is_refused_at_the_root(self) -> None:
-        data = sidecar_to_dict(pinned_sidecar())
-        del data["corpora"]["gsm8k-main"]
-
-        with pytest.raises(ArtifactError) as caught:
-            sidecar_from_dict(data)
-
-        assert caught.value.json_path == "$"
-        assert "tier3.tasks[0].corpus" in caught.value.message
-
     def test_digest_without_provenance_names_its_entry(self) -> None:
         # The refusal the mark exists for. An unlabelled digest must
         # not reach a reader as though a run had measured it.
@@ -442,18 +423,6 @@ class TestCorporaFromDict:
         assert caught.value.json_path == "$.corpora.wikitext-2-test"
         assert "expected a JSON object" in caught.value.message
 
-    def test_task_corpus_with_a_null_map_is_refused_at_the_root(self) -> None:
-        # A key into a map the document does not carry resolves
-        # against nothing.
-        data = sidecar_to_dict(pinned_sidecar())
-        data["corpora"] = None
-
-        with pytest.raises(ArtifactError) as caught:
-            sidecar_from_dict(data)
-
-        assert caught.value.json_path == "$"
-        assert "tier3.tasks[0].corpus" in caught.value.message
-
     def test_empty_corpora_map_is_refused_at_the_root(self) -> None:
         data = sidecar_to_dict(pinned_sidecar())
         data["corpora"] = {}
@@ -477,13 +446,15 @@ class TestCorporaFromDict:
     def test_reader_never_fills_an_unrecorded_digest(self) -> None:
         # Nothing in vramfit computes a corpus digest. A null stays
         # null through a load and a save.
-        data = sidecar_to_dict(pinned_sidecar())
+        data = sidecar_to_dict(revision_only_sidecar())
 
         loaded = sidecar_from_dict(data)
 
         assert loaded.corpora is not None
-        assert loaded.corpora["gsm8k-main"].sha256 is None
-        assert sidecar_to_dict(loaded)["corpora"]["gsm8k-main"]["sha256"] is None
+        assert loaded.corpora["wikitext-2-test"].sha256 is None
+        entry = sidecar_to_dict(loaded)["corpora"]["wikitext-2-test"]
+        assert entry["sha256"] is None
+        assert entry["size_bytes"] is None
 
 
 class TestLoadEvalsSidecar:
@@ -501,9 +472,9 @@ class TestLoadEvalsSidecar:
     ) -> None:
         # This test read byte for byte before version 3. The writer
         # now emits 3, so a schema-2 file cannot re-serialize to its
-        # own bytes. Assert the exact delta instead: the envelope, the
-        # null corpora map, and each task's null corpus key. Every
-        # measured number must still come back untouched.
+        # own bytes. Assert the exact delta instead: the envelope and
+        # the null corpora map. Every measured number must still come
+        # back untouched.
         source = PUBLISHED / name
         out = tmp_path / name
         save_evals_sidecar(load_evals_sidecar(source), out)
@@ -513,10 +484,6 @@ class TestLoadEvalsSidecar:
         expected = dict(before)
         expected["vramfit_schema"] = EVALS_SIDECAR_SCHEMA_VERSION
         expected["corpora"] = None
-        if expected["tier3"] is not None:
-            expected["tier3"] = {
-                "tasks": [{**t, "corpus": None} for t in expected["tier3"]["tasks"]]
-            }
 
         assert json.loads(out.read_text(encoding="utf-8")) == expected
 

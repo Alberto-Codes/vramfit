@@ -15,8 +15,7 @@ belongs to the JSON adapter (ADR-0008), never here.
 over the same corpus, so the record states that identity instead of
 repeating a string. A sidecar that carries the map resolves every
 name in it. A sidecar that carries None records no corpus identity
-and stays valid, and it refuses a tier-3 task that names a corpus —
-that key would resolve against nothing.
+and stays valid.
 
 Examples:
     Build a tier-1-only sidecar:
@@ -91,23 +90,26 @@ class CorpusReference:
     bytes, so `EvalsSidecar.corpora` maps it to one of these. Two
     tiers that name the same key name the same entry.
 
-    Every field is nullable, for the reason the sensitivity map's
-    calibration digest already fixes: a save never invents what it did
-    not observe.
+    One rule governs what an entry records. An entry records at least
+    one field. It can carry the content identity, and an entry that
+    carries it records both halves, `sha256` and `size_bytes`, with
+    the `provenance` mark. An entry that carries no content identity
+    names the corpus by `source` and `revision` alone, and it claims
+    nothing about the bytes. A save never invents what it did not
+    observe, the rule the sensitivity map's calibration digest
+    already fixes.
 
-    `sha256` and `size_bytes` pair in both directions, as
-    `ScanMeta` pairs the calibration file's: computing the digest
-    reads every byte of the corpus, so a producer that records
-    `sha256` records `size_bytes` from the same read. The glossary's
-    Content identity entry names the term as the digest and the count
-    together.
+    The two halves pair as `ScanMeta` pairs the calibration file's.
+    Computing the digest reads every byte of the corpus, so a producer
+    that records `sha256` records `size_bytes` from the same read. The
+    glossary's Content identity entry names the term as the digest and
+    the count together.
 
     The entry pins the corpus, not the tokenizer, so a digest match
     does not promise the same chunk count.
 
-    `provenance` is the one field a context makes mandatory. It pairs
-    with `sha256` in both directions, because it says who hashed the
-    bytes and when:
+    `provenance` pairs with `sha256` in both directions, because it
+    says who hashed the bytes and when:
 
     - `measured`: the process that produced the numbers hashed these
       bytes as it read them.
@@ -133,9 +135,10 @@ class CorpusReference:
         file (str | None): The local file the run read, or None when
             there was none or it went unrecorded.
         sha256 (str | None): SHA-256 of those bytes, 64 lowercase hex
-            digits, or None when unrecorded. Pairs with `size_bytes`.
-        size_bytes (int | None): Size of those bytes, or None when
-            unrecorded. Pairs with `sha256`.
+            digits, or None when the entry records no content
+            identity. Pairs with `size_bytes`.
+        size_bytes (int | None): Size of those bytes, or None when the
+            entry records no content identity. Pairs with `sha256`.
         provenance (str | None): One of `CORPUS_PROVENANCE`. Required
             wherever `sha256` is present, and refused where it is
             absent.
@@ -440,11 +443,6 @@ class Tier3Task:
         score (float): The metric's value.
         stderr (float): Its standard error.
         wall_clock_seconds (float): Measured task duration.
-        corpus (str | None): Key into `EvalsSidecar.corpora`, or None
-            when the task names no corpus. An lm-evaluation-harness
-            task fetches its data at run time, so the entry a task
-            names usually carries `source` and `revision` without a
-            digest — identity and revision, not content identity.
 
     Examples:
         Record a Winogrande row:
@@ -465,7 +463,6 @@ class Tier3Task:
     score: float
     stderr: float
     wall_clock_seconds: float
-    corpus: str | None = None
 
     def __post_init__(self) -> None:
         """Enforce the task-row invariants.
@@ -473,8 +470,7 @@ class Tier3Task:
         Raises:
             ValueError: If a string field is empty, ``few_shot`` is
                 negative, ``n`` or ``wall_clock_seconds`` is not
-                positive, ``corpus`` is the empty string instead of
-                None, or a number is not finite.
+                positive, or a number is not finite.
         """
         if not self.date:
             raise ValueError("date must not be empty")
@@ -493,8 +489,6 @@ class Tier3Task:
         _check_finite(self.wall_clock_seconds, "wall_clock_seconds")
         if self.wall_clock_seconds <= 0:
             raise ValueError("wall_clock_seconds must be positive")
-        if self.corpus == "":
-            raise ValueError("corpus must not be empty — use None")
 
 
 @dataclass(frozen=True, slots=True)
@@ -543,9 +537,7 @@ class EvalsSidecar:
         tier3 (Tier3Result | None): The task slice, when measured.
         corpora (Mapping[str, CorpusReference] | None): The corpora the
             tiers name, keyed by the string each tier carries, or None
-            when the sidecar records no corpus identity. None forbids
-            a tier-3 task's ``corpus``, which has no other map to
-            resolve against.
+            when the sidecar records no corpus identity.
 
     Examples:
         A tier-1-only baseline record:
@@ -571,22 +563,14 @@ class EvalsSidecar:
 
         `corpora` resolves every corpus name the tiers carry. A
         sidecar that records no corpora carries None and claims no
-        corpus identity.
-
-        The two kinds of name differ in what a null map allows. Tier
-        1's and tier 2's ``dataset`` predate the map, and a schema-2
-        document carries the field with no map, so a null map exempts
-        them. `Tier3Task.corpus` arrived with version 3, so a
-        document that carries it can carry the map too, and a null map
-        refuses it.
+        corpus identity. A schema-2 document carries tier 1's and
+        tier 2's ``dataset`` with no map, so a null map exempts them.
 
         Raises:
             ValueError: If every tier is absent, if tier 3 is present
                 without the harness toolchain fields, if a harness
-                field is present without tier 3, if `corpora` is
-                empty or fails to resolve a name a tier carries, or if
-                a tier-3 task names a corpus with no map to resolve
-                it.
+                field is present without tier 3, or if `corpora` is
+                empty or fails to resolve a name a tier carries.
         """
         if self.tier1 is None and self.tier2 is None and self.tier3 is None:
             raise ValueError("at least one tier must be present")
@@ -614,65 +598,33 @@ class EvalsSidecar:
             )
         if self.corpora is not None:
             object.__setattr__(self, "corpora", MappingProxyType(dict(self.corpora)))
-        self._check_corpus_names()
+            self._check_corpus_names()
 
     def _named_corpora(self) -> list[tuple[str, str]]:
         """List every corpus name the tiers carry, with its field.
 
-        Tier 1 and tier 2 always name one. `_named_task_corpora`
-        supplies the tier-3 names.
-
         Returns:
             One ``(field, name)`` pair per corpus name, in document
-            order.
+            order. Tier 1 and tier 2 each name one.
         """
         named = []
         if self.tier1 is not None:
             named.append(("tier1.dataset", self.tier1.dataset))
         if self.tier2 is not None:
             named.append(("tier2.dataset", self.tier2.dataset))
-        named.extend(self._named_task_corpora())
         return named
-
-    def _named_task_corpora(self) -> list[tuple[str, str]]:
-        """List every corpus name the tier-3 tasks carry, with its field.
-
-        Returns:
-            One ``(field, name)`` pair per task that records a
-            ``corpus``, in document order.
-        """
-        if self.tier3 is None:
-            return []
-        return [
-            (f"tier3.tasks[{index}].corpus", task.corpus)
-            for index, task in enumerate(self.tier3.tasks)
-            if task.corpus is not None
-        ]
 
     def _check_corpus_names(self) -> None:
         """Resolve every corpus name against `corpora`.
 
         A sidecar that carries the map must resolve what it names.
         The map is never extended to cover a name it lacks — inventing
-        the entry would state a corpus identity nobody recorded. A
-        sidecar that carries no map refuses a tier-3 task's ``corpus``
-        for the same reason: the key names an entry that does not
-        exist.
+        the entry would state a corpus identity nobody recorded.
 
         Raises:
-            ValueError: If a tier-3 task names a corpus with no map to
-                resolve it, if `corpora` is empty, or if a tier names
-                a key the map does not carry.
+            ValueError: If `corpora` is empty, or a tier names a key
+                the map does not carry.
         """
-        if self.corpora is None:
-            dangling = self._named_task_corpora()
-            if dangling:
-                field_name, name = dangling[0]
-                raise ValueError(
-                    f'{field_name} names "{name}", but the sidecar carries '
-                    "no corpora map — every corpus a tier names must resolve"
-                )
-            return
         if not self.corpora:
             raise ValueError("corpora must not be empty — use None")
         for field_name, name in self._named_corpora():

@@ -37,15 +37,17 @@ change.
 
 **Corpus reference**
 :   One entry in an evals sidecar's `corpora` map, under the key a
-    tier carries. It holds the dataset id, the revision, the file, and
-    the **content identity**, each recorded or null. Two tiers that
-    ran over one corpus name one entry. The record states that
-    identity once, instead of repeating a string. It pins the corpus,
-    not the tokenizer. A digest match does not promise the same chunk
-    count. No vramfit command computes one, because no in-repo
-    producer writes a sidecar. The schema carries the identity, and
-    the reader refuses a name the map does not resolve. Not "dataset
-    entry".
+    tier carries. It records at least one of the dataset id, the
+    revision, the file, and the **content identity**. An entry that
+    carries the content identity records both halves, with the
+    **provenance mark**. An entry that carries no content identity
+    names the corpus by id and revision alone. Two tiers that ran over
+    one corpus may name one entry, which states that identity once
+    instead of repeating a string. It pins the corpus, not the
+    tokenizer. A digest match does not promise the same chunk count.
+    No vramfit command computes one, because no in-repo producer
+    writes a sidecar. The schema carries the identity, and the reader
+    refuses a name the map does not resolve. Not "dataset entry".
 
 **Provenance mark**
 :   The label a corpus reference carries wherever it records a digest,
@@ -411,7 +413,7 @@ change.
     folds it into the **Fingerprint**. It pins the corpus, not the
     tokenizer. A digest match does not promise the same
     `calibration_tokens` count. An evals sidecar's **corpus
-    reference** carries one too, marked by its **provenance mark**.
+    reference** can carry one too, marked by its **provenance mark**.
     Not "hash" or "checksum" alone, which name the
     digest without the count.
 
