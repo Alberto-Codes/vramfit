@@ -10,9 +10,9 @@ sidecar carries the same key set. The domain types
 (`vramfit.domain.evals`) enforce the value invariants, and the reader
 restates a domain refusal as an `ArtifactError` naming the JSON path.
 
-Where a document carries ``corpora``, the map takes each tier's
-corpus name to an entry that can carry the content identity, in place
-of a bare string that names no bytes. An entry that carries the
+Where a document carries ``corpora``, the map takes each key to an
+entry that can carry the content identity, and a tier names the key
+its corpus uses, in place of a bare string that names no bytes. An entry that carries the
 identity records the digest, the byte count and the provenance mark
 together. An entry that carries none of them names the corpus by
 whichever of the id, the revision and the file it recorded. The
@@ -61,7 +61,7 @@ from pathlib import Path
 from typing import Any, Final
 
 from vramfit.adapters.outbound.json_common import (
-    _built,
+    ArtifactError,
     _check_schema_version,
     _get_dict,
     _get_float,
@@ -101,8 +101,8 @@ EVALS_SIDECAR_SCHEMA_ALSO_READS: Final[tuple[int, ...]] = (2,)
 # Every key the reader carries, per object (#261). A key outside these
 # sets warns and loads (ADR-0013, the 2026-08-16 amendment). The writer
 # emits one key set in every schema-3 sidecar, so a hand edit is the
-# only way a document reaches a report. ``corpora`` keys are the
-# corpus names the tiers carry, so no set fixes them.
+# only way a document reaches a report. The producer chooses the
+# ``corpora`` keys, so no fixed set covers them.
 SIDECAR_ROOT_FIELDS: Final[frozenset[str]] = frozenset(
     {"vramfit_schema", "artifact", "toolchain", "corpora", "tier1", "tier2", "tier3"}
 )
@@ -274,6 +274,38 @@ def sidecar_to_dict(sidecar: EvalsSidecar) -> dict[str, Any]:
     }
 
 
+def _built[T](path: str, build: Callable[[], T]) -> T:
+    """Construct a domain value, reporting its invariants by JSON path.
+
+    The domain types enforce the value rules in ``__post_init__``
+    (ADR-0008). A reader must not leak a bare `ValueError` naming no
+    field. This restates the failure as an `ArtifactError`.
+
+    Every caller extracts its fields first and passes ``build`` a
+    constructor call and nothing else. That keeps this ``except``
+    narrow. A ``build`` that also parsed would relabel any unrelated
+    `ValueError` as the reader's fault, at the enclosing block's path
+    rather than the failing field's — the error-labeling bug class
+    ADR-0011 exists to prevent.
+
+    Args:
+        path: JSON path of the object being built.
+        build: Zero-argument constructor call. It must not parse.
+
+    Returns:
+        The constructed domain value.
+
+    Raises:
+        ArtifactError: If the domain type rejects the values.
+    """
+    try:
+        return build()
+    except ArtifactError:
+        raise
+    except ValueError as exc:
+        raise ArtifactError(path, str(exc)) from exc
+
+
 def _corpus_from_dict(obj: dict[str, Any], path: str) -> CorpusReference:
     """Parse one ``corpora`` entry.
 
@@ -314,9 +346,9 @@ def _corpus_from_dict(obj: dict[str, Any], path: str) -> CorpusReference:
 def _corpora_from_dict(obj: dict[str, Any], path: str) -> dict[str, CorpusReference]:
     """Parse the ``corpora`` map.
 
-    The keys are the corpus names the tiers carry, so the reader
-    fixes no key set here and reports no unknown field.
-    `EvalsSidecar` resolves each name against this map.
+    The producer chooses the keys, so the reader fixes no key set
+    here and reports no unknown field. `EvalsSidecar` resolves each
+    name a tier carries against this map.
 
     Args:
         obj: The map's JSON object.

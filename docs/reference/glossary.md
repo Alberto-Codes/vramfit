@@ -36,8 +36,8 @@ change.
     tool output) or "benchmark report".
 
 **Corpus reference**
-:   One entry in an evals sidecar's `corpora` map, under the key a
-    tier carries. It records at least one of the dataset id, the
+:   One entry in an evals sidecar's `corpora` map, under a key the
+    producer chose. It records at least one of the dataset id, the
     revision, the file, and the **content identity**. An entry that
     carries the content identity records both halves, with the
     **provenance mark**. An entry that carries no content identity

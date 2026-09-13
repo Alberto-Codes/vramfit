@@ -2232,7 +2232,7 @@ its tiers carry the same bare strings they carried before and the
 reader resolves nothing. Everything that follows holds where a
 sidecar carries the map.
 
-The map holds one entry per corpus. An entry records at least one of
+The map takes each key to one entry. An entry records at least one of
 the dataset id, the revision, the file, and the content identity. An
 entry that carries the content identity records the SHA-256, the byte
 count and the provenance mark together. An entry that carries none of

@@ -27,9 +27,7 @@ installs its own. The boolean extractor
 accepts only real booleans, and the string extractors reject the
 empty string. An optional extractor reads a nullable field: it returns
 None for JSON null and still rejects the empty string, so a document
-records an absence by writing null. `_built` wraps a domain
-constructor and restates its `ValueError` as an `ArtifactError` at the
-object's JSON path. Schema versions advance
+records an absence by writing null. Schema versions advance
 per artifact (ADR-0013) — each adapter owns its version constant and
 passes it to `_check_schema_version`. An adapter reads one version
 unless it names older ones through ``also_reads``, which suits a bump
@@ -119,38 +117,6 @@ def _require(condition: bool, path: str, message: str) -> None:
     """
     if not condition:
         raise ArtifactError(path, message)
-
-
-def _built[T](path: str, build: Callable[[], T]) -> T:
-    """Construct a domain value, reporting its invariants by JSON path.
-
-    The domain types enforce the value rules in ``__post_init__``
-    (ADR-0008). A reader must not leak a bare `ValueError` naming no
-    field. This restates the failure as an `ArtifactError`.
-
-    Every caller extracts its fields first and passes ``build`` a
-    constructor call and nothing else. That keeps this ``except``
-    narrow. A ``build`` that also parsed would relabel any unrelated
-    `ValueError` as the reader's fault, at the enclosing block's path
-    rather than the failing field's — the error-labeling bug class
-    ADR-0011 exists to prevent.
-
-    Args:
-        path: JSON path of the object being built.
-        build: Zero-argument constructor call. It must not parse.
-
-    Returns:
-        The constructed domain value.
-
-    Raises:
-        ArtifactError: If the domain type rejects the values.
-    """
-    try:
-        return build()
-    except ArtifactError:
-        raise
-    except ValueError as exc:
-        raise ArtifactError(path, str(exc)) from exc
 
 
 class UnknownArtifactFieldWarning(UserWarning):

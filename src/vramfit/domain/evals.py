@@ -11,12 +11,12 @@ non-negative standard errors, a well-formed SHA-256, a provenance
 mark that names its referent). Serialization belongs to the JSON
 adapter (ADR-0008), never here.
 
-`corpora` maps each corpus name the tiers carry to one
-`CorpusReference`. Tier 1 and tier 2 name the same key when they ran
-over the same corpus, so the record states that identity instead of
-repeating a string. A sidecar that carries the map resolves every
-name in it. A sidecar that carries None records no corpus identity
-and stays valid.
+`corpora` takes a corpus name to one `CorpusReference`. Tier 1 and
+tier 2 may name one key when they ran over one corpus, which states
+that identity once instead of repeating a string. A sidecar that
+carries the map must resolve what it names: every name a tier
+carries is a key in it. A sidecar that carries None records no
+corpus identity and stays valid.
 
 Examples:
     Build a tier-1-only sidecar:
@@ -85,7 +85,7 @@ def _check_stderr(value: float, name: str) -> None:
 
 @dataclass(frozen=True, slots=True)
 class CorpusReference:
-    """One evaluation corpus, named by revision and by content.
+    """One evaluation corpus, named by whichever fields it records.
 
     A tier names its corpus with a string. That string alone names no
     bytes, so `EvalsSidecar.corpora` maps it to one of these. Two
@@ -565,9 +565,11 @@ class EvalsSidecar:
         tier1 (Tier1Result | None): Perplexity, when measured.
         tier2 (Tier2Result | None): KL divergence, when measured.
         tier3 (Tier3Result | None): The task slice, when measured.
-        corpora (Mapping[str, CorpusReference] | None): The corpora the
-            tiers name, keyed by the string each tier carries, or None
-            when the sidecar records no corpus identity.
+        corpora (Mapping[str, CorpusReference] | None): One
+            `CorpusReference` per corpus name the producer chose, or
+            None when the sidecar records no corpus identity. Where
+            the map is present, every name a tier carries resolves in
+            it.
 
     Examples:
         A tier-1-only baseline record:
