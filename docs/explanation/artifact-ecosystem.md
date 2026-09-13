@@ -230,7 +230,7 @@ budget) pair, never raw damage across scans.
   load-bearing the moment third parties submit maps. The calibration
   corpus landed: the fingerprint folds its SHA-256 and byte count.
   It pins the corpus, not the tokenizer. A digest match does not
-  promise the same count.
+  promise the same `calibration_tokens` count.
   Weights and the imatrix still enter by path, and that half stays
   parked.
 

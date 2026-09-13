@@ -17,7 +17,8 @@ RECORDED — `ScanMeta` takes None for both fields, and nothing in the
 pipeline back-fills a digest from a fresh download.
 
 The digest pins the corpus, not the chunking. The tokenizer stays
-unpinned. A digest match does not promise the same count.
+unpinned. A digest match does not promise the same
+`calibration_tokens` count.
 
 Examples:
     Read the identity the scan records:

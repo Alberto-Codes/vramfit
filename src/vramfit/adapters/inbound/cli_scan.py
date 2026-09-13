@@ -354,7 +354,8 @@ def scan(
     resuming into a map that mixes two corpora. Checkpoints written
     before that change do not resume — pass ``--no-resume``. The
     digest pins the corpus, not the chunking: the tokenizer stays
-    unpinned. A digest match does not promise the same count.
+    unpinned. A digest match does not promise the same
+    ``calibration_tokens`` count.
     ``--gpu-memory`` caps the shards that ``auto`` sharding places on
     GPU 0 (parsed with the project size grammar, validated up front),
     keeping workspace free for activations and logits. Every run
