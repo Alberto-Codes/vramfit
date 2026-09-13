@@ -2223,6 +2223,30 @@ corpus enters by its SHA-256 and byte count, so re-issued bytes
 behind an unchanged path refuse the checkpoint. That pins the
 corpus, not the tokenizer. Weights and the imatrix still enter by
 path, so swapping either under an unchanged path defeats it.
+
+The evals sidecar names its own text the same way, and the machinery
+differs because the sidecar is written outside this repo. Its
+`corpora` map holds one entry per corpus, carrying the dataset id,
+the revision, and the SHA-256 of the bytes — each recorded or null.
+Tier 1 and tier 2 name one entry instead of carrying two strings that
+happen to match, which matters because the tier-2 KLD is measured
+against the tier-1 reference: the pairing means something only if
+both ran over the same bytes. A reader refuses a sidecar whose tier
+names an entry the map does not carry.
+
+Two limits bound what that buys, and both are worth stating plainly.
+No vramfit command computes an evaluation digest — no in-repo
+producer writes a sidecar, so whatever ran the evaluation records the
+identity, and vramfit carries it and refuses a broken reference. And
+the map pins the corpus, not the tokenizer, so a digest match
+promises no chunk count. Each recorded digest carries a mark saying
+who hashed the bytes: `measured`, `recovered`, or `re_derived`. The
+reader refuses a digest with no mark, because an unlabelled hash gets
+read as a measurement. A `re_derived` digest says *these are the
+bytes the pinned revision carries*. It does not say *these are the
+bytes that run measured*. That is an assumption recorded on purpose,
+not a measurement recovered.
+
 None of these proves the artifact is any good. The project's claim is
 that a publication should carry both: provenance (hashes,
 fingerprint, run log) and evidence (the three tiers above). Shipping

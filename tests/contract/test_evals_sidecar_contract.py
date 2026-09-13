@@ -26,6 +26,7 @@ from vramfit.adapters.outbound.evals_sidecar_json import (
 )
 from vramfit.adapters.outbound.json_common import ArtifactError
 from vramfit.domain.evals import (
+    CorpusReference,
     EvalsSidecar,
     EvalToolchain,
     EvaluatedArtifact,
@@ -82,6 +83,28 @@ def tier1_only_sidecar() -> EvalsSidecar:
     )
 
 
+def pinned_sidecar() -> EvalsSidecar:
+    """A sidecar whose tier 1 and tier 2 resolve to one corpus entry."""
+    base = sample_sidecar()
+    return EvalsSidecar(
+        artifact=base.artifact,
+        toolchain=base.toolchain,
+        tier1=base.tier1,
+        tier2=base.tier2,
+        tier3=base.tier3,
+        corpora={
+            "wikitext-2-test": CorpusReference(
+                source="Salesforce/wikitext",
+                revision="b08601e",
+                file="wikitext-2-raw/wiki.test.raw",
+                sha256="ef" * 32,
+                size_bytes=1_288_556,
+                provenance="re_derived",
+            )
+        },
+    )
+
+
 def _real_sink(
     tmp_path: Path,
 ) -> tuple[EvalsSidecarSink, Callable[[], dict[str, Any]]]:
@@ -127,6 +150,21 @@ class TestEvalsSidecarSinkContract:
         assert data["tier2"] is None
         assert data["tier3"] is None
 
+    def test_saved_corpora_reads_back_equal(self, build, tmp_path) -> None:
+        sink, readback = build(tmp_path)
+        sidecar = pinned_sidecar()
+
+        sink.save(sidecar)
+
+        assert readback() == sidecar_to_dict(sidecar)
+
+    def test_absent_corpora_reads_back_null(self, build, tmp_path) -> None:
+        sink, readback = build(tmp_path)
+
+        sink.save(tier1_only_sidecar())
+
+        assert readback()["corpora"] is None
+
     def test_second_save_wins(self, build, tmp_path) -> None:
         sink, readback = build(tmp_path)
 
@@ -171,6 +209,22 @@ class TestEvalsSidecarSourceContract:
         source: EvalsSidecarSource = build(tmp_path, expected)
 
         assert source.load() == expected
+
+    def test_load_returns_the_corpora_it_was_given(self, build, tmp_path) -> None:
+        expected = pinned_sidecar()
+        source: EvalsSidecarSource = build(tmp_path, expected)
+
+        loaded = source.load()
+
+        assert loaded == expected
+        assert loaded.tier1 is not None
+        assert loaded.corpora is not None
+        assert loaded.corpora[loaded.tier1.dataset].provenance == "re_derived"
+
+    def test_load_returns_absent_corpora_as_none(self, build, tmp_path) -> None:
+        source: EvalsSidecarSource = build(tmp_path, tier1_only_sidecar())
+
+        assert source.load().corpora is None
 
     def test_load_returns_absent_tiers_as_none(self, build, tmp_path) -> None:
         source: EvalsSidecarSource = build(tmp_path, tier1_only_sidecar())

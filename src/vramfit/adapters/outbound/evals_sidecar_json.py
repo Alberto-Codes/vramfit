@@ -1,12 +1,26 @@
 """JSON file adapter for the evals sidecar artifact (ADR-0025).
 
 Owns serialization of the sidecar schema, including the
-``vramfit_schema`` envelope (version 2 since the envelope key
-renamed, #118). Absent tiers serialize as JSON null, as do the
-toolchain's tier-3 fields, so every schema-2 sidecar carries the same
-key set. The domain types (`vramfit.domain.evals`) enforce the value
+``vramfit_schema`` envelope (`EVALS_SIDECAR_SCHEMA_VERSION` and
+`EVALS_SIDECAR_SCHEMA_ALSO_READS`). The adapter writes version 3 and
+also reads version 2, because version 3 only added the optional
+``corpora`` map and the tier-3 task's optional ``corpus`` key. Absent
+tiers serialize as JSON null, as do the toolchain's tier-3 fields and
+those two additions, so every schema-3 sidecar carries the same key
+set. The domain types (`vramfit.domain.evals`) enforce the value
 invariants, and the reader restates a domain refusal as an
 `ArtifactError` naming the JSON path.
+
+``corpora`` names each tier's corpus by content instead of by a bare
+string, and the reader refuses a document whose tier names an entry
+the map does not carry. Two limits bound what that buys. First,
+nothing in vramfit computes a corpus digest: no in-repo producer
+writes a sidecar, so this adapter can carry an identity and refuse a
+broken reference, and it cannot capture one the way `vramfit scan`
+captures the calibration file's. Second, an entry pins the corpus,
+not the tokenizer, so a digest match promises no chunk count.
+`CorpusReference.provenance` labels who hashed the bytes and when,
+and the reader refuses a digest that carries no label.
 
 The reader landed with #137. The sidecar was the last published
 artifact with no reader, so nobody could verify the five shipped
@@ -41,12 +55,14 @@ from pathlib import Path
 from typing import Any, Final
 
 from vramfit.adapters.outbound.json_common import (
-    ArtifactError,
+    _built,
     _check_schema_version,
     _get_dict,
     _get_float,
     _get_int,
     _get_list,
+    _get_opt_int,
+    _get_opt_str,
     _get_str,
     _load_json,
     _require,
@@ -54,6 +70,7 @@ from vramfit.adapters.outbound.json_common import (
     _warn_unknown_fields,
 )
 from vramfit.domain.evals import (
+    CorpusReference,
     EvalsSidecar,
     EvalToolchain,
     EvaluatedArtifact,
@@ -67,14 +84,24 @@ from vramfit.domain.evals import (
 # The evals-sidecar schema version (ADR-0025). Versions advance per
 # artifact (ADR-0013) — a breaking change here bumps this constant
 # and nothing else's.
-EVALS_SIDECAR_SCHEMA_VERSION: Final[int] = 2
+EVALS_SIDECAR_SCHEMA_VERSION: Final[int] = 3
+# Older versions this adapter still reads. Version 3 only added the
+# optional ``corpora`` map and the tier-3 task's optional ``corpus``
+# key, so every version-2 sidecar is already a valid version-3
+# document, and it records no corpus identity. The writer emits 3,
+# which tells a reader the producer could have recorded one.
+EVALS_SIDECAR_SCHEMA_ALSO_READS: Final[tuple[int, ...]] = (2,)
 
 # Every key the reader carries, per object (#261). A key outside these
 # sets warns and loads (ADR-0013, the 2026-08-16 amendment). The writer
-# emits one key set in every schema-2 sidecar, so a hand edit is the
-# only way a document reaches a report.
+# emits one key set in every schema-3 sidecar, so a hand edit is the
+# only way a document reaches a report. ``corpora`` keys are the
+# corpus names the tiers carry, so no set fixes them.
 SIDECAR_ROOT_FIELDS: Final[frozenset[str]] = frozenset(
-    {"vramfit_schema", "artifact", "toolchain", "tier1", "tier2", "tier3"}
+    {"vramfit_schema", "artifact", "toolchain", "corpora", "tier1", "tier2", "tier3"}
+)
+CORPUS_FIELDS: Final[frozenset[str]] = frozenset(
+    {"source", "revision", "file", "sha256", "size_bytes", "provenance"}
 )
 ARTIFACT_FIELDS: Final[frozenset[str]] = frozenset({"file", "sha256", "size_bytes"})
 TOOLCHAIN_FIELDS: Final[frozenset[str]] = frozenset(
@@ -106,8 +133,32 @@ TIER3_TASK_FIELDS: Final[frozenset[str]] = frozenset(
         "score",
         "stderr",
         "wall_clock_seconds",
+        "corpus",
     }
 )
+
+
+def _corpus_to_dict(corpus: CorpusReference) -> dict[str, Any]:
+    """Serialize one ``corpora`` entry.
+
+    Every field is written, null where the sidecar records nothing.
+    A null reads as unrecorded, never as a claim about the bytes
+    behind that name today.
+
+    Args:
+        corpus: The corpus reference.
+
+    Returns:
+        One ``corpora`` entry's JSON object.
+    """
+    return {
+        "source": corpus.source,
+        "revision": corpus.revision,
+        "file": corpus.file,
+        "sha256": corpus.sha256,
+        "size_bytes": corpus.size_bytes,
+        "provenance": corpus.provenance,
+    }
 
 
 def _tier1_to_dict(tier1: Tier1Result) -> dict[str, Any]:
@@ -157,6 +208,9 @@ def _tier2_to_dict(tier2: Tier2Result) -> dict[str, Any]:
 def _tier3_to_dict(tier3: Tier3Result) -> dict[str, Any]:
     """Serialize the tier-3 block.
 
+    A task's ``corpus`` key is written null when the task names no
+    corpus, so the key set never varies.
+
     Args:
         tier3: The tier-3 result.
 
@@ -175,6 +229,7 @@ def _tier3_to_dict(tier3: Tier3Result) -> dict[str, Any]:
                 "score": t.score,
                 "stderr": t.stderr,
                 "wall_clock_seconds": t.wall_clock_seconds,
+                "corpus": t.corpus,
             }
             for t in tier3.tasks
         ],
@@ -185,7 +240,8 @@ def sidecar_to_dict(sidecar: EvalsSidecar) -> dict[str, Any]:
     """Serialize a sidecar to a JSON dict with the schema envelope.
 
     Absent tiers serialize as JSON null, as do the toolchain's
-    tier-3 fields — the key set never varies within schema 2.
+    tier-3 fields, the ``corpora`` map, and a tier-3 task's
+    ``corpus`` key — the key set never varies within schema 3.
 
     Args:
         sidecar: The sidecar to serialize.
@@ -206,66 +262,76 @@ def sidecar_to_dict(sidecar: EvalsSidecar) -> dict[str, Any]:
             "llama_cpp_python": sidecar.toolchain.llama_cpp_python,
             "lane": sidecar.toolchain.lane,
         },
+        "corpora": (
+            None
+            if sidecar.corpora is None
+            else {key: _corpus_to_dict(c) for key, c in sidecar.corpora.items()}
+        ),
         "tier1": None if sidecar.tier1 is None else _tier1_to_dict(sidecar.tier1),
         "tier2": None if sidecar.tier2 is None else _tier2_to_dict(sidecar.tier2),
         "tier3": None if sidecar.tier3 is None else _tier3_to_dict(sidecar.tier3),
     }
 
 
-def _built[T](path: str, build: Callable[[], T]) -> T:
-    """Construct a domain value, reporting its invariants by JSON path.
+def _corpus_from_dict(obj: dict[str, Any], path: str) -> CorpusReference:
+    """Parse one ``corpora`` entry.
 
-    The domain types enforce the value rules in ``__post_init__``
-    (ADR-0008). A reader must not leak a bare `ValueError` naming no
-    field. This restates the failure as an `ArtifactError`.
+    Extracts every field first, then constructs. `_built` wraps the
+    constructor alone, so it never relabels a parse failure.
 
-    Every caller extracts its fields first and passes ``build`` a
-    constructor call and nothing else. That keeps this ``except``
-    narrow. A ``build`` that also parsed would relabel any unrelated
-    `ValueError` as the reader's fault, at the enclosing block's path
-    rather than the failing field's — the error-labeling bug class
-    ADR-0011 exists to prevent.
+    The reader never hashes a corpus to fill a null, and it never
+    supplies a missing ``provenance``. `CorpusReference` refuses a
+    digest that carries no label, so an unlabelled digest fails here
+    rather than reaching a reader as a measurement.
 
-    Args:
-        path: JSON path of the object being built.
-        build: Zero-argument constructor call. It must not parse.
-
-    Returns:
-        The constructed domain value.
-
-    Raises:
-        ArtifactError: If the domain type rejects the values.
-    """
-    try:
-        return build()
-    except ArtifactError:
-        raise
-    except ValueError as exc:
-        raise ArtifactError(path, str(exc)) from exc
-
-
-def _get_opt_str(obj: dict[str, Any], key: str, path: str) -> str | None:
-    """Return the non-empty string at ``key``, or None for JSON null.
+    The reader reports a field the block does not carry, then loads
+    it (#261).
 
     Args:
-        obj: Parent JSON object.
-        key: Key to read.
-        path: JSON path of the parent for error reporting.
+        obj: The entry's JSON object.
+        path: Its JSON path.
 
     Returns:
-        The string value, or None when the field is null.
+        The corpus reference.
 
     Raises:
-        ArtifactError: If the key is missing, or holds neither null
-            nor a non-empty string.
+        ArtifactError: If a field is missing or invalid.
     """
-    _require(key in obj, path, f'missing required field "{key}"')
-    value = obj[key]
-    if value is None:
-        return None
-    _require(isinstance(value, str), f"{path}.{key}", "expected a string or null")
-    _require(value != "", f"{path}.{key}", "must not be empty — use null")
-    return value
+    _warn_unknown_fields(obj, path, CORPUS_FIELDS)
+    source = _get_opt_str(obj, "source", path)
+    revision = _get_opt_str(obj, "revision", path)
+    file = _get_opt_str(obj, "file", path)
+    sha256 = _get_opt_str(obj, "sha256", path)
+    size_bytes = _get_opt_int(obj, "size_bytes", path)
+    provenance = _get_opt_str(obj, "provenance", path)
+    return _built(
+        path,
+        lambda: CorpusReference(source, revision, file, sha256, size_bytes, provenance),
+    )
+
+
+def _corpora_from_dict(obj: dict[str, Any], path: str) -> dict[str, CorpusReference]:
+    """Parse the ``corpora`` map.
+
+    The keys are the corpus names the tiers carry, so the reader
+    fixes no key set here and reports no unknown field.
+    `EvalsSidecar` resolves each name against this map.
+
+    Args:
+        obj: The map's JSON object.
+        path: Its JSON path.
+
+    Returns:
+        One corpus reference per key.
+
+    Raises:
+        ArtifactError: If an entry is not a JSON object, or a field
+            inside one is missing or invalid.
+    """
+    return {
+        key: _corpus_from_dict(_get_dict(value, f"{path}.{key}"), f"{path}.{key}")
+        for key, value in obj.items()
+    }
 
 
 def _artifact_from_dict(obj: dict[str, Any], path: str) -> EvaluatedArtifact:
@@ -426,6 +492,9 @@ def _tier3_task_from_dict(obj: dict[str, Any], path: str) -> Tier3Task:
     Extracts every field first, then constructs. `_built` wraps the
     constructor alone, so it never relabels a parse failure.
 
+    ``corpus`` arrived with version 3, so an absent key reads the
+    same as null: the task names no corpus.
+
     The reader reports a field the block does not carry, then loads
     it (#261).
 
@@ -449,10 +518,11 @@ def _tier3_task_from_dict(obj: dict[str, Any], path: str) -> Tier3Task:
     score = _get_float(obj, "score", path)
     stderr = _get_float(obj, "stderr", path)
     seconds = _get_float(obj, "wall_clock_seconds", path)
+    corpus = _get_opt_str(obj, "corpus", path) if "corpus" in obj else None
     return _built(
         path,
         lambda: Tier3Task(
-            date, name, version, few_shot, n, metric, score, stderr, seconds
+            date, name, version, few_shot, n, metric, score, stderr, seconds, corpus
         ),
     )
 
@@ -541,9 +611,11 @@ def sidecar_from_dict(data: dict[str, Any]) -> EvalsSidecar:
     """Validate a JSON dict and build the sidecar it describes.
 
     The inverse of `sidecar_to_dict`. Every tier key must be present.
-    The writer emits one key set in every schema-2 sidecar, so a null
-    value means the tier did not run. A field the reader does not know
-    reports and loads (#261).
+    The writer emits one key set in every schema-3 sidecar, so a null
+    value means the tier did not run. ``corpora`` is the exception:
+    version 2 predates it, so an absent key reads as null and the
+    sidecar records no corpus identity. A field the reader does not
+    know reports and loads (#261).
 
     Args:
         data: The artifact's top-level JSON object.
@@ -552,10 +624,12 @@ def sidecar_from_dict(data: dict[str, Any]) -> EvalsSidecar:
         The validated sidecar.
 
     Raises:
-        ArtifactError: If the envelope is not
-            `EVALS_SIDECAR_SCHEMA_VERSION`, if the document carries
-            the pre-rename envelope key (#118, #154), or if any field
-            is missing or invalid.
+        ArtifactError: If the envelope names a version outside
+            `EVALS_SIDECAR_SCHEMA_VERSION` and
+            `EVALS_SIDECAR_SCHEMA_ALSO_READS`, if the document
+            carries the pre-rename envelope key (#118, #154), if any
+            field is missing or invalid, or if a tier names a corpus
+            the ``corpora`` map does not carry.
 
     Examples:
         A version mismatch refuses by path:
@@ -566,14 +640,29 @@ def sidecar_from_dict(data: dict[str, Any]) -> EvalsSidecar:
     """
     root = "$"
     obj = _get_dict(data, root)
-    _check_schema_version(obj, root, EVALS_SIDECAR_SCHEMA_VERSION)
+    _check_schema_version(
+        obj, root, EVALS_SIDECAR_SCHEMA_VERSION, EVALS_SIDECAR_SCHEMA_ALSO_READS
+    )
     _warn_unknown_fields(obj, root, SIDECAR_ROOT_FIELDS)
     artifact = _required_block(obj, "artifact", root, _artifact_from_dict)
     toolchain = _required_block(obj, "toolchain", root, _toolchain_from_dict)
+    # Additive in version 3, so absent reads the same as null: the
+    # sidecar records no corpus identity. The reader never invents an
+    # entry to resolve a name — a corpus nobody recorded stays
+    # unrecorded.
+    raw_corpora = obj.get("corpora")
+    corpora_path = f"{root}.corpora"
+    corpora = (
+        None
+        if raw_corpora is None
+        else _corpora_from_dict(_get_dict(raw_corpora, corpora_path), corpora_path)
+    )
     tier1 = _optional_block(obj, "tier1", root, _tier1_from_dict)
     tier2 = _optional_block(obj, "tier2", root, _tier2_from_dict)
     tier3 = _optional_block(obj, "tier3", root, _tier3_from_dict)
-    return _built(root, lambda: EvalsSidecar(artifact, toolchain, tier1, tier2, tier3))
+    return _built(
+        root, lambda: EvalsSidecar(artifact, toolchain, tier1, tier2, tier3, corpora)
+    )
 
 
 def load_evals_sidecar(path: Path) -> EvalsSidecar:

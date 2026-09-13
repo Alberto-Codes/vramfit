@@ -10,6 +10,13 @@ all three. Invariants live in ``__post_init__`` (finite numbers,
 non-negative standard errors, a well-formed SHA-256). Serialization
 belongs to the JSON adapter (ADR-0008), never here.
 
+`corpora` maps each corpus name the tiers carry to one
+`CorpusReference`. Tier 1 and tier 2 name the same key when they ran
+over the same corpus, so the record states that identity instead of
+repeating a string. A sidecar that carries the map resolves every
+name in it. A sidecar that carries None records no corpus identity
+and stays valid.
+
 Examples:
     Build a tier-1-only sidecar:
 
@@ -29,11 +36,24 @@ See Also:
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from types import MappingProxyType
 
 _HEX_DIGITS = frozenset("0123456789abcdef")
 _SHA256_HEX_LEN = 64
 _PERCENT_MAX = 100
+
+# The three values `CorpusReference.provenance` accepts. Each answers
+# one question: who hashed these bytes, and when.
+MEASURED = "measured"
+RECOVERED = "recovered"
+RE_DERIVED = "re_derived"
+CORPUS_PROVENANCE = (MEASURED, RECOVERED, RE_DERIVED)
+
+# Every field of a corpus reference, in declaration order. An entry
+# that records none of them is not a reference.
+_CORPUS_FIELDS = ("source", "revision", "file", "sha256", "size_bytes", "provenance")
 
 
 def _check_finite(value: float, name: str) -> None:
@@ -63,6 +83,119 @@ def _check_stderr(value: float, name: str) -> None:
     _check_finite(value, name)
     if value < 0:
         raise ValueError(f"{name} must not be negative")
+
+
+@dataclass(frozen=True, slots=True)
+class CorpusReference:
+    """One evaluation corpus, named by revision and by content.
+
+    A tier names its corpus with a string. That string alone names no
+    bytes, so `EvalsSidecar.corpora` maps it to one of these. Two
+    tiers that name the same key name the same entry.
+
+    Every field is nullable, for the reason the sensitivity map's
+    calibration digest already fixes: a save never invents what it did
+    not observe. `size_bytes` stands on its own and may be recorded
+    with or without a digest.
+
+    `provenance` is the one field a context makes mandatory. It pairs
+    with `sha256` in both directions, because it says who hashed the
+    bytes and when:
+
+    - `measured`: the process that produced the numbers hashed these
+      bytes as it read them.
+    - `recovered`: the run's own file survived and was hashed
+      afterwards — the same bytes, a later moment.
+    - `re_derived`: the run's own file is gone, and these are the
+      pinned revision's bytes.
+
+    A `re_derived` digest says *these are the bytes the pinned
+    revision carries*. It does not say *these are the bytes that run
+    measured*. That is an assumption being recorded, not a
+    measurement being recovered.
+
+    Nothing in vramfit computes these values. No in-repo producer
+    writes a sidecar — whatever ran the evaluation authors it. This
+    type carries the identity and refuses a malformed one.
+
+    Attributes:
+        source (str | None): The dataset id, e.g.
+            ``Salesforce/wikitext``, or None when unrecorded.
+        revision (str | None): The pinned revision, e.g. ``b08601e``,
+            or None when unrecorded.
+        file (str | None): The local file the run read, or None when
+            there was none or it went unrecorded.
+        sha256 (str | None): SHA-256 of those bytes, 64 lowercase hex
+            digits, or None when unrecorded.
+        size_bytes (int | None): Size of those bytes, or None when
+            unrecorded.
+        provenance (str | None): One of `CORPUS_PROVENANCE`. Required
+            wherever `sha256` is present, and refused where it is
+            absent.
+
+    Examples:
+        Name the pinned revision's bytes, re-derived after the run's
+        own file was gone:
+
+        ```python
+        CorpusReference(
+            source="Salesforce/wikitext",
+            revision="b08601e",
+            sha256="0" * 64,
+            size_bytes=1_288_556,
+            provenance="re_derived",
+        )
+        ```
+    """
+
+    source: str | None = None
+    revision: str | None = None
+    file: str | None = None
+    sha256: str | None = None
+    size_bytes: int | None = None
+    provenance: str | None = None
+
+    def __post_init__(self) -> None:
+        """Enforce the corpus-reference invariants.
+
+        Raises:
+            ValueError: If a string field is the empty string instead
+                of None, if the entry records nothing at all, or if
+                the content identity is malformed.
+        """
+        for name in _CORPUS_FIELDS:
+            if getattr(self, name) == "":
+                raise ValueError(f"{name} must not be empty — use None")
+        if all(getattr(self, name) is None for name in _CORPUS_FIELDS):
+            raise ValueError(
+                "a corpus reference must record at least one of "
+                f"{', '.join(_CORPUS_FIELDS)}"
+            )
+        self._check_content_identity()
+
+    def _check_content_identity(self) -> None:
+        """Enforce the digest, its size, and its required label.
+
+        Raises:
+            ValueError: If the digest is malformed, the byte count is
+                not positive, the digest and its label do not pair, or
+                the label is not one of `CORPUS_PROVENANCE`.
+        """
+        if self.sha256 is not None and (
+            len(self.sha256) != _SHA256_HEX_LEN or not set(self.sha256) <= _HEX_DIGITS
+        ):
+            raise ValueError("sha256 must be 64 lowercase hex digits")
+        if self.size_bytes is not None and self.size_bytes <= 0:
+            raise ValueError("size_bytes must be positive")
+        if (self.sha256 is None) != (self.provenance is None):
+            raise ValueError(
+                "sha256 and provenance must pair — a digest says which "
+                "bytes, and provenance says who hashed them and when"
+            )
+        if self.provenance is not None and self.provenance not in CORPUS_PROVENANCE:
+            raise ValueError(
+                f"provenance must be one of {', '.join(CORPUS_PROVENANCE)}"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -295,6 +428,11 @@ class Tier3Task:
         score (float): The metric's value.
         stderr (float): Its standard error.
         wall_clock_seconds (float): Measured task duration.
+        corpus (str | None): Key into `EvalsSidecar.corpora`, or None
+            when the task names no corpus. An lm-evaluation-harness
+            task fetches its data at run time, so the entry a task
+            names usually carries `source` and `revision` without a
+            digest — identity and revision, not content identity.
 
     Examples:
         Record a Winogrande row:
@@ -315,6 +453,7 @@ class Tier3Task:
     score: float
     stderr: float
     wall_clock_seconds: float
+    corpus: str | None = None
 
     def __post_init__(self) -> None:
         """Enforce the task-row invariants.
@@ -322,7 +461,8 @@ class Tier3Task:
         Raises:
             ValueError: If a string field is empty, ``few_shot`` is
                 negative, ``n`` or ``wall_clock_seconds`` is not
-                positive, or a number is not finite.
+                positive, ``corpus`` is the empty string instead of
+                None, or a number is not finite.
         """
         if not self.date:
             raise ValueError("date must not be empty")
@@ -341,6 +481,8 @@ class Tier3Task:
         _check_finite(self.wall_clock_seconds, "wall_clock_seconds")
         if self.wall_clock_seconds <= 0:
             raise ValueError("wall_clock_seconds must be positive")
+        if self.corpus == "":
+            raise ValueError("corpus must not be empty — use None")
 
 
 @dataclass(frozen=True, slots=True)
@@ -387,6 +529,9 @@ class EvalsSidecar:
         tier1 (Tier1Result | None): Perplexity, when measured.
         tier2 (Tier2Result | None): KL divergence, when measured.
         tier3 (Tier3Result | None): The task slice, when measured.
+        corpora (Mapping[str, CorpusReference] | None): The corpora the
+            tiers name, keyed by the string each tier carries, or None
+            when the sidecar records no corpus identity.
 
     Examples:
         A tier-1-only baseline record:
@@ -401,6 +546,7 @@ class EvalsSidecar:
     tier1: Tier1Result | None = None
     tier2: Tier2Result | None = None
     tier3: Tier3Result | None = None
+    corpora: Mapping[str, CorpusReference] | None = field(hash=False, default=None)
 
     def __post_init__(self) -> None:
         """Enforce the whole-record invariants.
@@ -409,10 +555,15 @@ class EvalsSidecar:
         directions (ADR-0025): a present tier 3 requires all three,
         and an absent tier 3 forbids them — no harness ran.
 
+        `corpora` resolves every corpus name the tiers carry. A
+        sidecar that records no corpora carries None and claims no
+        corpus identity.
+
         Raises:
             ValueError: If every tier is absent, if tier 3 is present
-                without the harness toolchain fields, or if a harness
-                field is present without tier 3.
+                without the harness toolchain fields, if a harness
+                field is present without tier 3, or if `corpora` is
+                empty or fails to resolve a name a tier carries.
         """
         if self.tier1 is None and self.tier2 is None and self.tier3 is None:
             raise ValueError("at least one tier must be present")
@@ -438,3 +589,47 @@ class EvalsSidecar:
                 "with tier3 — without the task slice no harness ran "
                 "(ADR-0025)"
             )
+        if self.corpora is not None:
+            object.__setattr__(self, "corpora", MappingProxyType(dict(self.corpora)))
+            self._check_corpus_names()
+
+    def _named_corpora(self) -> list[tuple[str, str]]:
+        """List every corpus name the tiers carry, with its field.
+
+        Returns:
+            One ``(field, name)`` pair per corpus name, in document
+            order. Tier 1 and tier 2 always name one. A tier-3 task
+            names one only when it records a ``corpus``.
+        """
+        named = []
+        if self.tier1 is not None:
+            named.append(("tier1.dataset", self.tier1.dataset))
+        if self.tier2 is not None:
+            named.append(("tier2.dataset", self.tier2.dataset))
+        if self.tier3 is not None:
+            named.extend(
+                (f"tier3.tasks[{index}].corpus", task.corpus)
+                for index, task in enumerate(self.tier3.tasks)
+                if task.corpus is not None
+            )
+        return named
+
+    def _check_corpus_names(self) -> None:
+        """Resolve every corpus name against `corpora`.
+
+        A sidecar that carries the map must resolve what it names.
+        The map is never extended to cover a name it lacks — inventing
+        the entry would state a corpus identity nobody recorded.
+
+        Raises:
+            ValueError: If `corpora` is empty, or a tier names a key
+                the map does not carry.
+        """
+        if not self.corpora:
+            raise ValueError("corpora must not be empty — use None")
+        for field_name, name in self._named_corpora():
+            if name not in self.corpora:
+                raise ValueError(
+                    f'{field_name} names "{name}", which corpora does not '
+                    "carry — every corpus a tier names must resolve"
+                )
