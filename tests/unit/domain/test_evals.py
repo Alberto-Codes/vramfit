@@ -38,9 +38,10 @@ CORPORA = {"wikitext-2-test": CORPUS}
 
 class TestCorpusReference:
     def test_source_and_revision_without_a_digest_is_valid(self) -> None:
-        # A tier-3 task's corpus is fetched at run time, so it has no
-        # local file to hash. Identity and revision still record.
-        corpus = CorpusReference(source="hails/mmlu_no_train", revision="99a5c73")
+        # A producer may record a corpus by identity and revision
+        # without having hashed any bytes. The type accepts that
+        # rather than inventing a digest.
+        corpus = CorpusReference(source="Salesforce/wikitext", revision="b08601e")
 
         assert corpus.sha256 is None
         assert corpus.provenance is None

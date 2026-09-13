@@ -29,11 +29,13 @@ change.
 
 **Evals sidecar**
 :   The versioned JSON artifact that records a packed model's evaluation
-    results (all three scoreboard tiers, their settings, the toolchain
-    that produced them, and the **corpus reference** each tier names
-    when one is recorded), published beside the weights
-    ([ADR-0025](../adr/0025-evals-sidecar.md)). Not "eval log" (the raw
-    tool output) or "benchmark report".
+    results (all three scoreboard tiers, their settings, and the
+    toolchain that produced them), published beside the weights
+    ([ADR-0025](../adr/0025-evals-sidecar.md)). It can also carry a
+    `corpora` map of **corpus reference** entries that tier 1 and
+    tier 2 name into. Where the map is present, the reader resolves
+    every name those two tiers carry. Not "eval log" (the raw tool
+    output) or "benchmark report".
 
 **Corpus reference**
 :   One entry in an evals sidecar's `corpora` map, under a key the
