@@ -25,9 +25,10 @@ catches it sees no ancestry. That hook lives in
 carries the report — `report_through_warnings` by default, and the CLI
 installs its own. The boolean extractor
 accepts only real booleans, and the string extractors reject the
-empty string. An optional extractor reads a nullable field: it returns
-None for JSON null and still rejects the empty string, so a document
-records an absence by writing null. Schema versions advance
+empty string. An optional extractor reads a nullable field and
+returns None for JSON null. The optional string extractor keeps that
+empty-string refusal, so a document records an absence by writing
+null. Schema versions advance
 per artifact (ADR-0013) — each adapter owns its version constant and
 passes it to `_check_schema_version`. An adapter reads one version
 unless it names older ones through ``also_reads``, which suits a bump

@@ -12,14 +12,14 @@ restates a domain refusal as an `ArtifactError` naming the JSON path.
 
 Where a document carries ``corpora``, the map takes each key to an
 entry that can carry the content identity, and a tier names the key
-its corpus uses, in place of a bare string that names no bytes. An entry that carries the
-identity records the digest, the byte count and the provenance mark
-together. An entry that carries none of them names the corpus by
-whichever of the id, the revision and the file it recorded. The
-reader then refuses a document whose tier names an entry the map does
-not carry, and it refuses a digest that carries no mark. A document
-that carries no map records no corpus identity, and the reader
-resolves no name.
+its corpus uses, in place of a bare string that names no bytes. An
+entry that carries the identity records the digest, the byte count and
+the provenance mark together. An entry that carries none of them names
+the corpus by whichever of the id, the revision and the file it
+recorded. The reader then refuses a document whose tier names an entry
+the map does not carry, and it refuses a digest that carries no mark.
+A document that carries no map records no corpus identity, and the
+reader resolves no name.
 
 Two limits bound what that buys. First, nothing in vramfit computes a
 corpus digest: no in-repo producer writes a sidecar, so this adapter
