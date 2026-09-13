@@ -2223,6 +2223,43 @@ corpus enters by its SHA-256 and byte count, so re-issued bytes
 behind an unchanged path refuse the checkpoint. That pins the
 corpus, not the tokenizer. Weights and the imatrix still enter by
 path, so swapping either under an unchanged path defeats it.
+
+The evals sidecar names its own text the same way, and the machinery
+differs because the sidecar is written outside this repo. Schema 3
+adds an optional `corpora` map. It enables corpus identity rather
+than guaranteeing it: a sidecar may record no map at all, and then
+its tiers carry the same bare strings they carried before and the
+reader resolves nothing. Everything that follows holds where a
+sidecar carries the map.
+
+The map takes each key to one entry. An entry records at least one of
+the dataset id, the revision, the file, and the content identity. An
+entry that carries the content identity records the SHA-256, the byte
+count and the provenance mark together. An entry that carries none of
+those three claims nothing about the bytes.
+
+Tier 1 and tier 2 may name one entry when they ran over one corpus,
+instead of carrying two strings that happen to match. Tier 2 compares
+the packed model against the f16 reference over one corpus, and the
+entry that corpus names can record its bytes. A reader refuses a
+sidecar whose tier names an entry the map does not carry, and it
+refuses a digest that carries no mark. It never refuses an entry for
+recording no digest, so a schema-3 sidecar pins content only where a
+producer recorded it.
+
+Two limits bound what that buys, and both are worth stating plainly.
+No vramfit command computes an evaluation digest — no in-repo
+producer writes a sidecar, so whatever ran the evaluation records the
+identity, and vramfit carries it and refuses a broken reference. And
+the map pins the corpus, not the tokenizer, so a digest match
+promises no chunk count. Each recorded digest carries a mark saying
+who hashed the bytes: `measured`, `recovered`, or `re_derived`. The
+reader refuses a digest with no mark, because an unlabelled hash gets
+read as a measurement. A `re_derived` digest says *these are the
+bytes the pinned revision carries*. It does not say *these are the
+bytes that run measured*. That is an assumption recorded on purpose,
+not a measurement recovered.
+
 None of these proves the artifact is any good. The project's claim is
 that a publication should carry both: provenance (hashes,
 fingerprint, run log) and evidence (the three tiers above). Shipping

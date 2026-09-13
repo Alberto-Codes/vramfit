@@ -29,10 +29,48 @@ change.
 
 **Evals sidecar**
 :   The versioned JSON artifact that records a packed model's evaluation
-    results (all three scoreboard tiers, their settings, and the toolchain
-    that produced them), published beside the weights
-    ([ADR-0025](../adr/0025-evals-sidecar.md)). Not "eval log" (the raw
-    tool output) or "benchmark report".
+    results (all three scoreboard tiers, their settings, and the
+    toolchain that produced them), published beside the weights
+    ([ADR-0025](../adr/0025-evals-sidecar.md)). It can also carry a
+    `corpora` map of **corpus reference** entries that tier 1 and
+    tier 2 name into. Where the map is present, the reader resolves
+    every name those two tiers carry. Not "eval log" (the raw tool
+    output) or "benchmark report".
+
+**Corpus reference**
+:   One entry in an evals sidecar's `corpora` map, under a key the
+    producer chose. It records at least one of the dataset id, the
+    revision, the file, and the **content identity**. An entry that
+    carries the content identity records both halves, with the
+    **provenance mark**. An entry that carries no content identity
+    names the corpus by whichever of the id, the revision and the file
+    it recorded. Two tiers that ran over one corpus may name one
+    entry, which states that identity once instead of repeating a
+    string. It pins the corpus, not the tokenizer. A digest match does
+    not promise the same chunk count. No vramfit command computes one,
+    because no in-repo producer writes a sidecar. The schema carries
+    the identity, and where a sidecar carries the map the reader
+    refuses a name the map does not resolve. Not "dataset entry".
+
+**Provenance mark**
+:   The label a corpus reference carries wherever it records a digest,
+    one of three values. `measured`: the process that produced the
+    numbers hashed those bytes as it read them. `recovered`: the run's
+    own file survived, and someone hashed it afterwards.
+    `re_derived`: the run's own file is gone, and these are the
+    pinned revision's bytes.
+    A mark that asserts about something outside the digest names that
+    referent, so `recovered` requires the recorded `file` and
+    `re_derived` requires the recorded `revision`. `measured` asserts
+    only about the bytes the producing process hashed, which the
+    digest already names.
+    A `re_derived` digest says *these are the bytes the pinned
+    revision carries*. It does not say *these are the bytes that run
+    measured*. The reader refuses a digest that carries no mark.
+    Inside a corpus reference the field that carries the mark is
+    spelled `provenance`. The bare word keeps its general sense
+    elsewhere in this project, where it names the whole class of run
+    records.
 
 **Analysis artifact**
 :   The JSON record of a derivation across two or more evaluated
@@ -385,8 +423,9 @@ change.
     calibration file's content identity in the sensitivity map and
     folds it into the **Fingerprint**. It pins the corpus, not the
     tokenizer. A digest match does not promise the same
-    `calibration_tokens` count. Not "hash" or "checksum" alone, which
-    name the
+    `calibration_tokens` count. An evals sidecar's **corpus
+    reference** can carry one too, marked by its **provenance mark**.
+    Not "hash" or "checksum" alone, which name the
     digest without the count.
 
 **NOT RECORDED**
@@ -394,7 +433,9 @@ change.
     fields absent or null. It is the absence of a claim, never the
     claim that the bytes match whatever carries that path today. The
     loader never hashes a file to fill the pair, and a save writes
-    null rather than inventing a digest.
+    null rather than inventing a digest. An evals sidecar with an
+    absent or null `corpora` map sits in the same state for its
+    evaluation corpus.
 
 **Fingerprint**
 :   The identity string that ties a scan checkpoint to one scan's

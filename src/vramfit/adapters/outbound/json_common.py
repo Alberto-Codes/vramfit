@@ -25,7 +25,10 @@ catches it sees no ancestry. That hook lives in
 carries the report — `report_through_warnings` by default, and the CLI
 installs its own. The boolean extractor
 accepts only real booleans, and the string extractors reject the
-empty string. Schema versions advance
+empty string. An optional extractor reads a nullable field and
+returns None for JSON null. The optional string extractor keeps that
+empty-string refusal, so a document records an absence by writing
+null. Schema versions advance
 per artifact (ADR-0013) — each adapter owns its version constant and
 passes it to `_check_schema_version`. An adapter reads one version
 unless it names older ones through ``also_reads``, which suits a bump
@@ -344,6 +347,52 @@ def _get_bool(obj: dict[str, Any], key: str, path: str) -> bool:
     value = obj[key]
     _require(isinstance(value, bool), f"{path}.{key}", "expected a boolean")
     return value
+
+
+def _get_opt_str(obj: dict[str, Any], key: str, path: str) -> str | None:
+    """Return the non-empty string at ``key``, or None for JSON null.
+
+    Args:
+        obj: Parent JSON object.
+        key: Key to read.
+        path: JSON path of the parent for error reporting.
+
+    Returns:
+        The string value, or None when the field is null.
+
+    Raises:
+        ArtifactError: If the key is missing, or holds neither null
+            nor a non-empty string.
+    """
+    _require(key in obj, path, f'missing required field "{key}"')
+    value = obj[key]
+    if value is None:
+        return None
+    _require(isinstance(value, str), f"{path}.{key}", "expected a string or null")
+    _require(value != "", f"{path}.{key}", "must not be empty — use null")
+    return value
+
+
+def _get_opt_int(obj: dict[str, Any], key: str, path: str) -> int | None:
+    """Return the integer at ``key``, or None for JSON null.
+
+    Args:
+        obj: Parent JSON object.
+        key: Key to read.
+        path: JSON path of the parent for error reporting.
+
+    Returns:
+        The integer value, or None when the field is null.
+
+    Raises:
+        ArtifactError: If the key is missing, or holds neither null
+            nor an integer inside the signed 64-bit range.
+    """
+    _require(key in obj, path, f'missing required field "{key}"')
+    value = obj[key]
+    if value is None:
+        return None
+    return _as_int(value, f"{path}.{key}")
 
 
 def _as_int(value: Any, path: str) -> int:

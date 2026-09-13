@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from vramfit.adapters.outbound.evals_sidecar_json import (
+    EVALS_SIDECAR_SCHEMA_ALSO_READS,
     EVALS_SIDECAR_SCHEMA_VERSION,
     JsonEvalsSidecarFile,
     load_evals_sidecar,
@@ -22,6 +23,7 @@ from vramfit.adapters.outbound.evals_sidecar_json import (
 )
 from vramfit.adapters.outbound.json_common import ArtifactError
 from vramfit.domain.evals import (
+    CorpusReference,
     EvalsSidecar,
     EvalToolchain,
     EvaluatedArtifact,
@@ -76,6 +78,46 @@ def tier1_only_sidecar() -> EvalsSidecar:
     )
 
 
+# One entry, named by both tier 1 and tier 2. The digest is the
+# fixture's own, not any published corpus's.
+WIKITEXT = CorpusReference(
+    source="Salesforce/wikitext",
+    revision="b08601e",
+    file="wikitext-2-raw/wiki.test.raw",
+    sha256="ef" * 32,
+    size_bytes=1_288_556,
+    provenance="re_derived",
+)
+
+
+def pinned_sidecar() -> EvalsSidecar:
+    """A schema-3 sidecar whose tiers resolve to one corpus entry."""
+    base = full_sidecar()
+    return EvalsSidecar(
+        artifact=base.artifact,
+        toolchain=base.toolchain,
+        tier1=base.tier1,
+        tier2=base.tier2,
+        tier3=base.tier3,
+        corpora={"wikitext-2-test": WIKITEXT},
+    )
+
+
+def revision_only_sidecar() -> EvalsSidecar:
+    """A schema-3 sidecar whose entry records no content identity."""
+    base = tier1_only_sidecar()
+    return EvalsSidecar(
+        artifact=base.artifact,
+        toolchain=base.toolchain,
+        tier1=base.tier1,
+        corpora={
+            "wikitext-2-test": CorpusReference(
+                source="Salesforce/wikitext", revision="b08601e"
+            )
+        },
+    )
+
+
 class TestSidecarToDict:
     def test_full_sidecar_serializes_every_block(self) -> None:
         data = sidecar_to_dict(full_sidecar())
@@ -105,6 +147,35 @@ class TestSidecarToDict:
 
         assert full.keys() == partial.keys()
         assert full["toolchain"].keys() == partial["toolchain"].keys()
+
+    def test_absent_corpora_serializes_as_null(self) -> None:
+        assert sidecar_to_dict(full_sidecar())["corpora"] is None
+
+    def test_corpus_entry_serializes_every_field(self) -> None:
+        entry = sidecar_to_dict(pinned_sidecar())["corpora"]["wikitext-2-test"]
+
+        assert entry == {
+            "source": "Salesforce/wikitext",
+            "revision": "b08601e",
+            "file": "wikitext-2-raw/wiki.test.raw",
+            "sha256": "ef" * 32,
+            "size_bytes": 1_288_556,
+            "provenance": "re_derived",
+        }
+
+    def test_unrecorded_corpus_fields_serialize_as_null(self) -> None:
+        entry = sidecar_to_dict(revision_only_sidecar())["corpora"]["wikitext-2-test"]
+
+        assert entry["source"] == "Salesforce/wikitext"
+        assert entry["sha256"] is None
+        assert entry["size_bytes"] is None
+        assert entry["provenance"] is None
+
+    def test_both_tiers_name_the_same_corpus_key(self) -> None:
+        data = sidecar_to_dict(pinned_sidecar())
+
+        assert data["tier1"]["dataset"] == data["tier2"]["dataset"]
+        assert data["tier1"]["dataset"] in data["corpora"]
 
 
 class TestSaveEvalsSidecar:
@@ -275,21 +346,169 @@ class TestSidecarFromDict:
         assert "tier3 requires the toolchain's lm_eval" in caught.value.message
 
 
+class TestCorporaFromDict:
+    def test_pinned_sidecar_reads_back_to_an_equal_value(self) -> None:
+        sidecar = pinned_sidecar()
+
+        assert sidecar_from_dict(sidecar_to_dict(sidecar)) == sidecar
+
+    def test_absent_corpora_key_reads_as_no_corpus_identity(self) -> None:
+        # How every schema-2 document loads: the key predates
+        # version 3, so absent reads the same as null.
+        data = sidecar_to_dict(full_sidecar())
+        del data["corpora"]
+        data["vramfit_schema"] = EVALS_SIDECAR_SCHEMA_ALSO_READS[0]
+
+        assert sidecar_from_dict(data).corpora is None
+
+    def test_tier_naming_an_unresolvable_key_is_refused_at_the_root(self) -> None:
+        data = sidecar_to_dict(pinned_sidecar())
+        data["tier2"]["dataset"] = "wikitext-103-test"
+
+        with pytest.raises(ArtifactError) as caught:
+            sidecar_from_dict(data)
+
+        assert caught.value.json_path == "$"
+        assert "tier2.dataset" in caught.value.message
+
+    def test_digest_without_provenance_names_its_entry(self) -> None:
+        # The refusal the mark exists for. An unlabelled digest must
+        # not reach a reader as though a run had measured it.
+        data = sidecar_to_dict(pinned_sidecar())
+        data["corpora"]["wikitext-2-test"]["provenance"] = None
+
+        with pytest.raises(ArtifactError) as caught:
+            sidecar_from_dict(data)
+
+        assert caught.value.json_path == "$.corpora.wikitext-2-test"
+        assert "sha256 and provenance must pair" in caught.value.message
+
+    def test_mark_without_its_referent_names_its_entry(self) -> None:
+        # The fixture is re_derived, so dropping the revision leaves
+        # a mark asserting a derivation the record cannot name.
+        data = sidecar_to_dict(pinned_sidecar())
+        data["corpora"]["wikitext-2-test"]["revision"] = None
+
+        with pytest.raises(ArtifactError) as caught:
+            sidecar_from_dict(data)
+
+        assert caught.value.json_path == "$.corpora.wikitext-2-test"
+        assert 'provenance "re_derived" requires revision' in caught.value.message
+
+    def test_undeclared_provenance_names_its_entry(self) -> None:
+        data = sidecar_to_dict(pinned_sidecar())
+        data["corpora"]["wikitext-2-test"]["provenance"] = "downloaded"
+
+        with pytest.raises(ArtifactError) as caught:
+            sidecar_from_dict(data)
+
+        assert caught.value.json_path == "$.corpora.wikitext-2-test"
+        assert "provenance must be one of" in caught.value.message
+
+    def test_malformed_digest_names_its_entry(self) -> None:
+        data = sidecar_to_dict(pinned_sidecar())
+        data["corpora"]["wikitext-2-test"]["sha256"] = "EF" * 32
+
+        with pytest.raises(ArtifactError) as caught:
+            sidecar_from_dict(data)
+
+        assert caught.value.json_path == "$.corpora.wikitext-2-test"
+        assert "64 lowercase hex digits" in caught.value.message
+
+    def test_missing_corpus_field_reports_it_as_missing(self) -> None:
+        data = sidecar_to_dict(pinned_sidecar())
+        del data["corpora"]["wikitext-2-test"]["revision"]
+
+        with pytest.raises(ArtifactError) as caught:
+            sidecar_from_dict(data)
+
+        assert caught.value.json_path == "$.corpora.wikitext-2-test"
+        assert 'missing required field "revision"' in caught.value.message
+
+    def test_non_object_corpus_entry_reports_the_wrong_type(self) -> None:
+        data = sidecar_to_dict(pinned_sidecar())
+        data["corpora"]["wikitext-2-test"] = "wikitext-2-test"
+
+        with pytest.raises(ArtifactError) as caught:
+            sidecar_from_dict(data)
+
+        assert caught.value.json_path == "$.corpora.wikitext-2-test"
+        assert "expected a JSON object" in caught.value.message
+
+    def test_empty_corpora_map_is_refused_at_the_root(self) -> None:
+        data = sidecar_to_dict(pinned_sidecar())
+        data["corpora"] = {}
+
+        with pytest.raises(ArtifactError) as caught:
+            sidecar_from_dict(data)
+
+        assert caught.value.json_path == "$"
+        assert "corpora must not be empty" in caught.value.message
+
+    def test_unknown_field_in_a_corpus_entry_warns_and_loads(self) -> None:
+        data = sidecar_to_dict(pinned_sidecar())
+        data["corpora"]["wikitext-2-test"]["license"] = "CC BY-SA 3.0"
+
+        with pytest.warns(UserWarning, match="license"):
+            sidecar = sidecar_from_dict(data)
+
+        assert sidecar.corpora is not None
+        assert sidecar.corpora["wikitext-2-test"].source == "Salesforce/wikitext"
+
+    def test_reader_never_fills_an_unrecorded_digest(self) -> None:
+        # Nothing in vramfit computes a corpus digest. A null stays
+        # null through a load and a save.
+        data = sidecar_to_dict(revision_only_sidecar())
+
+        loaded = sidecar_from_dict(data)
+
+        assert loaded.corpora is not None
+        assert loaded.corpora["wikitext-2-test"].sha256 is None
+        entry = sidecar_to_dict(loaded)["corpora"]["wikitext-2-test"]
+        assert entry["sha256"] is None
+        assert entry["size_bytes"] is None
+
+
 class TestLoadEvalsSidecar:
     @pytest.mark.parametrize("name", PUBLISHED_SIDECARS, ids=PUBLISHED_IDS)
-    def test_published_sidecar_round_trips_byte_for_byte(
+    def test_published_sidecar_still_loads(self, name: str) -> None:
+        # The five shipped files sit at schema 2 and stay untouched.
+        # They are the evidence that version 3 only added.
+        sidecar = load_evals_sidecar(PUBLISHED / name)
+
+        assert sidecar.corpora is None
+
+    @pytest.mark.parametrize("name", PUBLISHED_SIDECARS, ids=PUBLISHED_IDS)
+    def test_published_sidecar_rewrites_with_only_the_version_3_additions(
         self, name: str, tmp_path
     ) -> None:
-        # The #121 re-upload verified every other artifact by loading
-        # it through the merged reader. The sidecars could not be
-        # checked that way, because no reader existed (#137).
+        # This test read byte for byte before version 3. The writer
+        # now emits 3, so a schema-2 file cannot re-serialize to its
+        # own bytes. Assert the exact delta instead: the envelope and
+        # the null corpora map. Every measured number must still come
+        # back untouched.
         source = PUBLISHED / name
-        loaded = load_evals_sidecar(source)
-
         out = tmp_path / name
-        save_evals_sidecar(loaded, out)
+        save_evals_sidecar(load_evals_sidecar(source), out)
 
-        assert out.read_text(encoding="utf-8") == source.read_text(encoding="utf-8")
+        before = json.loads(source.read_text(encoding="utf-8"))
+        assert before["vramfit_schema"] == EVALS_SIDECAR_SCHEMA_ALSO_READS[0]
+        expected = dict(before)
+        expected["vramfit_schema"] = EVALS_SIDECAR_SCHEMA_VERSION
+        expected["corpora"] = None
+
+        assert json.loads(out.read_text(encoding="utf-8")) == expected
+
+    def test_pinned_sidecar_round_trips_byte_for_byte(self, tmp_path) -> None:
+        # A schema-3 document is what the writer emits, so it must
+        # survive a load and a save unchanged.
+        first = tmp_path / "model.gguf.evals.json"
+        save_evals_sidecar(pinned_sidecar(), first)
+        second = tmp_path / "again.evals.json"
+
+        save_evals_sidecar(load_evals_sidecar(first), second)
+
+        assert second.read_text(encoding="utf-8") == first.read_text(encoding="utf-8")
 
     @pytest.mark.parametrize("name", PUBLISHED_SIDECARS, ids=PUBLISHED_IDS)
     def test_published_sidecar_names_its_artifact_and_build(self, name: str) -> None:
