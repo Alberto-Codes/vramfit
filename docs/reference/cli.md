@@ -545,8 +545,9 @@ expert stack's count vector and pools each group's vectors into the
 without a resolved expert stack records none — see the
 [sensitivity map format](../reference/sensitivity-map.md).
 
-Exit codes: 1 when the scan extra is missing, the model or calibration
-cannot load, sharding offloaded a quantizable group beyond host RAM,
+Exit codes: 1 when the scan extra is missing, the calibration file
+holds no bytes, the model or calibration cannot load, sharding
+offloaded a quantizable group beyond host RAM,
 a `--groups` name matches no discovered group, the checkpoint
 belongs to a different scan, a measurement fails (the checkpoint keeps
 completed cells), a checkpoint write fails, or the map cannot be
