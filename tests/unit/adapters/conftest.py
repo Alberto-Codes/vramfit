@@ -16,6 +16,7 @@ from typer.testing import CliRunner
 from tests.fakes import MemoryDamageMeter
 from vramfit.adapters.inbound import cli_scan
 from vramfit.adapters.inbound.cli import app
+from vramfit.adapters.outbound.calibration_digest import calibration_identity
 from vramfit.domain.scan import GroupSpec
 
 SPECS = (
@@ -30,6 +31,9 @@ DAMAGES = {
 }
 
 runner = CliRunner()
+
+# The calibration text every scan invocation measures against.
+CALIBRATION_TEXT = "calibration text"
 
 
 def install_meter(monkeypatch: pytest.MonkeyPatch, meter: object) -> dict:
@@ -52,18 +56,53 @@ def install_meter(monkeypatch: pytest.MonkeyPatch, meter: object) -> dict:
     return captured
 
 
-def invoke_scan(tmp_path: Path, *extra: str):
+def write_calibration(tmp_path: Path, text: str = CALIBRATION_TEXT) -> Path:
+    """Write the calibration text a scan invocation measures.
+
+    Args:
+        tmp_path: The test's temporary directory.
+        text: The calibration text. A different text stands for the
+            corpus being re-issued behind an unchanged path.
+
+    Returns:
+        The calibration file's path.
+    """
+    path = tmp_path / "calib.txt"
+    path.write_text(text)
+    return path
+
+
+def calibration_content(tmp_path: Path) -> tuple[str, int]:
+    """Read the content identity `invoke_scan`'s calibration file has.
+
+    A test that rebuilds the scan's fingerprint must fold the same
+    digest the command folds, or the run halts on the fingerprint
+    instead of the behaviour under test. The file may not exist yet,
+    so this writes it first, exactly as `invoke_scan` does.
+
+    Args:
+        tmp_path: The test's temporary directory.
+
+    Returns:
+        The SHA-256 hex digest and the byte count.
+    """
+    return calibration_identity(write_calibration(tmp_path))
+
+
+def invoke_scan(tmp_path: Path, *extra: str, calibration_text: str = CALIBRATION_TEXT):
     """Run ``vramfit scan`` against a temporary calibration file.
 
     Args:
         tmp_path: The test's temporary directory.
         *extra: Extra command-line arguments.
+        calibration_text: The calibration file's text. A different
+            text stands for the corpus being re-issued behind an
+            unchanged path.
 
     Returns:
         The runner result and the map path.
     """
-    calibration = tmp_path / "calib.txt"
-    calibration.write_text("calibration text")
+    calibration = write_calibration(tmp_path, calibration_text)
     out = tmp_path / "sensitivity.json"
     args = [
         "scan",

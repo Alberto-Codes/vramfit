@@ -1,10 +1,13 @@
 """JSON file adapter for the sensitivity-map artifact.
 
 Owns (de)serialization and validation of the map schema, including the
-``vramfit_schema`` envelope (`MAP_SCHEMA_VERSION` — schema versions
-advance per artifact, ADR-0013). The adapter writes version 3 and
-also reads version 2, because version 3 only widened ``group_by``
-with the ``stack`` value (#161). One file class serves both directions:
+``vramfit_schema`` envelope (`MAP_SCHEMA_VERSION` and
+`MAP_SCHEMA_ALSO_READS` — schema versions advance per artifact,
+ADR-0013). The adapter writes version 4 and
+also reads versions 2 and 3, because each later version only added
+to the one before it: version 3 widened ``group_by`` with the
+``stack`` value (#161), and version 4 added the calibration file's
+content identity. One file class serves both directions:
 ``vramfit scan`` writes through the sink face, ``vramfit plan`` reads
 through the source face. Validation is strict: artifacts are rejected,
 never normalized — ``scan.precisions`` must arrive strictly descending,
@@ -17,6 +20,10 @@ with that method, and ``scan.imatrix`` (ADR-0020) defaults to None,
 because every map written before the field existed was unassisted.
 A group's ``imatrix_counts`` summary (ADR-0026 decision 4) is
 additive the same way: absent means the group records no summary.
+``scan.calibration_sha256`` and ``scan.calibration_bytes`` are
+additive too, and they pair: absent or null means the scan recorded
+no content identity, which stays NOT RECORDED. The loader never
+hashes a file to fill them, and a save never invents them.
 The top-level ``derived`` note (#136) is additive too: absent means
 the map is a scan artifact. A present ``imatrix`` must pair with
 an assisted method token, ``kquant-imx`` or ``q0-imx`` — the
@@ -54,6 +61,7 @@ from vramfit.adapters.outbound.json_common import (
     ArtifactError,
     _as_float,
     _as_int,
+    _as_str,
     _check_schema_version,
     _get_dict,
     _get_int,
@@ -73,13 +81,15 @@ from vramfit.domain.model import (
 from vramfit.domain.scan import ASSISTED_METHODS, SCAN_METHOD
 
 # The sensitivity-map schema version. Versions advance per artifact
-# (ADR-0013) — the recipe sits at 6 while the map sits at 3.
-MAP_SCHEMA_VERSION: Final[int] = 3
-# Older versions this adapter still reads. Version 3 only widened
-# ``group_by`` with the ``stack`` value (#161), so every version-2 map
-# is already a valid version-3 document. The writer emits 3, which
-# tells a reader the producer could have keyed on stacks.
-MAP_SCHEMA_ALSO_READS: Final[tuple[int, ...]] = (2,)
+# (ADR-0013), so this constant moves on its own.
+MAP_SCHEMA_VERSION: Final[int] = 4
+# Older versions this adapter still reads. Each bump only added:
+# version 3 widened ``group_by`` with the ``stack`` value (#161), and
+# version 4 added the paired calibration digest and byte count. So
+# every older map is already a valid version-4 document, and it
+# records no content identity. The writer emits 4, which tells a
+# reader the producer could have recorded one.
+MAP_SCHEMA_ALSO_READS: Final[tuple[int, ...]] = (2, 3)
 
 # Every key the reader carries, per object the schema fixes (#261).
 # A key outside these sets warns and loads (ADR-0013, the 2026-08-16
@@ -95,6 +105,8 @@ SCAN_FIELDS: Final[frozenset[str]] = frozenset(
         "metric",
         "calibration",
         "calibration_tokens",
+        "calibration_sha256",
+        "calibration_bytes",
         "precisions",
         "group_by",
         "started_at",
@@ -186,7 +198,10 @@ def map_to_dict(map_: SensitivityMap) -> dict[str, Any]:
         are stringified in descending-bit order. The within-group
         method token is always written, even when it is the default,
         and the imatrix path is always written — null when
-        unassisted (ADR-0020). Per-tensor sizes are written only
+        unassisted (ADR-0020). The calibration digest and byte count
+        are always written too, null when the scan recorded no
+        content identity, which a reader reads as NOT RECORDED: a
+        save never invents a digest. Per-tensor sizes are written only
         when known — an absent field means unknown, never zero
         (ADR-0022). A group's imatrix count summary is written only
         when the group records one (ADR-0026 decision 4). The
@@ -200,6 +215,8 @@ def map_to_dict(map_: SensitivityMap) -> dict[str, Any]:
             "metric": map_.scan.metric,
             "calibration": map_.scan.calibration,
             "calibration_tokens": map_.scan.calibration_tokens,
+            "calibration_sha256": map_.scan.calibration_sha256,
+            "calibration_bytes": map_.scan.calibration_bytes,
             "precisions": list(map_.scan.precisions),
             "group_by": map_.scan.group_by,
             "started_at": map_.scan.started_at,
@@ -331,8 +348,15 @@ def _parse_scan_meta(obj: dict[str, Any]) -> ScanMeta:
             ``kquant-imx`` or ``q0-imx`` — assisted
             damages without their imatrix provenance are not
             comparable to anything (ADR-0020, absent defaults to
-            None). A field the section does not carry reports and
-            loads (#261).
+            None), or the calibration content identity is malformed
+            — the digest must hold 64 lowercase hex digits, the byte
+            count must be positive, and the two must pair (absent or
+            null on both means NOT RECORDED). A mistyped field
+            reports at its own JSON path. The digest shape, the
+            positive byte count, and the pairing are domain
+            invariants, so they report at the section's path. A
+            field the section does not carry reports and loads
+            (#261).
     """
     path = "$.scan"
     _warn_unknown_fields(obj, path, SCAN_FIELDS)
@@ -372,6 +396,17 @@ def _parse_scan_meta(obj: dict[str, Any]) -> ScanMeta:
     # existed were unassisted by definition. The pairing rules mirror
     # ScanMeta's own invariant, re-stated here for JSON-path errors.
     imatrix = _get_str(obj, "imatrix", path) if obj.get("imatrix") is not None else None
+    # Optional, additive, and paired (ScanMeta enforces the pairing):
+    # absent or null means the scan recorded no content identity,
+    # which stays NOT RECORDED. The loader never hashes a file to
+    # fill a gap — a digest taken today proves nothing about the
+    # bytes an earlier run measured.
+    raw_digest = obj.get("calibration_sha256")
+    raw_bytes = obj.get("calibration_bytes")
+    digest_path = f"{path}.calibration_sha256"
+    bytes_path = f"{path}.calibration_bytes"
+    digest = None if raw_digest is None else _as_str(raw_digest, digest_path)
+    n_bytes = None if raw_bytes is None else _as_int(raw_bytes, bytes_path)
     _require(
         not (within_group in ASSISTED_METHODS and imatrix is None),
         f"{path}.imatrix",
@@ -383,16 +418,29 @@ def _parse_scan_meta(obj: dict[str, Any]) -> ScanMeta:
         "imatrix provenance requires an assisted within_group "
         f'({", ".join(ASSISTED_METHODS)}), got "{within_group}" (ADR-0020)',
     )
-    return ScanMeta(
-        metric=_get_str(obj, "metric", path),
-        calibration=_get_str(obj, "calibration", path),
-        calibration_tokens=tokens,
-        precisions=tuple(precisions),
-        group_by=cast('Literal["layer", "tensor", "stack"]', group_by),
-        started_at=_get_str(obj, "started_at", path),
-        within_group=within_group,
-        imatrix=imatrix,
-    )
+    metric = _get_str(obj, "metric", path)
+    calibration = _get_str(obj, "calibration", path)
+    started_at = _get_str(obj, "started_at", path)
+    # The calibration content rules live in the domain, so the reader
+    # states them once. A `ValueError` translates here, as the
+    # imatrix count summary's does (#260). Only the constructor sits
+    # inside the try, or a field's own `ArtifactError` would come back
+    # out relabelled at this block's path.
+    try:
+        return ScanMeta(
+            metric=metric,
+            calibration=calibration,
+            calibration_tokens=tokens,
+            precisions=tuple(precisions),
+            group_by=cast('Literal["layer", "tensor", "stack"]', group_by),
+            started_at=started_at,
+            within_group=within_group,
+            imatrix=imatrix,
+            calibration_sha256=digest,
+            calibration_bytes=n_bytes,
+        )
+    except ValueError as exc:
+        raise ArtifactError(path, str(exc)) from exc
 
 
 def _parse_sensitivity(obj: dict[str, Any], path: str) -> dict[int, float]:

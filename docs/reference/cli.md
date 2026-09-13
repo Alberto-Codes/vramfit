@@ -469,11 +469,17 @@ the RSS high-water mark, then scan_finished or scan_halted. Every
 finished (group x precision) cell lands in a checkpoint file next
 to `--out` (`<stem>.checkpoint.json`). A rerun of the same scan resumes
 from it. The checkpoint carries the scan's fingerprint (model, metric,
-calibration, token count, grouping, precisions, method, imatrix
-path) — a rerun with
+calibration path, token count, calibration SHA-256 and byte count,
+grouping, precisions, method, imatrix path) — a rerun with
 any of those changed refuses the checkpoint instead of mixing numbers.
-The fingerprint identifies provenance, not content: do not swap weights
-or calibration text under an unchanged path between resumes.
+The calibration text enters by content, so a re-issued corpus behind
+an unchanged path refuses the checkpoint. The digest pins the corpus,
+not the tokenizer. A digest match does not promise the same
+`calibration_tokens` count.
+Checkpoints written before that change do
+not resume — pass `--no-resume`. Every other input
+enters by path: do not swap weights or an imatrix under an unchanged
+path between resumes.
 `--no-resume` deletes the checkpoint first and says so.
 
 `--groups` takes literal names and no glob, by maintainer ruling
@@ -540,8 +546,9 @@ expert stack's count vector and pools each group's vectors into the
 without a resolved expert stack records none — see the
 [sensitivity map format](../reference/sensitivity-map.md).
 
-Exit codes: 1 when the scan extra is missing, the model or calibration
-cannot load, sharding offloaded a quantizable group beyond host RAM,
+Exit codes: 1 when the scan extra is missing, the calibration file
+holds no bytes, the model or calibration cannot load, sharding
+offloaded a quantizable group beyond host RAM,
 a `--groups` name matches no discovered group, the checkpoint
 belongs to a different scan, a measurement fails (the checkpoint keeps
 completed cells), a checkpoint write fails, or the map cannot be

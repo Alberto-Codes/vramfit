@@ -31,7 +31,7 @@ Examples:
         model_id="test/model",
         scan=ScanMeta(
             metric="kl_divergence",
-            calibration="wikitext",
+            calibration="/work/calibration.txt",
             calibration_tokens=1024,
             precisions=(8, 4),
             group_by="layer",
@@ -87,6 +87,11 @@ Q0_IMX_METHOD = "q0-imx"
 # field — a map or recipe cannot claim assistance without naming its
 # imatrix, or the reverse (ADR-0020).
 ASSISTED_METHODS = (KQUANT_IMX_METHOD, Q0_IMX_METHOD)
+# The shape of a recorded SHA-256, checked wherever a content
+# identity enters the domain. [vramfit.domain.evals][] fixes the same
+# two constants for the evaluated artifact's digest.
+_HEX_DIGITS = frozenset("0123456789abcdef")
+_SHA256_HEX_LEN = 64
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,8 +103,19 @@ class ScanMeta:
 
     Attributes:
         metric (str): Divergence metric name, e.g. ``kl_divergence``.
-        calibration (str): Calibration set name or path.
+        calibration (str): Path of the calibration text file, as the
+            invocation spelled it. A path, never a corpus nickname —
+            a nickname names no bytes, so it cannot identify what the
+            scan measured against.
         calibration_tokens (int): Number of calibration tokens measured.
+        calibration_sha256 (str | None): SHA-256 of the calibration
+            file's bytes, 64 lowercase hex digits, or None when the
+            scan did not record it. None means NOT RECORDED — never
+            a digest computed later from a file that carries the same
+            name today.
+        calibration_bytes (int | None): Size of the calibration file
+            in bytes, or None when the scan did not record it. Pairs
+            with `calibration_sha256`: both, or neither.
         precisions (tuple[int, ...]): Candidate bit-widths, strictly
             descending.
         group_by (str): Grouping granularity — ``layer``, ``tensor``,
@@ -125,8 +141,12 @@ class ScanMeta:
 
         meta = ScanMeta(
             metric="kl_divergence",
-            calibration="wikitext",
+            calibration="/work/calibration.txt",
             calibration_tokens=131072,
+            calibration_sha256=(
+                "74f2665d6e6925fc2c17dec644bec9e87df478a0f1836822125e8acbb3777806"
+            ),
+            calibration_bytes=772386,
             precisions=(8, 4),
             group_by="layer",
             started_at="2026-07-27T00:00:00Z",
@@ -142,6 +162,8 @@ class ScanMeta:
     started_at: str
     within_group: str = SCAN_METHOD
     imatrix: str | None = None
+    calibration_sha256: str | None = None
+    calibration_bytes: int | None = None
 
     def __post_init__(self) -> None:
         """Enforce the scan invariants the solver relies on.
@@ -153,7 +175,10 @@ class ScanMeta:
                 ``imatrix`` does not pair with an assisted method
                 token (`ASSISTED_METHODS`) — assisted damages
                 without their imatrix provenance are not comparable
-                to anything (ADR-0020).
+                to anything (ADR-0020), ``calibration_sha256`` is not
+                64 lowercase hex digits, ``calibration_bytes`` is not
+                positive, or the two do not pair — half a content
+                identity records nothing a reader can check.
         """
         if self.calibration_tokens <= 0:
             raise ValueError("calibration_tokens must be positive")
@@ -178,6 +203,27 @@ class ScanMeta:
             raise ValueError("precisions must all be positive")
         if not all(a > b for a, b in itertools.pairwise(self.precisions)):
             raise ValueError("precisions must be strictly descending")
+        self._check_calibration_content()
+
+    def _check_calibration_content(self) -> None:
+        """Enforce the calibration file's content identity.
+
+        Raises:
+            ValueError: If the digest is malformed, the byte count is
+                not positive, or the two do not pair.
+        """
+        digest, size = self.calibration_sha256, self.calibration_bytes
+        if (digest is None) != (size is None):
+            raise ValueError(
+                "calibration_sha256 and calibration_bytes must pair — "
+                "record both, or neither"
+            )
+        if digest is not None and (
+            len(digest) != _SHA256_HEX_LEN or not set(digest) <= _HEX_DIGITS
+        ):
+            raise ValueError("calibration_sha256 must be 64 lowercase hex digits")
+        if size is not None and size <= 0:
+            raise ValueError("calibration_bytes must be positive")
 
 
 @dataclass(frozen=True, slots=True)
