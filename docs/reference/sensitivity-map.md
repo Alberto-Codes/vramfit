@@ -221,7 +221,7 @@ below remain, the sub-4-bit pricing claims do not.
   group: it appears only when every expert-stack member resolved
   its full count vector, and a group without an expert stack never
   carries it. `median` is always a float. The field is additive and
-  informational, so the schema holds at 3. The loader accepts an
+  informational, so it bumped no schema version. The loader accepts an
   absent field as no summary. A present field must hold exactly the
   three keys, with values ordered `min <= median <= max`. An absent
   field leaves a dense-only group and an unresolved group alike —
@@ -260,8 +260,8 @@ below remain, the sub-4-bit pricing claims do not.
     "derived": "Derived from sensitivity-64k-kquant-imx.json by removing the 2-bit column. Not a scan artifact. Diagnostic for the 2-bit-specific frame-transfer hypothesis (eleventh data point)."
     ```
 
-    The field is additive and informational, so the schema holds at 3.
-    A reader that ignores it stays correct. The loader accepts an
+    The field is additive and informational, so it bumped no schema
+    version. A reader that ignores it stays correct. The loader accepts an
     absent field as a scan artifact. A present field must be a
     non-empty string. The writer omits the field when the map carries
     no note and never writes null, so an explicit null is a hand-edit
