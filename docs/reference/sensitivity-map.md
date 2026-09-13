@@ -123,9 +123,8 @@ below remain, the sub-4-bit pricing claims do not.
   value against the same corpus rather than against whatever now
   carries that name. They do not prove which part of that file the
   scan measured. The meter truncates to `--max-tokens`, so the scan
-  measures a prefix bounded by `scan.calibration_tokens`. Two maps
-  that share a digest and record different token counts measured
-  different text. The published calibration text is
+  measures a prefix bounded by `scan.calibration_tokens`. The
+  published calibration text is
   `74f2665d…3777806` at 772,386 bytes, and the
   [maps dataset](https://huggingface.co/datasets/Alberto-Codes/Llama-3_3-Nemotron-Super-49B-v1_5-sensitivity-maps)
   ships the file itself. The two fields pair: the loader requires
