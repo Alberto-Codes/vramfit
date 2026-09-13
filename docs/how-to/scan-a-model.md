@@ -61,8 +61,7 @@ unchanged path — do not change either between a crash and its
 resume.
 
 The digest pins the corpus, not the chunking. The tokenizer stays
-unpinned. The same corpus through two tokenizers measures two token
-counts.
+unpinned. A digest match does not promise the same count.
 
 Checkpoints written before the calibration digest do not resume: the
 fingerprint gained the calibration file's SHA-256 and byte count.

@@ -384,8 +384,8 @@ change.
     SHA-256 hex digest and the byte count. `vramfit scan` records the
     calibration file's content identity in the sensitivity map and
     folds it into the **Fingerprint**. It pins the corpus, not the
-    tokenizer — the same bytes through two tokenizers still measure
-    two token counts. Not "hash" or "checksum" alone, which name the
+    tokenizer. A digest match does not promise the same count. Not
+    "hash" or "checksum" alone, which name the
     digest without the count.
 
 **NOT RECORDED**
@@ -401,9 +401,9 @@ change.
     count, calibration SHA-256 and byte count, grouping, precisions,
     within-group method, and imatrix path. The calibration text
     enters by content, so re-issued bytes behind an unchanged path
-    refuse the checkpoint. It pins the corpus, not the tokenizer —
-    the same bytes through two tokenizers still measure two token
-    counts. Every other input enters by path, so swapping weights or
+    refuse the checkpoint. It pins the corpus, not the tokenizer. A
+    digest match does not promise the same count. Every other input
+    enters by path, so swapping weights or
     an imatrix under an unchanged path defeats it.
 
 ## Budgeting
