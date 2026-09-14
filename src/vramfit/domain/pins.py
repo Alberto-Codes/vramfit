@@ -353,8 +353,6 @@ def pinned_group_names(
     pins: Mapping[str, int],
     sensitivity_map: SensitivityMap,
     runtime: str | None,
-    discovered_bytes: Mapping[str, int] | None = None,
-    merged_splits: Mapping[str, Mapping[str, int]] | None = None,
 ) -> tuple[frozenset[str], tuple[str, ...]]:
     """Name the groups the caller's pins force, and the misses.
 
@@ -365,22 +363,18 @@ def pinned_group_names(
     records. `resolve_pins` and `held_pin_skips` read the same
     `_match_universe` and `match_pattern` pair this does.
 
-    A pattern that resolves to a merged projection's checkpoint
-    spelling reports the group the plan prices (#576). A pattern that
-    resolves to nothing is a miss: without `discovered_bytes` or
-    `merged_splits` the universe is the map's groups alone, so a pin
-    on a checkpoint-discovered or folded name lands nowhere. The
-    caller decides what a miss means, because this function refuses
-    nothing — `resolve_pins` owns the refusal.
+    The universe is the map's groups. A pattern that resolves to
+    nothing is a miss, so a pin on a checkpoint-discovered (ADR-0029)
+    or folded (#576) name lands nowhere here. Widening the universe
+    needs a checkpoint read this caller does not make, and whether to
+    make it is open (#593) — the parameters return with the caller
+    that supplies them. The caller decides what a miss means, because
+    this function refuses nothing — `resolve_pins` owns the refusal.
 
     Args:
         pins: Ordered glob-pattern pins.
         sensitivity_map: The map whose groups are matched.
         runtime: Target runtime name, or None.
-        discovered_bytes: Bytes per checkpoint-discovered group
-            (ADR-0029), or None. Its names widen the universe.
-        merged_splits: The merged projections the plan folded, or
-            None. Their checkpoint spellings widen it too.
 
     Returns:
         A pair: the pinned group names, and the patterns that
@@ -397,7 +391,7 @@ def pinned_group_names(
     """
     if not pins:
         return frozenset(), ()
-    names, folded = _match_universe(sensitivity_map, discovered_bytes, merged_splits)
+    names, folded = _match_universe(sensitivity_map, None, None)
     forced: set[str] = set()
     missed: list[str] = []
     for pattern in pins:

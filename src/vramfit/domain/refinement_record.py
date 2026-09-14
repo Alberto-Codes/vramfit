@@ -157,7 +157,10 @@ class MeasurementFrame:
 
         ```python
         from vramfit.domain.evals import CorpusReference
-        from vramfit.domain.refinement_record import MeasurementFrame
+        from vramfit.domain.refinement_record import (
+            FileIdentity,
+            MeasurementFrame,
+        )
 
         frame = MeasurementFrame(
             runtime_build="b10362",

@@ -27,6 +27,13 @@ importance matrix by content, each hashed once before the first arm
 runs. Two passes measured against different bytes never record the
 same frame.
 
+The pre-flight orders itself cheapest-first: every refusal that costs
+milliseconds runs before any full-file read. The reference logits
+reach 39.7 GB on the 49B target, so hashing them ahead of a
+row-width check the command is about to fail on would spend minutes
+to learn what a header read already knew. Keep new refusals above the
+content-identity reads.
+
 [vramfit.adapters.inbound.llama_cpp_layout][]'s `LlamaCppTools`
 names the tools once, for this command and for ``pack``. The
 pre-flight checks those paths and the wiring runs them, so the two
@@ -405,7 +412,8 @@ def refine(
     have priced this recipe, and an assisted recipe packed without
     its matrix warns the way ``pack`` warns. The corpus, the
     reference logits, and the matrix are each hashed once here, so
-    the frame names bytes rather than paths. `_resolve_row_widths`
+    the frame names bytes rather than paths — and they are hashed
+    last, after every refusal that costs milliseconds. `_resolve_row_widths`
     owns its own refusal, so the width read is not wrapped here.
 
     Args:
@@ -465,11 +473,14 @@ def refine(
     )
     _check_destination("--out", sidecar_path)
     _check_destination("--runlog", runlog_path)
+    row_widths = _resolve_row_widths(recipe, model_dir)
+    # Cheap refusals first, full-file reads last. The reference logits
+    # reach 39.7 GB on the 49B target, so every refusal that costs
+    # milliseconds runs before the hashing does.
     corpus = _corpus_identity(eval_text)
     reference = _file_identity("--base-logits", base_logits)
     matrix = None if imatrix is None else _file_identity("--imatrix", imatrix)
     run_log = SafeRunLog(JsonlRunLogFile(runlog_path), path=runlog_path)
-    row_widths = _resolve_row_widths(recipe, model_dir)
     base_path = (
         base_gguf if base_gguf is not None else out_dir / f"{model_dir.name}-f16.gguf"
     )

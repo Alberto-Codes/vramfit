@@ -223,12 +223,13 @@ does not earn the refinement step.
   defect twice: a glob over assignment names that missed a folded
   merged-projection spelling, and a read of `protected_tensors` that
   missed every floor the assignment already met (issue #59).
-- A pin the map alone cannot resolve declines. `fixed_groups` calls
-  `pinned_group_names` with the map alone, passing neither
-  `discovered_bytes` nor `merged_splits`, so the pin match universe
-  is the map's groups. A pin spelled with a checkpoint-discovered
-  (ADR-0029) or folded (#576) name is reported as missed, and the
-  pass declines rather than measuring arms that may violate it.
+- A pin the map alone cannot resolve declines. `pinned_group_names`
+  resolves against the map's groups, so a pin spelled with a
+  checkpoint-discovered (ADR-0029) or folded (#576) name is reported
+  as missed, and the pass declines rather than measuring arms that
+  may violate it. The function takes no parameters for widening that
+  universe: the open question below is untaken, so the surface that
+  would serve it returns with the caller that supplies it.
 - The pass refuses a map that did not price the recipe. `refine` is
   the first command handed a recipe and a map as separate arguments,
   and a mismatched pair declines cleanly at exit 0 — a comparison
@@ -269,11 +270,12 @@ does not earn the refinement step.
 
   Widening is not free, and the cost belongs in this record.
   `_resolve_row_widths` yields row widths alone — elements per row
-  per group. It does not yield `discovered_bytes` or
-  `merged_splits`, which `cli_plan_sizes.discovered_groups` produces
-  and neither the recipe nor the map stores. Widening therefore
-  needs a second checkpoint read and a new call, not the reuse of a
-  value the command already holds. `checkpoint_row_widths` also pins
+  per group. The per-group byte sizes and folded-projection
+  spellings a wider match needs come from
+  `cli_plan_sizes.discovered_groups`, which `refine` never calls and
+  neither the recipe nor the map stores. Widening therefore needs a
+  second checkpoint read and a new call, not the reuse of a value the
+  command already holds. `checkpoint_row_widths` also pins
   its granularity to `stack` where the plan-time read follows
   `map_.scan.group_by`, so a map grouped by layer or tensor would
   not even yield the same group names.

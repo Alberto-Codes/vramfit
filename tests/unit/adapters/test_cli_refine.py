@@ -13,6 +13,7 @@ from hashlib import sha256
 from pathlib import Path
 
 import pytest
+import typer
 from typer.testing import CliRunner
 
 from tests.fakes import (
@@ -769,3 +770,27 @@ def test_refine_refuses_empty_reference_logits(workspace, wiring_log) -> None:
     assert "--base-logits" in result.output
     assert "holds no bytes" in result.output
     assert wiring_log == []
+
+
+def test_refine_refuses_a_bad_model_before_reading_the_reference_logits(
+    workspace, monkeypatch
+) -> None:
+    """The reference logits reach 39.7 GB; a row-width refusal is free."""
+    hashed: list[Path] = []
+    real = cli_refine.content_identity
+
+    def record(path: Path):
+        hashed.append(path)
+        return real(path)
+
+    monkeypatch.setattr(cli_refine, "content_identity", record)
+    monkeypatch.setattr(
+        cli_refine,
+        "_resolve_row_widths",
+        lambda recipe, model_dir: (_ for _ in ()).throw(typer.Exit(code=1)),
+    )
+
+    result = _invoke(workspace, "--limit", "1")
+
+    assert result.exit_code == 1
+    assert hashed == []

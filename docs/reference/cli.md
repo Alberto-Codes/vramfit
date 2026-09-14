@@ -960,12 +960,9 @@ artifact precedent is 7.8 sigma.
 
 Writes one refinement sidecar, by default beside the recipe at
 `<recipe>.refinement.json`. It records every arm measured, the
-winner, the stated bar, the control with its sigma, and the frame —
-runtime build, hardware, and the evaluation corpus named by content.
-The command hashes `--eval-text` as it runs and records the SHA-256
-digest, the byte count, and the `measured` provenance mark, so two
-passes over different corpora never record the same frame. The map's
-predicted delta is recorded as provenance and orders nothing.
+winner, the stated bar, the control with its sigma, and the frame,
+enumerated once below. The map's predicted delta is recorded as
+provenance and orders nothing.
 
 It also records `neighbourhood_moves`, how many byte-neutral moves
 the neighbourhood held before `--limit` sampled it. Read it beside
@@ -978,16 +975,20 @@ that declines for another reason — a pin this map cannot resolve —
 records the moves it found, because a recipe with 385 moves the pass
 could not prove safe is not a recipe with no neighbourhood.
 
-The frame carries every input whose substitution would change the
-number: the runtime build, the hardware, and the evaluation corpus,
-the reference logits, and the importance matrix, each named by
-content. A pass run without `--imatrix` records `"imatrix": null`, so
-an assisted pass and an unassisted one never serialize alike.
+**The frame carries every input whose substitution would change the
+number.** That is the rule, and the instances follow from it: the
+runtime build, the hardware, and the content identity of the
+evaluation corpus, the reference logits, and the importance matrix.
+The command hashes each of those three files once and records the
+SHA-256 digest and the byte count, so two passes over different bytes
+never record the same frame even under one path. A pass run without `--imatrix`
+records `"imatrix": null`, so an assisted pass and an unassisted one
+never serialize alike.
 
 `--base-logits` is the sharpest of those: every divergence is
-computed against those bytes, so two passes against different
-reference logits never record the same frame even under one path.
-The command hashes it once before the first arm runs.
+computed against those bytes. The three hashes run last in the
+pre-flight, after every refusal that costs milliseconds, because the
+reference logits reach 39.7 GB on the 49B target.
 
 The command reports what it measured and never a verdict on the
 recipe. When no arm clears the bar it names the arms it evaluated and
@@ -1020,8 +1021,9 @@ then refine_finished (winner, refusal).
 
 Exit codes: 1 when the recipe or map is invalid, the model directory
 does not exist, `--base-logits` or `--eval-text` is not a file or
-cannot be read, `--eval-text` holds no bytes or measures fewer than
-two chunks, `--imatrix` is not a file or holds no bytes, the map
+cannot be read, `--base-logits` holds no bytes, `--eval-text` holds no
+bytes or measures fewer than two chunks, `--imatrix` is not a file or
+holds no bytes, the map
 prices a different `model_id` from the recipe, the `--llama-cpp`
 checkout
 misses `convert_hf_to_gguf.py`, `build/bin/llama-quantize` or
