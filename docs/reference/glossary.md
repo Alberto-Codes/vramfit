@@ -731,6 +731,33 @@ change.
     the neighbourhood it prices (#486). Lives in
     `vramfit.domain.refinement`. Not "search" or "tuning".
 
+**Arm**
+:   One candidate a **refinement pass** packed and measured, recorded
+    in the **refinement sidecar**'s `arms` list. An **equal-byte
+    neighbour** is the unpacked recipe; an arm is what that recipe
+    became once the pass paid to build and evaluate it. Not a **probe
+    arm**, which is a packed artifact built to answer one allocation
+    question and named by its ticket.
+
+**Control arm** (short: **control**)
+:   The unmodified recipe's **arm**, carrying the reserved name
+    `control` in the sidecar. Every other arm's delta and sigma are
+    measured against it, so it runs first: a candidate's number is
+    unreadable until the control reproduces the frame it claims. It
+    is not a neighbour and names no **byte-neutral swap**. Not a
+    **control token**, which is a tokenizer concept. A control that
+    packs over the **weight budget** stops the pass, because nothing
+    downstream is readable against it.
+
+**Excluded arm**
+:   An **arm** the pass measured and then kept out of selection,
+    because its packed file exceeded the **weight budget** its recipe
+    was solved for — the same rule `vramfit pack` gates on.
+    Byte-neutrality equalizes *predicted* bytes, so a swap can still
+    pack over. The record keeps it with its measurement and its
+    negative margin: it cost card time, so it is excluded rather than
+    dropped, and an arm that was never evaluated has no entry at all.
+
 **Equal-byte neighbour** (short: **neighbour**)
 :   A recipe one byte-neutral swap away from another, spending the
     same predicted bytes and competing inside the same weight budget.

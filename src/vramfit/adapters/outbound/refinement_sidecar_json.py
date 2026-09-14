@@ -5,9 +5,10 @@ refined, carrying the `vramfit_schema` envelope
 (`REFINEMENT_SIDECAR_SCHEMA_VERSION`). Breaking changes bump it.
 
 The document records every arm the pass measured, not only the one it
-kept. The losing arms are the evidence that the sensitivity map did
-not order the neighbourhood, which is the finding the whole stage
-rests on.
+kept, and that includes an arm the weight budget excluded from
+selection — a measured arm is never dropped from the record. The
+losing arms are the evidence that the sensitivity map did not order
+the neighbourhood, which is the finding the whole stage rests on.
 
 It also records `neighbourhood_moves`, how many byte-neutral moves
 the neighbourhood held. The arms are a sample of that whenever the
@@ -60,9 +61,10 @@ from vramfit.domain.refinement_record import (
 # frame, the stated bar, the control, every arm, the neighbourhood
 # the arms were drawn from, and the outcome. `neighbourhood_moves`
 # and the frame's `imatrix` both joined version 1 rather than
-# bumping it, and the frame's `reference` became a content identity
-# in the same way: no sidecar had been published when any of those
-# landed, so nothing reads a document of the older shape.
+# bumping it, the frame's `reference` became a content identity in
+# the same way, and each arm's `budget_margin` joined it too: no
+# sidecar had been published when any of those landed, so nothing
+# reads a document of the older shape.
 REFINEMENT_SIDECAR_SCHEMA_VERSION: Final[int] = 1
 
 
@@ -112,6 +114,11 @@ def _identity_to_dict(identity: FileIdentity | None) -> dict[str, Any] | None:
 def _arm_to_dict(arm: ArmRecord) -> dict[str, Any]:
     """Serialize one measured arm.
 
+    Writes ``budget_margin`` beside ``packed_bytes``: a negative
+    margin marks an arm the weight budget excluded from selection,
+    which an arm that was never evaluated is not — that one has no
+    entry here at all.
+
     Args:
         arm: The arm record.
 
@@ -133,6 +140,11 @@ def _arm_to_dict(arm: ArmRecord) -> dict[str, Any]:
         # (ADR-0031 decision 6).
         "predicted_delta": arm.predicted_delta,
         "packed_bytes": arm.packed_bytes,
+        # Negative means the arm packed over the weight budget, so
+        # selection could not keep it. The arm is still here with its
+        # measurement: it was evaluated and excluded, which an arm
+        # that was never evaluated is not — that one has no entry.
+        "budget_margin": arm.budget_margin,
     }
 
 

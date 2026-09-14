@@ -66,6 +66,7 @@ def won_sidecar() -> RefinementSidecar:
         better_chunks=0,
         chunks=594,
         packed_bytes=21_860_214_272,
+        budget_margin=1_000_000,
     )
     arms = (
         ArmRecord(
@@ -81,6 +82,7 @@ def won_sidecar() -> RefinementSidecar:
             chunks=594,
             predicted_delta=0.00312,
             packed_bytes=21_860_214_272,
+            budget_margin=1_000_000,
         ),
         ArmRecord(
             arm="arm02",
@@ -95,6 +97,7 @@ def won_sidecar() -> RefinementSidecar:
             chunks=594,
             predicted_delta=-0.00104,
             packed_bytes=21_860_214_272,
+            budget_margin=1_000_000,
         ),
     )
     return RefinementSidecar(

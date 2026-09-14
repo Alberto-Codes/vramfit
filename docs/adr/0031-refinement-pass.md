@@ -181,6 +181,29 @@ does not earn the refinement step.
    decision that cannot survive its citation being unreachable is not
    yet a record.
 
+9. **Every packed arm is judged against the weight budget, and an arm
+   that exceeds it is excluded rather than kept or dropped.** The
+   pass calls `vramfit.domain.pack.weight_budget_margin`, the rule
+   `vramfit pack` gates on, so one budget rule serves both stages.
+
+   Byte-neutrality is a property of *predicted* bytes. The real GGUF
+   size is a different number — `PREDICTED_BYTES_TOLERANCE` exists
+   because nominal-bit predictions undershoot effective bits
+   (ADR-0014) — so a swap whose predicted totals match can still pack
+   over. On the 30B target a q_proj/o_proj swap moves two stacks that
+   route through different effective-bits tables (ADR-0028), and
+   their real block-and-padding costs drift in opposite directions.
+
+   An over-budget arm stays in the record with its measurement and
+   its negative margin, and leaves the selection. It cost card time,
+   so dropping it from the record would make the arm count lie the
+   way the declined-pass zero and "the recipe stands" once did. An
+   arm that was never evaluated has no entry at all — that is the
+   distinction a reader needs.
+
+   A control that exceeds the budget stops the pass instead. Every
+   other arm is read against it, so nothing downstream is readable.
+
 ## Consequences
 
 - No outcome of the pass is a verdict on the recipe. The arms are a

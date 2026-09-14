@@ -41,6 +41,7 @@ def _control(chunks: int = 594) -> ArmRecord:
         better_chunks=0,
         chunks=chunks,
         packed_bytes=21_860_214_272,
+        budget_margin=1_000_000,
     )
 
 
@@ -58,6 +59,7 @@ def _arm(name: str = "arm11", sigma: float = -14.4, chunks: int = 594) -> ArmRec
         chunks=chunks,
         predicted_delta=0.004,
         packed_bytes=17_000_000_000,
+        budget_margin=1_000_000,
     )
 
 
@@ -114,6 +116,7 @@ def test_a_winner_that_measured_worse_is_refused() -> None:
         better_chunks=100,
         chunks=594,
         packed_bytes=21_860_214_272,
+        budget_margin=1_000_000,
     )
     with pytest.raises(RefinementRecordError, match="does not clear the stated"):
         _sidecar(arms=(worse,))
@@ -185,6 +188,7 @@ def test_an_arm_other_than_the_control_must_describe_a_swap() -> None:
             better_chunks=0,
             chunks=594,
             packed_bytes=21_860_214_272,
+            budget_margin=1_000_000,
         )
 
 
@@ -202,6 +206,7 @@ def test_the_control_arm_names_no_swap() -> None:
             better_chunks=0,
             chunks=594,
             packed_bytes=21_860_214_272,
+            budget_margin=1_000_000,
         )
 
 
@@ -219,6 +224,7 @@ def test_a_half_described_swap_is_refused() -> None:
             better_chunks=0,
             chunks=594,
             packed_bytes=21_860_214_272,
+            budget_margin=1_000_000,
         )
 
 
@@ -236,6 +242,7 @@ def test_an_arm_counting_more_better_chunks_than_it_measured_is_refused() -> Non
             better_chunks=600,
             chunks=594,
             packed_bytes=21_860_214_272,
+            budget_margin=1_000_000,
         )
 
 
@@ -269,6 +276,7 @@ def test_arm_record_and_paired_result_agree_on_the_win_rule() -> None:
             better_chunks=1,
             chunks=594,
             packed_bytes=21_860_214_272,
+            budget_margin=1_000_000,
         )
         assert arm.improved(7.8) == cleared_bar(delta, sigma, 7.8)
 
@@ -286,6 +294,7 @@ def test_arm_record_refuses_a_negative_bar() -> None:
         better_chunks=1,
         chunks=594,
         packed_bytes=21_860_214_272,
+        budget_margin=1_000_000,
     )
 
     with pytest.raises(ValueError, match="must not be negative"):

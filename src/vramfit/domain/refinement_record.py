@@ -223,6 +223,14 @@ class ArmRecord:
         packed_bytes (int): Real size of the arm's packed file.
             Every arm is packed before it is measured, so every
             record has one.
+        budget_margin (int): ``weight_budget_bytes - packed_bytes``,
+            the same figure `pack` gates on
+            (`vramfit.domain.pack.weight_budget_margin`). Negative
+            means the arm packed over the budget its recipe was
+            solved for, and `fits_budget` reads it. Byte-neutrality
+            equalizes *predicted* bytes, so a swap can still pack
+            over: the real GGUF size is a different number, which is
+            why this is measured rather than assumed.
 
     Examples:
         The winning arm of the 2026-09-11 sweep:
@@ -242,6 +250,7 @@ class ArmRecord:
             better_chunks=436,
             chunks=594,
             packed_bytes=21_860_214_272,
+            budget_margin=1_293_252_608,
         )
         ```
     """
@@ -257,6 +266,7 @@ class ArmRecord:
     better_chunks: int
     chunks: int
     packed_bytes: int
+    budget_margin: int
     predicted_delta: float | None = None
 
     def __post_init__(self) -> None:
@@ -286,6 +296,20 @@ class ArmRecord:
             raise RefinementRecordError(f"arm {self.arm} half-describes its swap")
         if self.packed_bytes <= 0:
             raise RefinementRecordError(f"arm {self.arm} has no packed bytes")
+
+    def fits_budget(self) -> bool:
+        """Judge whether this arm packed inside its weight budget.
+
+        An arm that did not is measured and recorded, never dropped
+        from the record — it cost card time and its number is real.
+        It is excluded from selection instead, because handing that
+        file to `pack` would exit 1 on the same rule.
+
+        Returns:
+            True when the packed file fits the recipe's weight
+            budget.
+        """
+        return self.budget_margin >= 0
 
     def improved(self, bar: float) -> bool:
         """Judge whether this arm beat the control past a bar.
@@ -319,7 +343,10 @@ class RefinementSidecar:
             pass packs nothing and measures nothing, so it reaches no
             card at all.
         arms (tuple[ArmRecord, ...]): Every candidate measured, in
-            measurement order. Empty when the pass declined.
+            measurement order, including any the weight budget
+            excluded from selection — a measured arm is never dropped
+            from the record. Empty when the pass declined, which is
+            the only state meaning "never evaluated".
         winner (str | None): Name of the arm the pass kept, or None
             when no arm cleared the bar.
         declined (str | None): Why the recipe had no neighbourhood
@@ -439,7 +466,8 @@ class RefinementSidecar:
 
         Raises:
             RefinementRecordError: If the winner names no measured
-                arm, or names one that never cleared the stated bar.
+                arm, names one that never cleared the stated bar, or
+                names one that packed over the weight budget.
         """
         if self.winner is None:
             return
@@ -450,6 +478,11 @@ class RefinementSidecar:
             raise RefinementRecordError(
                 f"winner {self.winner} reached {kept.sigma:.1f} sigma, "
                 f"which does not clear the stated {self.bar}"
+            )
+        if not kept.fits_budget():
+            raise RefinementRecordError(
+                f"winner {self.winner} packed {-kept.budget_margin} bytes over "
+                "the weight budget, so no pass may keep it"
             )
 
     def winning_arm(self) -> ArmRecord | None:

@@ -7,7 +7,15 @@ poorly for it.
 
 The control runs first. A candidate's number is unreadable until the
 control reproduces the frame it claims to be measured in, so a caller
-that cannot check its control has no result to read.
+that cannot check its control has no result to read. A control that
+packs over the weight budget stops the pass for the same reason.
+
+Every packed arm is judged against that budget with
+`vramfit.domain.pack.weight_budget_margin`, the rule `pack` gates on.
+Byte-neutrality equalizes predicted bytes, so a swap can still pack
+over. An arm that does stays in the record with its measurement
+intact and leaves the selection: it cost card time, so it is
+excluded rather than dropped.
 
 When the neighbourhood is larger than the caller's arm budget, the
 loop takes an evenly spaced stride through the enumeration. The
@@ -48,12 +56,14 @@ from dataclasses import replace
 from pathlib import Path
 
 from vramfit.domain.model import Recipe, SensitivityMap
+from vramfit.domain.pack import weight_budget_margin
 from vramfit.domain.paired import PairedResult, compare, select
 from vramfit.domain.refinement import Candidate, decline_reason, neighbours
 from vramfit.domain.refinement_record import (
     CONTROL_ARM,
     ArmRecord,
     MeasurementFrame,
+    RefinementRecordError,
     RefinementSidecar,
 )
 from vramfit.ports.outbound import RecipePacker, RuntimeDivergenceMeter
@@ -126,7 +136,7 @@ def _measure(
     meter: RuntimeDivergenceMeter,
     out_dir: Path,
     report: Reporter,
-) -> tuple[tuple[float, ...], int]:
+) -> tuple[tuple[float, ...], int, int]:
     """Pack one arm, measure it, and drop the packed file.
 
     A pass packs one file per arm and the 30B target's are about
@@ -142,16 +152,25 @@ def _measure(
         report: Progress reporter.
 
     Returns:
-        The arm's per-chunk divergences and its real packed bytes.
+        The arm's per-chunk divergences, its real packed bytes, and
+        its weight-budget margin.
     """
     packed = out_dir / f"{name}.gguf"
     report("arm_packing", {"arm": name, "out": str(packed)})
     result = packer_for(str(packed)).pack(arm_recipe)
-    report("arm_packed", {"arm": name, "packed_bytes": result.packed_bytes})
+    margin = weight_budget_margin(arm_recipe, result.packed_bytes)
+    report(
+        "arm_packed",
+        {
+            "arm": name,
+            "packed_bytes": result.packed_bytes,
+            "budget_margin": margin,
+        },
+    )
     divergences = meter.measure(str(packed))
     report("arm_measured", {"arm": name, "chunks": len(divergences)})
     packed.unlink(missing_ok=True)
-    return divergences, result.packed_bytes
+    return divergences, result.packed_bytes, margin
 
 
 def _record(
@@ -159,6 +178,7 @@ def _record(
     candidate: Candidate | None,
     paired: PairedResult,
     packed_bytes: int,
+    budget_margin: int,
 ) -> ArmRecord:
     """Turn one arm's measurement into its record.
 
@@ -167,6 +187,8 @@ def _record(
         candidate: The arm's move, or None for the control.
         paired: The arm's standing against the control.
         packed_bytes: Real size of the arm's packed file.
+        budget_margin: The arm's weight-budget margin, negative when
+            the packed file exceeds the budget.
 
     Returns:
         The arm record.
@@ -185,6 +207,7 @@ def _record(
         chunks=paired.chunks,
         predicted_delta=None if candidate is None else candidate.predicted_delta,
         packed_bytes=packed_bytes,
+        budget_margin=budget_margin,
     )
 
 
@@ -221,11 +244,21 @@ def run_pass(  # noqa: PLR0913 - the pass surface: two ports, a frame, and its b
     enumeration agreeing across two runs, and a declined record
     carries the moves that enumeration found rather than zero.
 
+    Every packed arm is judged against the weight budget. An arm that
+    exceeds it stays in the record with its measurement and leaves
+    the selection, so a pass never keeps a file `pack` would refuse.
+
     Returns:
         The pass's complete search record, carrying the arms measured
-        and the whole neighbourhood they were drawn from. A recipe
-        with no legal swap returns a declined record, having measured
-        nothing and reached no card.
+        — including any the budget excluded — and the whole
+        neighbourhood they were drawn from. A recipe with no legal
+        swap returns a declined record, having measured nothing and
+        reached no card.
+
+    Raises:
+        RefinementRecordError: If the control packs over the weight
+            budget. Every other arm is read against it, so nothing
+            downstream is readable.
     """
     candidates = neighbours(recipe, map_, row_widths)
     declined = decline_reason(recipe, map_, candidates)
@@ -254,17 +287,26 @@ def run_pass(  # noqa: PLR0913 - the pass surface: two ports, a frame, and its b
     # GGUF, and `pack` refuses without one.
     base_bytes = packer_for(str(out_dir / f"{CONTROL_ARM}.gguf")).convert()
     report("base_converted", {"base_bytes": base_bytes})
-    control_chunks, control_bytes = _measure(
+    control_chunks, control_bytes, control_margin = _measure(
         CONTROL_ARM, recipe, packer_for, meter, out_dir, report
     )
     control = _record(
-        CONTROL_ARM, None, compare(control_chunks, control_chunks), control_bytes
+        CONTROL_ARM,
+        None,
+        compare(control_chunks, control_chunks),
+        control_bytes,
+        control_margin,
     )
+    if not control.fits_budget():
+        raise RefinementRecordError(
+            f"the control packed {-control_margin} bytes over the weight "
+            "budget, so no arm is readable against it"
+        )
     records: list[ArmRecord] = []
     results: dict[str, PairedResult] = {}
     for index, candidate in enumerate(arms, start=1):
         name = f"arm{index:02d}"
-        chunks, packed_bytes = _measure(
+        chunks, packed_bytes, margin = _measure(
             name,
             _arm_recipe(recipe, candidate),
             packer_for,
@@ -273,8 +315,12 @@ def run_pass(  # noqa: PLR0913 - the pass surface: two ports, a frame, and its b
             report,
         )
         paired = compare(chunks, control_chunks)
-        results[name] = paired
-        records.append(_record(name, candidate, paired, packed_bytes))
+        record = _record(name, candidate, paired, packed_bytes, margin)
+        records.append(record)
+        if record.fits_budget():
+            results[name] = paired
+        else:
+            report("arm_over_budget", {"arm": name, "budget_margin": margin})
     winner, refusal = select(results, bar)
     report("refine_finished", {"winner": winner, "refusal": refusal})
     return RefinementSidecar(

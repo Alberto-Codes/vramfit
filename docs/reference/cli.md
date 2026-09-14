@@ -964,6 +964,16 @@ winner, the stated bar, the control with its sigma, and the frame,
 enumerated once below. The map's predicted delta is recorded as
 provenance and orders nothing.
 
+Each arm also records `budget_margin`,
+`weight_budget_bytes - packed_bytes`, the same figure `vramfit pack`
+gates on. Byte-neutrality equalizes *predicted* bytes, so a swap can
+still pack over: a negative margin means the arm exceeded the budget
+its recipe was solved for. Such an arm is measured, recorded with its
+margin, reported as excluded, and kept out of selection — never
+dropped, because it cost card time. An arm that was never evaluated
+has no entry at all. A control that exceeds the budget stops the
+pass, because nothing downstream is readable against it.
+
 It also records `neighbourhood_moves`, how many byte-neutral moves
 the neighbourhood held before `--limit` sampled it. Read it beside
 the arm count: 15 arms of 15 and 15 arms of 385 are different
@@ -1020,15 +1030,16 @@ winning arm to an artifact needs a tier-3 slice and a serve test.
 
 Run log: refine_started (arms, neighbourhood_moves, bar) or
 refine_declined (reason, neighbourhood_moves),
-base_converted, then per arm arm_packing, arm_packed, arm_measured,
-then refine_finished (winner, refusal).
+base_converted, then per arm arm_packing, arm_packed (with
+budget_margin), arm_measured, and arm_over_budget for an excluded
+arm, then refine_finished (winner, refusal).
 
 Exit codes: 1 when the recipe or map is invalid, the model directory
 does not exist, `--runtime-build` or `--hardware` is empty,
 `--base-logits` or `--eval-text` is not a file or cannot be read,
 `--base-logits` holds no bytes, `--eval-text` holds no bytes or
-measures fewer than two chunks, `--imatrix` is not a file or holds no
-bytes, the map
+measures fewer than two chunks, the control packs over the weight
+budget, `--imatrix` is not a file or holds no bytes, the map
 prices a different `model_id` from the recipe, the `--llama-cpp`
 checkout
 misses `convert_hf_to_gguf.py`, `build/bin/llama-quantize` or

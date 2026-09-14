@@ -26,6 +26,7 @@ from vramfit.domain.refinement_record import (
     CONTROL_ARM,
     FileIdentity,
     MeasurementFrame,
+    RefinementRecordError,
 )
 
 pytestmark = pytest.mark.unit
@@ -108,11 +109,17 @@ def _recipe(bits, pins=None):
     )
 
 
-def _packer_for(recorder):
+def _packer_for(recorder, sizes=None):
+    """Build a packer whose size may vary per arm.
+
+    ``sizes`` maps a packed path's stem to the bytes that arm packs,
+    so a suite can put one arm over the weight budget.
+    """
+
     def build(path: str):
         recorder.append(path)
         return MemoryRecipePacker(
-            packed_bytes=500,
+            packed_bytes=(sizes or {}).get(Path(path).stem, 500),
             has_base=True,
             row_widths=stack_row_widths([G0, G1, G2, G3]),
             out_path=Path(path),
@@ -449,3 +456,83 @@ def test_the_loop_drops_an_arm_pack_only_after_measuring_it(tmp_path) -> None:
 
     assert meter.present
     assert all(meter.present)
+
+
+def test_an_in_budget_arm_stays_selectable(tmp_path) -> None:
+    meter = MemoryRuntimeDivergenceMeter(
+        default=CONTROL_CHUNKS,
+        series={str(tmp_path / "arm01.gguf"): tuple(c - 0.1 for c in CONTROL_CHUNKS)},
+    )
+
+    sidecar = _run(tmp_path, meter, limit=1)
+
+    arm = sidecar.arms[0]
+    assert arm.fits_budget()
+    assert sidecar.winner == arm.arm
+
+
+def test_an_over_budget_arm_is_measured_recorded_and_unselectable(tmp_path) -> None:
+    """It cost card time, so it is excluded rather than dropped."""
+    better = tuple(c - 0.1 for c in CONTROL_CHUNKS)
+    meter = MemoryRuntimeDivergenceMeter(
+        default=CONTROL_CHUNKS,
+        series={str(tmp_path / "arm01.gguf"): better},
+    )
+
+    sidecar = run_pass(
+        _recipe({G0: 2, G1: 2, G2: 4, G3: 4}),
+        _map([G0, G1, G2, G3]),
+        _packer_for([], sizes={"arm01": 10**9 + 1}),
+        meter,
+        _frame(),
+        bar=1.0,
+        limit=1,
+        out_dir=tmp_path,
+        row_widths={},
+    )
+
+    arm = sidecar.arms[0]
+    assert arm.chunks == len(CONTROL_CHUNKS)
+    assert arm.mean == pytest.approx(sum(better) / len(better))
+    assert not arm.fits_budget()
+    assert arm.budget_margin == -1
+    assert sidecar.winner is None
+
+
+def test_an_over_budget_arm_is_reported_in_the_run_log(tmp_path) -> None:
+    meter = MemoryRuntimeDivergenceMeter(default=CONTROL_CHUNKS)
+    seen: list[tuple[str, dict]] = []
+
+    run_pass(
+        _recipe({G0: 2, G1: 2, G2: 4, G3: 4}),
+        _map([G0, G1, G2, G3]),
+        _packer_for([], sizes={"arm01": 10**9 + 1}),
+        meter,
+        _frame(),
+        bar=1.0,
+        limit=1,
+        out_dir=tmp_path,
+        row_widths={},
+        report=lambda event, fields: seen.append((event, dict(fields))),
+    )
+
+    over = [fields for event, fields in seen if event == "arm_over_budget"]
+    assert over == [{"arm": "arm01", "budget_margin": -1}]
+
+
+def test_an_over_budget_control_refuses_the_pass(tmp_path) -> None:
+    """Nothing downstream is readable against a control that does not fit."""
+    meter = MemoryRuntimeDivergenceMeter(default=CONTROL_CHUNKS)
+
+    with pytest.raises(RefinementRecordError, match="over the weight budget"):
+        run_pass(
+            _recipe({G0: 2, G1: 2, G2: 4, G3: 4}),
+            _map([G0, G1, G2, G3]),
+            _packer_for([], sizes={"control": 10**9 + 1}),
+            meter,
+            _frame(),
+            bar=1.0,
+            limit=1,
+            out_dir=tmp_path,
+            row_widths={},
+        )
