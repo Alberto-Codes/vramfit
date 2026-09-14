@@ -11,7 +11,9 @@ record beside the recipe.
 Every arm is packed and measured. Nothing is ranked by the map,
 because the map does not order the neighbourhood it prices
 (ADR-0031). A recipe with no legal swap declines before the first
-pack, so a target the protocol cannot reach costs nothing.
+pack, so a target the protocol cannot reach packs nothing and
+measures nothing. It still reads the frame's inputs first, because
+the record names them by content.
 
 Every refusal leaves one ``error:`` line and exit 1. The domain
 error root covers them: a recipe whose pins or protections do not
@@ -27,14 +29,15 @@ importance matrix by content, each hashed once before the first arm
 runs. Two passes measured against different bytes never record the
 same frame.
 
-The pre-flight orders itself cheapest-first: every refusal that costs
-milliseconds runs before any full-file read. The reference logits
-reach 39.7 GB on the 49B target, so hashing them ahead of a refusal
-the command could already have made would spend minutes to learn what
-was knowable for free. The content-identity reads are the last thing
-the pre-flight does, and one comment marks that boundary — a new
-refusal belongs above it, including one a constructor further down
-would otherwise make for the first time.
+**No refusal anywhere in a pass may fire for a reason that was
+knowable before an expensive read.** The rule is not "the pre-flight
+block is ordered cheapest-first" — a refusal three levels down the
+call graph satisfies that reading and still costs a 39.7 GB hash.
+`_check_recipe_resolves` runs the domain refusals a pass makes before
+its first pack, and names them, so the next reader checks a stated
+set rather than re-deriving one from the call graph. The
+content-identity reads come after it, and one comment marks that
+boundary.
 
 [vramfit.adapters.inbound.llama_cpp_layout][]'s `LlamaCppTools`
 names the tools once, for this command and for ``pack``. The
@@ -68,6 +71,7 @@ from __future__ import annotations
 
 import os
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Annotated
 
@@ -90,6 +94,8 @@ from vramfit.adapters.outbound.run_log_jsonl import JsonlRunLogFile
 from vramfit.adapters.outbound.sensitivity_map_json import load_sensitivity_map
 from vramfit.domain.errors import VramfitError
 from vramfit.domain.evals import CorpusReference
+from vramfit.domain.model import Recipe, SensitivityMap
+from vramfit.domain.refinement import neighbours
 from vramfit.domain.refinement_record import (
     FileIdentity,
     MeasurementFrame,
@@ -164,6 +170,46 @@ def _check_destination(label: str, path: Path) -> None:
         _halt(f"{label}: directory {parent} does not exist")
     if not os.access(parent, os.W_OK):
         _halt(f"{label}: directory {parent} is not writable")
+
+
+def _check_recipe_resolves(
+    recipe: Recipe, map_: SensitivityMap, row_widths: Mapping[str, int]
+) -> None:
+    """Refuse a recipe this map cannot resolve, before any file is read.
+
+    `neighbours` is the whole set of domain refusals a pass makes
+    before its first pack, so running it here is not an approximation
+    of that set — it is that set. It refuses through three paths:
+
+    - protection resolution, through
+      `vramfit.domain.protection.expand_protections`, which raises
+      `ProtectionError` for a pattern that matches no tensor, matches
+      a single-tensor group, or hits a group with no
+      ``tensor_bytes``.
+    - group pricing, through
+      `vramfit.domain.sizes.measured_width`, which raises
+      `SizeSourceError` for a group rooted outside
+      ``CHECKPOINT_ROOTS``. `_resolve_row_widths` does not cover it,
+      because `consults_row_width` filters the set it checks.
+    - pin resolution, through
+      `vramfit.domain.pins.pinned_group_names`, which refuses
+      nothing — an unresolvable pin declines rather than halting.
+
+    The result is discarded. `run_pass` enumerates again, and the
+    enumeration is pure, so the second call answers the same.
+
+    Args:
+        recipe: The recipe to refine.
+        map_: The map that priced it.
+        row_widths: Elements per row per group.
+
+    Raises:
+        Exit: With code 1 when the recipe does not resolve.
+    """
+    try:
+        neighbours(recipe, map_, row_widths)
+    except VramfitError as error:
+        _halt(str(error))
 
 
 def _check_frame_labels(runtime_build: str, hardware: str) -> None:
@@ -438,9 +484,10 @@ def refine(
     an assisted recipe packed without its matrix warns the way
     ``pack`` warns. The corpus, the reference logits, and the matrix
     are each hashed once here, so the frame names bytes rather than
-    paths — and they are hashed last, after every refusal that costs
-    milliseconds. `_resolve_row_widths` owns its own refusal, so the
-    width read is not wrapped here.
+    paths — and they are hashed last, after every refusal a pass
+    could make without them. `_check_recipe_resolves` runs the
+    domain refusals above them. `_resolve_row_widths` owns its own
+    refusal, so the width read is not wrapped here.
 
     Args:
         recipe_path: The recipe to refine.
@@ -501,10 +548,14 @@ def refine(
     _check_destination("--out", sidecar_path)
     _check_destination("--runlog", runlog_path)
     row_widths = _resolve_row_widths(recipe, model_dir)
-    # Every refusal above this line costs milliseconds. Every read
-    # below it costs a whole file — the reference logits reach
-    # 39.7 GB on the 49B target. A new refusal belongs above, and
-    # nothing below here may refuse for a reason already knowable.
+    _check_recipe_resolves(recipe, map_, row_widths)
+    # No refusal anywhere in a pass may fire for a reason that was
+    # knowable before an expensive read. Every read below this line
+    # costs a whole file — the reference logits reach 39.7 GB on the
+    # 49B target — and the refusals a pass can still make below it
+    # need a packed arm or a measured one. The domain refusals that
+    # need neither are enumerated in `_check_recipe_resolves`, which
+    # runs above.
     corpus = _corpus_identity(eval_text)
     reference = _file_identity("--base-logits", base_logits)
     matrix = None if imatrix is None else _file_identity("--imatrix", imatrix)

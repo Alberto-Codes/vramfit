@@ -997,9 +997,11 @@ recipe. When no arm clears the bar it names the arms it evaluated and
 the neighbourhood they came from, because a sample supports no
 conclusion about the arms it never measured.
 
-A recipe with no legal swap declines before the first pack and costs
-nothing. The published 49B recipe is that case: 81 of its 82 groups
-sit at the 3-bit floor. A recipe carrying a pin the map cannot
+A recipe with no legal swap declines before the first pack: it packs
+nothing and measures nothing, so it spends no card time. It does hash
+the frame's inputs first, because the sidecar names them by content
+even on a decline. The published 49B recipe is that case: 81 of its
+82 groups sit at the 3-bit floor. A recipe carrying a pin the map cannot
 resolve declines too. The pass resolves pins against the map's groups
 alone, so a pin spelled with a checkpoint-discovered or
 merged-projection name is reported as missed, and the command

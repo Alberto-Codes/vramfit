@@ -40,6 +40,7 @@ def _control(chunks: int = 594) -> ArmRecord:
         sigma=0.0,
         better_chunks=0,
         chunks=chunks,
+        packed_bytes=21_860_214_272,
     )
 
 
@@ -112,6 +113,7 @@ def test_a_winner_that_measured_worse_is_refused() -> None:
         sigma=14.4,
         better_chunks=100,
         chunks=594,
+        packed_bytes=21_860_214_272,
     )
     with pytest.raises(RefinementRecordError, match="does not clear the stated"):
         _sidecar(arms=(worse,))
@@ -182,6 +184,7 @@ def test_an_arm_other_than_the_control_must_describe_a_swap() -> None:
             sigma=0.0,
             better_chunks=0,
             chunks=594,
+            packed_bytes=21_860_214_272,
         )
 
 
@@ -198,6 +201,7 @@ def test_the_control_arm_names_no_swap() -> None:
             sigma=0.0,
             better_chunks=0,
             chunks=594,
+            packed_bytes=21_860_214_272,
         )
 
 
@@ -214,6 +218,7 @@ def test_a_half_described_swap_is_refused() -> None:
             sigma=0.0,
             better_chunks=0,
             chunks=594,
+            packed_bytes=21_860_214_272,
         )
 
 
@@ -230,6 +235,7 @@ def test_an_arm_counting_more_better_chunks_than_it_measured_is_refused() -> Non
             sigma=0.0,
             better_chunks=600,
             chunks=594,
+            packed_bytes=21_860_214_272,
         )
 
 
@@ -262,6 +268,7 @@ def test_arm_record_and_paired_result_agree_on_the_win_rule() -> None:
             sigma=sigma,
             better_chunks=1,
             chunks=594,
+            packed_bytes=21_860_214_272,
         )
         assert arm.improved(7.8) == cleared_bar(delta, sigma, 7.8)
 
@@ -278,6 +285,7 @@ def test_arm_record_refuses_a_negative_bar() -> None:
         sigma=-14.4,
         better_chunks=1,
         chunks=594,
+        packed_bytes=21_860_214_272,
     )
 
     with pytest.raises(ValueError, match="must not be negative"):

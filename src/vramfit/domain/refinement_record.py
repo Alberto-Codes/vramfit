@@ -220,8 +220,9 @@ class ArmRecord:
         predicted_delta (float | None): The map's predicted damage
             change for the swap. Provenance only — nothing orders,
             filters, or selects on it (ADR-0031 decision 6).
-        packed_bytes (int | None): Real size of the arm's packed
-            file, or None when the pass did not record it.
+        packed_bytes (int): Real size of the arm's packed file.
+            Every arm is packed before it is measured, so every
+            record has one.
 
     Examples:
         The winning arm of the 2026-09-11 sweep:
@@ -254,8 +255,8 @@ class ArmRecord:
     sigma: float
     better_chunks: int
     chunks: int
+    packed_bytes: int
     predicted_delta: float | None = None
-    packed_bytes: int | None = None
 
     def __post_init__(self) -> None:
         """Enforce that an arm describes a whole move, or none.
@@ -263,8 +264,9 @@ class ArmRecord:
         Raises:
             RefinementRecordError: If the arm is unnamed, reports no
                 chunks, counts more better chunks than it measured,
-                or half-describes its swap. The control names no
-                swap and every other arm names all four parts.
+                half-describes its swap, or reports no packed bytes.
+                The control names no swap and every other arm names
+                all four parts.
         """
         if not self.arm:
             raise RefinementRecordError("arm must be named")
@@ -281,7 +283,7 @@ class ArmRecord:
             raise RefinementRecordError("the control arm names no swap")
         if self.arm != CONTROL_ARM and len(named) != len(parts):
             raise RefinementRecordError(f"arm {self.arm} half-describes its swap")
-        if self.packed_bytes is not None and self.packed_bytes <= 0:
+        if self.packed_bytes <= 0:
             raise RefinementRecordError(f"arm {self.arm} has no packed bytes")
 
     def improved(self, bar: float) -> bool:
@@ -313,7 +315,8 @@ class RefinementSidecar:
         bar (float): Evidence bar in sigma the pass was run against.
         control (ArmRecord | None): The unmodified recipe's
             measurement, or None when the pass declined. A declined
-            pass reaches no card, so it measures nothing at all.
+            pass packs nothing and measures nothing, so it reaches no
+            card at all.
         arms (tuple[ArmRecord, ...]): Every candidate measured, in
             measurement order. Empty when the pass declined.
         winner (str | None): Name of the arm the pass kept, or None
@@ -398,7 +401,8 @@ class RefinementSidecar:
         Raises:
             RefinementRecordError: If the record carries any
                 measurement. Declining happens before the first pack,
-                which is what keeps an unreachable target free.
+                which is what keeps an unreachable target off the
+                card.
         """
         if self.arms or self.winner is not None or self.control is not None:
             raise RefinementRecordError(

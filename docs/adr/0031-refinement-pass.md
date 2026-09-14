@@ -191,7 +191,10 @@ does not earn the refinement step.
   run measured 0.48 dollars per arm on this target, so a 15-candidate
   pass costs about 7 dollars and 1.5 hours on rented hardware.
 - That cost does not scale to every target. Decision 8 is what keeps
-  an unaffordable or degenerate target from being forced.
+  an unaffordable or degenerate target from being forced. A decline
+  packs nothing and measures nothing, so it spends no card time — it
+  still hashes the frame's inputs first, because the record names
+  them by content whatever the outcome.
 - **Byte-neutrality is priced, never assumed.** The pass prices every
   candidate group at its new precision through
   `vramfit.domain.solver.group_size_predictor`, the path the plan

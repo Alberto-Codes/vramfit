@@ -233,7 +233,7 @@ def test_run_pass_declines_a_recipe_with_no_legal_swap(tmp_path) -> None:
 
 
 def test_run_pass_declining_measures_nothing_at_all(tmp_path) -> None:
-    """The 49B case cost 0.00 dollars, and the loop must keep it that way."""
+    """The 49B case reaches no card, and the loop must keep it that way."""
     meter = MemoryRuntimeDivergenceMeter(default=CONTROL_CHUNKS)
 
     _run(tmp_path, meter, bits={G0: 4, G1: 4, G2: 4})

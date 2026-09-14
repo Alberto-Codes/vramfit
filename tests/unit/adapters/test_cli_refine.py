@@ -68,7 +68,11 @@ def _map() -> SensitivityMap:
     )
 
 
-def _recipe(bits: dict[str, int], imatrix: str | None = None) -> Recipe:
+def _recipe(
+    bits: dict[str, int],
+    imatrix: str | None = None,
+    protections: dict[str, int] | None = None,
+) -> Recipe:
     assignments = tuple(
         Assignment(group=n, bits=b, bytes=SIZE_AT[b], damage=0.1)
         for n, b in bits.items()
@@ -81,7 +85,7 @@ def _recipe(bits: dict[str, int], imatrix: str | None = None) -> Recipe:
         predicted_damage=1.0,
         solver="greedy-damage-per-byte",
         pins={},
-        protections={},
+        protections=protections or {},
         format_overhead=0.0,
         trace=(),
     )
@@ -816,3 +820,31 @@ def test_refine_refuses_an_empty_frame_label_before_any_hash(
     assert result.exit_code == 1
     assert flag in result.output
     assert hashed == []
+
+
+def test_refine_refuses_an_unresolvable_protection_before_any_hash(
+    workspace, monkeypatch, wiring_log
+) -> None:
+    """A protection that matches no tensor is knowable for free."""
+    hashed: list[Path] = []
+    real = cli_refine.content_identity
+
+    def record(path: Path):
+        hashed.append(path)
+        return real(path)
+
+    monkeypatch.setattr(cli_refine, "content_identity", record)
+    save_recipe(
+        _recipe(
+            {G[0]: 2, G[1]: 2, G[2]: 4, G[3]: 4},
+            protections={"no.such.tensor": 5},
+        ),
+        workspace / "protected.json",
+    )
+
+    result = _invoke(workspace, "--limit", "1", recipe="protected.json")
+
+    assert result.exit_code == 1
+    assert "matches no tensor" in result.output
+    assert hashed == []
+    assert wiring_log == []
