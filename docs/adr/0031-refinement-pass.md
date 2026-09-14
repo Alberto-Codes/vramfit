@@ -6,6 +6,24 @@
   maintainer ruling left conditional on a neighbour winning. Nine
   neighbours won. The measured evidence is the closing comment on
   #486 and `data/vramfit-c4-neighbour-30b/`.
+- **Note (2026-09-14, validation pass):** the stage ran end to end on
+  the published 30B recipe, on one rented H100 for 8.02 USD. The
+  control reproduced the published frame at 0.204220 mean KLD against
+  0.204223 over 594 chunks. Five of fifteen arms measured below the
+  control and four cleared the 7.8 sigma bar. The stage selected an
+  arm at 0.192490, which is 5.74 percent better at 12.4 sigma paired.
+
+    Those fifteen arms overlap the 2026-09-11 arms in zero positions,
+    so decision 1 now rests on two independent samples. Spearman rho
+    between predicted penalty and measured delta was **-0.171** here
+    against +0.146 there, and Pearson r **-0.224** against +0.279. The
+    correlation is near zero in both and changes sign between them.
+
+    The consequence sharpened. A search ranking by the map would have
+    picked the arm at +0.009580, which measured **worse** than the
+    recipe it started from. The earlier run put map-ranking's cost at
+    43 percent of the win. On this sample map-ranking does not lose
+    part of the win, it goes backwards.
 - **Amends:** [ADR-0007](0007-recipe-solver-strategy.md). The greedy
   solve no longer has the last word on a recipe's assignments. It
   keeps the whole plan step, and the refinement pass runs after it.
