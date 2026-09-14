@@ -25,6 +25,8 @@ from vramfit.domain.refinement import (
     refuse_unpriced_move,
 )
 
+pytestmark = pytest.mark.unit
+
 
 def _map(groups=None, precisions=(8, 4, 2)):
     """Build a map whose stacks share one reference size."""
@@ -50,13 +52,17 @@ def _map(groups=None, precisions=(8, 4, 2)):
                 tensors=(f"{name}.a.weight", f"{name}.b.weight"),
                 bytes_fp16=size,
                 sensitivity=curve,
+                tensor_bytes={
+                    f"{name}.a.weight": size // 2,
+                    f"{name}.b.weight": size - size // 2,
+                },
             )
             for name, size, curve in groups
         ),
     )
 
 
-def _recipe(bits, pins=None, protected=()):
+def _recipe(bits, pins=None, protections=None, protected=()):
     """Build a recipe whose groups take the given precisions."""
     sizes = {2: 200, 4: 400, 8: 800}
     assignments = tuple(
@@ -71,7 +77,7 @@ def _recipe(bits, pins=None, protected=()):
         predicted_damage=0.4,
         solver="greedy-damage-per-byte",
         pins=pins or {},
-        protections={"*": 5} if protected else {},
+        protections=protections or {},
         format_overhead=0.0,
         trace=(),
     )
@@ -207,6 +213,7 @@ def test_neighbours_emits_no_move_touching_a_pinned_group() -> None:
 def test_neighbours_emits_no_move_touching_a_protected_group() -> None:
     recipe = _recipe(
         {"g0": 2, "g1": 2, "g2": 4, "g3": 4},
+        protections={"g2.b.weight": 5},
         protected=(ProtectedTensor(tensor="g2.b.weight", bits=5),),
     )
 
@@ -214,6 +221,53 @@ def test_neighbours_emits_no_move_touching_a_protected_group() -> None:
 
     assert found
     assert all("g2" not in (c.move.promoted, c.move.demoted) for c in found)
+
+
+def test_neighbours_emits_no_move_touching_a_noop_protection_floor() -> None:
+    """A floor the assignment already meets resolves to no pair (#59).
+
+    `resolve_protected` drops it at plan time, so `protected_tensors`
+    is empty while the group still carries a floored tensor.
+    """
+    recipe = _recipe(
+        {"g0": 2, "g1": 2, "g2": 4, "g3": 4},
+        protections={"g2.b.weight": 4},
+        protected=(),
+    )
+
+    found = neighbours(recipe, _map())
+
+    assert recipe.protected_tensors == ()
+    assert found
+    assert all("g2" not in (c.move.promoted, c.move.demoted) for c in found)
+
+
+def test_fixed_groups_names_a_group_whose_protection_resolved_no_pair() -> None:
+    recipe = _recipe(
+        {"g0": 2, "g1": 2, "g2": 4, "g3": 4},
+        protections={"g2.b.weight": 4},
+        protected=(),
+    )
+
+    assert fixed_groups(recipe, _map()) == frozenset({"g2"})
+
+
+def test_fixed_groups_names_a_group_a_pin_sweeps_by_glob() -> None:
+    recipe = _recipe({"g0": 2, "g1": 2, "g2": 4, "g3": 4}, pins={"g[01]": 2})
+
+    assert fixed_groups(recipe, _map()) == frozenset({"g0", "g1"})
+
+
+def test_decline_reason_refuses_a_pin_this_map_cannot_resolve() -> None:
+    recipe = _recipe(
+        {"g0": 2, "g1": 2, "g2": 4, "g3": 4},
+        pins={"model.layers.0.mixer.in_proj": 8},
+    )
+
+    reason = decline_reason(recipe, _map())
+
+    assert reason is not None
+    assert "cannot resolve pin" in reason
 
 
 def test_neighbours_of_a_wholly_pinned_recipe_is_empty() -> None:
@@ -226,6 +280,7 @@ def test_fixed_groups_names_pinned_and_protected_groups() -> None:
     recipe = _recipe(
         {"g0": 2, "g1": 2, "g2": 4, "g3": 4},
         pins={"g0": 2},
+        protections={"g2.b.weight": 5},
         protected=(ProtectedTensor(tensor="g2.b.weight", bits=5),),
     )
 

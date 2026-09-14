@@ -906,9 +906,13 @@ groups trade their recorded byte figures, so every arm spends the
 recipe's exact byte total and competes inside the same weight budget.
 A swap prices exactly only when both groups carry the same reference
 size, and the command skips any other pair. It also skips any pair
-naming a pinned group or a group carrying a protected tensor. An arm
-keeps the recipe's pin and protection records, so a swap that moved
-one would pack bytes the arm does not predict.
+naming a group the recipe already fixes: a group a `--pin` pattern
+covers, or a group holding a tensor a `--protect` pattern floors.
+Protections resolve from the recipe's verbatim patterns, not from its
+resolved pairs, so a floor the assignment already meets still fixes
+its group. The pack reads an arm's assignments and never its pins, so
+a swap that moved a fixed group would pack against the constraint the
+plan records.
 
 **Every arm is packed and measured.** The sensitivity map does not
 order the neighbourhood it prices — Spearman rho was +0.146 over the
@@ -947,7 +951,11 @@ predicted delta is recorded as provenance and orders nothing.
 
 A recipe with no legal swap declines before the first pack and costs
 nothing. The published 49B recipe is that case: 81 of its 82 groups
-sit at the 3-bit floor.
+sit at the 3-bit floor. A recipe carrying a pin the map cannot
+resolve declines too. The command reads no checkpoint, so a pin
+spelled with a checkpoint-discovered or merged-projection name lands
+on no group here, and the command declines rather than measuring arms
+that may violate it.
 
 The command writes a sidecar and never a refined recipe. Promoting a
 winning arm to an artifact needs a tier-3 slice and a serve test.
@@ -957,6 +965,8 @@ base_converted, then per arm arm_packing, arm_packed, arm_measured,
 then refine_finished (winner, refusal).
 
 Exit codes: 1 when the recipe or map is invalid, the model directory
-does not exist, `--base-logits` or `--eval-text` is not a file,
-`--eval-text` holds no bytes, a group has no row width, or a
-toolchain stage fails. 2 when `--bar` is not stated.
+does not exist, `--base-logits` or `--eval-text` is not a file or
+cannot be read, `--eval-text` holds no bytes or measures fewer than
+two chunks, the recipe's pins or protections do not resolve against
+the map, a group has no row width, or a toolchain stage fails. 2 when
+`--bar` is not stated.

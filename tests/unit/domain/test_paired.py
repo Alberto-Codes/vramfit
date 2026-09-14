@@ -7,10 +7,13 @@ import pytest
 from vramfit.domain.paired import (
     PairedError,
     PairedResult,
+    cleared_bar,
     compare,
     per_chunk,
     select,
 )
+
+pytestmark = pytest.mark.unit
 
 
 def _result(delta: float, sigma: float, mean: float) -> PairedResult:
@@ -141,3 +144,20 @@ def test_compare_reports_unbounded_sigma_for_a_uniform_regression() -> None:
     result = compare(candidate, control)
     assert result.sigma == float("inf")
     assert not result.improved(7.8)
+
+
+def test_cleared_bar_accepts_an_arm_past_the_bar() -> None:
+    assert cleared_bar(-0.012368, -14.4, 7.8)
+
+
+def test_cleared_bar_rejects_an_arm_short_of_the_bar() -> None:
+    assert not cleared_bar(-0.01, -3.0, 7.8)
+
+
+def test_cleared_bar_rejects_an_arm_that_measured_worse() -> None:
+    assert not cleared_bar(0.01, 14.4, 7.8)
+
+
+def test_cleared_bar_refuses_a_negative_bar() -> None:
+    with pytest.raises(ValueError, match="must not be negative"):
+        cleared_bar(0.01, 1.0, -1.0)

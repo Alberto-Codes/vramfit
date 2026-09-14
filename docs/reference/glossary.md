@@ -747,9 +747,12 @@ change.
 **Fixed group**
 :   A group the **refinement pass** takes out of every **byte-neutral
     swap**, because the recipe already fixes its precision. A pin
-    names one, and so does a group carrying a protected tensor. A
-    refined arm keeps both records, so a swap that moved one would
-    pack bytes the arm does not predict. Lives in
+    pattern covers one, and so does a group holding a tensor a
+    protection pattern floors — including a floor the assignment
+    already meets, which resolves to no pair. Both resolve through
+    the solver's own paths, never through a second glob. The pack
+    reads an arm's assignments and never its pins, so a swap that
+    moved one would pack against the plan's own record. Lives in
     `vramfit.domain.refinement.fixed_groups`. Not a **held group**,
     which is the unquantizable class a pin sweep skips.
 

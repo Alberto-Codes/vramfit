@@ -13,6 +13,11 @@ because the map does not order the neighbourhood it prices
 (ADR-0031). A recipe with no legal swap declines before the first
 pack, so a target the protocol cannot reach costs nothing.
 
+Every refusal leaves one ``error:`` line and exit 1. The domain
+error root covers them: a recipe whose pins or protections do not
+resolve against this map, a measurement too short to pair, and a
+toolchain failure all halt the same way.
+
 The caller states the evidence bar. The command carries no default
 for it (ADR-0031 decision 7).
 
@@ -54,6 +59,7 @@ from vramfit.adapters.outbound.refinement_sidecar_json import (
 )
 from vramfit.adapters.outbound.run_log_jsonl import JsonlRunLogFile
 from vramfit.adapters.outbound.sensitivity_map_json import load_sensitivity_map
+from vramfit.domain.errors import VramfitError
 from vramfit.domain.evals import CorpusReference
 from vramfit.domain.refinement_record import MeasurementFrame, RefinementSidecar
 from vramfit.ports.outbound import RefinementSidecarSink
@@ -211,9 +217,8 @@ def refine(
         runlog: Run-log path, or None to place it beside the sidecar.
 
     Raises:
-        Exit: With code 1 when an input refuses or the toolchain
-            fails.
-        OSError: If the evaluation text cannot be read.
+        Exit: With code 1 when an input refuses, a measurement
+            cannot be paired, or the toolchain fails.
     """
     try:
         recipe = load_recipe(recipe_path)
@@ -230,7 +235,11 @@ def refine(
     for label, path in (("--base-logits", base_logits), ("--eval-text", eval_text)):
         if not path.is_file():
             _halt(f"{label}: {path} does not exist")
-    corpus_sha256, corpus_bytes = content_identity(eval_text)
+    try:
+        corpus_sha256, corpus_bytes = content_identity(eval_text)
+    except OSError as error:
+        _halt(f"--eval-text: {error}")
+        return
     if corpus_bytes == 0:
         _halt(f"--eval-text: {eval_text} holds no bytes")
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -306,7 +315,7 @@ def refine(
             keep_packs=keep_packs,
             report=run_log.emit,
         )
-    except PackError as error:
+    except VramfitError as error:
         _halt(str(error))
         return
     sink: RefinementSidecarSink = JsonRefinementSidecarFile(sidecar_path)

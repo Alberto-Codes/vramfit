@@ -29,6 +29,8 @@ Examples:
 See Also:
     - [vramfit.domain.refinement][]: Generates the arms.
     - [vramfit.domain.paired][]: Measures and selects between them.
+      `cleared_bar` states the win rule this module validates
+      against.
 """
 
 from __future__ import annotations
@@ -37,6 +39,7 @@ from dataclasses import dataclass
 
 from vramfit.domain.errors import VramfitError
 from vramfit.domain.evals import CorpusReference
+from vramfit.domain.paired import cleared_bar
 
 # The arm name reserved for the unmodified recipe. The pass measures
 # it first, because a candidate is only readable against a control
@@ -197,13 +200,20 @@ class ArmRecord:
     def improved(self, bar: float) -> bool:
         """Judge whether this arm beat the control past a bar.
 
+        Reads `vramfit.domain.paired.cleared_bar`, the one
+        definition of the rule, so a recorded winner is a winner
+        `vramfit.domain.paired.select` would have chosen.
+
         Args:
             bar: Evidence bar in sigma, stated positive.
 
         Returns:
             True when the arm measured lower and cleared the bar.
+
+        Raises:
+            ValueError: If ``bar`` is negative.
         """
-        return self.delta < 0 and self.sigma <= -bar
+        return cleared_bar(self.delta, self.sigma, bar)
 
 
 @dataclass(frozen=True, slots=True)

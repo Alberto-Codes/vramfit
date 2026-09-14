@@ -22,6 +22,8 @@ from vramfit.domain.model import (
 from vramfit.domain.refinement import neighbours
 from vramfit.domain.refinement_record import CONTROL_ARM, MeasurementFrame
 
+pytestmark = pytest.mark.unit
+
 # Routed-expert stacks, the unit the C4 protocol swapped between. The
 # GGUF backend maps these names, so the packer fake prices them the
 # way the real adapter would.

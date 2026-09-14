@@ -12,6 +12,11 @@ not order its neighbourhood, so nothing here consults a prediction.
 `select` takes its evidence bar from the caller and has no default,
 because the bar a result must clear is the caller's to state.
 
+`cleared_bar` states what clearing the bar means, once. `select`
+reads it to pick a winner and
+`vramfit.domain.refinement_record.ArmRecord` reads it to validate a
+recorded one, so no record can claim a winner selection would refuse.
+
 Examples:
     Compare one candidate against the control:
 
@@ -38,6 +43,41 @@ from vramfit.domain.errors import VramfitError
 # The smallest paired sample that has a spread at all. One chunk
 # yields no standard deviation, so no sigma exists to report.
 MIN_CHUNKS = 2
+
+
+def cleared_bar(delta: float, sigma: float, bar: float) -> bool:
+    """Judge one measured standing against an evidence bar.
+
+    The one definition of what "cleared the bar" means. `select`
+    reads it to pick a winner and `RefinementSidecar` reads it to
+    validate the winner a record claims, so the two cannot disagree
+    about which arm becomes a published claim.
+
+    Args:
+        delta: Mean paired difference, arm less control. Negative
+            means the arm measured better.
+        sigma: ``delta`` in units of its own standard error.
+        bar: Evidence bar in sigma, stated positive.
+
+    Returns:
+        True when the arm measured lower and cleared the bar.
+
+    Raises:
+        ValueError: If ``bar`` is negative. A negative bar would
+            accept an arm that measured worse.
+
+    Examples:
+        The winning arm of the 2026-09-11 sweep:
+
+        ```python
+        from vramfit.domain.paired import cleared_bar
+
+        assert cleared_bar(-0.012368, -14.4, 7.8)
+        ```
+    """
+    if bar < 0:
+        raise ValueError("bar must not be negative")
+    return delta < 0 and sigma <= -bar
 
 
 class PairedError(VramfitError, ValueError):
@@ -86,6 +126,8 @@ class PairedResult:
     def improved(self, bar: float) -> bool:
         """Judge whether this candidate beat the control past a bar.
 
+        Reads `cleared_bar`, the one definition of the rule.
+
         Args:
             bar: Evidence bar in sigma, stated positive.
 
@@ -97,9 +139,7 @@ class PairedResult:
             ValueError: If ``bar`` is negative. A negative bar would
                 accept a candidate that measured worse.
         """
-        if bar < 0:
-            raise ValueError("bar must not be negative")
-        return self.delta < 0 and self.sigma <= -bar
+        return cleared_bar(self.delta, self.sigma, bar)
 
 
 def per_chunk(cumulative: Sequence[float]) -> tuple[float, ...]:

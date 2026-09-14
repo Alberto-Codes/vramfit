@@ -22,10 +22,16 @@ total cannot move. `refuse_unpriced_move` states that condition.
 A recipe also fixes some groups. A pin forces one group's
 precision, and a protection floor forces one tensor's precision
 inside its group (ADR-0022). A swap that moves such a group breaks
-the equal-byte claim. The arm recipe still carries the pin, and a
-protected tensor still packs at its floor, so the packed bytes leave
-the total the candidate predicts. `fixed_groups` names them and
+the constraint the plan records: the pack reads the arm's
+assignments and never `plan.pins`, so a demoted pinned group packs
+at the swapped width. `fixed_groups` names them and
 `refuse_unpriced_move` skips every move that reaches one.
+
+This stage re-derives neither rule. Pins resolve through
+`vramfit.domain.pins` and protections through
+`vramfit.domain.protection`, the paths the solver itself used. A
+second resolution drifts from the first, and every instance of that
+drift found so far let a refined arm violate its own plan.
 
 Examples:
     Enumerate a recipe's neighbourhood:
@@ -44,10 +50,11 @@ from __future__ import annotations
 
 from collections.abc import Collection, Mapping
 from dataclasses import dataclass
-from fnmatch import fnmatchcase
 
 from vramfit.domain.errors import VramfitError
 from vramfit.domain.model import Assignment, Recipe, SensitivityMap
+from vramfit.domain.pins import pinned_group_names
+from vramfit.domain.protection import expand_protections
 
 # The smallest number of distinct precisions a neighbourhood needs. A
 # recipe holding one precision has no pair to swap between.
@@ -169,12 +176,21 @@ def _reference_bytes(map_: SensitivityMap) -> Mapping[str, int]:
 def fixed_groups(recipe: Recipe, map_: SensitivityMap) -> frozenset[str]:
     """Name every group whose precision the recipe already fixes.
 
-    A pin pattern forces the precision of each group it matches
-    (ADR-0007). A protection floor forces one tensor's precision
-    inside its group (ADR-0022), and the pack drives that floor
-    whatever the group takes. A refined arm carries both records
-    unchanged, so a swap that moves such a group packs bytes the
-    candidate does not predict.
+    This stage does not re-derive a constraint the solver resolves.
+    Pins resolve through `vramfit.domain.pins.pinned_group_names`
+    and protections through
+    `vramfit.domain.protection.expand_protections`, the same two
+    paths the plan step used. A second resolution would drift from
+    the first, and a drifted answer is how a refined arm violates a
+    constraint its own plan records.
+
+    Protections read the verbatim patterns, never
+    `Recipe.protected_tensors`. A resolved pair exists only where
+    the floor exceeds the solved precision (ADR-0022), so every
+    floor the assignment already meets is dropped at plan time
+    (issue #59). Those groups still carry a floored tensor, and a
+    swap that demotes one would pack below the floor the operator
+    stated.
 
     Args:
         recipe: The solved recipe to search around.
@@ -184,17 +200,16 @@ def fixed_groups(recipe: Recipe, map_: SensitivityMap) -> frozenset[str]:
     Returns:
         The fixed group names, empty for a recipe with no pins and
         no protections.
+
+    Raises:
+        VramfitError: If the recipe's own pin or protection records
+            do not resolve against this map. `PinError` and
+            `ProtectionError` both carry that root.
     """
-    names = [a.group for a in recipe.assignments]
-    fixed = {
-        name
-        for pattern in recipe.plan.pins
-        for name in names
-        if fnmatchcase(name, pattern)
-    }
-    protected = {pair.tensor for pair in recipe.protected_tensors}
-    fixed |= {g.name for g in map_.groups if protected.intersection(g.tensors)}
-    return frozenset(fixed)
+    pinned, _missed = pinned_group_names(recipe.plan.pins, map_, recipe.runtime)
+    floors = expand_protections(recipe.plan.protections, map_, recipe.runtime)
+    floored = {g.name for g in map_.groups if any(t in floors for t in g.tensors)}
+    return pinned | floored
 
 
 def refuse_unpriced_move(
@@ -376,6 +391,16 @@ def decline_reason(recipe: Recipe, map_: SensitivityMap) -> str | None:
     way — `fixed_groups` takes pinned and protected groups out of the
     pairing first.
 
+    A pin this map cannot resolve declines too. The pass reads no
+    checkpoint, so a pin spelled with a checkpoint-discovered
+    (ADR-0029) or folded (#576) name lands on no group here. The
+    pass cannot keep a group it cannot name out of a swap, so it
+    declines rather than measuring arms that may violate the pin.
+
+    Raises:
+        VramfitError: If the recipe's protection records do not
+            resolve against this map (`ProtectionError`).
+
     Args:
         recipe: The solved recipe to search around.
         map_: The map that priced it.
@@ -383,6 +408,12 @@ def decline_reason(recipe: Recipe, map_: SensitivityMap) -> str | None:
     Returns:
         The refusal, or None when at least one neighbour exists.
     """
+    _pinned, missed = pinned_group_names(recipe.plan.pins, map_, recipe.runtime)
+    if missed:
+        return (
+            f"the map cannot resolve pin {missed[0]}, so the pass cannot "
+            "prove a swap leaves it in place"
+        )
     levels = {a.bits for a in recipe.assignments}
     if len(levels) < MIN_LEVELS:
         only = next(iter(levels))

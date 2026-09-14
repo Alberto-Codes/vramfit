@@ -34,6 +34,8 @@ from vramfit.domain.model import (
     SensitivityMap,
 )
 
+pytestmark = pytest.mark.unit
+
 runner = CliRunner()
 
 G = [f"model.layers.{i}.mixer.experts.up_proj" for i in range(4)]
@@ -297,6 +299,22 @@ def test_refine_refuses_a_missing_model_directory(workspace) -> None:
 
     assert result.exit_code == 1
     assert "does not exist" in result.output
+
+
+def test_refine_reports_an_unpairable_measurement_cleanly(workspace, monkeypatch):
+    """One chunk has no spread, so `compare` refuses (PairedError)."""
+    monkeypatch.setattr(
+        cli_refine,
+        "LlamaCppDivergenceMeter",
+        lambda **kwargs: MemoryRuntimeDivergenceMeter(default=(0.3,)),
+    )
+
+    result = _invoke(workspace, "--limit", "1")
+
+    assert result.exit_code == 1
+    assert "error:" in result.output
+    assert "chunks" in result.output
+    assert not (workspace / "r.refinement.json").exists()
 
 
 def test_refine_writes_a_run_log(workspace) -> None:

@@ -17,6 +17,8 @@ from vramfit.domain.model import (
 from vramfit.domain.paired import compare, per_chunk, select
 from vramfit.domain.refinement import decline_reason, neighbours
 
+pytestmark = pytest.mark.unit
+
 # Every group carries one reference size, which is the condition a
 # byte-neutral swap needs. The C4 protocol ran on expert stacks, which
 # are the same size as each other.

@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from vramfit.domain.evals import CorpusReference
+from vramfit.domain.paired import cleared_bar
 from vramfit.domain.refinement_record import (
     CONTROL_ARM,
     ArmRecord,
@@ -12,6 +13,8 @@ from vramfit.domain.refinement_record import (
     RefinementRecordError,
     RefinementSidecar,
 )
+
+pytestmark = pytest.mark.unit
 
 
 def _frame() -> MeasurementFrame:
@@ -230,3 +233,41 @@ def test_a_frame_that_names_no_instrument_is_refused() -> None:
             corpus=CorpusReference(file="wiki.test.raw"),
             reference="f16 base logits",
         )
+
+
+def test_arm_record_and_paired_result_agree_on_the_win_rule() -> None:
+    """Both readers of the bar call one predicate, so they cannot drift."""
+    standings = [(-0.0124, -14.4), (-0.01, -3.0), (0.01, 14.4), (0.0, 0.0)]
+
+    for delta, sigma in standings:
+        arm = ArmRecord(
+            arm="arm01",
+            promoted="g1",
+            demoted="g2",
+            from_bits=2,
+            to_bits=4,
+            mean=0.19,
+            delta=delta,
+            sigma=sigma,
+            better_chunks=1,
+            chunks=594,
+        )
+        assert arm.improved(7.8) == cleared_bar(delta, sigma, 7.8)
+
+
+def test_arm_record_refuses_a_negative_bar() -> None:
+    arm = ArmRecord(
+        arm="arm01",
+        promoted="g1",
+        demoted="g2",
+        from_bits=2,
+        to_bits=4,
+        mean=0.19,
+        delta=-0.01,
+        sigma=-14.4,
+        better_chunks=1,
+        chunks=594,
+    )
+
+    with pytest.raises(ValueError, match="must not be negative"):
+        arm.improved(-1.0)

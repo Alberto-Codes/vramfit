@@ -134,11 +134,32 @@ does not earn the refinement step.
 - A byte-neutral swap prices exactly only when both groups carry the
   same reference size. The pass skips any other pair rather than
   predicting a total it cannot stand behind.
-- The pass also skips any pair naming a pinned group or a group
-  carrying a protected tensor. An arm recipe keeps `plan.pins` and
-  `protected_tensors` unchanged, so such a swap would pack bytes the
-  arm does not predict. This narrows which arms the pass measures,
-  which is the subject of #591.
+- The pass also skips any pair naming a group the recipe already
+  fixes — one a pin pattern covers, or one holding a tensor a
+  protection pattern floors. The pack reads an arm's assignments and
+  never its pins, so such a swap would pack against the constraint
+  the plan records. This narrows which arms the pass measures, which
+  is the subject of #591.
+- **The stage does not re-derive a constraint the solver resolves.**
+  Pins resolve through `vramfit.domain.pins.pinned_group_names` and
+  protections through
+  `vramfit.domain.protection.expand_protections`, the paths the plan
+  step itself used. Each rule has exactly one resolution path, and
+  the refinement pass calls it. A second implementation drifts from
+  the first, and a drifted answer is how a refined arm violates a
+  constraint its own plan records. Two rounds of review found this
+  defect twice: a glob over assignment names that missed a folded
+  merged-projection spelling, and a read of `protected_tensors` that
+  missed every floor the assignment already met (issue #59).
+- A pin the map alone cannot resolve declines. The pass reads no
+  checkpoint, so the pin match universe is the map's groups. A pin
+  spelled with a checkpoint-discovered (ADR-0029) or folded (#576)
+  name lands on no group here, and the pass cannot keep a group it
+  cannot name out of a swap.
+- One definition states what clearing the evidence bar means.
+  `vramfit.domain.paired.cleared_bar` decides which arm the pass
+  selects and which winner a sidecar accepts, so no record can claim
+  a winner selection would have refused.
 - The solver keeps its approximation and its scope. ADR-0007 is
   amended in reach, not replaced.
 - One more artifact rides a refined publication.
