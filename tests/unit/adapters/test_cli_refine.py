@@ -134,6 +134,36 @@ def workspace(tmp_path: Path, monkeypatch) -> Path:
     return tmp_path
 
 
+@pytest.fixture
+def wiring_log(monkeypatch) -> list[str]:
+    """Record every seam the command constructs, in order.
+
+    A pre-flight that runs after the packer or the meter is built has
+    already paid for the convert, so the refusal tests assert this
+    stays empty.
+    """
+    built: list[str] = []
+
+    def record(name, factory):
+        def build(**kwargs):
+            built.append(name)
+            return factory(**kwargs)
+
+        monkeypatch.setattr(cli_refine, name, build)
+
+    record(
+        "LlamaCppPacker",
+        lambda **kwargs: MemoryRecipePacker(
+            packed_bytes=500, has_base=True, row_widths=stack_row_widths(G)
+        ),
+    )
+    record(
+        "LlamaCppDivergenceMeter",
+        lambda **kwargs: MemoryRuntimeDivergenceMeter(default=CHUNKS),
+    )
+    return built
+
+
 def _invoke(tmp_path: Path, *extra: str, recipe: str = "r.json", bar: str = "7.8"):
     return runner.invoke(
         app,
@@ -381,27 +411,33 @@ def test_refine_records_the_neighbourhood_the_arms_were_drawn_from(
     assert sidecar["neighbourhood_moves"] == 4
 
 
-def test_refine_refuses_a_checkout_missing_llama_perplexity(workspace) -> None:
+def test_refine_refuses_a_checkout_missing_llama_perplexity(
+    workspace, wiring_log
+) -> None:
     (workspace / "llama.cpp" / "build" / "bin" / "llama-perplexity").unlink()
 
     result = _invoke(workspace, "--limit", "1")
 
     assert result.exit_code == 1
     assert "llama-perplexity" in result.output
+    assert wiring_log == []
     assert not (workspace / "arms").exists()
 
 
-def test_refine_refuses_a_checkout_missing_the_convert_script(workspace) -> None:
+def test_refine_refuses_a_checkout_missing_the_convert_script(
+    workspace, wiring_log
+) -> None:
     (workspace / "llama.cpp" / "convert_hf_to_gguf.py").unlink()
 
     result = _invoke(workspace, "--limit", "1")
 
     assert result.exit_code == 1
     assert "convert_hf_to_gguf.py" in result.output
+    assert wiring_log == []
     assert not (workspace / "arms").exists()
 
 
-def test_refine_refuses_a_tool_that_cannot_execute(workspace) -> None:
+def test_refine_refuses_a_tool_that_cannot_execute(workspace, wiring_log) -> None:
     binary = workspace / "llama.cpp" / "build" / "bin" / "llama-quantize"
     binary.chmod(0o644)
 
@@ -409,4 +445,100 @@ def test_refine_refuses_a_tool_that_cannot_execute(workspace) -> None:
 
     assert result.exit_code == 1
     assert "not executable" in result.output
+    assert wiring_log == []
     assert not (workspace / "arms").exists()
+
+
+def test_refine_refuses_a_missing_imatrix_before_any_tool_runs(
+    workspace, wiring_log
+) -> None:
+    result = _invoke(
+        workspace, "--limit", "1", "--imatrix", str(workspace / "absent.imatrix")
+    )
+
+    assert result.exit_code == 1
+    assert "--imatrix" in result.output
+    assert wiring_log == []
+    assert not (workspace / "arms").exists()
+
+
+def test_refine_accepts_an_imatrix_that_exists(workspace) -> None:
+    (workspace / "m.imatrix").write_bytes(b"imatrix")
+
+    result = _invoke(
+        workspace, "--limit", "1", "--imatrix", str(workspace / "m.imatrix")
+    )
+
+    assert result.exit_code == 0, result.output
+    assert (workspace / "r.refinement.json").is_file()
+
+
+def test_refine_refuses_a_missing_sidecar_directory_before_any_tool_runs(
+    workspace, wiring_log
+) -> None:
+    result = _invoke(
+        workspace, "--limit", "1", "--out", str(workspace / "results" / "r.json")
+    )
+
+    assert result.exit_code == 1
+    assert "--out" in result.output
+    assert wiring_log == []
+    assert not (workspace / "arms").exists()
+
+
+def test_refine_refuses_a_missing_runlog_directory_before_any_tool_runs(
+    workspace, wiring_log
+) -> None:
+    result = _invoke(
+        workspace, "--limit", "1", "--runlog", str(workspace / "logs" / "r.jsonl")
+    )
+
+    assert result.exit_code == 1
+    assert "--runlog" in result.output
+    assert wiring_log == []
+    assert not (workspace / "arms").exists()
+
+
+def test_refine_refuses_a_sidecar_directory_it_cannot_write(
+    workspace, wiring_log
+) -> None:
+    locked = workspace / "locked"
+    locked.mkdir()
+    locked.chmod(0o555)
+    try:
+        result = _invoke(workspace, "--limit", "1", "--out", str(locked / "r.json"))
+
+        assert result.exit_code == 1
+        assert "not writable" in result.output
+        assert wiring_log == []
+    finally:
+        locked.chmod(0o755)
+
+
+def test_refine_wires_the_tools_the_preflight_checked(workspace, monkeypatch) -> None:
+    """The checked paths are the paths that run."""
+    seen: dict[str, object] = {}
+    monkeypatch.setattr(
+        cli_refine,
+        "LlamaCppPacker",
+        lambda **kwargs: (
+            seen.update(kwargs)
+            or MemoryRecipePacker(
+                packed_bytes=500, has_base=True, row_widths=stack_row_widths(G)
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        cli_refine,
+        "LlamaCppDivergenceMeter",
+        lambda **kwargs: (
+            seen.update(kwargs) or MemoryRuntimeDivergenceMeter(default=CHUNKS)
+        ),
+    )
+    tools = cli_refine.LlamaCppTools.under(workspace / "llama.cpp")
+
+    _invoke(workspace, "--limit", "1")
+
+    assert seen["convert_script"] == tools.convert_script
+    assert seen["quantize_bin"] == tools.quantize_bin
+    assert seen["perplexity_bin"] == tools.perplexity_bin

@@ -934,8 +934,10 @@ Options: `--map` (required), `--llama-cpp` (required),
 (default `arms`), `--out`, `--limit` (default 15), `--threads`,
 `--keep-packs`, `--python-bin`, `--runlog`.
 
-The command checks all three llama.cpp tools before the convert
-stage, so a checkout missing a built binary costs no card time.
+The command checks every path it needs before the convert stage: the
+three llama.cpp tools, `--imatrix` when given, and the directories
+`--out` and `--runlog` write into. A missing path costs no card time,
+and a finished pass is never discarded at its last step.
 
 `--base-logits` names logits stored from the reference build. Write
 them once with `llama-perplexity --kl-divergence-base` over the f16
@@ -984,8 +986,10 @@ then refine_finished (winner, refusal).
 Exit codes: 1 when the recipe or map is invalid, the model directory
 does not exist, `--base-logits` or `--eval-text` is not a file or
 cannot be read, `--eval-text` holds no bytes or measures fewer than
-two chunks, the `--llama-cpp` checkout misses `convert_hf_to_gguf.py`,
-`build/bin/llama-quantize` or `build/bin/llama-perplexity`, the
-recipe's pins or protections do not resolve against the map, a group
-has no row width, or a toolchain stage fails. 2 when
+two chunks, `--imatrix` is not a file, the `--llama-cpp` checkout
+misses `convert_hf_to_gguf.py`, `build/bin/llama-quantize` or
+`build/bin/llama-perplexity`, the `--out` or `--runlog` directory does
+not exist or refuses a write, the recipe's pins or protections do not
+resolve against the map, a group has no row width, or a toolchain
+stage fails. 2 when
 `--bar` is not stated.

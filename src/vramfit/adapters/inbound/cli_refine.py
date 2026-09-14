@@ -16,9 +16,15 @@ pack, so a target the protocol cannot reach costs nothing.
 Every refusal leaves one ``error:`` line and exit 1. The domain
 error root covers them: a recipe whose pins or protections do not
 resolve against this map, a measurement too short to pair, and a
-toolchain failure all halt the same way. The three llama.cpp tools
-are checked before the convert stage, so a missing binary costs no
-card time.
+toolchain failure all halt the same way. Every path the pass needs
+is checked before the convert stage: the three llama.cpp tools, the
+importance matrix, and the destinations the sidecar and the run log
+are written to. A missing path costs no card time, and a finished
+pass is never discarded at its last step.
+
+`LlamaCppTools` names the three tools once. The pre-flight checks
+those paths and the wiring runs them, so the two cannot disagree
+about which file they mean.
 
 The command reports what it measured and never a verdict on the
 recipe. The arms are a sample of the neighbourhood whenever the arm
@@ -47,6 +53,7 @@ from __future__ import annotations
 
 import os
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
 
@@ -85,7 +92,55 @@ def _halt(message: str) -> None:
     raise typer.Exit(code=1)
 
 
-def _check_toolchain(llama_cpp: Path) -> None:
+@dataclass(frozen=True, slots=True)
+class LlamaCppTools:
+    """The three tools one pass runs, named once.
+
+    The pre-flight checks these paths and the wiring runs them, so
+    neither can mean a different file from the other. A second
+    spelling would let the check pass while the run dies after the
+    convert, which is the cost this record exists to prevent.
+
+    Attributes:
+        convert_script (Path): ``convert_hf_to_gguf.py``, which
+            writes the f16 base.
+        quantize_bin (Path): ``llama-quantize``, which packs each
+            arm.
+        perplexity_bin (Path): ``llama-perplexity``, which measures
+            each arm's divergence.
+
+    Examples:
+        Resolve a checkout's tools:
+
+        ```python
+        tools = LlamaCppTools.under(Path("~/llama.cpp"))
+        ```
+    """
+
+    convert_script: Path
+    quantize_bin: Path
+    perplexity_bin: Path
+
+    @classmethod
+    def under(cls, llama_cpp: Path) -> LlamaCppTools:
+        """Name the tools a checkout carries.
+
+        Args:
+            llama_cpp: The llama.cpp checkout.
+
+        Returns:
+            The three paths, built once for both the pre-flight and
+            the wiring.
+        """
+        built = llama_cpp / "build" / "bin"
+        return cls(
+            convert_script=llama_cpp / "convert_hf_to_gguf.py",
+            quantize_bin=built / "llama-quantize",
+            perplexity_bin=built / "llama-perplexity",
+        )
+
+
+def _check_toolchain(tools: LlamaCppTools) -> None:
     """Refuse a checkout missing a tool the pass runs.
 
     The pass drives three tools and reaches the last one only after
@@ -95,20 +150,44 @@ def _check_toolchain(llama_cpp: Path) -> None:
     every tool is checked before any of them runs.
 
     Args:
-        llama_cpp: The llama.cpp checkout.
+        tools: The checkout's tools, as the wiring will run them.
 
     Raises:
         Exit: With code 1 when a tool is missing or cannot execute.
     """
-    convert_script = llama_cpp / "convert_hf_to_gguf.py"
-    if not convert_script.is_file():
-        _halt(f"--llama-cpp: {convert_script} does not exist — build the tools first")
-    for name in ("llama-quantize", "llama-perplexity"):
-        binary = llama_cpp / "build" / "bin" / name
+    if not tools.convert_script.is_file():
+        _halt(
+            f"--llama-cpp: {tools.convert_script} does not exist — "
+            "build the tools first"
+        )
+    for binary in (tools.quantize_bin, tools.perplexity_bin):
         if not binary.is_file():
             _halt(f"--llama-cpp: {binary} does not exist — build the tools first")
         if not os.access(binary, os.X_OK):
             _halt(f"--llama-cpp: {binary} is not executable")
+
+
+def _check_destination(label: str, path: Path) -> None:
+    """Refuse a destination the pass could not write when it finishes.
+
+    The sidecar is the pass's only artifact and it is written last,
+    after every pack and every measurement. A directory that does not
+    exist discards all of that, so the destination is checked before
+    the first tool runs.
+
+    Args:
+        label: The option that named the path, for the message.
+        path: The file the pass will write.
+
+    Raises:
+        Exit: With code 1 when the parent directory is missing or
+            refuses a write.
+    """
+    parent = path.parent
+    if not parent.is_dir():
+        _halt(f"{label}: directory {parent} does not exist")
+    if not os.access(parent, os.W_OK):
+        _halt(f"{label}: directory {parent} is not writable")
 
 
 def _sample_phrase(sidecar: RefinementSidecar) -> str:
@@ -256,8 +335,9 @@ def refine(
     candidate group through the predictor the plan step used. The
     frame and the sidecar write sit inside the guarded region, so an
     empty ``--runtime-build`` and a refused write each leave one
-    ``error:`` line rather than a traceback. The llama.cpp tools are
-    checked before any of them runs.
+    ``error:`` line rather than a traceback. Every path the pass
+    needs — the tools, the matrix, and both destinations — is
+    checked before the first tool runs.
 
     Args:
         recipe_path: The recipe to refine.
@@ -296,18 +376,12 @@ def refine(
             f'model directory "{model_dir}" does not exist — the recipe\'s '
             "model_id is not a local path, pass --model"
         )
-    for label, path in (("--base-logits", base_logits), ("--eval-text", eval_text)):
+    inputs = (("--base-logits", base_logits), ("--eval-text", eval_text))
+    for label, path in inputs if imatrix is None else (*inputs, ("--imatrix", imatrix)):
         if not path.is_file():
             _halt(f"{label}: {path} does not exist")
-    _check_toolchain(llama_cpp)
-    try:
-        corpus_sha256, corpus_bytes = content_identity(eval_text)
-    except OSError as error:
-        _halt(f"--eval-text: {error}")
-        return
-    if corpus_bytes == 0:
-        _halt(f"--eval-text: {eval_text} holds no bytes")
-    out_dir.mkdir(parents=True, exist_ok=True)
+    tools = LlamaCppTools.under(llama_cpp)
+    _check_toolchain(tools)
     sidecar_path = (
         out if out is not None else recipe_path.with_suffix(".refinement.json")
     )
@@ -316,6 +390,16 @@ def refine(
         if runlog is not None
         else sidecar_path.with_name(sidecar_path.stem + ".runlog.jsonl")
     )
+    _check_destination("--out", sidecar_path)
+    _check_destination("--runlog", runlog_path)
+    try:
+        corpus_sha256, corpus_bytes = content_identity(eval_text)
+    except OSError as error:
+        _halt(f"--eval-text: {error}")
+        return
+    if corpus_bytes == 0:
+        _halt(f"--eval-text: {eval_text} holds no bytes")
+    out_dir.mkdir(parents=True, exist_ok=True)
     run_log = SafeRunLog(JsonlRunLogFile(runlog_path), path=runlog_path)
     try:
         row_widths = _resolve_row_widths(recipe, model_dir)
@@ -329,6 +413,9 @@ def refine(
     def packer_for(packed: str) -> LlamaCppPacker:
         """Wire the llama.cpp adapter for one arm.
 
+        Reads the tools the pre-flight checked, so the packer runs
+        the files that were verified to exist.
+
         Args:
             packed: Where this arm's packed file goes.
 
@@ -339,8 +426,8 @@ def refine(
             model_dir=model_dir,
             base_gguf=base_path,
             out_path=Path(packed),
-            convert_script=llama_cpp / "convert_hf_to_gguf.py",
-            quantize_bin=llama_cpp / "build" / "bin" / "llama-quantize",
+            convert_script=tools.convert_script,
+            quantize_bin=tools.quantize_bin,
             python_bin=python_bin if python_bin is not None else Path(sys.executable),
             threads=threads,
             imatrix=imatrix,
@@ -348,7 +435,7 @@ def refine(
         )
 
     meter = LlamaCppDivergenceMeter(
-        perplexity_bin=llama_cpp / "build" / "bin" / "llama-perplexity",
+        perplexity_bin=tools.perplexity_bin,
         text_path=eval_text,
         base_logits=base_logits,
         threads=threads,
