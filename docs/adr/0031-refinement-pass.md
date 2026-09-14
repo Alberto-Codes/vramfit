@@ -120,6 +120,15 @@ does not earn the refinement step.
 
 ## Open questions
 
+- Which arms the pass measures when it cannot afford the whole
+  neighbourhood, tracked in #591. The shipped stride is
+  map-independent and untested. Measured 2026-09-14 against the
+  published 30B recipe: the neighbourhood holds 385 moves, the 15
+  arms a stride selects overlap the 2026-09-11 arms in zero
+  positions, and 12 of those 15 carry a predicted delta above +0.05
+  where only 3 of the earlier arms sat. Decision 1 rules out ranking
+  on the map. Whether it also rules out using the map to spread a
+  sample is what #591 asks.
 - Whether the pass should search beyond one swap. Every arm measured
   so far moves exactly two assignments, and nothing prices a
   two-swap neighbourhood yet.
