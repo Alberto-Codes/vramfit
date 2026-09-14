@@ -50,6 +50,10 @@ budget was smaller, and the sidecar records both counts. An arm that
 packed over the weight budget is reported and recorded with its
 margin, and left out of the selection.
 
+`RefinementSidecar.outcome` classifies the finished pass, and this
+command renders that structure. The run log renders the same one, so
+no surface words an outcome another surface does not have.
+
 The pre-flight refusals live in
 [vramfit.adapters.inbound.cli_refine_preflight][]. This module keeps
 the wiring, the pass, and the reporting.
@@ -175,22 +179,6 @@ def _file_identity(label: str, path: Path) -> FileIdentity:
     return FileIdentity(file=str(path), sha256=sha256, size_bytes=size_bytes)
 
 
-def _sample_phrase(sidecar: RefinementSidecar) -> str:
-    """Word how much of the neighbourhood the pass measured.
-
-    Args:
-        sidecar: The pass's search record.
-
-    Returns:
-        The arm count, naming the neighbourhood it was drawn from
-        when the pass measured only part of it.
-    """
-    measured = len(sidecar.arms)
-    if measured == sidecar.neighbourhood_moves:
-        return f"{measured} evaluated"
-    return f"{measured} evaluated of a neighbourhood of {sidecar.neighbourhood_moves}"
-
-
 def _report_outcome(sidecar: RefinementSidecar) -> None:
     """Print what the pass measured.
 
@@ -199,9 +187,12 @@ def _report_outcome(sidecar: RefinementSidecar) -> None:
     caller's budget was smaller, and no sample supports a conclusion
     about the arms it never measured. An arm the weight budget
     excluded is printed with its margin rather than omitted — it was
-    measured, so the reader sees it — and the no-winner line names
-    the exclusions separately, because "did not clear the bar" and
-    "was never judged on merit" are different facts.
+    measured, so the reader sees it.
+
+    The closing line is `RefinementSidecar.outcome`'s summary, the
+    same classification the run log records. This surface words
+    nothing of its own, so it cannot say the pass judged an arm the
+    run log calls excluded.
 
     Args:
         sidecar: The pass's search record.
@@ -226,32 +217,7 @@ def _report_outcome(sidecar: RefinementSidecar) -> None:
             f"({arm.delta:+.6f}, {arm.sigma:+.1f} sigma, "
             f"{arm.better_chunks}/{arm.chunks} better){excluded}"
         )
-    if sidecar.winner is None:
-        excluded = [a for a in sidecar.arms if not a.fits_budget()]
-        judged = len(sidecar.arms) - len(excluded)
-        if not excluded:
-            typer.echo(
-                f"no arm among the {_sample_phrase(sidecar)} "
-                f"cleared {sidecar.bar} sigma"
-            )
-        elif judged:
-            typer.echo(
-                f"no arm among the {judged} judged cleared {sidecar.bar} sigma, "
-                f"and {len(excluded)} packed over the weight budget"
-            )
-        else:
-            typer.echo(
-                f"all {len(excluded)} measured arms packed over the weight "
-                "budget, so none was judged on merit"
-            )
-        return
-    won = sidecar.winning_arm()
-    if won is not None:
-        typer.echo(
-            f"winner: {sidecar.winner} at {won.mean:.6f}, "
-            f"{won.sigma:+.1f} sigma against the control, "
-            f"among the {_sample_phrase(sidecar)}"
-        )
+    typer.echo(sidecar.outcome().summary())
 
 
 def refine(

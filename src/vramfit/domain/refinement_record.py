@@ -30,6 +30,12 @@ arms of the 2026-09-11 sweep, which is why the pass measures at all.
 `vramfit.domain.paired.select` cannot see the field, because it reads
 `PairedResult` and that type carries no prediction.
 
+`outcome` classifies a finished pass once. It splits the arms into
+the ones selection judged and the ones the weight budget excluded,
+and it names the arm kept. Every surface that reports a pass renders
+that structure rather than re-deriving the split, so the terminal and
+the run log cannot describe one pass two ways.
+
 Examples:
     Read the winning arm's measured mean:
 
@@ -40,6 +46,8 @@ Examples:
 
 See Also:
     - [vramfit.domain.refinement][]: Generates the arms.
+    - [vramfit.domain.pack][]: `fits_weight_budget` states the
+      weight-budget rule this module validates against.
     - [vramfit.domain.paired][]: Measures and selects between them.
       `cleared_bar` states the win rule this module validates
       against.
@@ -51,6 +59,7 @@ from dataclasses import dataclass
 
 from vramfit.domain.errors import VramfitError
 from vramfit.domain.evals import CorpusReference
+from vramfit.domain.pack import fits_weight_budget
 from vramfit.domain.paired import cleared_bar
 
 # The arm name reserved for the unmodified recipe. The pass measures
@@ -305,11 +314,15 @@ class ArmRecord:
         It is excluded from selection instead, because handing that
         file to `pack` would exit 1 on the same rule.
 
+        Reads `vramfit.domain.pack.fits_weight_budget`, the one
+        definition of the rule, so a recorded arm is judged the way
+        `vramfit pack` gates.
+
         Returns:
             True when the packed file fits the recipe's weight
             budget.
         """
-        return self.budget_margin >= 0
+        return fits_weight_budget(self.budget_margin)
 
     def improved(self, bar: float) -> bool:
         """Judge whether this arm beat the control past a bar.
@@ -331,8 +344,132 @@ class ArmRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class PassOutcome:
+    """What a finished pass judged, what it excluded, what it kept.
+
+    One classification, read by every surface that reports a pass.
+    The terminal summary and the run log render this structure, so
+    neither re-derives the split and neither can describe one pass
+    differently. Two surfaces re-deriving it drifted inside one
+    change: one said "1 of 2 measured arms packed over the weight
+    budget", the other said "1 packed over the weight budget", and
+    the second dropped the neighbourhood it was supposed to name.
+
+    It carries records, never sentences. A string would let each
+    reader re-derive meaning from text, which is what drifted.
+
+    Attributes:
+        judged (tuple[ArmRecord, ...]): The arms selection could
+            choose between — every arm that packed inside its weight
+            budget.
+        excluded (tuple[ArmRecord, ...]): The arms the weight budget
+            kept out of selection, each carrying its negative margin.
+            Measured and recorded, never judged on merit.
+        winner (ArmRecord | None): The arm the pass kept, or None
+            when it kept none.
+        bar (float): The evidence bar in sigma the pass ran against.
+        neighbourhood_moves (int): How many byte-neutral moves the
+            neighbourhood held, before any stride sampled it.
+
+    Examples:
+        Report a finished pass:
+
+        ```python
+        outcome = sidecar.outcome()
+        print(outcome.summary())
+        ```
+    """
+
+    judged: tuple[ArmRecord, ...]
+    excluded: tuple[ArmRecord, ...]
+    winner: ArmRecord | None
+    bar: float
+    neighbourhood_moves: int
+
+    def measured(self) -> int:
+        """Count the arms the pass packed and measured.
+
+        Returns:
+            The judged arms and the excluded arms together. Every one
+            of them cost card time.
+        """
+        return len(self.judged) + len(self.excluded)
+
+    def strongest_judged(self) -> ArmRecord | None:
+        """Find the judged arm that came closest to winning.
+
+        Returns:
+            The judged arm with the lowest sigma, or None when the
+            budget excluded every arm the pass measured.
+        """
+        if not self.judged:
+            return None
+        return min(self.judged, key=lambda arm: arm.sigma)
+
+    def sample_phrase(self) -> str:
+        """Word which arms the outcome speaks for.
+
+        Returns:
+            The arms measured and the neighbourhood they came from,
+            naming the judged count separately whenever the budget
+            excluded any. No sample supports a conclusion about the
+            arms it never measured, and an excluded arm is not one
+            the selection weighed.
+        """
+        phrase = f"{self.measured()} evaluated"
+        if self.measured() != self.neighbourhood_moves:
+            phrase = f"{phrase} of a neighbourhood of {self.neighbourhood_moves}"
+        if self.excluded and self.judged:
+            return f"{len(self.judged)} judged of {phrase}"
+        return phrase
+
+    def summary(self) -> str:
+        """State the outcome in one sentence.
+
+        Returns:
+            What the pass kept or why it kept nothing, against the
+            arms it judged and the neighbourhood they came from. An
+            excluded arm is named as excluded and never as one that
+            failed the bar.
+        """
+        over = f"{len(self.excluded)} packed over the weight budget"
+        if self.winner is not None:
+            kept = (
+                f"winner: {self.winner.arm} at {self.winner.mean:.6f}, "
+                f"{self.winner.sigma:+.1f} sigma against the control, "
+                f"among the {self.sample_phrase()}"
+            )
+            return kept if not self.excluded else f"{kept}, and {over}"
+        strongest = self.strongest_judged()
+        if strongest is None:
+            return (
+                f"no arm of the {self.sample_phrase()} was judged on merit: all {over}"
+            )
+        lost = (
+            f"no arm among the {self.sample_phrase()} cleared "
+            f"{self.bar} sigma, and the strongest reached "
+            f"{strongest.sigma:+.1f}"
+        )
+        return lost if not self.excluded else f"{lost}; {over}"
+
+    def refusal(self) -> str | None:
+        """State why the pass kept no arm.
+
+        Returns:
+            The summary when no arm was kept. None when one won: a
+            winning pass refuses nothing, and the run log records its
+            exclusions in their own field.
+        """
+        return None if self.winner is not None else self.summary()
+
+
+@dataclass(frozen=True, slots=True)
 class RefinementSidecar:
     """One refinement pass's complete search record.
+
+    `outcome` reads these fields and nothing else. It is the one
+    classifier of a finished pass, so every surface that reports one
+    renders the same split.
 
     Attributes:
         model_id (str): The refined recipe's model identifier.
@@ -492,3 +629,19 @@ class RefinementSidecar:
             The winning arm, or None when the pass kept none.
         """
         return next((a for a in self.arms if a.arm == self.winner), None)
+
+    def outcome(self) -> PassOutcome:
+        """Classify this finished pass, once, for every surface.
+
+        Returns:
+            The arms selection judged, the arms the weight budget
+            excluded, and the arm the pass kept. A declined pass
+            measured nothing, so every part is empty.
+        """
+        return PassOutcome(
+            judged=tuple(a for a in self.arms if a.fits_budget()),
+            excluded=tuple(a for a in self.arms if not a.fits_budget()),
+            winner=self.winning_arm(),
+            bar=self.bar,
+            neighbourhood_moves=self.neighbourhood_moves,
+        )

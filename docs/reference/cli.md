@@ -976,10 +976,14 @@ pass, because nothing downstream is readable against it — it refuses
 between its pack and its measurement, so the pass never pays to
 measure a control it will reject.
 
-When no arm wins and the budget excluded some, the summary names
-both counts: an arm excluded for budget is never reported as one
-that failed to clear the bar. When the budget excluded every arm,
-the summary says so rather than claiming nothing was measured.
+One classification serves the summary line and the run log. It names
+the arms selection judged, the arms the budget excluded, and the arm
+kept, so the two surfaces cannot describe one pass differently. An
+arm excluded for budget is never reported as one that failed to clear
+the bar. A winner is reported against the arms it was judged against,
+with the exclusions counted separately. When the budget excluded
+every arm, the summary says so rather than claiming nothing was
+measured.
 
 It also records `neighbourhood_moves`, how many byte-neutral moves
 the neighbourhood held before `--limit` sampled it. Read it beside
@@ -1009,9 +1013,9 @@ target. An empty `--runtime-build` or `--hardware` — an unset shell
 variable, say — refuses before the first byte is read.
 
 The command reports what it measured and never a verdict on the
-recipe. When no arm clears the bar it names the arms it evaluated and
-the neighbourhood they came from, because a sample supports no
-conclusion about the arms it never measured.
+recipe. Every outcome line, winner or none, names the arms it
+evaluated and the neighbourhood they came from, because a sample
+supports no conclusion about the arms it never measured.
 
 A recipe with no legal swap declines before the first pack: it packs
 nothing and measures nothing, so it spends no card time. It does hash
@@ -1038,7 +1042,9 @@ Run log: refine_started (arms, neighbourhood_moves, bar) or
 refine_declined (reason, neighbourhood_moves),
 base_converted, then per arm arm_packing, arm_packed (with
 budget_margin), arm_measured, and arm_over_budget for an excluded
-arm, then refine_finished (winner, refusal). An over-budget control
+arm, then refine_finished (winner, judged, excluded, refusal). The
+finished event carries the exclusions whether or not an arm won, and
+`refusal` is null on a winning pass. An over-budget control
 refuses after its arm_packed and emits no arm_measured, because the
 pass refuses before spending the measurement.
 

@@ -7,6 +7,7 @@ from vramfit.domain.pack import (
     PackResult,
     TypeOverride,
     collapsed_tensors,
+    fits_weight_budget,
     modal_type,
     predicted_bytes_delta,
     predicted_bytes_within_tolerance,
@@ -15,6 +16,7 @@ from vramfit.domain.pack import (
     without_protections,
     zero_count_experts,
 )
+from vramfit.domain.refinement_record import ArmRecord
 
 pytestmark = pytest.mark.unit
 
@@ -271,6 +273,40 @@ class TestWeightBudgetMargin:
     def test_non_positive_packed_bytes_raises_value_error(self) -> None:
         with pytest.raises(ValueError, match="packed_bytes"):
             weight_budget_margin(make_recipe(3_000), 0)
+
+
+class TestFitsWeightBudget:
+    def test_an_exact_fit_fits(self) -> None:
+        assert fits_weight_budget(weight_budget_margin(make_recipe(3_000), 3_000))
+
+    def test_one_byte_over_does_not_fit(self) -> None:
+        assert not fits_weight_budget(weight_budget_margin(make_recipe(3_000), 3_001))
+
+    def test_the_record_judges_an_exact_fit_the_same_way(self) -> None:
+        """An exact fit is the only margin two definitions can split.
+
+        A second spelling of the rule reads a zero margin as over
+        budget, and the pass would then keep a file the record
+        refuses.
+        """
+        margin = weight_budget_margin(make_recipe(3_000), 3_000)
+        arm = ArmRecord(
+            arm="arm01",
+            promoted="g1",
+            demoted="g2",
+            from_bits=2,
+            to_bits=4,
+            mean=0.19,
+            delta=-0.01,
+            sigma=-14.4,
+            better_chunks=1,
+            chunks=2,
+            packed_bytes=3_000,
+            budget_margin=margin,
+        )
+
+        assert arm.fits_budget() == fits_weight_budget(margin)
+        assert arm.fits_budget()
 
 
 class TestPredictedBytesDelta:

@@ -209,8 +209,8 @@ def test_select_never_returns_an_arm_short_of_the_bar(
 ) -> None:
     a, b = drawn
     results = {"only": compare(a, b)}
-    winner, refusal = select(results, bar=bar)
-    if winner is None:
-        assert refusal is not None
+    winner = select(results, bar=bar)
+    if results["only"].improved(bar):
+        assert winner == "only"
     else:
-        assert results[winner].improved(bar)
+        assert winner is None

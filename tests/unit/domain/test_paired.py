@@ -97,9 +97,7 @@ def test_select_returns_the_lowest_mean_among_arms_past_the_bar() -> None:
         "arm11": _result(delta=-0.012, sigma=-14.4, mean=0.191855),
         "arm07": _result(delta=-0.001, sigma=-2.0, mean=0.203),
     }
-    winner, refusal = select(results, bar=7.8)
-    assert winner == "arm11"
-    assert refusal is None
+    assert select(results, bar=7.8) == "arm11"
 
 
 def test_select_ignores_a_lower_mean_that_missed_the_bar() -> None:
@@ -107,22 +105,17 @@ def test_select_ignores_a_lower_mean_that_missed_the_bar() -> None:
         "loud": _result(delta=-0.006, sigma=-9.0, mean=0.197),
         "quiet": _result(delta=-0.012, sigma=-1.0, mean=0.191),
     }
-    winner, _ = select(results, bar=7.8)
-    assert winner == "loud"
+    assert select(results, bar=7.8) == "loud"
 
 
 def test_select_declines_when_no_arm_clears_the_bar() -> None:
     results = {"arm01": _result(delta=-0.001, sigma=-2.0, mean=0.203)}
-    winner, refusal = select(results, bar=7.8)
-    assert winner is None
-    assert refusal is not None
-    assert "-2.0" in refusal
+
+    assert select(results, bar=7.8) is None
 
 
 def test_select_declines_when_nothing_was_measured() -> None:
-    winner, refusal = select({}, bar=7.8)
-    assert winner is None
-    assert refusal == "no arm was measured"
+    assert select({}, bar=7.8) is None
 
 
 def test_select_refuses_a_negative_bar() -> None:

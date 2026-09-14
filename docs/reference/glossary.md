@@ -340,6 +340,17 @@ change.
     decision 3, [ADR-0027](../adr/0027-instrument-frame-matching.md)
     decision 4). Not "device", "card", or "machine".
 
+**Pass outcome**
+:   What one finished **refinement pass** judged, excluded, and kept:
+    the **arms** selection could choose between, the **excluded
+    arms** the **weight budget** kept out of it, and the winner. One
+    classification, derived from the **refinement sidecar** and never
+    stored beside it. Every surface that reports a pass renders it —
+    the terminal summary and the run log — so no two can describe one
+    pass differently. Lives in
+    `vramfit.domain.refinement_record.PassOutcome`. A judged arm is
+    simply an arm that is not excluded.
+
 **Measurement frame** (short: **frame**)
 :   The whole apparatus a damage number is measured inside: process,
     quantization path, calibration text, token count, and

@@ -17,6 +17,11 @@ reads it to pick a winner and
 `vramfit.domain.refinement_record.ArmRecord` reads it to validate a
 recorded one, so no record can claim a winner selection would refuse.
 
+`select` reports a winner and never a reason for none. The arms it is
+handed are the judged arms alone, so it cannot see the ones the
+weight budget excluded, and a refusal it worded would describe a pass
+it only half read.
+
 Examples:
     Compare one candidate against the control:
 
@@ -225,33 +230,31 @@ def compare(candidate: Sequence[float], control: Sequence[float]) -> PairedResul
     )
 
 
-def select(
-    results: dict[str, PairedResult], bar: float
-) -> tuple[str | None, str | None]:
-    """Choose the winning arm, or report why none wins.
+def select(results: dict[str, PairedResult], bar: float) -> str | None:
+    """Choose the winning arm, if one cleared the bar.
 
     The winner is the arm with the lowest measured mean among those
     that cleared the bar. Measurement decides alone.
+
+    It names no loser and states no refusal. Why a pass kept nothing
+    is a fact about the whole pass, including the arms the weight
+    budget kept out of `results`, and
+    `vramfit.domain.refinement_record.PassOutcome` states it once for
+    every surface.
 
     Args:
         results: One paired standing per arm name.
         bar: Evidence bar in sigma, stated positive.
 
     Returns:
-        The winning arm's name and None, or None and the refusal.
+        The winning arm's name, or None when no arm cleared the bar.
 
     Raises:
         ValueError: If ``bar`` is negative.
     """
     if bar < 0:
         raise ValueError("bar must not be negative")
-    if not results:
-        return None, "no arm was measured"
     winners = {name: r for name, r in results.items() if r.improved(bar)}
     if not winners:
-        best = min(results.values(), key=lambda r: r.sigma)
-        return None, (
-            f"no arm beat the control past {bar} sigma, "
-            f"and the strongest reached {best.sigma:.1f}"
-        )
-    return min(winners, key=lambda name: winners[name].mean), None
+        return None
+    return min(winners, key=lambda name: winners[name].mean)

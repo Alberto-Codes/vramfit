@@ -19,10 +19,10 @@ Examples:
     Re-check a packed file against its recipe's budget:
 
     ```python
-    from vramfit.domain.pack import weight_budget_margin
+    from vramfit.domain.pack import fits_weight_budget, weight_budget_margin
 
     margin = weight_budget_margin(recipe, packed_bytes=2_000_000_000)
-    fits = margin >= 0
+    fits = fits_weight_budget(margin)
     ```
 
 See Also:
@@ -324,6 +324,36 @@ def weight_budget_margin(recipe: Recipe, packed_bytes: int) -> int:
     if packed_bytes <= 0:
         raise ValueError("packed_bytes must be positive")
     return recipe.plan.weight_budget_bytes - packed_bytes
+
+
+def fits_weight_budget(margin: int) -> bool:
+    """Judge a weight-budget margin.
+
+    The one definition of what "fits the weight budget" means.
+    `vramfit pack` gates on it, the refinement pass judges each packed
+    arm by it, and
+    `vramfit.domain.refinement_record.ArmRecord` reads it to validate
+    a recorded arm, so the three cannot disagree about which file a
+    stage may keep.
+
+    Args:
+        margin: A margin from `weight_budget_margin`.
+
+    Returns:
+        True when the packed file fits the budget its recipe was
+        solved for.
+
+    Examples:
+        A margin of zero fits:
+
+        ```python
+        from vramfit.domain.pack import fits_weight_budget
+
+        assert fits_weight_budget(0)
+        assert not fits_weight_budget(-1)
+        ```
+    """
+    return margin >= 0
 
 
 def predicted_bytes_delta(predicted_total_bytes: int, packed_bytes: int) -> int:

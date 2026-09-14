@@ -471,6 +471,31 @@ def test_an_in_budget_arm_stays_selectable(tmp_path) -> None:
     assert sidecar.winner == arm.arm
 
 
+def test_an_arm_packing_to_the_budget_exactly_stays_selectable(tmp_path) -> None:
+    """The boundary the budget rule turns on, at the seam that judges."""
+    better = tuple(c - 0.1 for c in CONTROL_CHUNKS)
+    meter = MemoryRuntimeDivergenceMeter(
+        default=CONTROL_CHUNKS,
+        series={str(tmp_path / "arm01.gguf"): better},
+    )
+
+    sidecar = run_pass(
+        _recipe({G0: 2, G1: 2, G2: 4, G3: 4}),
+        _map([G0, G1, G2, G3]),
+        _packer_for([], sizes={"arm01": 10**9}),
+        meter,
+        _frame(),
+        bar=1.0,
+        limit=1,
+        out_dir=tmp_path,
+        row_widths={},
+    )
+
+    assert sidecar.arms[0].budget_margin == 0
+    assert sidecar.arms[0].fits_budget()
+    assert sidecar.winner == "arm01"
+
+
 def test_an_over_budget_arm_is_measured_recorded_and_unselectable(tmp_path) -> None:
     """It cost card time, so it is excluded rather than dropped."""
     better = tuple(c - 0.1 for c in CONTROL_CHUNKS)
@@ -573,8 +598,10 @@ def test_a_budget_exclusion_never_reads_as_an_arm_that_lost(tmp_path) -> None:
 
     finished = next(f for event, f in seen if event == "refine_finished")
     assert finished["winner"] is None
-    assert "packed over the weight budget" in finished["refusal"]
-    assert "1 of 2" in finished["refusal"]
+    assert finished["judged"] == 1
+    assert finished["excluded"] == ["arm01"]
+    assert "1 judged of 2 evaluated" in finished["refusal"]
+    assert "1 packed over the weight budget" in finished["refusal"]
 
 
 def test_every_arm_excluded_never_reads_as_none_measured(tmp_path) -> None:
@@ -597,5 +624,46 @@ def test_every_arm_excluded_never_reads_as_none_measured(tmp_path) -> None:
 
     finished = next(f for event, f in seen if event == "refine_finished")
     assert len(sidecar.arms) == 2
-    assert "no arm was measured" not in finished["refusal"]
-    assert "no arm was judged on merit" in finished["refusal"]
+    assert finished["judged"] == 0
+    assert finished["excluded"] == ["arm01", "arm02"]
+    assert "was judged on merit" in finished["refusal"]
+    assert "2 evaluated of a neighbourhood of 4" in finished["refusal"]
+
+
+def test_a_winning_pass_still_records_the_arms_the_budget_excluded(tmp_path) -> None:
+    """A winner is no reason to forget the arm that was never judged.
+
+    The reviewer's sequence: the strongest-measuring arm packed over
+    the budget, and a weaker one won. The run log carried no trace of
+    the exclusion, because the refusal it rode on was None.
+    """
+    strongest = tuple(c - 0.2 for c in CONTROL_CHUNKS)
+    winner = (0.20, 0.21, 0.20, 0.19, 0.20, 0.21)
+    meter = MemoryRuntimeDivergenceMeter(
+        default=CONTROL_CHUNKS,
+        series={
+            str(tmp_path / "arm01.gguf"): strongest,
+            str(tmp_path / "arm02.gguf"): winner,
+        },
+    )
+    seen: list[tuple[str, dict]] = []
+
+    sidecar = run_pass(
+        _recipe({G0: 2, G1: 2, G2: 4, G3: 4}),
+        _map([G0, G1, G2, G3]),
+        _packer_for([], sizes={"arm01": 10**9 + 1}),
+        meter,
+        _frame(),
+        bar=7.8,
+        limit=2,
+        out_dir=tmp_path,
+        row_widths={},
+        report=lambda event, fields: seen.append((event, dict(fields))),
+    )
+
+    finished = next(f for event, f in seen if event == "refine_finished")
+    assert sidecar.winner == "arm02"
+    assert finished["winner"] == "arm02"
+    assert finished["judged"] == 1
+    assert finished["excluded"] == ["arm01"]
+    assert finished["refusal"] is None

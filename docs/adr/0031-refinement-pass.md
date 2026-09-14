@@ -207,15 +207,6 @@ does not earn the refinement step.
    **That ordering is structural, not a rule.** `refine_loop` packs
    and judges in one call and measures in another, so the control
    refusal lands between them because that is where the seam is.
-   Four separate reviews of this change found a refusal firing after
-   an expensive read, and each was answered by stating the ordering
-   rule better — cheapest-first, then a pre-flight boundary, then an
-   enumerated refusal set. The last and best-worded version was
-   violated two rounds after it was written, by the change that added
-   this very gate: the control's refusal sat after a 594-chunk
-   divergence run it then discarded. A rule someone must remember at
-   the moment of writing code is the weakest guarantee available, so
-   the opportunity was removed rather than the mistake forbidden.
 
    The pre-flight's own ordering is still remembered rather than
    enforced, and `cli_refine_preflight` says so. That boundary is
@@ -223,9 +214,13 @@ does not earn the refinement step.
    construction.
 
    An arm the budget excludes is never reported as one that failed
-   the bar. It does not reach `select`, so the refusal names the
-   exclusion count alongside the arms that were judged — and when
-   every arm was excluded, the record says that rather than claiming
+   the bar. It does not reach `select`, which reports a winner and
+   never a reason for none.
+   `RefinementSidecar.outcome` classifies the finished pass — the
+   arms selection judged, the arms the budget excluded, and the arm
+   kept — and every surface renders that structure. A winner is
+   reported against the arms it was judged against, and when the
+   budget excluded every arm the record says so rather than claiming
    none was measured.
 
 ## Consequences
@@ -289,6 +284,36 @@ does not earn the refinement step.
   `vramfit.domain.paired.cleared_bar` decides which arm the pass
   selects and which winner a sidecar accepts, so no record can claim
   a winner selection would have refused.
+  `vramfit.domain.pack.fits_weight_budget` does the same for the
+  weight budget, for `vramfit pack`, the pass, and the record.
+- **A rule that must be remembered is the weakest guarantee
+  available. Change the shape instead.** Two defect classes reopened
+  through the review of this change, and both closed the same way.
+
+  Ordering: four reviews found a refusal firing after an expensive
+  read. Three were answered by stating the rule better —
+  cheapest-first, then a pre-flight boundary, then an enumerated
+  refusal set. The best-worded version was violated two rounds after
+  it was written, by the change that added the budget gate: the
+  control's refusal sat after a 594-chunk divergence run it then
+  discarded. One structural change closed the class. Splitting
+  `_pack` from `_measure` put the verdict before the spending, and
+  the wrong version has nowhere left to live.
+
+  Duplication: `cleared_bar` stated one definition and held for the
+  whole review. The budget predicate and the exclusion classification
+  were each written twice, and each pair disagreed inside the commit
+  that wrote it — one surface said "1 of 2 measured arms packed over
+  the weight budget", the other said "1 packed over the weight
+  budget", and the second dropped the neighbourhood it was supposed
+  to name. `fits_weight_budget` and `PassOutcome` replaced both with
+  one definition each.
+
+  Two consequences a future reader can act on. Where a rule must be
+  remembered at the moment of writing code, change the shape so the
+  wrong version cannot be written. Where two surfaces must agree
+  about meaning, pass a structure and never a string — a string lets
+  each reader re-derive the meaning, and two derivations drift.
 - The solver keeps its approximation and its scope. ADR-0007 is
   amended in reach, not replaced.
 - One more artifact rides a refined publication.

@@ -45,7 +45,12 @@ def _control(chunks: int = 594) -> ArmRecord:
     )
 
 
-def _arm(name: str = "arm11", sigma: float = -14.4, chunks: int = 594) -> ArmRecord:
+def _arm(
+    name: str = "arm11",
+    sigma: float = -14.4,
+    chunks: int = 594,
+    budget_margin: int = 1_000_000,
+) -> ArmRecord:
     return ArmRecord(
         arm=name,
         promoted="g1",
@@ -59,7 +64,7 @@ def _arm(name: str = "arm11", sigma: float = -14.4, chunks: int = 594) -> ArmRec
         chunks=chunks,
         predicted_delta=0.004,
         packed_bytes=17_000_000_000,
-        budget_margin=1_000_000,
+        budget_margin=budget_margin,
     )
 
 
@@ -360,3 +365,74 @@ def test_a_file_identity_refuses_an_empty_file() -> None:
 def test_a_file_identity_refuses_a_non_positive_size() -> None:
     with pytest.raises(RefinementRecordError, match="size_bytes must be positive"):
         FileIdentity(file="30b.imatrix", sha256="ab" * 32, size_bytes=0)
+
+
+def _excluded(name: str = "arm07") -> ArmRecord:
+    """An arm that measured well and packed 100 MB over the budget."""
+    return _arm(name=name, sigma=-30.0, budget_margin=-104_857_600)
+
+
+def test_an_outcome_splits_the_judged_arms_from_the_excluded_ones() -> None:
+    sidecar = _sidecar(
+        arms=(_excluded(), _arm()), winner="arm11", neighbourhood_moves=385
+    )
+
+    outcome = sidecar.outcome()
+
+    assert [a.arm for a in outcome.judged] == ["arm11"]
+    assert [a.arm for a in outcome.excluded] == ["arm07"]
+    assert outcome.measured() == 2
+
+
+def test_a_winner_is_summarized_against_the_arms_it_was_judged_against() -> None:
+    """The excluded arm measured stronger, and the winner never beat it."""
+    sidecar = _sidecar(
+        arms=(_excluded(), _arm()), winner="arm11", neighbourhood_moves=385
+    )
+
+    summary = sidecar.outcome().summary()
+
+    assert "winner: arm11" in summary
+    assert "among the 1 judged of 2 evaluated of a neighbourhood of 385" in summary
+    assert "1 packed over the weight budget" in summary
+
+
+def test_a_winning_pass_refuses_nothing() -> None:
+    assert _sidecar().outcome().refusal() is None
+
+
+def test_an_all_excluded_pass_reports_none_judged_rather_than_none_measured() -> None:
+    sidecar = _sidecar(
+        arms=(_excluded("arm07"), _excluded("arm08")),
+        winner=None,
+        neighbourhood_moves=385,
+    )
+
+    refusal = sidecar.outcome().refusal()
+
+    assert refusal is not None
+    assert "was judged on merit" in refusal
+    assert "2 evaluated of a neighbourhood of 385" in refusal
+
+
+def test_a_no_winner_summary_names_the_strongest_judged_arm() -> None:
+    sidecar = _sidecar(arms=(_arm(sigma=-2.0),), winner=None, neighbourhood_moves=385)
+
+    summary = sidecar.outcome().summary()
+
+    assert "cleared 7.8 sigma" in summary
+    assert "the strongest reached -2.0" in summary
+    assert "1 evaluated of a neighbourhood of 385" in summary
+
+
+def test_a_declined_pass_classifies_as_nothing_measured() -> None:
+    outcome = _sidecar(
+        arms=(),
+        winner=None,
+        declined="every group sits at the 3-bit floor",
+        neighbourhood_moves=0,
+    ).outcome()
+
+    assert outcome.measured() == 0
+    assert outcome.winner is None
+    assert outcome.strongest_judged() is None

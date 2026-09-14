@@ -2,7 +2,10 @@
 
 The stage stats the packed file and reports it twice (ADR-0012
 decision 4, amended 2026-09-04). The budget line compares the bytes
-against ``plan.weight_budget_bytes`` and gates the pack. The
+against ``plan.weight_budget_bytes`` and gates the pack through
+`vramfit.domain.pack.fits_weight_budget`, the one definition of that
+rule — the refinement pass judges each packed arm by the same call.
+The
 prediction line compares the same bytes against
 ``plan.predicted_total_bytes``, with the signed delta and its
 fraction, and warns past the predicted-bytes tolerance. It never
@@ -37,6 +40,7 @@ from vramfit.domain.budget import format_size
 from vramfit.domain.model import Recipe
 from vramfit.domain.pack import (
     PREDICTED_BYTES_TOLERANCE,
+    fits_weight_budget,
     predicted_bytes_delta,
     predicted_bytes_within_tolerance,
     weight_budget_margin,
@@ -136,8 +140,10 @@ def _size_check_stage(
 
     Nominal-bit predictions undershoot GGUF's effective bits, so the
     recipe's promise is re-proven on the artifact (ADR-0014). The
-    budget line gates the pack. The prediction line follows it, lands
-    in the same ``size_checked`` event, and only warns.
+    budget line gates the pack, reading
+    `vramfit.domain.pack.fits_weight_budget`. The prediction line
+    follows it, lands in the same ``size_checked`` event, and only
+    warns.
 
     Args:
         run_log: The pack run's event log.
@@ -150,7 +156,7 @@ def _size_check_stage(
             weight budget (via ``_halt``); the file is kept.
     """
     margin = weight_budget_margin(recipe, packed_bytes)
-    fits = margin >= 0
+    fits = fits_weight_budget(margin)
     prediction = _predicted_report(recipe.plan.predicted_total_bytes, packed_bytes)
     run_log.emit(
         "size_checked",

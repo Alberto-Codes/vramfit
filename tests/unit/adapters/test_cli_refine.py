@@ -891,7 +891,62 @@ def test_refine_reports_an_excluded_arm_with_its_margin(workspace, monkeypatch) 
     assert result.exit_code == 0, result.output
     assert "excluded, 4096 bytes over the weight budget" in result.output
     assert "packed over the weight budget" in result.output
-    assert "no arm was measured" not in result.output
+    assert "was judged on merit" in result.output
     sidecar = json.loads((workspace / "r.refinement.json").read_text())
     assert sidecar["arms"][0]["budget_margin"] == -4096
     assert sidecar["winner"] is None
+
+
+def _split_pass(workspace, monkeypatch, arm02) -> None:
+    """Put arm01 over the weight budget and give arm02 its own series."""
+    over = {"arm01": 10**9 + 4096}
+    monkeypatch.setattr(
+        cli_refine,
+        "LlamaCppPacker",
+        lambda **kwargs: MemoryRecipePacker(
+            packed_bytes=over.get(kwargs["out_path"].stem, 500),
+            has_base=True,
+            row_widths=stack_row_widths(G),
+            out_path=kwargs["out_path"],
+        ),
+    )
+    monkeypatch.setattr(
+        cli_refine,
+        "LlamaCppDivergenceMeter",
+        lambda **kwargs: MemoryRuntimeDivergenceMeter(
+            default=CHUNKS,
+            series={
+                str(workspace / "arms" / "arm01.gguf"): (0.10, 0.11, 0.10, 0.09),
+                str(workspace / "arms" / "arm02.gguf"): arm02,
+            },
+        ),
+    )
+
+
+def test_refine_reports_a_winner_against_the_arms_it_was_judged_against(
+    workspace, monkeypatch
+) -> None:
+    """The strongest arm was excluded, so the winner never beat it."""
+    _split_pass(workspace, monkeypatch, arm02=(0.20, 0.21, 0.20, 0.19))
+
+    result = _invoke(workspace, "--limit", "2")
+
+    assert result.exit_code == 0, result.output
+    assert "winner: arm02" in result.output
+    assert "among the 1 judged of 2 evaluated of a neighbourhood of 4" in result.output
+    assert "1 packed over the weight budget" in result.output
+    assert "among the 2 evaluated" not in result.output
+
+
+def test_refine_names_the_neighbourhood_when_the_budget_excluded_an_arm(
+    workspace, monkeypatch
+) -> None:
+    """A sample stays a sample, exclusions or not."""
+    _split_pass(workspace, monkeypatch, arm02=CHUNKS)
+
+    result = _invoke(workspace, "--limit", "2")
+
+    assert result.exit_code == 0, result.output
+    assert "1 judged of 2 evaluated of a neighbourhood of 4" in result.output
+    assert "1 packed over the weight budget" in result.output
+    assert json.loads((workspace / "r.refinement.json").read_text())["winner"] is None

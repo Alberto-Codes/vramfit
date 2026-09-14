@@ -24,9 +24,12 @@ The control's refusal lands between them because that is where the
 seam is, not because a rule says to check early.
 
 `select` judges the arms it is given, and an excluded arm is not
-among them, so `_refusal_with_exclusions` names the exclusions the
-selection never saw. Without it a budget exclusion would read as an
-arm that failed the bar.
+among them, so it reports a winner and never a reason for none.
+`RefinementSidecar.outcome` classifies the finished pass instead —
+judged arms, excluded arms, and the arm kept — and the run log
+renders that structure. The terminal renders the same one, so a
+budget exclusion cannot read as an arm that failed the bar on one
+surface and as an exclusion on the other.
 
 When the neighbourhood is larger than the caller's arm budget, the
 loop takes an evenly spaced stride through the enumeration. The
@@ -67,7 +70,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from vramfit.domain.model import Recipe, SensitivityMap
-from vramfit.domain.pack import weight_budget_margin
+from vramfit.domain.pack import fits_weight_budget, weight_budget_margin
 from vramfit.domain.paired import PairedResult, compare, select
 from vramfit.domain.refinement import Candidate, decline_reason, neighbours
 from vramfit.domain.refinement_record import (
@@ -186,11 +189,10 @@ class PackedArm:
         """Judge whether this pack fits the budget it was solved for.
 
         Returns:
-            True when the margin is non-negative, which is what
-            `vramfit.domain.pack.weight_budget_margin` documents as
-            fitting.
+            `vramfit.domain.pack.fits_weight_budget` of the margin,
+            the one definition of the rule `vramfit pack` gates on.
         """
-        return self.budget_margin >= 0
+        return fits_weight_budget(self.budget_margin)
 
 
 def _pack(
@@ -256,34 +258,6 @@ def _measure(
     report("arm_measured", {"arm": packed.name, "chunks": len(divergences)})
     packed.path.unlink(missing_ok=True)
     return divergences
-
-
-def _refusal_with_exclusions(
-    refusal: str | None, excluded: Sequence[str], measured: int
-) -> str | None:
-    """Name the budget exclusions the selection never saw.
-
-    `select` judges the arms it is given. An arm the weight budget
-    excluded is not among them, so an unqualified refusal would
-    report it as one that failed the bar — and when every arm was
-    excluded, `select` says none was measured at all, after the pass
-    paid to measure them.
-
-    Args:
-        refusal: The refusal `select` returned, or None for a winner.
-        excluded: Names of the arms the budget excluded.
-        measured: How many arms the pass measured in total.
-
-    Returns:
-        The refusal, naming the exclusions when there were any.
-        None when an arm won.
-    """
-    if refusal is None or not excluded:
-        return refusal
-    over = f"{len(excluded)} of {measured} measured arms packed over the weight budget"
-    if len(excluded) == measured:
-        return f"{over}, so no arm was judged on merit"
-    return f"{refusal}; {over} and were not judged"
 
 
 def _record(
@@ -363,6 +337,11 @@ def run_pass(  # noqa: PLR0913 - the pass surface: two ports, a frame, and its b
     pass never keeps a file `pack` would refuse. The control is
     refused at that same seam, before its measurement is spent.
 
+    The finished record classifies itself. `refine_finished` reports
+    `RefinementSidecar.outcome` — the judged count, the excluded arm
+    names, and the refusal when no arm was kept — so the run log
+    carries the exclusions whether or not an arm won.
+
     Returns:
         The pass's complete search record, carrying the arms measured
         — including any the budget excluded — and the whole
@@ -419,7 +398,6 @@ def run_pass(  # noqa: PLR0913 - the pass surface: two ports, a frame, and its b
     )
     records: list[ArmRecord] = []
     results: dict[str, PairedResult] = {}
-    excluded: list[str] = []
     for index, candidate in enumerate(arms, start=1):
         name = f"arm{index:02d}"
         packed = _pack(
@@ -433,21 +411,28 @@ def run_pass(  # noqa: PLR0913 - the pass surface: two ports, a frame, and its b
         if packed.fits_budget():
             results[name] = paired
         else:
-            excluded.append(name)
             report(
                 "arm_over_budget",
                 {"arm": name, "budget_margin": packed.budget_margin},
             )
-    winner, refusal = select(results, bar)
-    refusal = _refusal_with_exclusions(refusal, excluded, len(records))
-    report("refine_finished", {"winner": winner, "refusal": refusal})
-    return RefinementSidecar(
+    sidecar = RefinementSidecar(
         model_id=recipe.model_id,
         frame=frame,
         bar=bar,
         control=control,
         arms=tuple(records),
-        winner=winner,
+        winner=select(results, bar),
         declined=None,
         neighbourhood_moves=len(candidates),
     )
+    outcome = sidecar.outcome()
+    report(
+        "refine_finished",
+        {
+            "winner": sidecar.winner,
+            "judged": len(outcome.judged),
+            "excluded": [arm.arm for arm in outcome.excluded],
+            "refusal": outcome.refusal(),
+        },
+    )
+    return sidecar
