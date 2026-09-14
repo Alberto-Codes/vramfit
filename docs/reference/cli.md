@@ -934,6 +934,9 @@ Options: `--map` (required), `--llama-cpp` (required),
 (default `arms`), `--out`, `--limit` (default 15), `--threads`,
 `--keep-packs`, `--python-bin`, `--runlog`.
 
+The command checks all three llama.cpp tools before the convert
+stage, so a checkout missing a built binary costs no card time.
+
 `--base-logits` names logits stored from the reference build. Write
 them once with `llama-perplexity --kl-divergence-base` over the f16
 base GGUF. Every arm measures against that same file, or the arms do
@@ -952,6 +955,16 @@ digest, the byte count, and the `measured` provenance mark, so two
 passes over different corpora never record the same frame. The map's
 predicted delta is recorded as provenance and orders nothing.
 
+It also records `neighbourhood_moves`, how many byte-neutral moves
+the neighbourhood held before `--limit` sampled it. Read it beside
+the arm count: 15 arms of 15 and 15 arms of 385 are different
+results. A declined pass records 0.
+
+The command reports what it measured and never a verdict on the
+recipe. When no arm clears the bar it names the arms it evaluated and
+the neighbourhood they came from, because a sample supports no
+conclusion about the arms it never measured.
+
 A recipe with no legal swap declines before the first pack and costs
 nothing. The published 49B recipe is that case: 81 of its 82 groups
 sit at the 3-bit floor. A recipe carrying a pin the map cannot
@@ -963,13 +976,16 @@ that may violate it.
 The command writes a sidecar and never a refined recipe. Promoting a
 winning arm to an artifact needs a tier-3 slice and a serve test.
 
-Run log: refine_started (arms, bar) or refine_declined (reason),
+Run log: refine_started (arms, neighbourhood_moves, bar) or
+refine_declined (reason),
 base_converted, then per arm arm_packing, arm_packed, arm_measured,
 then refine_finished (winner, refusal).
 
 Exit codes: 1 when the recipe or map is invalid, the model directory
 does not exist, `--base-logits` or `--eval-text` is not a file or
 cannot be read, `--eval-text` holds no bytes or measures fewer than
-two chunks, the recipe's pins or protections do not resolve against
-the map, a group has no row width, or a toolchain stage fails. 2 when
+two chunks, the `--llama-cpp` checkout misses `convert_hf_to_gguf.py`,
+`build/bin/llama-quantize` or `build/bin/llama-perplexity`, the
+recipe's pins or protections do not resolve against the map, a group
+has no row width, or a toolchain stage fails. 2 when
 `--bar` is not stated.

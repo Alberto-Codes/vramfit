@@ -66,15 +66,20 @@ def _sidecar(
     arms: tuple[ArmRecord, ...] | None = None,
     winner: str | None = "arm11",
     declined: str | None = None,
+    neighbourhood_moves: int | None = None,
 ) -> RefinementSidecar:
+    measured = (_arm(),) if arms is None else arms
+    if neighbourhood_moves is None:
+        neighbourhood_moves = 0 if declined is not None else len(measured)
     return RefinementSidecar(
         model_id=model_id,
         frame=_frame(),
         bar=bar,
         control=_control() if control is None and declined is None else control,
-        arms=(_arm(),) if arms is None else arms,
+        arms=measured,
         winner=winner,
         declined=declined,
+        neighbourhood_moves=neighbourhood_moves,
     )
 
 
@@ -151,6 +156,7 @@ def test_a_pass_that_ran_without_a_control_is_refused() -> None:
             arms=(_arm(),),
             winner=None,
             declined=None,
+            neighbourhood_moves=1,
         )
 
 
@@ -271,3 +277,30 @@ def test_arm_record_refuses_a_negative_bar() -> None:
 
     with pytest.raises(ValueError, match="must not be negative"):
         arm.improved(-1.0)
+
+
+def test_a_sampled_pass_records_the_whole_neighbourhood() -> None:
+    sidecar = _sidecar(winner=None, neighbourhood_moves=385)
+
+    assert len(sidecar.arms) == 1
+    assert sidecar.neighbourhood_moves == 385
+
+
+def test_more_arms_than_the_neighbourhood_held_is_refused() -> None:
+    with pytest.raises(RefinementRecordError, match="no sample of it"):
+        _sidecar(winner=None, neighbourhood_moves=0)
+
+
+def test_a_negative_neighbourhood_count_is_refused() -> None:
+    with pytest.raises(RefinementRecordError, match="must not be negative"):
+        _sidecar(winner=None, neighbourhood_moves=-1)
+
+
+def test_a_declined_pass_counts_no_neighbourhood_move() -> None:
+    with pytest.raises(RefinementRecordError, match="neighbourhood count is zero"):
+        _sidecar(
+            arms=(),
+            winner=None,
+            declined="no byte-neutral neighbour",
+            neighbourhood_moves=385,
+        )

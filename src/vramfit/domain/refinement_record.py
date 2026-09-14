@@ -11,6 +11,12 @@ The record carries every arm the pass measured, not only the winner.
 An arm that lost is evidence about the neighbourhood, and the losing
 arms are what show the map did not order it.
 
+It also carries how large the neighbourhood was. A caller's arm
+budget is usually smaller than the neighbourhood, so the arms are a
+sample of it. `neighbourhood_moves` beside ``len(arms)`` is what
+tells a reader 15 arms of 15 from 15 arms of 385, and no outcome
+reads correctly without both.
+
 One rule governs the predicted delta. It records as provenance and
 nothing may order, filter, or select on it (decision 6). Spearman rho
 between prediction and measured outcome was +0.146 over the fifteen
@@ -233,12 +239,25 @@ class RefinementSidecar:
             when no arm cleared the bar.
         declined (str | None): Why the recipe had no neighbourhood
             worth searching, or None when the pass ran arms.
+        neighbourhood_moves (int): How many byte-neutral moves the
+            neighbourhood held, before any stride took a sample. Read
+            it beside ``len(arms)``: the two differ whenever the
+            caller's arm budget was smaller than the neighbourhood,
+            and a reader cannot judge an outcome without both. Zero
+            for a declined pass, which enumerated no move worth
+            measuring.
 
     Examples:
         A declined pass measured nothing:
 
         ```python
         assert sidecar.arms == () and sidecar.control is None
+        ```
+
+        A sampled pass names the fraction it read:
+
+        ```python
+        print(f"{len(sidecar.arms)} of {sidecar.neighbourhood_moves}")
         ```
     """
 
@@ -249,25 +268,34 @@ class RefinementSidecar:
     arms: tuple[ArmRecord, ...]
     winner: str | None
     declined: str | None
+    neighbourhood_moves: int
 
     def __post_init__(self) -> None:
         """Enforce that the record's claims match its measurements.
 
         Raises:
-            RefinementRecordError: If the bar is negative, a pass
-                that ran carries no control, arm names repeat, an arm
-                measured a different chunk count from the control,
-                the winner names no measured arm or one that never
-                cleared the bar, or a declined pass still carries a
-                measurement.
+            RefinementRecordError: If the bar is negative, the
+                neighbourhood count is negative or smaller than the
+                arms measured, a pass that ran carries no control,
+                arm names repeat, an arm measured a different chunk
+                count from the control, the winner names no measured
+                arm or one that never cleared the bar, or a declined
+                pass still carries a measurement.
         """
         if not self.model_id:
             raise RefinementRecordError("model_id must not be empty")
         if self.bar < 0:
             raise RefinementRecordError("bar must not be negative")
+        if self.neighbourhood_moves < 0:
+            raise RefinementRecordError("neighbourhood_moves must not be negative")
         if self.declined is not None:
             self._check_declined()
             return
+        if len(self.arms) > self.neighbourhood_moves:
+            raise RefinementRecordError(
+                f"the pass measured {len(self.arms)} arms of a neighbourhood "
+                f"of {self.neighbourhood_moves}, so the arms are no sample of it"
+            )
         self._check_measured()
         self._check_winner()
 
@@ -276,12 +304,18 @@ class RefinementSidecar:
 
         Raises:
             RefinementRecordError: If the record carries any
-                measurement. Declining happens before the first pack,
-                which is what keeps an unreachable target free.
+                measurement, or counts a neighbourhood move.
+                Declining happens before the first pack, which is
+                what keeps an unreachable target free.
         """
         if self.arms or self.winner is not None or self.control is not None:
             raise RefinementRecordError(
                 "a declined pass measures nothing and keeps nothing"
+            )
+        if self.neighbourhood_moves:
+            raise RefinementRecordError(
+                "a declined pass enumerated no move worth measuring, so its "
+                "neighbourhood count is zero"
             )
 
     def _check_measured(self) -> None:

@@ -95,12 +95,24 @@ def _recipe(bits: dict[str, int]) -> Recipe:
     )
 
 
+def _build_llama_cpp(root: Path) -> None:
+    """Lay out the checkout `refine` pre-flights before any tool runs."""
+    bin_dir = root / "build" / "bin"
+    bin_dir.mkdir(parents=True)
+    (root / "convert_hf_to_gguf.py").write_text("# convert")
+    for name in ("llama-quantize", "llama-perplexity"):
+        binary = bin_dir / name
+        binary.write_text("#!/bin/sh\n")
+        binary.chmod(0o755)
+
+
 @pytest.fixture
 def workspace(tmp_path: Path, monkeypatch) -> Path:
     """Lay out a runnable refine invocation with both seams faked."""
     (tmp_path / "ckpt").mkdir()
     (tmp_path / "base.logits").write_bytes(b"logits")
     (tmp_path / "wiki.test.raw").write_text("text")
+    _build_llama_cpp(tmp_path / "llama.cpp")
     save_sensitivity_map(_map(), tmp_path / "map.json")
     save_recipe(_recipe({G[0]: 2, G[1]: 2, G[2]: 4, G[3]: 4}), tmp_path / "r.json")
 
@@ -237,7 +249,7 @@ def test_refine_records_the_stated_bar(workspace) -> None:
 def test_refine_reports_no_winner_when_nothing_clears_the_bar(workspace) -> None:
     result = _invoke(workspace, "--limit", "2")
 
-    assert "no arm cleared 7.8 sigma" in result.output
+    assert "cleared 7.8 sigma" in result.output
     assert json.loads((workspace / "r.refinement.json").read_text())["winner"] is None
 
 
@@ -348,3 +360,53 @@ def test_refine_reports_a_failed_sidecar_write_cleanly(workspace, monkeypatch) -
     assert result.exit_code == 1
     assert "error:" in result.output
     assert "read-only file system" in result.output
+
+
+def test_refine_names_the_evaluated_arms_rather_than_claiming_a_verdict(
+    workspace,
+) -> None:
+    result = _invoke(workspace, "--limit", "2")
+
+    assert "no arm among the 2 evaluated of a neighbourhood of 4" in result.output
+    assert "the recipe stands" not in result.output
+
+
+def test_refine_records_the_neighbourhood_the_arms_were_drawn_from(
+    workspace,
+) -> None:
+    _invoke(workspace, "--limit", "2")
+
+    sidecar = json.loads((workspace / "r.refinement.json").read_text())
+    assert len(sidecar["arms"]) == 2
+    assert sidecar["neighbourhood_moves"] == 4
+
+
+def test_refine_refuses_a_checkout_missing_llama_perplexity(workspace) -> None:
+    (workspace / "llama.cpp" / "build" / "bin" / "llama-perplexity").unlink()
+
+    result = _invoke(workspace, "--limit", "1")
+
+    assert result.exit_code == 1
+    assert "llama-perplexity" in result.output
+    assert not (workspace / "arms").exists()
+
+
+def test_refine_refuses_a_checkout_missing_the_convert_script(workspace) -> None:
+    (workspace / "llama.cpp" / "convert_hf_to_gguf.py").unlink()
+
+    result = _invoke(workspace, "--limit", "1")
+
+    assert result.exit_code == 1
+    assert "convert_hf_to_gguf.py" in result.output
+    assert not (workspace / "arms").exists()
+
+
+def test_refine_refuses_a_tool_that_cannot_execute(workspace) -> None:
+    binary = workspace / "llama.cpp" / "build" / "bin" / "llama-quantize"
+    binary.chmod(0o644)
+
+    result = _invoke(workspace, "--limit", "1")
+
+    assert result.exit_code == 1
+    assert "not executable" in result.output
+    assert not (workspace / "arms").exists()

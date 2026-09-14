@@ -324,3 +324,54 @@ def test_run_pass_arm_recipes_keep_the_control_byte_total(tmp_path) -> None:
         arm = packer.packed[-1]
         assert sum(a.bytes for a in arm.assignments) == total
         assert arm.plan.predicted_total_bytes == total
+
+
+def test_a_strided_pass_records_the_whole_neighbourhood(tmp_path) -> None:
+    """15 arms of 15 and 15 arms of 385 must not read alike."""
+    meter = MemoryRuntimeDivergenceMeter(default=CONTROL_CHUNKS)
+
+    sidecar = _run(tmp_path, meter, limit=1)
+
+    assert len(sidecar.arms) == 1
+    assert sidecar.neighbourhood_moves == 4
+
+
+def test_an_unstrided_pass_counts_its_arms_and_its_neighbourhood_alike(
+    tmp_path,
+) -> None:
+    meter = MemoryRuntimeDivergenceMeter(default=CONTROL_CHUNKS)
+
+    sidecar = _run(tmp_path, meter, limit=10)
+
+    assert len(sidecar.arms) == sidecar.neighbourhood_moves == 4
+
+
+def test_a_declined_pass_counts_no_neighbourhood_move(tmp_path) -> None:
+    meter = MemoryRuntimeDivergenceMeter(default=CONTROL_CHUNKS)
+
+    sidecar = _run(tmp_path, meter, bits={G0: 4, G1: 4, G2: 4})
+
+    assert sidecar.declined is not None
+    assert sidecar.neighbourhood_moves == 0
+
+
+def test_refine_started_carries_both_counts(tmp_path) -> None:
+    meter = MemoryRuntimeDivergenceMeter(default=CONTROL_CHUNKS)
+    seen: list[tuple[str, dict]] = []
+
+    run_pass(
+        _recipe({G0: 2, G1: 2, G2: 4, G3: 4}),
+        _map([G0, G1, G2, G3]),
+        _packer_for([]),
+        meter,
+        _frame(),
+        bar=1.0,
+        limit=1,
+        out_dir=tmp_path,
+        row_widths={},
+        report=lambda event, fields: seen.append((event, dict(fields))),
+    )
+
+    started = next(fields for event, fields in seen if event == "refine_started")
+    assert started["arms"] == 1
+    assert started["neighbourhood_moves"] == 4

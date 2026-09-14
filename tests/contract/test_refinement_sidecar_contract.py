@@ -98,6 +98,7 @@ def won_sidecar() -> RefinementSidecar:
         arms=arms,
         winner="arm01",
         declined=None,
+        neighbourhood_moves=385,
     )
 
 
@@ -111,6 +112,7 @@ def declined_sidecar() -> RefinementSidecar:
         arms=(),
         winner=None,
         declined="every group sits at 3 bits, so no swap moves precision",
+        neighbourhood_moves=0,
     )
 
 
@@ -148,6 +150,26 @@ class TestRefinementSidecarSinkContract:
         sink.save(won_sidecar())
 
         assert readback()["vramfit_schema"] == REFINEMENT_SIDECAR_SCHEMA_VERSION
+
+    def test_saved_sidecar_names_the_neighbourhood_the_arms_came_from(
+        self, build, tmp_path
+    ) -> None:
+        sink, readback = build(tmp_path)
+
+        sink.save(won_sidecar())
+
+        data = readback()
+        assert len(data["arms"]) == 2
+        assert data["neighbourhood_moves"] == 385
+
+    def test_declined_pass_reads_back_no_neighbourhood_move(
+        self, build, tmp_path
+    ) -> None:
+        sink, readback = build(tmp_path)
+
+        sink.save(declined_sidecar())
+
+        assert readback()["neighbourhood_moves"] == 0
 
     def test_saved_sidecar_keeps_every_arm_not_only_the_winner(
         self, build, tmp_path

@@ -103,11 +103,18 @@ does not earn the refinement step.
    assignments, so adding to it would compound a field that is
    already wrong for this case.
 
-5. **The sidecar records at minimum:** every arm evaluated, the
-   winner, the evidence bar the caller stated, the control result
-   with its sigma, and the frame the measurement ran in. The frame
-   means the runtime binary build, the hardware, and the evaluation
-   corpus content identity.
+5. **The sidecar records at minimum:** every arm evaluated, how many
+   byte-neutral moves the neighbourhood held, the winner, the
+   evidence bar the caller stated, the control result with its
+   sigma, and the frame the measurement ran in. The frame means the
+   runtime binary build, the hardware, and the evaluation corpus
+   content identity.
+
+   The neighbourhood count is not the arm count. A pass measures the
+   arms its budget affords, so 15 arms of 15 and 15 arms of 385 are
+   different results and a record that states one number states
+   neither. The count comes from the enumeration, before the stride
+   samples it. A declined pass records zero.
 
 6. **The map's predicted delta records as provenance only.** The
    sidecar may carry it. Nothing may order, filter, or select on it.
@@ -126,6 +133,10 @@ does not earn the refinement step.
 
 ## Consequences
 
+- No outcome of the pass is a verdict on the recipe. The arms are a
+  sample of the neighbourhood whenever the budget is smaller, so the
+  command reports what it measured and the sidecar carries the
+  fraction. A pass where no arm cleared the bar says exactly that.
 - The pass costs packs and evaluations, never map arithmetic. The C4
   run measured 0.48 dollars per arm on this target, so a 15-candidate
   pass costs about 7 dollars and 1.5 hours on rented hardware.

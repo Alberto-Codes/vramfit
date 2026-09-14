@@ -758,6 +758,16 @@ change.
     `vramfit.domain.refinement.fixed_groups`. Not a **held group**,
     which is the unquantizable class a pin sweep skips.
 
+**Refinement sidecar**
+:   The record one **refinement pass** writes beside the recipe it
+    searched (ADR-0031). It carries every arm measured, the
+    neighbourhood those arms were drawn from, the winner, the stated
+    **evidence bar**, the control, and the measurement frame. The arm
+    count and the neighbourhood count are separate figures, and an
+    outcome reads correctly only with both. Lives in
+    `vramfit.domain.refinement_record`. Not "report" or "results
+    file".
+
 **Neighbourhood decline**
 :   The refinement pass's answer when a recipe has no legal swap. The
     published 49B recipe places 81 of its 82 groups at the 3-bit

@@ -15,6 +15,10 @@ stride is deterministic and independent of the map, which is the
 property that matters — a map-ranked subset is the one selection
 ADR-0031 decision 1 forbids.
 
+The sidecar records the whole neighbourhood's size beside the arms
+the stride took, so a reader never mistakes a sample for a search.
+The count comes from the enumeration, never from the arms.
+
 Examples:
     Run a pass over the first few neighbours:
 
@@ -214,9 +218,10 @@ def run_pass(  # noqa: PLR0913 - the pass surface: two ports, a frame, and its b
         report: Progress reporter.
 
     Returns:
-        The pass's complete search record. A recipe with no legal
-        swap returns a declined record, having measured nothing and
-        reached no card.
+        The pass's complete search record, carrying the arms measured
+        and the whole neighbourhood they were drawn from. A recipe
+        with no legal swap returns a declined record, having measured
+        nothing and reached no card.
     """
     declined = decline_reason(recipe, map_, row_widths)
     if declined is not None:
@@ -229,9 +234,14 @@ def run_pass(  # noqa: PLR0913 - the pass surface: two ports, a frame, and its b
             arms=(),
             winner=None,
             declined=declined,
+            neighbourhood_moves=0,
         )
-    arms = stride(neighbours(recipe, map_, row_widths), limit)
-    report("refine_started", {"arms": len(arms), "bar": bar})
+    candidates = neighbours(recipe, map_, row_widths)
+    arms = stride(candidates, limit)
+    report(
+        "refine_started",
+        {"arms": len(arms), "neighbourhood_moves": len(candidates), "bar": bar},
+    )
     # Every arm quantizes the same full-precision base, so the convert
     # stage runs once for the whole pass. It reuses an existing base
     # GGUF, and `pack` refuses without one.
@@ -269,4 +279,5 @@ def run_pass(  # noqa: PLR0913 - the pass surface: two ports, a frame, and its b
         arms=tuple(records),
         winner=winner,
         declined=None,
+        neighbourhood_moves=len(candidates),
     )

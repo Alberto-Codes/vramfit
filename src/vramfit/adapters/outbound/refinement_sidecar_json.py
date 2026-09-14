@@ -9,6 +9,11 @@ kept. The losing arms are the evidence that the sensitivity map did
 not order the neighbourhood, which is the finding the whole stage
 rests on.
 
+It also records `neighbourhood_moves`, how many byte-neutral moves
+the neighbourhood held. The arms are a sample of that whenever the
+caller's budget was smaller, so a reader needs both numbers before
+reading any outcome.
+
 `predicted_delta` serializes as provenance. Nothing in this package or
 the domain orders, filters, or selects on it (ADR-0031 decision 6).
 
@@ -42,7 +47,11 @@ from vramfit.domain.evals import CorpusReference
 from vramfit.domain.refinement_record import ArmRecord, RefinementSidecar
 
 # Schema version 1: the first refinement sidecar. It carries the
-# frame, the stated bar, the control, every arm, and the outcome.
+# frame, the stated bar, the control, every arm, the neighbourhood
+# the arms were drawn from, and the outcome. `neighbourhood_moves`
+# joined version 1 rather than bumping it: no sidecar had been
+# published when the field landed, so nothing reads a document
+# without it.
 REFINEMENT_SIDECAR_SCHEMA_VERSION: Final[int] = 1
 
 
@@ -99,6 +108,9 @@ def _arm_to_dict(arm: ArmRecord) -> dict[str, Any]:
 def sidecar_to_dict(sidecar: RefinementSidecar) -> dict[str, Any]:
     """Serialize a refinement sidecar with the schema envelope.
 
+    Writes ``neighbourhood_moves`` beside ``arms``, so a reader can
+    always tell a whole search from a sample of one.
+
     Args:
         sidecar: The record to serialize.
 
@@ -117,6 +129,9 @@ def sidecar_to_dict(sidecar: RefinementSidecar) -> dict[str, Any]:
         "bar": sidecar.bar,
         "control": (None if sidecar.control is None else _arm_to_dict(sidecar.control)),
         "arms": [_arm_to_dict(a) for a in sidecar.arms],
+        # Read beside len(arms): the two differ whenever the arm
+        # budget was smaller than the neighbourhood.
+        "neighbourhood_moves": sidecar.neighbourhood_moves,
         "winner": sidecar.winner,
         "declined": sidecar.declined,
     }

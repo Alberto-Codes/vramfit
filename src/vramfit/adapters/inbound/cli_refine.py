@@ -16,7 +16,13 @@ pack, so a target the protocol cannot reach costs nothing.
 Every refusal leaves one ``error:`` line and exit 1. The domain
 error root covers them: a recipe whose pins or protections do not
 resolve against this map, a measurement too short to pair, and a
-toolchain failure all halt the same way.
+toolchain failure all halt the same way. The three llama.cpp tools
+are checked before the convert stage, so a missing binary costs no
+card time.
+
+The command reports what it measured and never a verdict on the
+recipe. The arms are a sample of the neighbourhood whenever the arm
+budget was smaller, and the sidecar records both counts.
 
 The caller states the evidence bar. The command carries no default
 for it (ADR-0031 decision 7).
@@ -39,6 +45,7 @@ See Also:
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 from typing import Annotated
@@ -78,8 +85,55 @@ def _halt(message: str) -> None:
     raise typer.Exit(code=1)
 
 
+def _check_toolchain(llama_cpp: Path) -> None:
+    """Refuse a checkout missing a tool the pass runs.
+
+    The pass drives three tools and reaches the last one only after
+    the convert stage and the control pack. On the rented card this
+    stage is priced against, that is about 20 minutes and a
+    full-size f16 base GGUF spent to learn a path does not exist, so
+    every tool is checked before any of them runs.
+
+    Args:
+        llama_cpp: The llama.cpp checkout.
+
+    Raises:
+        Exit: With code 1 when a tool is missing or cannot execute.
+    """
+    convert_script = llama_cpp / "convert_hf_to_gguf.py"
+    if not convert_script.is_file():
+        _halt(f"--llama-cpp: {convert_script} does not exist — build the tools first")
+    for name in ("llama-quantize", "llama-perplexity"):
+        binary = llama_cpp / "build" / "bin" / name
+        if not binary.is_file():
+            _halt(f"--llama-cpp: {binary} does not exist — build the tools first")
+        if not os.access(binary, os.X_OK):
+            _halt(f"--llama-cpp: {binary} is not executable")
+
+
+def _sample_phrase(sidecar: RefinementSidecar) -> str:
+    """Word how much of the neighbourhood the pass measured.
+
+    Args:
+        sidecar: The pass's search record.
+
+    Returns:
+        The arm count, naming the neighbourhood it was drawn from
+        when the pass measured only part of it.
+    """
+    measured = len(sidecar.arms)
+    if measured == sidecar.neighbourhood_moves:
+        return f"{measured} evaluated"
+    return f"{measured} evaluated of a neighbourhood of {sidecar.neighbourhood_moves}"
+
+
 def _report_outcome(sidecar: RefinementSidecar) -> None:
-    """Print what the pass found.
+    """Print what the pass measured.
+
+    Every line states a measurement. None states a verdict on the
+    recipe: the arms are a sample of the neighbourhood whenever the
+    caller's budget was smaller, and no sample supports a conclusion
+    about the arms it never measured.
 
     Args:
         sidecar: The pass's search record.
@@ -100,13 +154,16 @@ def _report_outcome(sidecar: RefinementSidecar) -> None:
             f"{arm.better_chunks}/{arm.chunks} better)"
         )
     if sidecar.winner is None:
-        typer.echo(f"no arm cleared {sidecar.bar} sigma — the recipe stands")
+        typer.echo(
+            f"no arm among the {_sample_phrase(sidecar)} cleared {sidecar.bar} sigma"
+        )
         return
     won = sidecar.winning_arm()
     if won is not None:
         typer.echo(
             f"winner: {sidecar.winner} at {won.mean:.6f}, "
-            f"{won.sigma:+.1f} sigma against the control"
+            f"{won.sigma:+.1f} sigma against the control, "
+            f"among the {_sample_phrase(sidecar)}"
         )
 
 
@@ -199,7 +256,8 @@ def refine(
     candidate group through the predictor the plan step used. The
     frame and the sidecar write sit inside the guarded region, so an
     empty ``--runtime-build`` and a refused write each leave one
-    ``error:`` line rather than a traceback.
+    ``error:`` line rather than a traceback. The llama.cpp tools are
+    checked before any of them runs.
 
     Args:
         recipe_path: The recipe to refine.
@@ -241,6 +299,7 @@ def refine(
     for label, path in (("--base-logits", base_logits), ("--eval-text", eval_text)):
         if not path.is_file():
             _halt(f"{label}: {path} does not exist")
+    _check_toolchain(llama_cpp)
     try:
         corpus_sha256, corpus_bytes = content_identity(eval_text)
     except OSError as error:
