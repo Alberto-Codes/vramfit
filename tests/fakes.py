@@ -437,6 +437,31 @@ class MemorySmokeTester:
 
 
 @dataclass
+class MemoryRuntimeDivergenceMeter:
+    """In-memory `RuntimeDivergenceMeter`. The series is configured.
+
+    Like the real adapter, a tool failure raises `PackError` and a
+    successful run returns the per-chunk series verbatim — comparison
+    and selection belong to the caller (ADR-0031).
+
+    `series` maps a packed path to its divergences. A path the mapping
+    does not name falls back to `default`, so a suite that does not
+    care which file was measured configures one series.
+    """
+
+    default: tuple[float, ...] = (0.2, 0.3, 0.25, 0.4)
+    series: dict[str, tuple[float, ...]] = field(default_factory=dict)
+    fail: bool = False
+    measured: list[str] = field(default_factory=list)
+
+    def measure(self, packed: str) -> tuple[float, ...]:
+        if self.fail:
+            raise PackError("divergence failed with exit code 3:\nconfigured failure")
+        self.measured.append(packed)
+        return self.series.get(packed, self.default)
+
+
+@dataclass
 class MemoryRunLog:
     """In-memory `RunLogSink` recording events in order."""
 

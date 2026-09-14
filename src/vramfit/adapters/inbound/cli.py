@@ -1,13 +1,17 @@
 """Typer CLI: the inbound (driving) adapter and composition root.
 
 Exposes the ``vramfit`` console script. ``version``, ``budget``,
-``plan``, ``scan``, ``pack``, ``validate``, and ``capacity`` are
-implemented — the scan, pack, validate, and capacity command bodies
-live in [vramfit.adapters.inbound.cli_scan][],
+``plan``, ``scan``, ``pack``, ``refine``, ``validate``, and
+``capacity`` are implemented — the scan, pack, refine, validate, and
+capacity command bodies live in [vramfit.adapters.inbound.cli_scan][],
 [vramfit.adapters.inbound.cli_pack][],
+[vramfit.adapters.inbound.cli_refine][],
 [vramfit.adapters.inbound.cli_validate][], and
 [vramfit.adapters.inbound.cli_capacity][] to keep this module under
-the size cap. ``budget`` reports KV growth per token, plus the
+the size cap. ``refine`` searches a solved recipe's equal-byte
+neighbourhood by packing and measuring every arm in the runtime
+frame, and writes one search record beside the recipe (ADR-0031).
+``budget`` reports KV growth per token, plus the
 window pool on a mixed sliding/global stack (#421), prices the key
 and value caches at the ``--kv-dtype`` / ``--kv-value-dtype`` pair
 (#424), and subtracts the measured ``--vision-line`` when the model
@@ -69,7 +73,13 @@ from typing import Annotated
 import typer
 
 from vramfit import __version__
-from vramfit.adapters.inbound import cli_capacity, cli_pack, cli_scan, cli_validate
+from vramfit.adapters.inbound import (
+    cli_capacity,
+    cli_pack,
+    cli_refine,
+    cli_scan,
+    cli_validate,
+)
 from vramfit.adapters.inbound.cli_plan_sizes import discovered_groups
 from vramfit.adapters.inbound.cli_protection_warnings import warn_protection_gaps
 from vramfit.adapters.inbound.cli_shape import (
@@ -154,6 +164,7 @@ def version() -> None:
 
 app.command(name="scan")(cli_scan.scan)
 app.command(name="pack")(cli_pack.pack)
+app.command(name="refine")(cli_refine.refine)
 app.command(name="validate")(cli_validate.validate)
 app.command(name="capacity")(cli_capacity.capacity)
 

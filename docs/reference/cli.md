@@ -5,10 +5,11 @@ status: stable
 # CLI reference
 
 > **Status: stable** — `version`, `budget`, `plan`, `scan`, `pack`,
-> `validate`, and `capacity` are implemented, and the flags and
-> behaviors below match the built commands (audited 2026-08-14 on
+> `refine`, `validate`, and `capacity` are implemented, and the flags
+> and behaviors below match the built commands (audited 2026-08-14 on
 > #149, promoted with the #228 build; `capacity` added 2026-08-26
-> on #422). `pack` covers the GGUF backend only (ADR-0010).
+> on #422, `refine` added 2026-09-14 on #590). `pack` and `refine`
+> cover the GGUF backend only (ADR-0010).
 
 ## `vramfit version`
 
@@ -887,3 +888,68 @@ Exit 2 when the llama.cpp checkout misses a needed tool,
 `--mmproj` is empty or its copy would land on a run-owned path,
 `--smoke-threshold` is
 not positive, or the `--out`/`--runlog` directory does not exist.
+
+## `vramfit refine`
+
+Searches a solved recipe's equal-byte neighbourhood and reports which
+arm, if any, measures better than the recipe itself (ADR-0031).
+
+```console
+$ vramfit refine recipe.json --map map.json --llama-cpp ~/llama.cpp \
+    --base-logits base.logits --eval-text wiki.test.raw \
+    --runtime-build b10362 --hardware "H100 SXM"
+```
+
+An arm swaps two assignments: one group's precision rises to a
+second group's, and that second group's falls to the first's. The two
+groups trade their recorded byte figures, so every arm spends the
+recipe's exact byte total and competes inside the same weight budget.
+A swap prices exactly only when both groups carry the same reference
+size, and the command skips any other pair.
+
+**Every arm is packed and measured.** The sensitivity map does not
+order the neighbourhood it prices — Spearman rho was +0.146 over the
+fifteen arms of the 2026-09-11 sweep — so nothing here ranks by
+prediction. When `--limit` is smaller than the neighbourhood, the
+command takes an evenly spaced stride through the enumeration, which
+is independent of the map.
+
+The control runs first. A candidate's number is unreadable until the
+control reproduces the frame it claims to be measured in.
+
+Options: `--map` (required), `--llama-cpp` (required),
+`--base-logits` (required), `--eval-text` (required),
+`--runtime-build` (required), `--hardware` (required), `--model`,
+`--base-gguf`, `--imatrix`, `--out-dir` (default `arms`), `--out`,
+`--bar` (default 7.8), `--limit` (default 15), `--threads`,
+`--keep-packs`, `--python-bin`, `--runlog`.
+
+`--base-logits` names logits stored from the reference build. Write
+them once with `llama-perplexity --kl-divergence-base` over the f16
+base GGUF. Every arm measures against that same file, or the arms do
+not compare.
+
+`--bar` is the sigma an arm must clear to win, and the command has no
+opinion about the right value. The project's artifact precedent is
+7.8.
+
+Writes one refinement sidecar, by default beside the recipe at
+`<recipe>.refinement.json`. It records every arm measured, the
+winner, the stated bar, the control with its sigma, and the frame —
+runtime build, hardware, and evaluation corpus. The map's predicted
+delta is recorded as provenance and orders nothing.
+
+A recipe with no legal swap declines before the first pack and costs
+nothing. The published 49B recipe is that case: 81 of its 82 groups
+sit at the 3-bit floor.
+
+The command writes a sidecar and never a refined recipe. Promoting a
+winning arm to an artifact needs a tier-3 slice and a serve test.
+
+Run log: refine_started (arms, bar) or refine_declined (reason),
+base_converted, then per arm arm_packing, arm_packed, arm_measured,
+then refine_finished (winner, refusal).
+
+Exit codes: 1 when the recipe or map is invalid, the model directory
+does not exist, `--base-logits` or `--eval-text` is not a file, a
+group has no row width, or a toolchain stage fails.

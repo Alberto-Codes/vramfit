@@ -1,0 +1,131 @@
+# ADR-0031: The refinement pass measures in the runtime frame and records its search in a sidecar
+
+- **Status:** Accepted
+- **Date:** 2026-09-14
+- **Origin:** Issue #590, resolving the question the 2026-09-11
+  maintainer ruling left conditional on a neighbour winning. Nine
+  neighbours won. The measured evidence is the closing comment on
+  #486 and `data/vramfit-c4-neighbour-30b/`.
+- **Amends:** [ADR-0007](0007-recipe-solver-strategy.md). The greedy
+  solve no longer has the last word on a recipe's assignments. It
+  keeps the whole plan step, and the refinement pass runs after it.
+
+## Context
+
+The solver ranks downgrades by damage measured one group at a time,
+with every other group at reference precision (ADR-0006). Whether
+that approximation picks the best assembled recipe was an open
+question for the life of the project.
+
+The C4 equal-byte neighbour sweep answered it on 2026-09-11. It ran
+on the published 30B recipe on one rented H100, for 7.61 dollars
+across sixteen arms. An arm swaps two assignments and spends the same
+bytes, so it competes inside the same weight budget.
+
+**Nine of fifteen neighbours measured lower full-window KLD than the
+recipe they came from.** The best arm measured 0.191855 mean KLD
+against the published 0.204223, which is 6.06 percent better at 14.4
+sigma paired. Seven arms cleared 4 sigma. The control reproduced the
+published figure at 0.08 sigma, and the same-file noise floor read
+zero twice.
+
+**The map does not order the neighbourhood it prices.** Spearman rho
+between the map's predicted penalty and the measured delta is +0.146,
+and Pearson r is +0.279. A search that ranked by the map would have
+measured the top arm, stopped at 0.197942, and missed 43 percent of
+the improvement.
+
+That last number is the design constraint. Prediction earns the
+greedy solve, where it orders thousands of candidates cheaply. It
+does not earn the refinement step.
+
+## Decision
+
+1. **The refinement pass measures every candidate it considers.** It
+   packs each candidate and evaluates it in the runtime frame. It
+   never ranks candidates by the sensitivity map, and it never
+   measures only a map-selected subset.
+
+2. **A new port carries the runtime-frame measurement.** It returns
+   per-chunk divergences against a reference base, which is what a
+   paired test needs. The llama.cpp adapter drives
+   `llama-perplexity --kl-divergence`.
+
+   Two existing ports were considered and neither fits.
+   `DamageMeter.measure_recipe` measures the torch scan frame, and
+   [ADR-0021](0021-runtime-frame-measurement.md) binds this
+   measurement to the runtime frame. `SmokeTester.smoke` returns one
+   perplexity figure, and widening it would change every caller of an
+   [ADR-0017](0017-post-pack-smoke-test.md) port for one new consumer.
+
+   **This port is forced, not fitted.** The charting convention warns
+   against adding a port so a ticket's wording fits, and #179 did
+   exactly that. The distinction is the measurement frame. The
+   authorized measurement is unreachable through any existing seam,
+   so the port is the smallest way to deliver it rather than
+   architecture added around it.
+
+3. **The search record ships as a refinement sidecar, beside the
+   recipe.** [ADR-0025](0025-evals-sidecar.md) already drew this
+   line. A search record is evidence about an artifact, not plan
+   arithmetic. The sidecar carries the `vramfit_schema` envelope, and
+   breaking changes bump it.
+
+4. **The recipe schema does not change.** A refined recipe names its
+   pass in `plan.solver` and carries nothing else new. Every recipe
+   the project has published was never refined, and none of them
+   gains a field.
+
+   `plan.trace` does not grow a refinement step. The trace holds
+   downgrade steps that no longer explain a refined recipe's
+   assignments, so adding to it would compound a field that is
+   already wrong for this case.
+
+5. **The sidecar records at minimum:** every arm evaluated, the
+   winner, the evidence bar the caller stated, the control result
+   with its sigma, and the frame the measurement ran in. The frame
+   means the runtime binary build, the hardware, and the evaluation
+   corpus content identity.
+
+6. **The map's predicted delta records as provenance only.** The
+   sidecar may carry it. Nothing may order, filter, or select on it.
+   Spearman +0.146 is why this pass exists, and the record must not
+   reintroduce map ranking through a stored field.
+
+7. **The caller states the evidence bar, and no default exists.** The
+   bar a result must clear belongs to the caller, not to the stage.
+   The project's artifact precedent is 7.8 sigma.
+
+8. **Declining is an outcome, not a failure.** A recipe with no legal
+   swap reports that it has none. The published 49B recipe places 81
+   of its 82 groups at the 3-bit floor, and its one 8-bit group
+   carries a different reference size, so no byte-neutral swap exists
+   there (`data/vramfit-c4-neighbour-refinement/report.md`).
+
+## Consequences
+
+- The pass costs packs and evaluations, never map arithmetic. The C4
+  run measured 0.48 dollars per arm on this target, so a 15-candidate
+  pass costs about 7 dollars and 1.5 hours on rented hardware.
+- That cost does not scale to every target. Decision 8 is what keeps
+  an unaffordable or degenerate target from being forced.
+- A byte-neutral swap prices exactly only when both groups carry the
+  same reference size. The pass skips any other pair rather than
+  predicting a total it cannot stand behind.
+- The solver keeps its approximation and its scope. ADR-0007 is
+  amended in reach, not replaced.
+- One more artifact rides a refined publication.
+- Nothing here says a published pack should be replaced. Promoting an
+  arm to an artifact needs a tier-3 slice and a serve test first.
+
+## Open questions
+
+- Whether the pass should search beyond one swap. Every arm measured
+  so far moves exactly two assignments, and nothing prices a
+  two-swap neighbourhood yet.
+- Whether a winning arm's improvement survives a frame change. The
+  C4 measurement ran on WikiText-2, and no arm has taken a tier-3
+  slice.
+- Whether an equal-byte move is the right neighbourhood at all. A
+  move that spends fewer bytes than the budget allows was never
+  measured.

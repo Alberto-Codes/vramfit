@@ -16,10 +16,14 @@ the importance matrix's per-expert tallies to the pack step's
 zero-count report (ADR-0026 decision 5), the size port
 (`TensorSizeSource`) carries the checkpoint's per-tensor sizes to
 the plan step, so the input map no longer defines the model
-(ADR-0029), and the evals ports
+(ADR-0029), the evals ports
 (`EvalsSidecarSource`, `EvalsSidecarSink`) carry one evaluated
 artifact's scoreboard evidence to and from its published sidecar
-(ADR-0025).
+(ADR-0025), and the divergence port (`RuntimeDivergenceMeter`)
+carries the refinement pass's runtime-frame measurement one chunk at
+a time, because a paired test cannot run on an aggregate, while the
+refinement sink (`RefinementSidecarSink`) carries that pass's search
+record to its own artifact (ADR-0031).
 Concrete implementations live in [vramfit.adapters.outbound][].
 
 Examples:
@@ -47,6 +51,7 @@ from vramfit.domain.budget import ModelShape
 from vramfit.domain.evals import EvalsSidecar
 from vramfit.domain.model import Recipe, SensitivityMap
 from vramfit.domain.pack import PackResult
+from vramfit.domain.refinement_record import RefinementSidecar
 from vramfit.domain.scan import GroupSpec, Measurement
 from vramfit.domain.sizes import TensorSize
 
@@ -486,6 +491,48 @@ class SmokeTester(Protocol):
         ...
 
 
+class RuntimeDivergenceMeter(Protocol):
+    """Measures a packed model's per-chunk divergence from a reference.
+
+    The refinement pass's evaluation seam (ADR-0031 decision 2). It
+    returns one value per evaluation chunk, because the pass compares
+    arms chunk by chunk and a single aggregate cannot carry a paired
+    test. The llama.cpp adapter drives ``llama-perplexity`` with
+    ``--kl-divergence`` against a stored reference base.
+
+    Neither older port fits. `DamageMeter.measure_recipe` measures the
+    torch scan frame, and ADR-0021 binds this measurement to the
+    runtime frame. `SmokeTester.smoke` returns one perplexity figure.
+
+    The port measures and nothing else. Comparison and selection are
+    domain arithmetic (`vramfit.domain.paired`).
+
+    Examples:
+        The refinement pass drives the port like this:
+
+        ```python
+        divergences = meter.measure(packed_path)
+        ```
+    """
+
+    def measure(self, packed: str) -> tuple[float, ...]:
+        """Measure one packed model against the reference base.
+
+        Args:
+            packed: Path of the packed model to evaluate, as the
+                caller spelled it.
+
+        Returns:
+            One divergence per evaluation chunk, in chunk order.
+            Never empty.
+
+        Raises:
+            RuntimeError: If the tool cannot start, exits nonzero, or
+                reports no per-chunk values.
+        """
+        ...
+
+
 class EvalsSidecarSource(Protocol):
     """Supplies one artifact's evals sidecar.
 
@@ -542,6 +589,36 @@ class EvalsSidecarSink(Protocol):
 
         Args:
             sidecar: The evidence record to persist.
+        """
+        ...
+
+
+class RefinementSidecarSink(Protocol):
+    """Accepts one refinement pass's search record for persistence.
+
+    The writer half of ADR-0031 decision 3. One call persists the
+    complete record of what the pass evaluated, what it kept, and in
+    which frame it measured. No reader exists yet, because nothing
+    reads a refined recipe's search record back — ADR-0025 landed its
+    reader only when a rule needed executing.
+
+    Examples:
+        The JSON file adapter satisfies this port:
+
+        ```python
+        from vramfit.adapters.outbound.refinement_sidecar_json import (
+            JsonRefinementSidecarFile,
+        )
+
+        sink: RefinementSidecarSink = JsonRefinementSidecarFile(path)
+        ```
+    """
+
+    def save(self, sidecar: RefinementSidecar) -> None:
+        """Persist the refinement sidecar.
+
+        Args:
+            sidecar: The search record to persist.
         """
         ...
 
