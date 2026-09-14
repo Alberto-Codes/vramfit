@@ -29,10 +29,12 @@ same frame.
 
 The pre-flight orders itself cheapest-first: every refusal that costs
 milliseconds runs before any full-file read. The reference logits
-reach 39.7 GB on the 49B target, so hashing them ahead of a
-row-width check the command is about to fail on would spend minutes
-to learn what a header read already knew. Keep new refusals above the
-content-identity reads.
+reach 39.7 GB on the 49B target, so hashing them ahead of a refusal
+the command could already have made would spend minutes to learn what
+was knowable for free. The content-identity reads are the last thing
+the pre-flight does, and one comment marks that boundary — a new
+refusal belongs above it, including one a constructor further down
+would otherwise make for the first time.
 
 [vramfit.adapters.inbound.llama_cpp_layout][]'s `LlamaCppTools`
 names the tools once, for this command and for ``pack``. The
@@ -162,6 +164,29 @@ def _check_destination(label: str, path: Path) -> None:
         _halt(f"{label}: directory {parent} does not exist")
     if not os.access(parent, os.W_OK):
         _halt(f"{label}: directory {parent} is not writable")
+
+
+def _check_frame_labels(runtime_build: str, hardware: str) -> None:
+    """Refuse a frame label the operator left empty.
+
+    `MeasurementFrame` refuses these too, and keeps doing so for every
+    other caller. This is the cheap copy: the frame is built after the
+    content-identity reads, so without it an unset shell variable
+    costs a full read of the reference logits before refusing.
+
+    Args:
+        runtime_build: The runtime binary's build identity.
+        hardware: The card the pass runs on.
+
+    Raises:
+        Exit: With code 1 when either label is empty.
+    """
+    for label, value in (
+        ("--runtime-build", runtime_build),
+        ("--hardware", hardware),
+    ):
+        if not value:
+            _halt(f"{label}: must not be empty — it names the measurement frame")
 
 
 def _check_input_files(
@@ -409,12 +434,13 @@ def refine(
     ``error:`` line rather than a traceback. Every path the pass
     needs is checked before the first tool runs: the tools, the
     matrix, both destinations, and the arm directory. The map must
-    have priced this recipe, and an assisted recipe packed without
-    its matrix warns the way ``pack`` warns. The corpus, the
-    reference logits, and the matrix are each hashed once here, so
-    the frame names bytes rather than paths — and they are hashed
-    last, after every refusal that costs milliseconds. `_resolve_row_widths`
-    owns its own refusal, so the width read is not wrapped here.
+    have priced this recipe, the frame labels must not be empty, and
+    an assisted recipe packed without its matrix warns the way
+    ``pack`` warns. The corpus, the reference logits, and the matrix
+    are each hashed once here, so the frame names bytes rather than
+    paths — and they are hashed last, after every refusal that costs
+    milliseconds. `_resolve_row_widths` owns its own refusal, so the
+    width read is not wrapped here.
 
     Args:
         recipe_path: The recipe to refine.
@@ -458,6 +484,7 @@ def refine(
             f'model directory "{model_dir}" does not exist — the recipe\'s '
             "model_id is not a local path, pass --model"
         )
+    _check_frame_labels(runtime_build, hardware)
     _check_input_files(base_logits, eval_text, imatrix)
     _warn_imatrix_provenance(recipe, imatrix)
     tools = LlamaCppTools.under(llama_cpp)
@@ -474,9 +501,10 @@ def refine(
     _check_destination("--out", sidecar_path)
     _check_destination("--runlog", runlog_path)
     row_widths = _resolve_row_widths(recipe, model_dir)
-    # Cheap refusals first, full-file reads last. The reference logits
-    # reach 39.7 GB on the 49B target, so every refusal that costs
-    # milliseconds runs before the hashing does.
+    # Every refusal above this line costs milliseconds. Every read
+    # below it costs a whole file — the reference logits reach
+    # 39.7 GB on the 49B target. A new refusal belongs above, and
+    # nothing below here may refuse for a reason already knowable.
     corpus = _corpus_identity(eval_text)
     reference = _file_identity("--base-logits", base_logits)
     matrix = None if imatrix is None else _file_identity("--imatrix", imatrix)

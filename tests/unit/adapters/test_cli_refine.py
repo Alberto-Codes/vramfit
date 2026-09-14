@@ -383,7 +383,8 @@ def test_refine_reports_an_empty_runtime_build_cleanly(workspace) -> None:
 
     assert result.exit_code == 1
     assert "error:" in result.output
-    assert "runtime_build" in result.output
+    assert "--runtime-build" in result.output
+    assert isinstance(result.exception, SystemExit)
 
 
 def test_refine_reports_a_failed_sidecar_write_cleanly(workspace, monkeypatch) -> None:
@@ -793,4 +794,25 @@ def test_refine_refuses_a_bad_model_before_reading_the_reference_logits(
     result = _invoke(workspace, "--limit", "1")
 
     assert result.exit_code == 1
+    assert hashed == []
+
+
+@pytest.mark.parametrize("flag", ["--runtime-build", "--hardware"])
+def test_refine_refuses_an_empty_frame_label_before_any_hash(
+    workspace, monkeypatch, flag
+) -> None:
+    """The reference logits reach 39.7 GB; an empty string costs nothing."""
+    hashed: list[Path] = []
+    real = cli_refine.content_identity
+
+    def record(path: Path):
+        hashed.append(path)
+        return real(path)
+
+    monkeypatch.setattr(cli_refine, "content_identity", record)
+
+    result = _invoke(workspace, "--limit", "1", flag, "")
+
+    assert result.exit_code == 1
+    assert flag in result.output
     assert hashed == []

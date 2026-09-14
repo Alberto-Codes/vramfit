@@ -479,7 +479,7 @@ def decline_reason(
     A recipe whose groups all sit at one precision has no swap at
     all. The published 49B recipe places 81 of its 82 groups at the
     3-bit floor, and its one 8-bit group prices differently from
-    every other, so the protocol's move does not exist there. A
+    every other, so the protocol's move does not exist there.
     A recipe whose every free pair would spend different bytes after
     the swap declines the same way — `fixed_groups` takes pinned and
     protected groups out of the pairing first, and `group_price`

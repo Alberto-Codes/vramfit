@@ -988,7 +988,9 @@ never serialize alike.
 `--base-logits` is the sharpest of those: every divergence is
 computed against those bytes. The three hashes run last in the
 pre-flight, after every refusal that costs milliseconds, because the
-reference logits reach 39.7 GB on the 49B target.
+reference logits reach 39.7 GB on the 49B target. An empty
+`--runtime-build` or `--hardware` — an unset shell variable, say —
+refuses before the first byte is read.
 
 The command reports what it measured and never a verdict on the
 recipe. When no arm clears the bar it names the arms it evaluated and
@@ -1020,10 +1022,11 @@ base_converted, then per arm arm_packing, arm_packed, arm_measured,
 then refine_finished (winner, refusal).
 
 Exit codes: 1 when the recipe or map is invalid, the model directory
-does not exist, `--base-logits` or `--eval-text` is not a file or
-cannot be read, `--base-logits` holds no bytes, `--eval-text` holds no
-bytes or measures fewer than two chunks, `--imatrix` is not a file or
-holds no bytes, the map
+does not exist, `--runtime-build` or `--hardware` is empty,
+`--base-logits` or `--eval-text` is not a file or cannot be read,
+`--base-logits` holds no bytes, `--eval-text` holds no bytes or
+measures fewer than two chunks, `--imatrix` is not a file or holds no
+bytes, the map
 prices a different `model_id` from the recipe, the `--llama-cpp`
 checkout
 misses `convert_hf_to_gguf.py`, `build/bin/llama-quantize` or
