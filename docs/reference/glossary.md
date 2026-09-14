@@ -722,6 +722,46 @@ change.
     keep the plain damage-per-byte order. Lives in
     `vramfit.domain.placement`.
 
+**Refinement pass**
+:   The stage that searches a solved recipe's neighbourhood by packing
+    and measuring candidates in the runtime frame. It never ranks
+    candidates by the sensitivity map. Spearman rho between the map's
+    predicted penalty and the measured delta was +0.146 over the
+    fifteen arms of the 2026-09-11 C4 sweep, so the map does not order
+    the neighbourhood it prices (#486). Lives in
+    `vramfit.domain.refinement`. Not "search" or "tuning".
+
+**Equal-byte neighbour** (short: **neighbour**)
+:   A recipe one byte-neutral swap away from another, spending the
+    same predicted bytes and competing inside the same weight budget.
+    Nine of fifteen neighbours of the published 30B recipe measured
+    lower full-window KLD than it did.
+
+**Byte-neutral swap** (short: **swap**)
+:   The move that produces a neighbour: one group's precision rises to
+    a second group's, and that second group's falls to the first's.
+    The two groups trade their recorded byte figures, so the predicted
+    total cannot move. It prices exactly only when both groups carry
+    the same reference size.
+
+**Neighbourhood decline**
+:   The refinement pass's answer when a recipe has no legal swap. The
+    published 49B recipe places 81 of its 82 groups at the 3-bit
+    floor, and its one 8-bit group carries a different reference size,
+    so no byte-neutral swap exists there. Declining is an outcome, not
+    a failure.
+
+**Paired comparison**
+:   The refinement pass's test of one arm against the control, chunk
+    by chunk over the same evaluation text. Pairing cancels
+    chunk-to-chunk variance, which is large beside the effect. Lives
+    in `vramfit.domain.paired`. Not "A/B test".
+
+**Evidence bar**
+:   The sigma a paired comparison must clear before the refinement
+    pass calls an arm a winner. Stated by the caller, never defaulted.
+    The project's artifact precedent is 7.8 sigma.
+
 **Target runtime**
 :   The serving stack a recipe is planned for, recorded in the recipe's
     `runtime` field (`--runtime`, default `llama.cpp`). Not "backend"
