@@ -218,10 +218,14 @@ def fixed_groups(recipe: Recipe, map_: SensitivityMap) -> frozenset[str]:
         The fixed group names, empty for a recipe with no pins and
         no protections.
 
+    A pin that lands on no group of this map raises nothing.
+    `pinned_group_names` returns the miss and `decline_reason` reads
+    it, so an unresolvable pin declines rather than refusing.
+
     Raises:
-        VramfitError: If the recipe's own pin or protection records
-            do not resolve against this map. `PinError` and
-            `ProtectionError` both carry that root.
+        ProtectionError: If the recipe's protection records do not
+            resolve against this map. It carries the `VramfitError`
+            root.
     """
     pinned, _missed = pinned_group_names(recipe.plan.pins, map_, recipe.runtime)
     floors = expand_protections(recipe.plan.protections, map_, recipe.runtime)
@@ -489,11 +493,13 @@ def decline_reason(
     reported as missed, and the pass declines rather than measuring
     arms that may violate a constraint the recipe records.
 
-    That narrowing is a choice, not a limit. `vramfit refine` reads
-    the checkpoint's tensor headers through ``_resolve_row_widths``
-    one step before the pass runs, so the names that would widen the
-    universe are already in hand. Widening it is available and
-    deliberately untaken.
+    That narrowing is a choice, not a limit. `vramfit refine` opens
+    the checkpoint for the row widths one step before the pass runs,
+    so the names that would widen the universe are readable at that
+    moment. Reading them is a second read the command does not make
+    — ``_resolve_row_widths`` yields row widths alone, not the
+    ``discovered_bytes`` and ``merged_splits`` a wider match needs.
+    Widening is available and deliberately untaken (#593).
 
     Raises:
         VramfitError: If the recipe's protection records do not

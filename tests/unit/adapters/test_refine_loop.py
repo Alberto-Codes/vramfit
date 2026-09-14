@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from tests.fakes import (
@@ -109,6 +111,7 @@ def _packer_for(recorder):
             packed_bytes=500,
             has_base=True,
             row_widths=stack_row_widths([G0, G1, G2, G3]),
+            out_path=Path(path),
         )
 
     return build
@@ -422,3 +425,23 @@ def test_refine_started_carries_both_counts(tmp_path) -> None:
     started = next(fields for event, fields in seen if event == "refine_started")
     assert started["arms"] == 1
     assert started["neighbourhood_moves"] == 4
+
+
+def test_the_loop_drops_every_arm_pack_it_measured(tmp_path) -> None:
+    """A sixteen-arm 30B pass must not fill a rented pod's disk."""
+    meter = MemoryRuntimeDivergenceMeter(default=CONTROL_CHUNKS)
+
+    _run(tmp_path, meter, limit=3)
+
+    assert meter.measured
+    assert list(tmp_path.glob("*.gguf")) == []
+
+
+def test_the_loop_drops_an_arm_pack_only_after_measuring_it(tmp_path) -> None:
+    """Deleting before the meter reads it would measure nothing."""
+    meter = MemoryRuntimeDivergenceMeter(default=CONTROL_CHUNKS)
+
+    _run(tmp_path, meter, limit=3)
+
+    assert meter.present
+    assert all(meter.present)

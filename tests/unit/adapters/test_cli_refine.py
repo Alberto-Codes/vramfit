@@ -123,7 +123,10 @@ def workspace(tmp_path: Path, monkeypatch) -> Path:
         cli_refine,
         "LlamaCppPacker",
         lambda **kwargs: MemoryRecipePacker(
-            packed_bytes=500, has_base=True, row_widths=stack_row_widths(G)
+            packed_bytes=500,
+            has_base=True,
+            row_widths=stack_row_widths(G),
+            out_path=kwargs["out_path"],
         ),
     )
     monkeypatch.setattr(
@@ -154,7 +157,10 @@ def wiring_log(monkeypatch) -> list[str]:
     record(
         "LlamaCppPacker",
         lambda **kwargs: MemoryRecipePacker(
-            packed_bytes=500, has_base=True, row_widths=stack_row_widths(G)
+            packed_bytes=500,
+            has_base=True,
+            row_widths=stack_row_widths(G),
+            out_path=kwargs["out_path"],
         ),
     )
     record(
@@ -715,7 +721,11 @@ def test_refine_refuses_an_empty_imatrix(workspace, wiring_log) -> None:
 
 
 def test_refine_deletes_each_arm_pack_after_measuring_it(workspace) -> None:
-    """A 16-arm pass on the 30B target would otherwise need 336 GiB."""
+    """A 16-arm pass on the 30B target would otherwise need 336 GiB.
+
+    The fake packer writes the file the real adapter writes, so the
+    absence asserted here is a file that existed and was removed.
+    """
     _invoke(workspace, "--limit", "2")
 
     assert (workspace / "arms").is_dir()

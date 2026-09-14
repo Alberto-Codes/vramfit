@@ -996,9 +996,10 @@ resolve declines too. The pass resolves pins against the map's groups
 alone, so a pin spelled with a checkpoint-discovered or
 merged-projection name is reported as missed, and the command
 declines rather than measuring arms that may violate it. That is a
-choice and not a limit: the command reads the checkpoint's tensor
-headers for the row widths one step earlier, so the names that would
-widen the match are already in hand.
+choice and not a limit: the command opens the checkpoint for the row
+widths one step earlier, so the names that would widen the match are
+readable at that moment. Reading them is a second read the command
+does not make today.
 
 Each arm's packed file is deleted once the meter has read it. The
 30B target's arms are about 21 GiB each, so a pass keeps none of
@@ -1020,7 +1021,8 @@ prices a different `model_id` from the recipe, the `--llama-cpp`
 checkout
 misses `convert_hf_to_gguf.py`, `build/bin/llama-quantize` or
 `build/bin/llama-perplexity`, the `--out` or `--runlog` directory does
-not exist or refuses a write, the recipe's pins or protections do not
-resolve against the map, a group has no row width, or a toolchain
-stage fails. 2 when
+not exist or refuses a write, the recipe's protections do not resolve
+against the map, a group has no row width, or a toolchain stage
+fails. A pin that does not resolve declines at exit 0 rather than
+refusing. 2 when
 `--bar` is not stated.

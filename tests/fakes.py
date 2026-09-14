@@ -215,6 +215,12 @@ class MemoryRecipePacker:
     (ADR-0012 decision 3 as amended 2026-09-04). None records no
     label.
 
+    ``out_path`` names the file a successful pack writes, as the real
+    adapter writes one. It defaults to None, which packs no bytes —
+    most suites read `PackResult` and never the file. A suite that
+    asserts on the packed file's lifetime sets it, so the file it
+    expects to appear or vanish is a file that existed.
+
     ``row_widths`` states each group's measured row width, which the
     256 super-block decision reads (issue #515). It defaults to the
     empty mapping, as `LlamaCppPacker` does, so a recipe whose groups
@@ -236,6 +242,7 @@ class MemoryRecipePacker:
     imatrix_entry_names: tuple[str, ...] | None = None
     packed_type_bytes: dict[str, int] | None = None
     row_widths: Mapping[str, int] = field(default_factory=dict)
+    out_path: Path | None = None
     packed: list[Recipe] = field(default_factory=list)
 
     def convert(self) -> int:
@@ -345,6 +352,8 @@ class MemoryRecipePacker:
             floored_layers=layer_gaps,
             file_type=declared,
         )
+        if self.out_path is not None:
+            self.out_path.write_bytes(b"gguf")
         self.packed.append(recipe)
         return result
 
@@ -448,17 +457,24 @@ class MemoryRuntimeDivergenceMeter:
     `series` maps a packed path to its divergences. A path the mapping
     does not name falls back to `default`, so a suite that does not
     care which file was measured configures one series.
+
+    `present` records whether each measured file existed when the
+    meter read it. The real tool cannot measure a file that is not
+    there, so a suite proving the caller deletes a pack *after*
+    measuring it reads this rather than inferring the order.
     """
 
     default: tuple[float, ...] = (0.2, 0.3, 0.25, 0.4)
     series: dict[str, tuple[float, ...]] = field(default_factory=dict)
     fail: bool = False
     measured: list[str] = field(default_factory=list)
+    present: list[bool] = field(default_factory=list)
 
     def measure(self, packed: str) -> tuple[float, ...]:
         if self.fail:
             raise PackError("divergence failed with exit code 3:\nconfigured failure")
         self.measured.append(packed)
+        self.present.append(Path(packed).is_file())
         return self.series.get(packed, self.default)
 
 

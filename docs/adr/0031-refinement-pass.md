@@ -130,7 +130,16 @@ does not earn the refinement step.
    arms its budget affords, so 15 arms of 15 and 15 arms of 385 are
    different results and a record that states one number states
    neither. The count comes from the enumeration, before the stride
-   samples it. A declined pass records zero.
+   samples it.
+
+   It counts what was enumerated, never the outcome. A declined pass
+   records the moves its enumeration found, which is zero only when
+   the neighbourhood was genuinely empty. A pass that declines for
+   another reason — a pin this map cannot resolve — records the moves
+   it found, because a recipe with 385 moves the pass could not prove
+   safe is not a recipe with no neighbourhood. Every decline the
+   stage can reach enumerates first, so the count is always a real
+   one and the record carries no separate not-enumerated value.
 
 6. **The map's predicted delta records as provenance only.** The
    sidecar may carry it. Nothing may order, filter, or select on it.
@@ -244,9 +253,20 @@ does not earn the refinement step.
   surface the project then owes.
 - Whether to widen the pin match universe beyond the map's groups.
   The narrowing above is a choice, not a limit: `vramfit refine`
-  reads the checkpoint's tensor headers through `_resolve_row_widths`
-  one step before the pass runs, so the `discovered_bytes` and
-  `merged_splits` that would widen the match are already in hand.
+  opens the checkpoint one step before the pass runs, so the names
+  that would widen the match are readable at that moment.
+
+  Widening is not free, and the cost belongs in this record.
+  `_resolve_row_widths` yields row widths alone — elements per row
+  per group. It does not yield `discovered_bytes` or
+  `merged_splits`, which `cli_plan_sizes.discovered_groups` produces
+  and neither the recipe nor the map stores. Widening therefore
+  needs a second checkpoint read and a new call, not the reuse of a
+  value the command already holds. `checkpoint_row_widths` also pins
+  its granularity to `stack` where the plan-time read follows
+  `map_.scan.group_by`, so a map grouped by layer or tensor would
+  not even yield the same group names.
+
   Widening would replace a decline with a measured pass for a recipe
   planned under `--checkpoint` whose pin lands on an uncovered group.
   Nothing has measured that case, so the option stays untaken rather
