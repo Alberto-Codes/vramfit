@@ -5,10 +5,11 @@ status: stable
 # CLI reference
 
 > **Status: stable** — `version`, `budget`, `plan`, `scan`, `pack`,
-> `validate`, and `capacity` are implemented, and the flags and
-> behaviors below match the built commands (audited 2026-08-14 on
+> `refine`, `validate`, and `capacity` are implemented, and the flags
+> and behaviors below match the built commands (audited 2026-08-14 on
 > #149, promoted with the #228 build; `capacity` added 2026-08-26
-> on #422). `pack` covers the GGUF backend only (ADR-0010).
+> on #422, `refine` added 2026-09-14 UTC on #590). `pack` and `refine`
+> cover the GGUF backend only (ADR-0010).
 
 ## `vramfit version`
 
@@ -887,3 +888,178 @@ Exit 2 when the llama.cpp checkout misses a needed tool,
 `--mmproj` is empty or its copy would land on a run-owned path,
 `--smoke-threshold` is
 not positive, or the `--out`/`--runlog` directory does not exist.
+
+## `vramfit refine`
+
+Searches a solved recipe's equal-byte neighbourhood and reports which
+arm, if any, measures better than the recipe itself (ADR-0031).
+
+```console
+$ vramfit refine recipe.json --map map.json --llama-cpp ~/llama.cpp \
+    --base-logits base.logits --eval-text wiki.test.raw \
+    --runtime-build b10362 --hardware "H100 SXM" --bar 7.8
+```
+
+An arm swaps two assignments: one group's precision rises to a
+second group's, and that second group's falls to the first's. The
+command reprices both groups at their new precisions through the same
+predictor `vramfit plan` used, and keeps the arm only when the two
+repriced groups spend what they spent before. So every arm spends the
+recipe's exact byte total and competes inside the same weight budget.
+Equal reference size is not the test and the command does not use it:
+a group's effective-bits table follows its measured row width, so one
+reference size can carry two prices. It also skips any pair
+naming a group the recipe already fixes: a group a `--pin` pattern
+covers, or a group holding a tensor a `--protect` pattern floors.
+Protections resolve from the recipe's verbatim patterns, not from its
+resolved pairs, so a floor the assignment already meets still fixes
+its group. The pack reads an arm's assignments and never its pins, so
+a swap that moved a fixed group would pack against the constraint the
+plan records.
+
+**Every arm is packed and measured.** The sensitivity map does not
+order the neighbourhood it prices — Spearman rho was +0.146 over the
+fifteen arms of the 2026-09-11 sweep — so nothing here ranks by
+prediction. When `--limit` is smaller than the neighbourhood, the
+command takes an evenly spaced stride through the enumeration, which
+is independent of the map.
+
+The control runs first. A candidate's number is unreadable until the
+control reproduces the frame it claims to be measured in.
+
+Options: `--map` (required), `--llama-cpp` (required),
+`--base-logits` (required), `--eval-text` (required),
+`--runtime-build` (required), `--hardware` (required), `--bar`
+(required), `--model`, `--base-gguf`, `--imatrix`, `--out-dir`
+(default `arms`), `--out`, `--limit` (default 15), `--threads`,
+`--python-bin`, `--runlog`.
+
+The command checks every path it needs before the convert stage: the
+three llama.cpp tools, `--imatrix` when given, and the destinations
+`--out` and `--runlog` name. `--out-dir` is created first, so an
+`--out` inside it resolves. A missing path costs no card time, and a
+finished pass is never discarded at its last step.
+
+It refuses a `--map` whose `model_id` differs from the recipe's. Every
+other stage derives the recipe from the map inside one `plan` run, so
+`refine` is the first command that can be handed a mismatched pair,
+and a mismatched map otherwise declines cleanly — a comparison that
+never happened, reading as a published no-winner result.
+
+It warns, as `pack` does, when the recipe records an imatrix and
+`--imatrix` is absent or names a different file (ADR-0020).
+
+`--base-logits` names logits stored from the reference build. Write
+them once with `llama-perplexity --kl-divergence-base` over the f16
+base GGUF. Every arm measures against that same file, or the arms do
+not compare.
+
+`--bar` is the sigma an arm must clear to win, and the command has no
+opinion about the right value. State it on every run. The project's
+artifact precedent is 7.8 sigma.
+
+Writes one refinement sidecar, by default beside the recipe at
+`<recipe>.refinement.json`. It records every arm measured, the
+winner, the stated bar, the control with its sigma, and the frame,
+enumerated once below. The map's predicted delta is recorded as
+provenance and orders nothing.
+
+Each arm also records `budget_margin`,
+`weight_budget_bytes - packed_bytes`, the same figure `vramfit pack`
+gates on. Byte-neutrality equalizes *predicted* bytes, so a swap can
+still pack over: a negative margin means the arm exceeded the budget
+its recipe was solved for. Such an arm is measured, recorded with its
+margin, reported as excluded, and kept out of selection — never
+dropped, because it cost card time. An arm that was never evaluated
+has no entry at all. A control that exceeds the budget stops the
+pass, because nothing downstream is readable against it — it refuses
+between its pack and its measurement, so the pass never pays to
+measure a control it will reject.
+
+One classification serves the summary line and the run log. It names
+the arms selection judged, the arms the budget excluded, and the arm
+kept, so the two surfaces cannot describe one pass differently. An
+arm excluded for budget is never reported as one that failed to clear
+the bar. A winner is reported against the arms it was judged against,
+with the exclusions counted separately. When the budget excluded
+every arm, the summary says so rather than claiming nothing was
+measured.
+
+It also records `neighbourhood_moves`, how many byte-neutral moves
+the neighbourhood held before `--limit` sampled it. Read it beside
+the arm count: 15 arms of 15 and 15 arms of 385 are different
+results.
+
+It counts what was enumerated, never the outcome. A declined pass
+records 0 only when the neighbourhood was genuinely empty. A pass
+that declines for another reason — a pin this map cannot resolve —
+records the moves it found, because a recipe with 385 moves the pass
+could not prove safe is not a recipe with no neighbourhood.
+
+**The frame carries every input whose substitution would change the
+number.** That is the rule, and the instances follow from it: the
+runtime build, the hardware, and the content identity of the
+evaluation corpus, the reference logits, and the importance matrix.
+The command hashes each of those three files once and records the
+SHA-256 digest and the byte count, so two passes over different bytes
+never record the same frame even under one path. A pass run without `--imatrix`
+records `"imatrix": null`, so an assisted pass and an unassisted one
+never serialize alike.
+
+`--base-logits` is the sharpest of those: every divergence is
+computed against those bytes. The three hashes run last in the
+pre-flight, because the reference logits reach 39.7 GB on the 49B
+target. An empty `--runtime-build` or `--hardware` — an unset shell
+variable, say — refuses before the first byte is read.
+
+The command reports what it measured and never a verdict on the
+recipe. Every outcome line, winner or none, names the arms it
+evaluated and the neighbourhood they came from, because a sample
+supports no conclusion about the arms it never measured.
+
+A recipe with no legal swap declines before the first pack: it packs
+nothing and measures nothing, so it spends no card time. It does hash
+the frame's inputs first, because the sidecar names them by content
+even on a decline. The published 49B recipe is that case: 81 of its
+82 groups sit at the 3-bit floor. A recipe carrying a pin the map cannot
+resolve declines too. The pass resolves pins against the map's groups
+alone, so a pin spelled with a checkpoint-discovered or
+merged-projection name is reported as missed, and the command
+declines rather than measuring arms that may violate it. That is a
+choice and not a limit: the command opens the checkpoint for the row
+widths one step earlier, so the names that would widen the match are
+readable at that moment. Reading them is a second read the command
+does not make today.
+
+Each arm's packed file is deleted once the meter has read it. The
+30B target's arms are about 21 GiB each, so a pass keeps none of
+them past its own measurement.
+
+The command writes a sidecar and never a refined recipe. Promoting a
+winning arm to an artifact needs a tier-3 slice and a serve test.
+
+Run log: refine_started (arms, neighbourhood_moves, bar) or
+refine_declined (reason, neighbourhood_moves),
+base_converted, then per arm arm_packing, arm_packed (with
+budget_margin), arm_measured, and arm_over_budget for an excluded
+arm, then refine_finished (winner, judged, excluded, refusal). The
+finished event carries the exclusions whether or not an arm won, and
+`refusal` is null on a winning pass. An over-budget control
+refuses after its arm_packed and emits no arm_measured, because the
+pass refuses before spending the measurement.
+
+Exit codes: 1 when the recipe or map is invalid, the model directory
+does not exist, `--runtime-build` or `--hardware` is empty,
+`--base-logits` or `--eval-text` is not a file or cannot be read,
+`--base-logits` holds no bytes, `--eval-text` holds no bytes or
+measures fewer than two chunks, the control packs over the weight
+budget, `--imatrix` is not a file or holds no bytes, the map prices a
+different `model_id` from the recipe, the `--llama-cpp` checkout
+misses `convert_hf_to_gguf.py`, `build/bin/llama-quantize` or
+`build/bin/llama-perplexity`, either built binary is not executable,
+`--out-dir` cannot be created, `--out` or `--runlog` names a
+directory, the directory `--out` or `--runlog` sits in does not exist
+or refuses a write, the recipe's protections do not resolve against
+the map, a group has no row width, or a toolchain stage fails. A pin
+that does not resolve declines at exit 0 rather than refusing. 2 when
+`--bar` is not stated.

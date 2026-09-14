@@ -75,8 +75,8 @@ guards additivity, not the frame transfer
     MoE model, "per-tensor" means 128 separate expert weights per
     projection, and no runtime will serve them at different
     precisions. `stack` keys on what a pack can actually address — one
-    group per projection's fused experts. The refinement pass gains a
-    middle rung, and on a dense model the rung collapses into
+    group per projection's fused experts. The granularity ladder gains
+    a middle rung, and on a dense model the rung collapses into
     `tensor`, where it belongs.
 2. **Calibration data** — generic text vs workload-matched, and how many
    tokens before the measurement stabilizes? First measurement

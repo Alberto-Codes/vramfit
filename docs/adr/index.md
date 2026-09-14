@@ -43,7 +43,7 @@ ADR that supersedes the old one.
 | [0004](0004-vllm-first-runtime.md) | vLLM as the first target runtime | Accepted, amended by 0010 + 2026-07-29 |
 | [0005](0005-heavy-deps-as-extras.md) | Heavy ML dependencies stay out of the base install | Accepted, amended by 0011 |
 | [0006](0006-sensitivity-metric.md) | Sensitivity metric for the scan step | Accepted |
-| [0007](0007-recipe-solver-strategy.md) | Solver strategy for recipe selection | Accepted, amended by 0029 |
+| [0007](0007-recipe-solver-strategy.md) | Solver strategy for recipe selection | Accepted, amended by 0029 + 0031 |
 | [0008](0008-hexagonal-architecture.md) | Hexagonal architecture, enforced by import-linter | Accepted |
 | [0009](0009-testing-strategy.md) | Testing strategy — pyramid, verified fakes, properties | Accepted |
 | [0010](0010-sub-4-bit-serving-path.md) | The sub-4-bit serving path runs through GGUF | Accepted, amended 2026-07-29, noted 2026-08-09 |
@@ -67,6 +67,7 @@ ADR that supersedes the old one.
 | [0028](0028-expert-stack-type-table.md) | Expert stacks map through their own GGUF type table | Accepted, amended by 0029 |
 | [0029](0029-plan-independent-size-source.md) | Plan reads tensor sizes from a source independent of the map | Accepted |
 | [0030](0030-vision-budget-sidecar.md) | Vision serves through a projector sidecar and a measured budget line | Accepted, amended 2026-08-29, 2026-08-31 |
+| [0031](0031-refinement-pass.md) | The refinement pass measures in the runtime frame and records its search in a sidecar | Accepted |
 
 ## Template
 

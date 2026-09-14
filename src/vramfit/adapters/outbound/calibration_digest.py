@@ -1,6 +1,7 @@
-"""Read a calibration file's content identity for the scan record.
+"""Read a corpus file's content identity.
 
-The scan records the calibration text by content, not by name. This
+The scan records the calibration text by content, not by name, and
+the refinement pass records the evaluation text the same way. This
 module reads the file once and returns the SHA-256 hex digest with
 the byte count. `vramfit.domain.scan.scan_fingerprint` folds both, so
 a re-issued file behind an unchanged path refuses the old checkpoint,
@@ -27,15 +28,17 @@ Examples:
     from pathlib import Path
 
     from vramfit.adapters.outbound.calibration_digest import (
-        calibration_identity,
+        content_identity,
     )
 
-    sha256, n_bytes = calibration_identity(Path("calibration.txt"))
+    sha256, n_bytes = content_identity(Path("calibration.txt"))
     ```
 
 See Also:
     - [vramfit.adapters.inbound.cli_scan][]: Records the identity in
       the map's `ScanMeta`.
+    - [vramfit.adapters.inbound.cli_refine][]: Records the evaluation
+      corpus's identity in the refinement sidecar's frame.
 """
 
 from __future__ import annotations
@@ -43,16 +46,18 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
-# Hash in 1 MiB slabs, as the sidecar does: a calibration file has no
+# Hash in 1 MiB slabs, as the sidecar does: a corpus file has no
 # fixed size, and a whole-file read would hold all of it in memory.
 _HASH_CHUNK_BYTES = 1 << 20
 
 
-def calibration_identity(path: Path) -> tuple[str, int]:
-    """Hash a calibration file and count its bytes.
+def content_identity(path: Path) -> tuple[str, int]:
+    """Hash a corpus file and count its bytes.
 
     Args:
-        path: The calibration text file the scan measures against.
+        path: The text file a stage measures against — the scan's
+            calibration corpus, or the refinement pass's evaluation
+            corpus.
 
     Returns:
         The SHA-256 hex digest and the byte count, in that order.
@@ -65,7 +70,7 @@ def calibration_identity(path: Path) -> tuple[str, int]:
         Record the identity the published calibration text carries:
 
         ```python
-        sha256, n_bytes = calibration_identity(path)
+        sha256, n_bytes = content_identity(path)
         assert n_bytes == 772386
         ```
     """

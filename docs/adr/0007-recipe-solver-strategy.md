@@ -1,8 +1,19 @@
 # ADR-0007: Solver strategy for recipe selection
 
 - **Status:** Accepted, amended by
-  [ADR-0029](0029-plan-independent-size-source.md)
+  [ADR-0029](0029-plan-independent-size-source.md) and
+  [ADR-0031](0031-refinement-pass.md)
 - **Date:** 2026-07-27
+- **Note (2026-09-14 UTC, issue #590):**
+  [ADR-0031](0031-refinement-pass.md) amends this record in reach.
+  The greedy solve no longer has the last word on a recipe's
+  assignments, and a refinement pass may run after it. Measured
+  2026-09-11: nine of fifteen equal-byte neighbours of the published
+  30B recipe beat it, and Spearman rho between this solver's input
+  prediction and the measured outcome is +0.146 inside that
+  neighbourhood. The solver keeps the whole plan step. The
+  validating run's pod ran 2026-09-14T03:20:33Z to about
+  2026-09-14T05:37Z.
 - **Note (2026-09-04, issue #362):**
   [ADR-0029](0029-plan-independent-size-source.md) amends this
   record. The solver prices every discovered group, not only the

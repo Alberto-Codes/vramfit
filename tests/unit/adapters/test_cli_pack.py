@@ -14,6 +14,8 @@ from tests.fakes import (
 )
 from vramfit.adapters.inbound import cli_pack, cli_pack_imatrix, cli_pack_smoke
 from vramfit.adapters.inbound.cli import app
+from vramfit.adapters.inbound.llama_cpp_layout import LlamaCppTools
+from vramfit.adapters.outbound.gguf.pack import LlamaCppPacker
 from vramfit.adapters.outbound.recipe_json import save_recipe
 from vramfit.adapters.outbound.run_log_jsonl import read_run_log
 from vramfit.domain.model import Assignment, PlanMeta, ProtectedTensor, Recipe
@@ -1721,3 +1723,24 @@ class TestPackSidecar:
         assert result.exit_code == 1
         assert not (tmp_path / "mmproj-model-f16.gguf").exists()
         assert "sidecar_shipped" not in events_of(out)
+
+
+def test_build_packer_wires_the_tools_the_preflight_checks(tmp_path) -> None:
+    """`pack`'s pre-flight and its wiring must mean the same files."""
+    checkout = tmp_path / "llama.cpp"
+    tools = LlamaCppTools.under(checkout)
+
+    packer = cli_pack._build_packer(
+        model_dir=tmp_path / "ckpt",
+        base_gguf=tmp_path / "base.gguf",
+        out=tmp_path / "packed.gguf",
+        llama_cpp=checkout,
+        python_bin=Path("python3"),
+        threads=8,
+        imatrix=None,
+        row_widths={},
+    )
+
+    assert isinstance(packer, LlamaCppPacker)
+    assert packer.convert_script == tools.convert_script
+    assert packer.quantize_bin == tools.quantize_bin

@@ -47,6 +47,8 @@ See Also:
     - [vramfit.domain.solver][]: The caller. `resolve_pins` runs
       before the downgrade loop and `assignment_damage` prices the
       final assignments.
+    - [vramfit.domain.refinement][]: Reads `pinned_group_names` to
+      keep a pinned group out of every swap.
     - [vramfit.domain.solver_errors][]: `PinError`.
 """
 
@@ -345,6 +347,60 @@ def resolve_pins(
         runtime,
     )
     return pinned, uncovered_pins, frozenset(expanded)
+
+
+def pinned_group_names(
+    pins: Mapping[str, int],
+    sensitivity_map: SensitivityMap,
+    runtime: str | None,
+) -> tuple[frozenset[str], tuple[str, ...]]:
+    """Name the groups the caller's pins force, and the misses.
+
+    One resolution path. A caller that needs to know which groups a
+    pin covers reads this, never its own glob over group names. Two
+    globs drift, and a stage that resolves a pin differently from the
+    solver can produce a recipe that violates a pin its own plan
+    records. `resolve_pins` and `held_pin_skips` read the same
+    `_match_universe` and `match_pattern` pair this does.
+
+    The universe is the map's groups. A pattern that resolves to
+    nothing is a miss, so a pin on a checkpoint-discovered (ADR-0029)
+    or folded (#576) name lands nowhere here. Widening the universe
+    needs a checkpoint read this caller does not make, and whether to
+    make it is open (#593) — the parameters return with the caller
+    that supplies them. The caller decides what a miss means, because
+    this function refuses nothing — `resolve_pins` owns the refusal.
+
+    Args:
+        pins: Ordered glob-pattern pins.
+        sensitivity_map: The map whose groups are matched.
+        runtime: Target runtime name, or None.
+
+    Returns:
+        A pair: the pinned group names, and the patterns that
+        matched no group, in pattern order.
+
+    Examples:
+        Read which groups a pin covers:
+
+        ```python
+        from vramfit.domain.pins import pinned_group_names
+
+        names, missed = pinned_group_names({"model.layers.0.*": 8}, map_, "llama.cpp")
+        ```
+    """
+    if not pins:
+        return frozenset(), ()
+    names, folded = _match_universe(sensitivity_map, None, None)
+    forced: set[str] = set()
+    missed: list[str] = []
+    for pattern in pins:
+        matched, skipped = match_pattern(pattern, names, runtime)
+        if not matched and not skipped:
+            missed.append(pattern)
+            continue
+        forced.update(folded.get(name, name) for name in matched)
+    return frozenset(forced), tuple(missed)
 
 
 def held_pin_skips(

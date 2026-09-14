@@ -45,6 +45,10 @@ See Also:
     - [vramfit.adapters.outbound.gguf.pack][]: The adapter this
       command wires.
     - [vramfit.domain.pack][]: The budget re-check.
+
+The llama.cpp tool paths come from
+[vramfit.adapters.inbound.llama_cpp_layout][]'s `LlamaCppTools`,
+so this command's pre-flight and its wiring name the same files.
 """
 
 from __future__ import annotations
@@ -78,6 +82,7 @@ from vramfit.adapters.inbound.cli_pack_smoke import (
     _halt_type_fallback,
     _run_smoke,
 )
+from vramfit.adapters.inbound.llama_cpp_layout import LlamaCppTools
 from vramfit.adapters.inbound.run_log import SafeRunLog
 from vramfit.adapters.outbound.gguf.pack import LlamaCppPacker, TypeFallbackError
 from vramfit.adapters.outbound.json_common import ArtifactError
@@ -102,7 +107,10 @@ def _build_packer(
 
     Unit tests monkeypatch this seam with the verified fake, keeping
     the command's orchestration testable without the toolchain
-    (ADR-0009).
+    (ADR-0009). The tool paths come from
+    [vramfit.adapters.inbound.llama_cpp_layout][]'s `LlamaCppTools`,
+    the same values this command's pre-flight checks, so the check
+    and the run cannot mean different files.
 
     Args:
         model_dir: Hugging Face checkpoint directory.
@@ -119,12 +127,13 @@ def _build_packer(
     Returns:
         The wired packer.
     """
+    tools = LlamaCppTools.under(llama_cpp)
     return LlamaCppPacker(
         model_dir=model_dir,
         base_gguf=base_gguf,
         out_path=out,
-        convert_script=llama_cpp / "convert_hf_to_gguf.py",
-        quantize_bin=llama_cpp / "build" / "bin" / "llama-quantize",
+        convert_script=tools.convert_script,
+        quantize_bin=tools.quantize_bin,
         python_bin=python_bin,
         threads=threads,
         imatrix=imatrix,

@@ -131,9 +131,13 @@ class CorpusReference:
     measured*. That is an assumption being recorded, not a
     measurement being recovered.
 
-    Nothing in vramfit computes these values. No in-repo producer
-    writes a sidecar — whatever ran the evaluation authors it. This
-    type carries the identity and refuses a malformed one.
+    No in-repo producer writes an evals sidecar — whatever ran the
+    evaluation authors it, and vramfit computes none of the values it
+    carries. The refinement pass is the one in-repo producer of a
+    reference: `vramfit.adapters.inbound.cli_refine` hashes its
+    evaluation corpus as it runs and records that identity under the
+    `measured` mark. This type carries the identity and refuses a
+    malformed one.
 
     Attributes:
         source (str | None): The dataset id, e.g.

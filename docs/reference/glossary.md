@@ -340,6 +340,17 @@ change.
     decision 3, [ADR-0027](../adr/0027-instrument-frame-matching.md)
     decision 4). Not "device", "card", or "machine".
 
+**Pass outcome**
+:   What one finished **refinement pass** judged, excluded, and kept:
+    the **arms** selection could choose between, the **excluded
+    arms** the **weight budget** kept out of it, and the winner. One
+    classification, derived from the **refinement sidecar** and never
+    stored beside it. Every surface that reports a pass renders it —
+    the terminal summary and the run log — so no two can describe one
+    pass differently. Lives in
+    `vramfit.domain.refinement_record.PassOutcome`. A judged arm is
+    simply an arm that is not excluded.
+
 **Measurement frame** (short: **frame**)
 :   The whole apparatus a damage number is measured inside: process,
     quantization path, calibration text, token count, and
@@ -354,6 +365,14 @@ change.
     perturb weights inside the bf16 model, measure calibration KL.
     The **runtime frame** is the packed artifact under the runtime's
     own numerics ([ADR-0021](../adr/0021-runtime-frame-measurement.md)).
+    A **refinement pass** records its frame by one rule: every input
+    whose substitution would change the number
+    ([ADR-0031](../adr/0031-refinement-pass.md) decision 5). Those
+    inputs are the runtime binary build, the hardware, and the
+    **content identity** of the evaluation corpus, the reference
+    logits, and the importance matrix. An input the pass did not use
+    records as null, never omitted. That record lives in
+    `vramfit.domain.refinement_record.MeasurementFrame`.
     **Frame-matched** describes a comparison run entirely inside one
     frame. Not "environment", "setup", or "context".
 
@@ -721,6 +740,100 @@ change.
     the candidates and the selection key is unchanged. Dense groups
     keep the plain damage-per-byte order. Lives in
     `vramfit.domain.placement`.
+
+**Refinement pass**
+:   The stage that searches a solved recipe's neighbourhood by packing
+    and measuring candidates in the runtime frame. It never ranks
+    candidates by the sensitivity map. Spearman rho between the map's
+    predicted penalty and the measured delta was +0.146 over the
+    fifteen arms of the 2026-09-11 C4 sweep, so the map does not order
+    the neighbourhood it prices (#486). Lives in
+    `vramfit.domain.refinement`. Not "search" or "tuning".
+
+**Arm**
+:   One candidate a **refinement pass** packed and measured, recorded
+    in the **refinement sidecar**'s `arms` list. An **equal-byte
+    neighbour** is the unpacked recipe; an arm is what that recipe
+    became once the pass paid to build and evaluate it. Not a **probe
+    arm**, which is a packed artifact built to answer one allocation
+    question and named by its ticket.
+
+**Control arm** (short: **control**)
+:   The unmodified recipe's **arm**, carrying the reserved name
+    `control` in the sidecar. Every other arm's delta and sigma are
+    measured against it, so it runs first: a candidate's number is
+    unreadable until the control reproduces the frame it claims. It
+    is not a neighbour and names no **byte-neutral swap**. Not a
+    **control token**, which is a tokenizer concept. A control that
+    packs over the **weight budget** stops the pass, because nothing
+    downstream is readable against it.
+
+**Excluded arm**
+:   An **arm** the pass measured and then kept out of selection,
+    because its packed file exceeded the **weight budget** its recipe
+    was solved for — the same rule `vramfit pack` gates on.
+    Byte-neutrality equalizes *predicted* bytes, so a swap can still
+    pack over. The record keeps it with its measurement and its
+    negative margin: it cost card time, so it is excluded rather than
+    dropped, and an arm that was never evaluated has no entry at all.
+
+**Equal-byte neighbour** (short: **neighbour**)
+:   A recipe one byte-neutral swap away from another, spending the
+    same predicted bytes and competing inside the same weight budget.
+    Nine of fifteen neighbours of the published 30B recipe measured
+    lower full-window KLD than it did.
+
+**Byte-neutral swap** (short: **swap**)
+:   The move that produces a neighbour: one group's precision rises to
+    a second group's, and that second group's falls to the first's.
+    Each group is repriced at its new precision through the solver's
+    own predictor, and the swap is byte-neutral when the two repriced
+    groups spend what they spent before. Equal reference size does not
+    imply equal price — the predictor binds each group's
+    effective-bits table from its measured row width.
+
+**Fixed group**
+:   A group the **refinement pass** takes out of every **byte-neutral
+    swap**, because the recipe already fixes its precision. A pin
+    pattern covers one, and so does a group holding a tensor a
+    protection pattern floors — including a floor the assignment
+    already meets, which resolves to no pair. Both resolve through
+    the solver's own paths, never through a second glob. The pack
+    reads an arm's assignments and never its pins, so a swap that
+    moved one would pack against the plan's own record. Lives in
+    `vramfit.domain.refinement.fixed_groups`. Not a **held group**,
+    which is the unquantizable class a pin sweep skips.
+
+**Refinement sidecar**
+:   The record one **refinement pass** writes beside the recipe it
+    searched (ADR-0031). It carries every arm measured, the
+    neighbourhood those arms were drawn from, the winner, the stated
+    **evidence bar**, the control, and the **measurement frame**. The
+    arm count and the neighbourhood count are separate figures, and an
+    outcome reads correctly only with both. Lives in
+    `vramfit.domain.refinement_record`. Not "report" or "results
+    file".
+
+**Neighbourhood decline**
+:   The refinement pass's answer when it will not measure a recipe's
+    neighbourhood. The published 49B recipe is the empty case: 81 of
+    its 82 groups sit at the 3-bit floor and its one 8-bit group
+    carries a different reference size, so no byte-neutral swap
+    exists there. A pass also declines when it cannot prove a swap
+    safe — a pin the map cannot resolve — and that record carries the
+    moves it enumerated rather than zero. Declining is an outcome,
+    not a failure.
+
+**Paired comparison**
+:   The refinement pass's test of one arm against the control, chunk
+    by chunk over the same evaluation text. Pairing cancels
+    chunk-to-chunk variance, which is large beside the effect. Lives
+    in `vramfit.domain.paired`. Not "A/B test".
+
+**Evidence bar**
+:   The sigma a paired comparison must clear before the refinement
+    pass calls an arm a winner. Stated by the caller, never defaulted.
+    The project's artifact precedent is 7.8 sigma.
 
 **Target runtime**
 :   The serving stack a recipe is planned for, recorded in the recipe's
