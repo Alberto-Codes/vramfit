@@ -979,10 +979,15 @@ records the moves it found, because a recipe with 385 moves the pass
 could not prove safe is not a recipe with no neighbourhood.
 
 The frame carries every input whose substitution would change the
-number: the runtime build, the hardware, the evaluation corpus named
-by content, and the importance matrix named by content. A pass run
-without `--imatrix` records `"imatrix": null`, so an assisted pass
-and an unassisted one never serialize alike.
+number: the runtime build, the hardware, and the evaluation corpus,
+the reference logits, and the importance matrix, each named by
+content. A pass run without `--imatrix` records `"imatrix": null`, so
+an assisted pass and an unassisted one never serialize alike.
+
+`--base-logits` is the sharpest of those: every divergence is
+computed against those bytes, so two passes against different
+reference logits never record the same frame even under one path.
+The command hashes it once before the first arm runs.
 
 The command reports what it measured and never a verdict on the
 recipe. When no arm clears the bar it names the arms it evaluated and

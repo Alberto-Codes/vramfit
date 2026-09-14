@@ -730,3 +730,42 @@ def test_refine_deletes_each_arm_pack_after_measuring_it(workspace) -> None:
 
     assert (workspace / "arms").is_dir()
     assert list((workspace / "arms").glob("*.gguf")) == []
+
+
+def test_refine_records_the_reference_logits_it_measured_against(
+    workspace,
+) -> None:
+    """Every divergence is computed against these bytes."""
+    _invoke(workspace, "--limit", "1")
+
+    frame = json.loads((workspace / "r.refinement.json").read_text())["frame"]
+    assert frame["reference"]["file"].endswith("base.logits")
+    assert frame["reference"]["sha256"] == sha256(b"logits").hexdigest()
+    assert frame["reference"]["size_bytes"] == len(b"logits")
+
+
+def test_two_passes_over_different_reference_logits_do_not_serialize_alike(
+    workspace,
+) -> None:
+    """A rebuilt base.logits behind one path is a different frame."""
+    _invoke(workspace, "--limit", "1")
+    first = json.loads((workspace / "r.refinement.json").read_text())["frame"]
+
+    (workspace / "base.logits").write_bytes(b"rebuilt logits")
+    _invoke(workspace, "--limit", "1")
+    second = json.loads((workspace / "r.refinement.json").read_text())["frame"]
+
+    assert first["reference"]["file"] == second["reference"]["file"]
+    assert first["reference"]["sha256"] != second["reference"]["sha256"]
+    assert first != second
+
+
+def test_refine_refuses_empty_reference_logits(workspace, wiring_log) -> None:
+    (workspace / "base.logits").write_bytes(b"")
+
+    result = _invoke(workspace, "--limit", "1")
+
+    assert result.exit_code == 1
+    assert "--base-logits" in result.output
+    assert "holds no bytes" in result.output
+    assert wiring_log == []

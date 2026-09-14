@@ -771,11 +771,12 @@ change.
 **Measurement frame** (short: **frame**)
 :   Everything a **refinement pass** consumed whose substitution would
     change the number it reports: the runtime binary build, the
-    hardware, the evaluation corpus's **content identity**, and the
-    importance matrix's. Two passes measured in different frames do
-    not compare. An input the pass did not use is recorded as null,
-    never omitted — an unassisted pass states that it ran unassisted.
-    Lives in `vramfit.domain.refinement_record.MeasurementFrame`.
+    hardware, and the **content identity** of the evaluation corpus,
+    the reference logits, and the importance matrix. Two passes
+    measured in different frames do not compare. An input the pass did
+    not use is recorded as null, never omitted — an unassisted pass
+    states that it ran unassisted. Lives in
+    `vramfit.domain.refinement_record.MeasurementFrame`.
 
 **Neighbourhood decline**
 :   The refinement pass's answer when it will not measure a recipe's

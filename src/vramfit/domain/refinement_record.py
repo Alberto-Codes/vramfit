@@ -12,9 +12,10 @@ An arm that lost is evidence about the neighbourhood, and the losing
 arms are what show the map did not order it.
 
 The frame carries every input whose substitution would change the
-number (ADR-0031 decision 5): the runtime build, the hardware, the
-evaluation corpus's content identity, and the importance matrix's. An
-input the pass did not use records as None, never as an absent field.
+number (ADR-0031 decision 5): the runtime build, the hardware, and
+the content identity of the evaluation corpus, the reference logits,
+and the importance matrix. An input the pass did not use records as
+None, never as an absent field.
 
 It also carries how large the neighbourhood was. A caller's arm
 budget is usually smaller than the neighbourhood, so the arms are a
@@ -75,16 +76,18 @@ class RefinementRecordError(VramfitError, ValueError):
 
 
 @dataclass(frozen=True, slots=True)
-class MatrixReference:
-    """The importance matrix a pass packed with, named by content.
+class FileIdentity:
+    """One file a pass consumed, named by its bytes.
 
-    An assisted pack consumes a matrix (ADR-0016), and substituting
-    one changes every number the pass produces (ADR-0020). The frame
-    therefore names the bytes, not the path alone: a path names no
-    bytes once the file behind it changes.
+    The frame names the bytes, not the path alone: a path names no
+    bytes once the file behind it changes. One type serves every such
+    input — the importance matrix an assisted pack consumes
+    (ADR-0016, ADR-0020) and the stored reference logits every
+    divergence is measured against — because they are one concept and
+    a second definition would drift from the first.
 
     Attributes:
-        file (str): The matrix path the pass was given.
+        file (str): The path the pass was given.
         sha256 (str): SHA-256 of those bytes, 64 lowercase hex
             digits.
         size_bytes (int): Size of those bytes. Pairs with `sha256`
@@ -94,9 +97,9 @@ class MatrixReference:
         The 30B pack's matrix:
 
         ```python
-        from vramfit.domain.refinement_record import MatrixReference
+        from vramfit.domain.refinement_record import FileIdentity
 
-        matrix = MatrixReference(file="30b.imatrix", sha256="ab" * 32, size_bytes=1024)
+        matrix = FileIdentity(file="30b.imatrix", sha256="ab" * 32, size_bytes=1024)
         ```
     """
 
@@ -130,9 +133,10 @@ class MeasurementFrame:
 
     The frame carries every input whose substitution would change the
     number (ADR-0031 decision 5). That rule is what puts the matrix
-    beside the corpus: an assisted pass and an unassisted one produce
-    different numbers, so a record that omitted the matrix would
-    serialize the two identically.
+    and the reference logits beside the corpus: an assisted pass and
+    an unassisted one produce different numbers, and two passes
+    against different reference logits are not comparable at all, so
+    a record that omitted either would serialize them identically.
 
     Attributes:
         runtime_build (str): The runtime binary's build identity,
@@ -140,9 +144,11 @@ class MeasurementFrame:
         hardware (str): The card the pass ran on, e.g. ``H100 SXM``.
         corpus (CorpusReference): The evaluation text, named by
             content where the pass recorded it.
-        reference (str): What the divergences were measured against,
-            e.g. ``f16 base logits``.
-        imatrix (MatrixReference | None): The importance matrix every
+        reference (FileIdentity): The stored reference logits every
+            divergence was measured against, named by content. It is
+            the most load-bearing input of all: every figure in the
+            record is computed relative to those bytes.
+        imatrix (FileIdentity | None): The importance matrix every
             arm packed with, or None when the pass ran unassisted.
             None is a recorded state, never an absent field.
 
@@ -157,7 +163,9 @@ class MeasurementFrame:
             runtime_build="b10362",
             hardware="H100 SXM",
             corpus=CorpusReference(file="wiki.test.raw"),
-            reference="f16 base logits",
+            reference=FileIdentity(
+                file="base.logits", sha256="cd" * 32, size_bytes=1024
+            ),
             imatrix=None,
         )
         ```
@@ -166,17 +174,21 @@ class MeasurementFrame:
     runtime_build: str
     hardware: str
     corpus: CorpusReference
-    reference: str
-    imatrix: MatrixReference | None
+    reference: FileIdentity
+    imatrix: FileIdentity | None
 
     def __post_init__(self) -> None:
         """Enforce that the frame names its instrument.
 
+        The reference and the matrix validate themselves, so this
+        checks only the two fields the operator types by hand.
+
         Raises:
-            RefinementRecordError: If any field is empty. A frame
-                that names nothing cannot bound a comparison.
+            RefinementRecordError: If ``runtime_build`` or
+                ``hardware`` is empty. A frame that names nothing
+                cannot bound a comparison.
         """
-        for field_name in ("runtime_build", "hardware", "reference"):
+        for field_name in ("runtime_build", "hardware"):
             if not getattr(self, field_name):
                 raise RefinementRecordError(f"{field_name} must not be empty")
 

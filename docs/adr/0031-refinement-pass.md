@@ -109,17 +109,28 @@ does not earn the refinement step.
 5. **The frame carries every input whose substitution would change
    the number.** That is the rule. The instances are the runtime
    binary build, the hardware, the evaluation corpus content
-   identity, and the importance matrix identity. Each one, swapped,
-   moves the measured divergence, so a record that omits it
-   serializes two different passes identically. An input the pass did
-   not use records as null rather than as an absent field, because
-   "ran unassisted" is a claim and silence is not.
+   identity, the reference logits content identity, and the
+   importance matrix identity. Each one, swapped, moves the measured
+   divergence, so a record that omits it serializes two different
+   passes identically. An input the pass did not use records as null
+   rather than as an absent field, because "ran unassisted" is a
+   claim and silence is not.
 
-   This rule is written as a rule because three separate reviews of
+   The reference logits are the sharpest case. Every divergence in
+   the record is computed against those bytes, so substituting them
+   changes every figure the pass reports — more directly than the
+   corpus or the matrix. Cost does not exempt them: the file reaches
+   39.7 GB on the 49B target and is hashed once per pass, before the
+   first arm runs, because a rule whose most load-bearing case is
+   carved out reads as coverage it does not provide.
+
+   This rule is written as a rule because four separate reviews of
    this change found the same shape: the measurement was sound and
    the record could not prove it — first the corpus identity, then
-   the neighbourhood size, then the matrix. A list of three cases
-   invites a fourth. The rule generates them.
+   the neighbourhood size, then the matrix, then the reference
+   logits. A list of cases invites another. The rule generates them,
+   and the fourth case was found by reading the rule rather than the
+   code.
 
    **The sidecar records at minimum:** every arm evaluated, how many
    byte-neutral moves the neighbourhood held, the winner, the

@@ -15,9 +15,10 @@ caller's budget was smaller, so a reader needs both numbers before
 reading any outcome.
 
 The frame carries every input whose substitution would change the
-number (ADR-0031 decision 5), so it names the importance matrix by
-content beside the evaluation corpus. An unassisted pass records a
-null matrix rather than omitting the field.
+number (ADR-0031 decision 5), so it names the reference logits and
+the importance matrix by content beside the evaluation corpus. An
+unassisted pass records a null matrix rather than omitting the
+field.
 
 `predicted_delta` serializes as provenance. Nothing in this package or
 the domain orders, filters, or selects on it (ADR-0031 decision 6).
@@ -51,7 +52,7 @@ from vramfit.adapters.outbound.json_common import _save_json
 from vramfit.domain.evals import CorpusReference
 from vramfit.domain.refinement_record import (
     ArmRecord,
-    MatrixReference,
+    FileIdentity,
     RefinementSidecar,
 )
 
@@ -59,8 +60,9 @@ from vramfit.domain.refinement_record import (
 # frame, the stated bar, the control, every arm, the neighbourhood
 # the arms were drawn from, and the outcome. `neighbourhood_moves`
 # and the frame's `imatrix` both joined version 1 rather than
-# bumping it: no sidecar had been published when either field
-# landed, so nothing reads a document without them.
+# bumping it, and the frame's `reference` became a content identity
+# in the same way: no sidecar had been published when any of those
+# landed, so nothing reads a document of the older shape.
 REFINEMENT_SIDECAR_SCHEMA_VERSION: Final[int] = 1
 
 
@@ -87,22 +89,23 @@ def _corpus_to_dict(corpus: CorpusReference) -> dict[str, Any]:
     }
 
 
-def _matrix_to_dict(matrix: MatrixReference | None) -> dict[str, Any] | None:
-    """Serialize the importance matrix the pass packed with.
+def _identity_to_dict(identity: FileIdentity | None) -> dict[str, Any] | None:
+    """Serialize one file the pass consumed, named by its bytes.
 
     Args:
-        matrix: The matrix reference, or None for an unassisted pass.
+        identity: The file identity, or None where the field is
+            optional and the pass used no such file.
 
     Returns:
-        The matrix entry's JSON object, or null. A null reads as
-        "this pass ran unassisted", which is a recorded state.
+        The entry's JSON object, or null. A null on the matrix reads
+        as "this pass ran unassisted", which is a recorded state.
     """
-    if matrix is None:
+    if identity is None:
         return None
     return {
-        "file": matrix.file,
-        "sha256": matrix.sha256,
-        "size_bytes": matrix.size_bytes,
+        "file": identity.file,
+        "sha256": identity.sha256,
+        "size_bytes": identity.size_bytes,
     }
 
 
@@ -138,8 +141,8 @@ def sidecar_to_dict(sidecar: RefinementSidecar) -> dict[str, Any]:
 
     Writes ``neighbourhood_moves`` beside ``arms``, so a reader can
     always tell a whole search from a sample of one, and the frame's
-    ``imatrix``, so an assisted pass never reads like an unassisted
-    one.
+    ``reference`` and ``imatrix`` by content, so two passes that
+    measured against different bytes never read alike.
 
     Args:
         sidecar: The record to serialize.
@@ -153,11 +156,14 @@ def sidecar_to_dict(sidecar: RefinementSidecar) -> dict[str, Any]:
         "frame": {
             "runtime_build": sidecar.frame.runtime_build,
             "hardware": sidecar.frame.hardware,
-            "reference": sidecar.frame.reference,
+            # Every divergence is measured against these bytes, so
+            # two passes against different reference logits must not
+            # serialize alike.
+            "reference": _identity_to_dict(sidecar.frame.reference),
             "corpus": _corpus_to_dict(sidecar.frame.corpus),
             # Null records an unassisted pass. Without this an
             # assisted and an unassisted pass serialize alike.
-            "imatrix": _matrix_to_dict(sidecar.frame.imatrix),
+            "imatrix": _identity_to_dict(sidecar.frame.imatrix),
         },
         "bar": sidecar.bar,
         "control": (None if sidecar.control is None else _arm_to_dict(sidecar.control)),

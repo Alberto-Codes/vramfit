@@ -22,7 +22,11 @@ from vramfit.domain.model import (
     SensitivityMap,
 )
 from vramfit.domain.refinement import neighbours
-from vramfit.domain.refinement_record import CONTROL_ARM, MeasurementFrame
+from vramfit.domain.refinement_record import (
+    CONTROL_ARM,
+    FileIdentity,
+    MeasurementFrame,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -44,7 +48,7 @@ def _frame() -> MeasurementFrame:
         runtime_build="b10362",
         hardware="H100 SXM",
         corpus=CorpusReference(file="wiki.test.raw"),
-        reference="f16 base logits",
+        reference=FileIdentity(file="base.logits", sha256="cd" * 32, size_bytes=1024),
         imatrix=None,
     )
 

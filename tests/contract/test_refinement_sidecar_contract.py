@@ -26,7 +26,7 @@ from vramfit.domain.evals import CorpusReference
 from vramfit.domain.refinement_record import (
     CONTROL_ARM,
     ArmRecord,
-    MatrixReference,
+    FileIdentity,
     MeasurementFrame,
     RefinementSidecar,
 )
@@ -43,8 +43,10 @@ def _frame() -> MeasurementFrame:
             size_bytes=1_288_556,
             provenance="measured",
         ),
-        reference="f16 base logits",
-        imatrix=MatrixReference(
+        reference=FileIdentity(
+            file="base.logits", sha256="cd" * 32, size_bytes=39_700_000_000
+        ),
+        imatrix=FileIdentity(
             file="30b.imatrix", sha256="ab" * 32, size_bytes=2_097_152
         ),
     )
@@ -186,6 +188,19 @@ class TestRefinementSidecarSinkContract:
         data = readback()
         assert [a["arm"] for a in data["arms"]] == ["arm01", "arm02"]
         assert data["winner"] == "arm01"
+
+    def test_saved_frame_keeps_the_reference_content_identity(
+        self, build, tmp_path
+    ) -> None:
+        """Every divergence is computed against these bytes."""
+        sink, readback = build(tmp_path)
+
+        sink.save(won_sidecar())
+
+        reference = readback()["frame"]["reference"]
+        assert reference["file"] == "base.logits"
+        assert reference["sha256"] == "cd" * 32
+        assert reference["size_bytes"] == 39_700_000_000
 
     def test_saved_frame_keeps_the_matrix_content_identity(
         self, build, tmp_path

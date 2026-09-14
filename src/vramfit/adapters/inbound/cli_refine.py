@@ -22,6 +22,11 @@ importance matrix, and the destinations the sidecar and the run log
 are written to. A missing path costs no card time, and a finished
 pass is never discarded at its last step.
 
+The frame names the evaluation corpus, the reference logits, and the
+importance matrix by content, each hashed once before the first arm
+runs. Two passes measured against different bytes never record the
+same frame.
+
 [vramfit.adapters.inbound.llama_cpp_layout][]'s `LlamaCppTools`
 names the tools once, for this command and for ``pack``. The
 pre-flight checks those paths and the wiring runs them, so the two
@@ -77,7 +82,7 @@ from vramfit.adapters.outbound.sensitivity_map_json import load_sensitivity_map
 from vramfit.domain.errors import VramfitError
 from vramfit.domain.evals import CorpusReference
 from vramfit.domain.refinement_record import (
-    MatrixReference,
+    FileIdentity,
     MeasurementFrame,
     RefinementSidecar,
 )
@@ -222,33 +227,35 @@ def _corpus_identity(eval_text: Path) -> CorpusReference:
     )
 
 
-def _read_matrix_identity(imatrix: Path | None) -> MatrixReference | None:
-    """Name the importance matrix by content, or record that none ran.
+def _file_identity(label: str, path: Path) -> FileIdentity:
+    """Name one file the pass consumes by the bytes it reads.
 
-    Substituting a matrix changes every number the pass produces
-    (ADR-0020), so the frame names the bytes the pass consumed rather
-    than the path it was handed.
+    Substituting either file changes every number the pass produces —
+    the matrix through the pack (ADR-0020), the reference logits
+    through every divergence — so the frame names the bytes rather
+    than the path it was handed. Each file is hashed once per pass,
+    before any arm runs, because the same bytes back the control and
+    every arm.
 
     Args:
-        imatrix: The ``--imatrix`` value, or None.
+        label: The option that named the path, for the message.
+        path: The file to name.
 
     Returns:
-        The matrix reference, or None for an unassisted pass.
+        The file's content identity.
 
     Raises:
-        Exit: With code 1 when the matrix cannot be read or holds no
+        Exit: With code 1 when the file cannot be read or holds no
             bytes.
     """
-    if imatrix is None:
-        return None
     try:
-        sha256, size_bytes = content_identity(imatrix)
+        sha256, size_bytes = content_identity(path)
     except OSError as error:
-        _halt(f"--imatrix: {error}")
+        _halt(f"{label}: {error}")
         raise
     if size_bytes == 0:
-        _halt(f"--imatrix: {imatrix} holds no bytes")
-    return MatrixReference(file=str(imatrix), sha256=sha256, size_bytes=size_bytes)
+        _halt(f"{label}: {path} holds no bytes")
+    return FileIdentity(file=str(path), sha256=sha256, size_bytes=size_bytes)
 
 
 def _sample_phrase(sidecar: RefinementSidecar) -> str:
@@ -396,7 +403,9 @@ def refine(
     needs is checked before the first tool runs: the tools, the
     matrix, both destinations, and the arm directory. The map must
     have priced this recipe, and an assisted recipe packed without
-    its matrix warns the way ``pack`` warns. `_resolve_row_widths`
+    its matrix warns the way ``pack`` warns. The corpus, the
+    reference logits, and the matrix are each hashed once here, so
+    the frame names bytes rather than paths. `_resolve_row_widths`
     owns its own refusal, so the width read is not wrapped here.
 
     Args:
@@ -457,7 +466,8 @@ def refine(
     _check_destination("--out", sidecar_path)
     _check_destination("--runlog", runlog_path)
     corpus = _corpus_identity(eval_text)
-    matrix = _read_matrix_identity(imatrix)
+    reference = _file_identity("--base-logits", base_logits)
+    matrix = None if imatrix is None else _file_identity("--imatrix", imatrix)
     run_log = SafeRunLog(JsonlRunLogFile(runlog_path), path=runlog_path)
     row_widths = _resolve_row_widths(recipe, model_dir)
     base_path = (
@@ -503,7 +513,7 @@ def refine(
             runtime_build=runtime_build,
             hardware=hardware,
             corpus=corpus,
-            reference=str(base_logits),
+            reference=reference,
             imatrix=matrix,
         )
         sidecar = run_pass(
