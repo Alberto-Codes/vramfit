@@ -125,10 +125,13 @@ def _measure(
     packer_for: Callable[[str], RecipePacker],
     meter: RuntimeDivergenceMeter,
     out_dir: Path,
-    keep_packs: bool,
     report: Reporter,
 ) -> tuple[tuple[float, ...], int]:
-    """Pack one arm, measure it, and drop the file unless asked to keep it.
+    """Pack one arm, measure it, and drop the packed file.
+
+    A pass packs one file per arm and the 30B target's are about
+    21 GiB each, so a sixteen-arm pass on a rented pod keeps none of
+    them past its own measurement.
 
     Args:
         name: The arm's name, which names its packed file.
@@ -136,7 +139,6 @@ def _measure(
         packer_for: Builds a packer writing to the given path.
         meter: The runtime-frame divergence meter.
         out_dir: Directory the packed files go in.
-        keep_packs: Keep each packed file instead of deleting it.
         report: Progress reporter.
 
     Returns:
@@ -148,8 +150,7 @@ def _measure(
     report("arm_packed", {"arm": name, "packed_bytes": result.packed_bytes})
     divergences = meter.measure(str(packed))
     report("arm_measured", {"arm": name, "chunks": len(divergences)})
-    if not keep_packs:
-        packed.unlink(missing_ok=True)
+    packed.unlink(missing_ok=True)
     return divergences, result.packed_bytes
 
 
@@ -198,7 +199,6 @@ def run_pass(  # noqa: PLR0913 - the pass surface: two ports, a frame, and its b
     limit: int,
     out_dir: Path,
     row_widths: Mapping[str, int],
-    keep_packs: bool = False,
     report: Reporter = _silent,
 ) -> RefinementSidecar:
     """Measure a recipe's neighbourhood and keep the best arm that wins.
@@ -214,12 +214,12 @@ def run_pass(  # noqa: PLR0913 - the pass surface: two ports, a frame, and its b
         out_dir: Directory the packed files go in.
         row_widths: Elements per row per group, which bind each
             group's effective-bits table for candidate pricing.
-        keep_packs: Keep each packed file instead of deleting it.
         report: Progress reporter.
 
     The neighbourhood is enumerated once. The decline reads that
     same enumeration, so no caller relies on a decline and an
-    enumeration agreeing across two runs.
+    enumeration agreeing across two runs, and a declined record
+    carries the moves that enumeration found rather than zero.
 
     Returns:
         The pass's complete search record, carrying the arms measured
@@ -230,7 +230,10 @@ def run_pass(  # noqa: PLR0913 - the pass surface: two ports, a frame, and its b
     candidates = neighbours(recipe, map_, row_widths)
     declined = decline_reason(recipe, map_, candidates)
     if declined is not None:
-        report("refine_declined", {"reason": declined})
+        report(
+            "refine_declined",
+            {"reason": declined, "neighbourhood_moves": len(candidates)},
+        )
         return RefinementSidecar(
             model_id=recipe.model_id,
             frame=frame,
@@ -239,7 +242,7 @@ def run_pass(  # noqa: PLR0913 - the pass surface: two ports, a frame, and its b
             arms=(),
             winner=None,
             declined=declined,
-            neighbourhood_moves=0,
+            neighbourhood_moves=len(candidates),
         )
     arms = stride(candidates, limit)
     report(
@@ -252,7 +255,7 @@ def run_pass(  # noqa: PLR0913 - the pass surface: two ports, a frame, and its b
     base_bytes = packer_for(str(out_dir / f"{CONTROL_ARM}.gguf")).convert()
     report("base_converted", {"base_bytes": base_bytes})
     control_chunks, control_bytes = _measure(
-        CONTROL_ARM, recipe, packer_for, meter, out_dir, keep_packs, report
+        CONTROL_ARM, recipe, packer_for, meter, out_dir, report
     )
     control = _record(
         CONTROL_ARM, None, compare(control_chunks, control_chunks), control_bytes
@@ -267,7 +270,6 @@ def run_pass(  # noqa: PLR0913 - the pass surface: two ports, a frame, and its b
             packer_for,
             meter,
             out_dir,
-            keep_packs,
             report,
         )
         paired = compare(chunks, control_chunks)

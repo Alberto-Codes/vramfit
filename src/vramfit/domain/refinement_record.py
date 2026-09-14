@@ -309,9 +309,16 @@ class RefinementSidecar:
             neighbourhood held, before any stride took a sample. Read
             it beside ``len(arms)``: the two differ whenever the
             caller's arm budget was smaller than the neighbourhood,
-            and a reader cannot judge an outcome without both. Zero
-            for a declined pass, which enumerated no move worth
-            measuring.
+            and a reader cannot judge an outcome without both.
+
+            It is a count of what was enumerated, never a summary of
+            the outcome. A declined pass records the moves it
+            enumerated, which is zero only when the neighbourhood was
+            genuinely empty. A pass that declines for another reason
+            — a pin this map cannot resolve — records the moves it
+            found, because "no neighbourhood" and "a neighbourhood
+            the pass could not prove safe" are different facts about
+            the recipe.
 
     Examples:
         A declined pass measured nothing:
@@ -368,20 +375,19 @@ class RefinementSidecar:
     def _check_declined(self) -> None:
         """Enforce that a declined pass reached no card.
 
+        The neighbourhood count is not checked here. A decline that
+        enumerated moves records them, because a recipe with 385
+        moves the pass could not prove safe is not a recipe with no
+        neighbourhood.
+
         Raises:
             RefinementRecordError: If the record carries any
-                measurement, or counts a neighbourhood move.
-                Declining happens before the first pack, which is
-                what keeps an unreachable target free.
+                measurement. Declining happens before the first pack,
+                which is what keeps an unreachable target free.
         """
         if self.arms or self.winner is not None or self.control is not None:
             raise RefinementRecordError(
                 "a declined pass measures nothing and keeps nothing"
-            )
-        if self.neighbourhood_moves:
-            raise RefinementRecordError(
-                "a declined pass enumerated no move worth measuring, so its "
-                "neighbourhood count is zero"
             )
 
     def _check_measured(self) -> None:

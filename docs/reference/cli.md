@@ -932,7 +932,7 @@ Options: `--map` (required), `--llama-cpp` (required),
 `--runtime-build` (required), `--hardware` (required), `--bar`
 (required), `--model`, `--base-gguf`, `--imatrix`, `--out-dir`
 (default `arms`), `--out`, `--limit` (default 15), `--threads`,
-`--keep-packs`, `--python-bin`, `--runlog`.
+`--python-bin`, `--runlog`.
 
 The command checks every path it needs before the convert stage: the
 three llama.cpp tools, `--imatrix` when given, and the destinations
@@ -970,7 +970,13 @@ predicted delta is recorded as provenance and orders nothing.
 It also records `neighbourhood_moves`, how many byte-neutral moves
 the neighbourhood held before `--limit` sampled it. Read it beside
 the arm count: 15 arms of 15 and 15 arms of 385 are different
-results. A declined pass records 0.
+results.
+
+It counts what was enumerated, never the outcome. A declined pass
+records 0 only when the neighbourhood was genuinely empty. A pass
+that declines for another reason — a pin this map cannot resolve —
+records the moves it found, because a recipe with 385 moves the pass
+could not prove safe is not a recipe with no neighbourhood.
 
 The frame carries every input whose substitution would change the
 number: the runtime build, the hardware, the evaluation corpus named
@@ -994,11 +1000,15 @@ choice and not a limit: the command reads the checkpoint's tensor
 headers for the row widths one step earlier, so the names that would
 widen the match are already in hand.
 
+Each arm's packed file is deleted once the meter has read it. The
+30B target's arms are about 21 GiB each, so a pass keeps none of
+them past its own measurement.
+
 The command writes a sidecar and never a refined recipe. Promoting a
 winning arm to an artifact needs a tier-3 slice and a serve test.
 
 Run log: refine_started (arms, neighbourhood_moves, bar) or
-refine_declined (reason),
+refine_declined (reason, neighbourhood_moves),
 base_converted, then per arm arm_packing, arm_packed, arm_measured,
 then refine_finished (winner, refusal).
 

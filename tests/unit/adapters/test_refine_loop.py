@@ -74,7 +74,7 @@ def _map(names, curves=None):
     )
 
 
-def _recipe(bits):
+def _recipe(bits, pins=None):
     assignments = tuple(
         Assignment(group=n, bits=b, bytes=SIZE_AT[b], damage=0.1)
         for n, b in bits.items()
@@ -86,7 +86,7 @@ def _recipe(bits):
         predicted_total_bytes=sum(a.bytes for a in assignments),
         predicted_damage=1.0,
         solver="greedy-damage-per-byte",
-        pins={},
+        pins=pins or {},
         protections={},
         format_overhead=0.0,
         trace=(),
@@ -347,13 +347,59 @@ def test_an_unstrided_pass_counts_its_arms_and_its_neighbourhood_alike(
     assert len(sidecar.arms) == sidecar.neighbourhood_moves == 4
 
 
-def test_a_declined_pass_counts_no_neighbourhood_move(tmp_path) -> None:
+def test_an_empty_neighbourhood_declines_at_zero(tmp_path) -> None:
     meter = MemoryRuntimeDivergenceMeter(default=CONTROL_CHUNKS)
 
     sidecar = _run(tmp_path, meter, bits={G0: 4, G1: 4, G2: 4})
 
     assert sidecar.declined is not None
     assert sidecar.neighbourhood_moves == 0
+
+
+def test_a_pin_miss_decline_records_the_moves_it_enumerated(tmp_path) -> None:
+    """A pin the map cannot resolve is not an empty neighbourhood."""
+    meter = MemoryRuntimeDivergenceMeter(default=CONTROL_CHUNKS)
+    bits = {G0: 2, G1: 2, G2: 4, G3: 4}
+    recipe = _recipe(bits, pins={"model.layers.9.mixer.in_proj": 8})
+
+    sidecar = run_pass(
+        recipe,
+        _map(list(bits)),
+        _packer_for([]),
+        meter,
+        _frame(),
+        bar=1.0,
+        limit=10,
+        out_dir=tmp_path,
+        row_widths={},
+    )
+
+    assert sidecar.declined is not None
+    assert "cannot resolve pin" in sidecar.declined
+    assert sidecar.neighbourhood_moves == 4
+    assert sidecar.arms == ()
+
+
+def test_refine_declined_carries_the_enumerated_count(tmp_path) -> None:
+    meter = MemoryRuntimeDivergenceMeter(default=CONTROL_CHUNKS)
+    bits = {G0: 2, G1: 2, G2: 4, G3: 4}
+    seen: list[tuple[str, dict]] = []
+
+    run_pass(
+        _recipe(bits, pins={"model.layers.9.mixer.in_proj": 8}),
+        _map(list(bits)),
+        _packer_for([]),
+        meter,
+        _frame(),
+        bar=1.0,
+        limit=10,
+        out_dir=tmp_path,
+        row_widths={},
+        report=lambda event, fields: seen.append((event, dict(fields))),
+    )
+
+    declined = next(fields for event, fields in seen if event == "refine_declined")
+    assert declined["neighbourhood_moves"] == 4
 
 
 def test_refine_started_carries_both_counts(tmp_path) -> None:

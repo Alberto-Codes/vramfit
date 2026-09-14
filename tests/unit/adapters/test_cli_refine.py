@@ -712,3 +712,11 @@ def test_refine_refuses_an_empty_imatrix(workspace, wiring_log) -> None:
     assert result.exit_code == 1
     assert "holds no bytes" in result.output
     assert wiring_log == []
+
+
+def test_refine_deletes_each_arm_pack_after_measuring_it(workspace) -> None:
+    """A 16-arm pass on the 30B target would otherwise need 336 GiB."""
+    _invoke(workspace, "--limit", "2")
+
+    assert (workspace / "arms").is_dir()
+    assert list((workspace / "arms").glob("*.gguf")) == []

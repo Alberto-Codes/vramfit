@@ -778,11 +778,14 @@ change.
     Lives in `vramfit.domain.refinement_record.MeasurementFrame`.
 
 **Neighbourhood decline**
-:   The refinement pass's answer when a recipe has no legal swap. The
-    published 49B recipe places 81 of its 82 groups at the 3-bit
-    floor, and its one 8-bit group carries a different reference size,
-    so no byte-neutral swap exists there. Declining is an outcome, not
-    a failure.
+:   The refinement pass's answer when it will not measure a recipe's
+    neighbourhood. The published 49B recipe is the empty case: 81 of
+    its 82 groups sit at the 3-bit floor and its one 8-bit group
+    carries a different reference size, so no byte-neutral swap
+    exists there. A pass also declines when it cannot prove a swap
+    safe — a pin the map cannot resolve — and that record carries the
+    moves it enumerated rather than zero. Declining is an outcome,
+    not a failure.
 
 **Paired comparison**
 :   The refinement pass's test of one arm against the control, chunk

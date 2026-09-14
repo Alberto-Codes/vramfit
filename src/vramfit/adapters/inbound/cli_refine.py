@@ -67,7 +67,6 @@ from vramfit.adapters.inbound.run_log import SafeRunLog
 from vramfit.adapters.outbound.calibration_digest import content_identity
 from vramfit.adapters.outbound.gguf.divergence import LlamaCppDivergenceMeter
 from vramfit.adapters.outbound.gguf.pack import LlamaCppPacker
-from vramfit.adapters.outbound.gguf.types import PackError
 from vramfit.adapters.outbound.json_common import ArtifactError
 from vramfit.adapters.outbound.recipe_json import load_recipe
 from vramfit.adapters.outbound.refinement_sidecar_json import (
@@ -373,10 +372,6 @@ def refine(
         int, typer.Option(min=1, help="Most arms to pack and measure.")
     ] = 15,
     threads: Annotated[int, typer.Option(min=1, help="Tool thread count.")] = 8,
-    keep_packs: Annotated[
-        bool,
-        typer.Option(help="Keep each arm's packed file instead of deleting it."),
-    ] = False,
     python_bin: Annotated[
         Path | None,
         typer.Option(help="Interpreter for the convert script. Default: this one."),
@@ -401,7 +396,8 @@ def refine(
     needs is checked before the first tool runs: the tools, the
     matrix, both destinations, and the arm directory. The map must
     have priced this recipe, and an assisted recipe packed without
-    its matrix warns the way ``pack`` warns.
+    its matrix warns the way ``pack`` warns. `_resolve_row_widths`
+    owns its own refusal, so the width read is not wrapped here.
 
     Args:
         recipe_path: The recipe to refine.
@@ -420,7 +416,6 @@ def refine(
         out: Sidecar path, or None to place it beside the recipe.
         limit: Most arms to measure.
         threads: Tool thread count.
-        keep_packs: Keep each packed arm.
         python_bin: Convert-script interpreter, or None for this one.
         runlog: Run-log path, or None to place it beside the sidecar.
 
@@ -464,11 +459,7 @@ def refine(
     corpus = _corpus_identity(eval_text)
     matrix = _read_matrix_identity(imatrix)
     run_log = SafeRunLog(JsonlRunLogFile(runlog_path), path=runlog_path)
-    try:
-        row_widths = _resolve_row_widths(recipe, model_dir)
-    except PackError as error:
-        _halt(str(error))
-        return
+    row_widths = _resolve_row_widths(recipe, model_dir)
     base_path = (
         base_gguf if base_gguf is not None else out_dir / f"{model_dir.name}-f16.gguf"
     )
@@ -525,7 +516,6 @@ def refine(
             limit=limit,
             out_dir=out_dir,
             row_widths=row_widths,
-            keep_packs=keep_packs,
             report=run_log.emit,
         )
         sink.save(sidecar)

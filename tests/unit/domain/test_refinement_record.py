@@ -299,14 +299,27 @@ def test_a_negative_neighbourhood_count_is_refused() -> None:
         _sidecar(winner=None, neighbourhood_moves=-1)
 
 
-def test_a_declined_pass_counts_no_neighbourhood_move() -> None:
-    with pytest.raises(RefinementRecordError, match="neighbourhood count is zero"):
-        _sidecar(
-            arms=(),
-            winner=None,
-            declined="no byte-neutral neighbour",
-            neighbourhood_moves=385,
-        )
+def test_a_declined_pass_may_count_the_moves_it_enumerated() -> None:
+    """A decline the pass could not prove safe still found a neighbourhood."""
+    sidecar = _sidecar(
+        arms=(),
+        winner=None,
+        declined="the map cannot resolve pin model.layers.0.mixer.in_proj",
+        neighbourhood_moves=385,
+    )
+
+    assert sidecar.neighbourhood_moves == 385
+
+
+def test_an_empty_neighbourhood_declines_at_zero() -> None:
+    sidecar = _sidecar(
+        arms=(),
+        winner=None,
+        declined="no byte-neutral neighbour",
+        neighbourhood_moves=0,
+    )
+
+    assert sidecar.neighbourhood_moves == 0
 
 
 def test_a_matrix_reference_names_its_bytes() -> None:

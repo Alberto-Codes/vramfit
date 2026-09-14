@@ -5,7 +5,10 @@
 - **Origin:** Issue #590, resolving the question the 2026-09-11
   maintainer ruling left conditional on a neighbour winning. Nine
   neighbours won. The measured evidence is the closing comment on
-  #486 and `data/vramfit-c4-neighbour-30b/`.
+  #486 and the C4 equal-byte neighbour sweep, an external measurement
+  run of 2026-09-11 whose records live outside this repository. The
+  figures that carry a decision are restated here, so no decision
+  below rests on reaching that run.
 - **Note (2026-09-14 UTC, validation pass):** the stage ran end to
   end on the published 30B recipe, on one rented H100 for 8.02 USD.
   The pod ran 2026-09-14T03:20:33Z to about 2026-09-14T05:37Z. That
@@ -139,10 +142,24 @@ does not earn the refinement step.
    The project's artifact precedent is 7.8 sigma.
 
 8. **Declining is an outcome, not a failure.** A recipe with no legal
-   swap reports that it has none. The published 49B recipe places 81
-   of its 82 groups at the 3-bit floor, and its one 8-bit group
-   carries a different reference size, so no byte-neutral swap exists
-   there (`data/vramfit-c4-neighbour-refinement/report.md`).
+   swap reports that it has none.
+
+   The published 49B recipe is that case, and the numbers are these.
+   It allocates 82 groups. 81 sit at the 3-bit floor and one sits at
+   8 bits. A swap needs two groups at different precisions, so every
+   candidate pair on that recipe pairs the single 8-bit group against
+   a 3-bit one — 81 ordered pairs, and no pair among the 81 groups at
+   the floor, because a swap between two groups at one precision
+   moves nothing. Each of those 81 pairs then fails the pricing test:
+   the 8-bit group carries a different reference size from the
+   stacks, so repricing the two at each other's precisions does not
+   spend what they spent before. The neighbourhood is empty, and the
+   pass reports that rather than forcing a move.
+
+   The 49B refinement survey, an external measurement run, recorded
+   the same result. It is restated here rather than cited, because a
+   decision that cannot survive its citation being unreachable is not
+   yet a record.
 
 ## Consequences
 
@@ -218,6 +235,13 @@ does not earn the refinement step.
   where only 3 of the earlier arms sat. Decision 1 rules out ranking
   on the map. Whether it also rules out using the map to spread a
   sample is what #591 asks.
+- Whether a pass should keep its packed arms for post-hoc
+  inspection. It does not: `_measure` drops each arm's file once the
+  meter has read it. The 30B target's arms are about 21 GiB each and
+  a pass packs sixteen, so retaining them needs 336 GiB of pod disk
+  to answer a question nothing has yet asked. A flag was considered
+  and left out rather than shipped unused — a public option is a
+  surface the project then owes.
 - Whether to widen the pin match universe beyond the map's groups.
   The narrowing above is a choice, not a limit: `vramfit refine`
   reads the checkpoint's tensor headers through `_resolve_row_widths`
