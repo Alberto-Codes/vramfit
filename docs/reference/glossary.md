@@ -744,6 +744,15 @@ change.
     total cannot move. It prices exactly only when both groups carry
     the same reference size.
 
+**Fixed group**
+:   A group the **refinement pass** takes out of every **byte-neutral
+    swap**, because the recipe already fixes its precision. A pin
+    names one, and so does a group carrying a protected tensor. A
+    refined arm keeps both records, so a swap that moved one would
+    pack bytes the arm does not predict. Lives in
+    `vramfit.domain.refinement.fixed_groups`. Not a **held group**,
+    which is the unquantizable class a pin sweep skips.
+
 **Neighbourhood decline**
 :   The refinement pass's answer when a recipe has no legal swap. The
     published 49B recipe places 81 of its 82 groups at the 3-bit

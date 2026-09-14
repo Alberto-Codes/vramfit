@@ -9,6 +9,7 @@ test. The measure loop itself is covered in
 from __future__ import annotations
 
 import json
+from hashlib import sha256
 from pathlib import Path
 
 import pytest
@@ -22,6 +23,7 @@ from tests.fakes import (
 from vramfit.adapters.inbound import cli_refine
 from vramfit.adapters.inbound.cli import app
 from vramfit.adapters.outbound.recipe_json import save_recipe
+from vramfit.adapters.outbound.run_log_jsonl import read_run_log
 from vramfit.adapters.outbound.sensitivity_map_json import save_sensitivity_map
 from vramfit.domain.model import (
     Assignment,
@@ -118,12 +120,14 @@ def workspace(tmp_path: Path, monkeypatch) -> Path:
     return tmp_path
 
 
-def _invoke(tmp_path: Path, *extra: str, recipe: str = "r.json"):
+def _invoke(tmp_path: Path, *extra: str, recipe: str = "r.json", bar: str = "7.8"):
     return runner.invoke(
         app,
         [
             "refine",
             str(tmp_path / recipe),
+            "--bar",
+            bar,
             "--map",
             str(tmp_path / "map.json"),
             "--llama-cpp",
@@ -163,8 +167,67 @@ def test_refine_records_the_frame_it_measured_in(workspace) -> None:
     assert frame["corpus"]["file"].endswith("wiki.test.raw")
 
 
+def test_refine_names_the_evaluation_corpus_by_content(workspace) -> None:
+    _invoke(workspace, "--limit", "1")
+
+    corpus = json.loads((workspace / "r.refinement.json").read_text())["frame"][
+        "corpus"
+    ]
+    assert corpus["sha256"] == sha256(b"text").hexdigest()
+    assert corpus["size_bytes"] == 4
+    assert corpus["provenance"] == "measured"
+
+
+def test_refine_records_a_different_corpus_differently(workspace) -> None:
+    _invoke(workspace, "--limit", "1")
+    first = json.loads((workspace / "r.refinement.json").read_text())["frame"]
+
+    (workspace / "wiki.test.raw").write_text("other text")
+    _invoke(workspace, "--limit", "1")
+    second = json.loads((workspace / "r.refinement.json").read_text())["frame"]
+
+    assert first["corpus"]["file"] == second["corpus"]["file"]
+    assert first["corpus"]["sha256"] != second["corpus"]["sha256"]
+
+
+def test_refine_refuses_an_empty_evaluation_corpus(workspace) -> None:
+    (workspace / "wiki.test.raw").write_text("")
+
+    result = _invoke(workspace, "--limit", "1")
+
+    assert result.exit_code == 1
+    assert "holds no bytes" in result.output
+
+
+def test_refine_refuses_an_unstated_bar(workspace) -> None:
+    result = runner.invoke(
+        app,
+        [
+            "refine",
+            str(workspace / "r.json"),
+            "--map",
+            str(workspace / "map.json"),
+            "--llama-cpp",
+            str(workspace / "llama.cpp"),
+            "--base-logits",
+            str(workspace / "base.logits"),
+            "--eval-text",
+            str(workspace / "wiki.test.raw"),
+            "--runtime-build",
+            "b10362",
+            "--hardware",
+            "H100 SXM",
+            "--model",
+            str(workspace / "ckpt"),
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert not (workspace / "r.refinement.json").exists()
+
+
 def test_refine_records_the_stated_bar(workspace) -> None:
-    _invoke(workspace, "--limit", "1", "--bar", "4.0")
+    _invoke(workspace, "--limit", "1", bar="4.0")
 
     assert json.loads((workspace / "r.refinement.json").read_text())["bar"] == 4.0
 
@@ -225,6 +288,8 @@ def test_refine_refuses_a_missing_model_directory(workspace) -> None:
             "b10362",
             "--hardware",
             "H100 SXM",
+            "--bar",
+            "7.8",
             "--model",
             str(workspace / "absent"),
         ],
@@ -237,6 +302,10 @@ def test_refine_refuses_a_missing_model_directory(workspace) -> None:
 def test_refine_writes_a_run_log(workspace) -> None:
     _invoke(workspace, "--limit", "1")
 
-    events = (workspace / "r.refinement.runlog.jsonl").read_text()
-    assert "refine_started" in events
-    assert "refine_finished" in events
+    events = read_run_log(workspace / "r.refinement.runlog.jsonl")
+    names = [line["event"] for line in events]
+    assert names[0] == "refine_started"
+    assert names[-1] == "refine_finished"
+    assert events[0]["arms"] == 1
+    assert events[0]["bar"] == 7.8
+    assert "arm_measured" in names

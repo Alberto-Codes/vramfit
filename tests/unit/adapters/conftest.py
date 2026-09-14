@@ -16,7 +16,7 @@ from typer.testing import CliRunner
 from tests.fakes import MemoryDamageMeter
 from vramfit.adapters.inbound import cli_scan
 from vramfit.adapters.inbound.cli import app
-from vramfit.adapters.outbound.calibration_digest import calibration_identity
+from vramfit.adapters.outbound.calibration_digest import content_identity
 from vramfit.domain.scan import GroupSpec
 
 SPECS = (
@@ -86,7 +86,7 @@ def calibration_content(tmp_path: Path) -> tuple[str, int]:
     Returns:
         The SHA-256 hex digest and the byte count.
     """
-    return calibration_identity(write_calibration(tmp_path))
+    return content_identity(write_calibration(tmp_path))
 
 
 def invoke_scan(tmp_path: Path, *extra: str, calibration_text: str = CALIBRATION_TEXT):

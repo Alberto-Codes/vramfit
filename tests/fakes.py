@@ -28,6 +28,7 @@ from vramfit.domain.budget import ModelShape
 from vramfit.domain.evals import EvalsSidecar
 from vramfit.domain.model import Recipe, SensitivityMap
 from vramfit.domain.pack import PackResult
+from vramfit.domain.refinement_record import RefinementSidecar
 from vramfit.domain.runtime import K_QUANT_SUPER_BLOCK, routes_by_row_width
 from vramfit.domain.scan import GroupSpec, Measurement, is_expert_stack
 from vramfit.domain.sizes import SizeSourceError, TensorSize
@@ -494,6 +495,26 @@ class MemoryEvalsSidecarStore:
 
     @property
     def last(self) -> EvalsSidecar:
+        return self.saved[-1]
+
+
+@dataclass
+class MemoryRefinementSidecarStore:
+    """In-memory `RefinementSidecarSink`.
+
+    Named `Store` because every save is captured and the last one
+    wins, so `last` returns what `save` last accepted. The port has
+    no reader, so neither does this fake — nothing reads a refinement
+    sidecar back yet (ADR-0031 decision 3).
+    """
+
+    saved: list[RefinementSidecar] = field(default_factory=list)
+
+    def save(self, sidecar: RefinementSidecar) -> None:
+        self.saved.append(sidecar)
+
+    @property
+    def last(self) -> RefinementSidecar:
         return self.saved[-1]
 
 

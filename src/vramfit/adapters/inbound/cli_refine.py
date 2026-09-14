@@ -13,6 +13,9 @@ because the map does not order the neighbourhood it prices
 (ADR-0031). A recipe with no legal swap declines before the first
 pack, so a target the protocol cannot reach costs nothing.
 
+The caller states the evidence bar. The command carries no default
+for it (ADR-0031 decision 7).
+
 The command writes a sidecar and never a refined recipe. Promoting a
 winning arm to an artifact needs a tier-3 slice and a serve test, and
 those are not this command's business.
@@ -21,7 +24,7 @@ Examples:
     Search the published recipe's neighbourhood:
 
     ```console
-    $ vramfit refine recipe.json --map map.json --llama-cpp ~/llama.cpp
+    $ vramfit refine recipe.json --map map.json --bar 7.8 ...
     ```
 
 See Also:
@@ -40,6 +43,7 @@ import typer
 from vramfit.adapters.inbound.cli_pack_check import _resolve_row_widths
 from vramfit.adapters.inbound.refine_loop import run_pass
 from vramfit.adapters.inbound.run_log import SafeRunLog
+from vramfit.adapters.outbound.calibration_digest import content_identity
 from vramfit.adapters.outbound.gguf.divergence import LlamaCppDivergenceMeter
 from vramfit.adapters.outbound.gguf.pack import LlamaCppPacker
 from vramfit.adapters.outbound.gguf.types import PackError
@@ -52,6 +56,7 @@ from vramfit.adapters.outbound.run_log_jsonl import JsonlRunLogFile
 from vramfit.adapters.outbound.sensitivity_map_json import load_sensitivity_map
 from vramfit.domain.evals import CorpusReference
 from vramfit.domain.refinement_record import MeasurementFrame, RefinementSidecar
+from vramfit.ports.outbound import RefinementSidecarSink
 
 
 def _halt(message: str) -> None:
@@ -130,6 +135,15 @@ def refine(
     hardware: Annotated[
         str, typer.Option(help="Card the pass runs on, recorded in the sidecar.")
     ],
+    bar: Annotated[
+        float,
+        typer.Option(
+            min=0.0,
+            help="Evidence bar in sigma an arm must clear to win. The "
+            "project's artifact precedent is 7.8. The command has no "
+            "default (ADR-0031 decision 7).",
+        ),
+    ],
     model: Annotated[
         Path | None,
         typer.Option(
@@ -151,14 +165,6 @@ def refine(
         Path | None,
         typer.Option(help="Sidecar path. Default: beside the recipe."),
     ] = None,
-    bar: Annotated[
-        float,
-        typer.Option(
-            min=0.0,
-            help="Evidence bar in sigma an arm must clear to win. The "
-            "project's artifact precedent is 7.8.",
-        ),
-    ] = 7.8,
     limit: Annotated[
         int, typer.Option(min=1, help="Most arms to pack and measure.")
     ] = 15,
@@ -191,13 +197,13 @@ def refine(
         eval_text: Evaluation text.
         runtime_build: Runtime build identity for the record.
         hardware: Card identity for the record.
+        bar: Evidence bar in sigma, stated by the caller.
         model: Checkpoint directory, or None to use the model_id.
         base_gguf: f16 base GGUF path, or None to place it beside the
             arms.
         imatrix: Importance matrix, or None.
         out_dir: Directory the arm packs go in.
         out: Sidecar path, or None to place it beside the recipe.
-        bar: Evidence bar in sigma.
         limit: Most arms to measure.
         threads: Tool thread count.
         keep_packs: Keep each packed arm.
@@ -207,6 +213,7 @@ def refine(
     Raises:
         Exit: With code 1 when an input refuses or the toolchain
             fails.
+        OSError: If the evaluation text cannot be read.
     """
     try:
         recipe = load_recipe(recipe_path)
@@ -223,6 +230,9 @@ def refine(
     for label, path in (("--base-logits", base_logits), ("--eval-text", eval_text)):
         if not path.is_file():
             _halt(f"{label}: {path} does not exist")
+    corpus_sha256, corpus_bytes = content_identity(eval_text)
+    if corpus_bytes == 0:
+        _halt(f"--eval-text: {eval_text} holds no bytes")
     out_dir.mkdir(parents=True, exist_ok=True)
     sidecar_path = (
         out if out is not None else recipe_path.with_suffix(".refinement.json")
@@ -263,10 +273,18 @@ def refine(
             row_widths=row_widths,
         )
 
+    # The frame names the evaluation corpus by content, never by path
+    # alone (ADR-0031 decision 5). This process reads and hashes those
+    # exact bytes as it runs, which is what "measured" marks.
     frame = MeasurementFrame(
         runtime_build=runtime_build,
         hardware=hardware,
-        corpus=CorpusReference(file=str(eval_text)),
+        corpus=CorpusReference(
+            file=str(eval_text),
+            sha256=corpus_sha256,
+            size_bytes=corpus_bytes,
+            provenance="measured",
+        ),
         reference=str(base_logits),
     )
     meter = LlamaCppDivergenceMeter(
@@ -291,6 +309,7 @@ def refine(
     except PackError as error:
         _halt(str(error))
         return
-    JsonRefinementSidecarFile(sidecar_path).save(sidecar)
+    sink: RefinementSidecarSink = JsonRefinementSidecarFile(sidecar_path)
+    sink.save(sidecar)
     _report_outcome(sidecar)
     typer.echo(f"wrote {sidecar_path}")

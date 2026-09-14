@@ -8,6 +8,7 @@ from vramfit.domain.model import (
     Assignment,
     LayerGroup,
     PlanMeta,
+    ProtectedTensor,
     Recipe,
     ScanMeta,
     SensitivityMap,
@@ -18,6 +19,7 @@ from vramfit.domain.refinement import (
     RefinementError,
     apply_move,
     decline_reason,
+    fixed_groups,
     neighbours,
     predicted_delta,
     refuse_unpriced_move,
@@ -45,7 +47,7 @@ def _map(groups=None, precisions=(8, 4, 2)):
         groups=tuple(
             LayerGroup(
                 name=name,
-                tensors=(f"{name}.weight",),
+                tensors=(f"{name}.a.weight", f"{name}.b.weight"),
                 bytes_fp16=size,
                 sensitivity=curve,
             )
@@ -54,7 +56,7 @@ def _map(groups=None, precisions=(8, 4, 2)):
     )
 
 
-def _recipe(bits):
+def _recipe(bits, pins=None, protected=()):
     """Build a recipe whose groups take the given precisions."""
     sizes = {2: 200, 4: 400, 8: 800}
     assignments = tuple(
@@ -68,8 +70,8 @@ def _recipe(bits):
         predicted_total_bytes=sum(a.bytes for a in assignments),
         predicted_damage=0.4,
         solver="greedy-damage-per-byte",
-        pins={},
-        protections={},
+        pins=pins or {},
+        protections={"*": 5} if protected else {},
         format_overhead=0.0,
         trace=(),
     )
@@ -80,7 +82,7 @@ def _recipe(bits):
         runtime=None,
         within_group=None,
         imatrix=None,
-        protected_tensors=(),
+        protected_tensors=protected,
     )
 
 
@@ -184,9 +186,68 @@ def test_refuse_unpriced_move_names_a_group_the_map_omits() -> None:
         Move(promoted="ghost", demoted="g1", from_bits=2, to_bits=4),
         {"g1": 1600},
         {"g1": {2: 0.9, 4: 0.2}},
+        frozenset(),
     )
     assert reason is not None
     assert "ghost" in reason
+
+
+def test_neighbours_emits_no_move_touching_a_pinned_group() -> None:
+    recipe = _recipe(
+        {"g0": 2, "g1": 2, "g2": 4, "g3": 4},
+        pins={"g0": 2},
+    )
+
+    found = neighbours(recipe, _map())
+
+    assert found
+    assert all("g0" not in (c.move.promoted, c.move.demoted) for c in found)
+
+
+def test_neighbours_emits_no_move_touching_a_protected_group() -> None:
+    recipe = _recipe(
+        {"g0": 2, "g1": 2, "g2": 4, "g3": 4},
+        protected=(ProtectedTensor(tensor="g2.b.weight", bits=5),),
+    )
+
+    found = neighbours(recipe, _map())
+
+    assert found
+    assert all("g2" not in (c.move.promoted, c.move.demoted) for c in found)
+
+
+def test_neighbours_of_a_wholly_pinned_recipe_is_empty() -> None:
+    recipe = _recipe({"g0": 2, "g1": 2, "g2": 4, "g3": 4}, pins={"g*": 4})
+
+    assert neighbours(recipe, _map()) == ()
+
+
+def test_fixed_groups_names_pinned_and_protected_groups() -> None:
+    recipe = _recipe(
+        {"g0": 2, "g1": 2, "g2": 4, "g3": 4},
+        pins={"g0": 2},
+        protected=(ProtectedTensor(tensor="g2.b.weight", bits=5),),
+    )
+
+    assert fixed_groups(recipe, _map()) == frozenset({"g0", "g2"})
+
+
+def test_fixed_groups_is_empty_without_pins_or_protections() -> None:
+    recipe = _recipe({"g0": 2, "g2": 4})
+
+    assert fixed_groups(recipe, _map()) == frozenset()
+
+
+def test_refuse_unpriced_move_refuses_a_fixed_group() -> None:
+    reason = refuse_unpriced_move(
+        Move(promoted="g0", demoted="g1", from_bits=2, to_bits=4),
+        {"g0": 1600, "g1": 1600},
+        {"g0": {2: 0.4, 4: 0.1}, "g1": {2: 0.9, 4: 0.2}},
+        frozenset({"g0"}),
+    )
+
+    assert reason is not None
+    assert "fixes group g0" in reason
 
 
 def test_apply_move_refuses_a_group_at_the_wrong_precision() -> None:

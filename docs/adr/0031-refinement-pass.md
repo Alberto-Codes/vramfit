@@ -1,13 +1,17 @@
 # ADR-0031: The refinement pass measures in the runtime frame and records its search in a sidecar
 
 - **Status:** Accepted
-- **Date:** 2026-09-14
+- **Date:** 2026-09-14 (UTC)
 - **Origin:** Issue #590, resolving the question the 2026-09-11
   maintainer ruling left conditional on a neighbour winning. Nine
   neighbours won. The measured evidence is the closing comment on
   #486 and `data/vramfit-c4-neighbour-30b/`.
-- **Note (2026-09-14, validation pass):** the stage ran end to end on
-  the published 30B recipe, on one rented H100 for 8.02 USD. The
+- **Note (2026-09-14 UTC, validation pass):** the stage ran end to
+  end on the published 30B recipe, on one rented H100 for 8.02 USD.
+  The pod ran 2026-09-14T03:20:33Z to about 2026-09-14T05:37Z. That
+  window falls on 2026-09-14 in UTC while the authorizing instruction,
+  dated 2026-09-13, was written in a local zone still on the previous
+  day. The
   control reproduced the published frame at 0.204220 mean KLD against
   0.204223 over 594 chunks. Five of fifteen arms measured below the
   control and four cleared the 7.8 sigma bar. The stage selected an
@@ -130,6 +134,11 @@ does not earn the refinement step.
 - A byte-neutral swap prices exactly only when both groups carry the
   same reference size. The pass skips any other pair rather than
   predicting a total it cannot stand behind.
+- The pass also skips any pair naming a pinned group or a group
+  carrying a protected tensor. An arm recipe keeps `plan.pins` and
+  `protected_tensors` unchanged, so such a swap would pack bytes the
+  arm does not predict. This narrows which arms the pass measures,
+  which is the subject of #591.
 - The solver keeps its approximation and its scope. ADR-0007 is
   amended in reach, not replaced.
 - One more artifact rides a refined publication.
@@ -140,7 +149,7 @@ does not earn the refinement step.
 
 - Which arms the pass measures when it cannot afford the whole
   neighbourhood, tracked in #591. The shipped stride is
-  map-independent and untested. Measured 2026-09-14 against the
+  map-independent and untested. Measured 2026-09-14 UTC against the
   published 30B recipe: the neighbourhood holds 385 moves, the 15
   arms a stride selects overlap the 2026-09-11 arms in zero
   positions, and 12 of those 15 carry a predicted delta above +0.05

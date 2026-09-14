@@ -16,10 +16,13 @@ the finished measurements to the pure assembly logic in
 [vramfit.domain.scan][]. An assisted scan records the
 ``kquant-imx`` or ``q0-imx`` token and the resolved imatrix path in the map, the
 fingerprint, and the run log — relative spellings must not split
-or mix checkpoint identities. The calibration text is the one input
-recorded by content: the map and the fingerprint carry its SHA-256
-and byte count, so re-issued bytes behind an unchanged path refuse
-the old checkpoint. The meter build reads that identity first, so an
+or mix checkpoint identities. The calibration text is recorded by
+content: the map and the fingerprint carry its SHA-256 and byte
+count, read through
+[vramfit.adapters.outbound.calibration_digest][]'s `content_identity`,
+so re-issued bytes behind an unchanged path refuse the old
+checkpoint. The refinement pass reads its evaluation corpus through
+that same helper. The meter build reads the identity first, so an
 unreadable or empty file halts through the run log before the model
 load.
 ``--groups`` restricts a run to named groups, so a caller that wants
@@ -64,7 +67,7 @@ from vramfit.adapters.inbound.scan_events import (
     rss_hwm_gb,
     start_run,
 )
-from vramfit.adapters.outbound.calibration_digest import calibration_identity
+from vramfit.adapters.outbound.calibration_digest import content_identity
 from vramfit.adapters.outbound.run_log_jsonl import JsonlRunLogFile
 from vramfit.adapters.outbound.scan_checkpoint_json import JsonScanCheckpointFile
 from vramfit.adapters.outbound.sensitivity_map_json import JsonSensitivityMapFile
@@ -171,6 +174,9 @@ def _build_meter(
 def _read_calibration_identity(calibration: Path) -> tuple[str, int]:
     """Read the calibration file's content identity for the record.
 
+    Reads through the shared `content_identity` helper and adds the
+    one rule the scan owns: an empty corpus refuses.
+
     Args:
         calibration: The UTF-8 calibration text file.
 
@@ -182,7 +188,7 @@ def _read_calibration_identity(calibration: Path) -> tuple[str, int]:
         ValueError: If the file holds no bytes. An empty corpus
             measures no damage, and `ScanMeta` refuses a zero count.
     """
-    sha256, n_bytes = calibration_identity(calibration)
+    sha256, n_bytes = content_identity(calibration)
     if n_bytes == 0:
         raise ValueError(f"--calibration: {calibration} holds no bytes")
     return sha256, n_bytes

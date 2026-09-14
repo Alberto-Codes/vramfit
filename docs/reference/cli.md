@@ -8,7 +8,7 @@ status: stable
 > `refine`, `validate`, and `capacity` are implemented, and the flags
 > and behaviors below match the built commands (audited 2026-08-14 on
 > #149, promoted with the #228 build; `capacity` added 2026-08-26
-> on #422, `refine` added 2026-09-14 on #590). `pack` and `refine`
+> on #422, `refine` added 2026-09-14 UTC on #590). `pack` and `refine`
 > cover the GGUF backend only (ADR-0010).
 
 ## `vramfit version`
@@ -897,7 +897,7 @@ arm, if any, measures better than the recipe itself (ADR-0031).
 ```console
 $ vramfit refine recipe.json --map map.json --llama-cpp ~/llama.cpp \
     --base-logits base.logits --eval-text wiki.test.raw \
-    --runtime-build b10362 --hardware "H100 SXM"
+    --runtime-build b10362 --hardware "H100 SXM" --bar 7.8
 ```
 
 An arm swaps two assignments: one group's precision rises to a
@@ -905,7 +905,10 @@ second group's, and that second group's falls to the first's. The two
 groups trade their recorded byte figures, so every arm spends the
 recipe's exact byte total and competes inside the same weight budget.
 A swap prices exactly only when both groups carry the same reference
-size, and the command skips any other pair.
+size, and the command skips any other pair. It also skips any pair
+naming a pinned group or a group carrying a protected tensor. An arm
+keeps the recipe's pin and protection records, so a swap that moved
+one would pack bytes the arm does not predict.
 
 **Every arm is packed and measured.** The sensitivity map does not
 order the neighbourhood it prices — Spearman rho was +0.146 over the
@@ -919,9 +922,9 @@ control reproduces the frame it claims to be measured in.
 
 Options: `--map` (required), `--llama-cpp` (required),
 `--base-logits` (required), `--eval-text` (required),
-`--runtime-build` (required), `--hardware` (required), `--model`,
-`--base-gguf`, `--imatrix`, `--out-dir` (default `arms`), `--out`,
-`--bar` (default 7.8), `--limit` (default 15), `--threads`,
+`--runtime-build` (required), `--hardware` (required), `--bar`
+(required), `--model`, `--base-gguf`, `--imatrix`, `--out-dir`
+(default `arms`), `--out`, `--limit` (default 15), `--threads`,
 `--keep-packs`, `--python-bin`, `--runlog`.
 
 `--base-logits` names logits stored from the reference build. Write
@@ -930,14 +933,17 @@ base GGUF. Every arm measures against that same file, or the arms do
 not compare.
 
 `--bar` is the sigma an arm must clear to win, and the command has no
-opinion about the right value. The project's artifact precedent is
-7.8.
+opinion about the right value. State it on every run. The project's
+artifact precedent is 7.8 sigma.
 
 Writes one refinement sidecar, by default beside the recipe at
 `<recipe>.refinement.json`. It records every arm measured, the
 winner, the stated bar, the control with its sigma, and the frame —
-runtime build, hardware, and evaluation corpus. The map's predicted
-delta is recorded as provenance and orders nothing.
+runtime build, hardware, and the evaluation corpus named by content.
+The command hashes `--eval-text` as it runs and records the SHA-256
+digest, the byte count, and the `measured` provenance mark, so two
+passes over different corpora never record the same frame. The map's
+predicted delta is recorded as provenance and orders nothing.
 
 A recipe with no legal swap declines before the first pack and costs
 nothing. The published 49B recipe is that case: 81 of its 82 groups
@@ -951,5 +957,6 @@ base_converted, then per arm arm_packing, arm_packed, arm_measured,
 then refine_finished (winner, refusal).
 
 Exit codes: 1 when the recipe or map is invalid, the model directory
-does not exist, `--base-logits` or `--eval-text` is not a file, a
-group has no row width, or a toolchain stage fails.
+does not exist, `--base-logits` or `--eval-text` is not a file,
+`--eval-text` holds no bytes, a group has no row width, or a
+toolchain stage fails. 2 when `--bar` is not stated.

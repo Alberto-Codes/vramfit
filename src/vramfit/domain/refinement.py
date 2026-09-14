@@ -19,6 +19,14 @@ precision, which holds when they carry the same reference size. The
 candidate then trades one recorded byte figure for the other and the
 total cannot move. `refuse_unpriced_move` states that condition.
 
+A recipe also fixes some groups. A pin forces one group's
+precision, and a protection floor forces one tensor's precision
+inside its group (ADR-0022). A swap that moves such a group breaks
+the equal-byte claim. The arm recipe still carries the pin, and a
+protected tensor still packs at its floor, so the packed bytes leave
+the total the candidate predicts. `fixed_groups` names them and
+`refuse_unpriced_move` skips every move that reaches one.
+
 Examples:
     Enumerate a recipe's neighbourhood:
 
@@ -34,8 +42,9 @@ See Also:
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass
+from fnmatch import fnmatchcase
 
 from vramfit.domain.errors import VramfitError
 from vramfit.domain.model import Assignment, Recipe, SensitivityMap
@@ -157,10 +166,42 @@ def _reference_bytes(map_: SensitivityMap) -> Mapping[str, int]:
     return {g.name: g.bytes_fp16 for g in map_.groups}
 
 
+def fixed_groups(recipe: Recipe, map_: SensitivityMap) -> frozenset[str]:
+    """Name every group whose precision the recipe already fixes.
+
+    A pin pattern forces the precision of each group it matches
+    (ADR-0007). A protection floor forces one tensor's precision
+    inside its group (ADR-0022), and the pack drives that floor
+    whatever the group takes. A refined arm carries both records
+    unchanged, so a swap that moves such a group packs bytes the
+    candidate does not predict.
+
+    Args:
+        recipe: The solved recipe to search around.
+        map_: The map that priced it, whose groups name their
+            tensors.
+
+    Returns:
+        The fixed group names, empty for a recipe with no pins and
+        no protections.
+    """
+    names = [a.group for a in recipe.assignments]
+    fixed = {
+        name
+        for pattern in recipe.plan.pins
+        for name in names
+        if fnmatchcase(name, pattern)
+    }
+    protected = {pair.tensor for pair in recipe.protected_tensors}
+    fixed |= {g.name for g in map_.groups if protected.intersection(g.tensors)}
+    return frozenset(fixed)
+
+
 def refuse_unpriced_move(
     move: Move,
     reference_bytes: Mapping[str, int],
     sensitivity: Mapping[str, Mapping[int, float]],
+    fixed: Collection[str],
 ) -> str | None:
     """Report why a swap cannot be priced from the recipe alone.
 
@@ -170,14 +211,26 @@ def refuse_unpriced_move(
     refuses a precision the map never measured, because the
     neighbour's recorded damage would then name no measurement.
 
+    A fixed group refuses first. A pin or a protection floor governs
+    that group's precision, and the arm recipe carries the record
+    that states it, so the swap would not survive the pack.
+
     Args:
         move: The swap to check.
         reference_bytes: Reference-precision bytes per group name.
         sensitivity: Damage per precision, per group name.
+        fixed: Group names the recipe already fixes, from
+            `fixed_groups`.
 
     Returns:
         The refusal, or None when the swap prices exactly.
     """
+    for name in (move.promoted, move.demoted):
+        if name in fixed:
+            return (
+                f"a pin or a protection fixes group {name}, "
+                "so a swap cannot move its precision"
+            )
     for name in (move.promoted, move.demoted):
         if name not in reference_bytes:
             return f"the map omits group {name}"
@@ -274,9 +327,10 @@ def neighbours(recipe: Recipe, map_: SensitivityMap) -> tuple[Candidate, ...]:
     """Enumerate every byte-neutral neighbour of a recipe.
 
     One neighbour per ordered pair of assignments whose precisions
-    differ and whose swap prices exactly. The result carries no
-    ordering the caller should read as a ranking — it follows the
-    recipe's own assignment order.
+    differ and whose swap prices exactly. A pinned group and a group
+    carrying a protected tensor stay out of every move. The result
+    carries no ordering the caller should read as a ranking — it
+    follows the recipe's own assignment order.
 
     Args:
         recipe: The solved recipe to search around.
@@ -287,6 +341,7 @@ def neighbours(recipe: Recipe, map_: SensitivityMap) -> tuple[Candidate, ...]:
     """
     sensitivity = _group_sensitivity(map_)
     reference = _reference_bytes(map_)
+    fixed = fixed_groups(recipe, map_)
     found: list[Candidate] = []
     for low in recipe.assignments:
         for high in recipe.assignments:
@@ -298,7 +353,7 @@ def neighbours(recipe: Recipe, map_: SensitivityMap) -> tuple[Candidate, ...]:
                 from_bits=low.bits,
                 to_bits=high.bits,
             )
-            if refuse_unpriced_move(move, reference, sensitivity) is not None:
+            if refuse_unpriced_move(move, reference, sensitivity, fixed) is not None:
                 continue
             found.append(
                 Candidate(
@@ -316,7 +371,10 @@ def decline_reason(recipe: Recipe, map_: SensitivityMap) -> str | None:
     A recipe whose groups all sit at one precision has no swap at
     all. The published 49B recipe places 81 of its 82 groups at the
     3-bit floor, and its one 8-bit group prices differently from
-    every other, so the protocol's move does not exist there.
+    every other, so the protocol's move does not exist there. A
+    recipe whose every free pair prices inexactly declines the same
+    way — `fixed_groups` takes pinned and protected groups out of the
+    pairing first.
 
     Args:
         recipe: The solved recipe to search around.
@@ -331,7 +389,7 @@ def decline_reason(recipe: Recipe, map_: SensitivityMap) -> str | None:
         return f"every group sits at {only} bits, so no swap moves precision"
     if not neighbours(recipe, map_):
         return (
-            "no pair of groups both prices exactly and differs in precision, "
-            "so the recipe has no byte-neutral neighbour"
+            "no free pair of groups both prices exactly and differs in "
+            "precision, so the recipe has no byte-neutral neighbour"
         )
     return None
