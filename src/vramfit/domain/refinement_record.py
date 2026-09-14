@@ -241,6 +241,7 @@ class ArmRecord:
             sigma=-14.4,
             better_chunks=436,
             chunks=594,
+            packed_bytes=21_860_214_272,
         )
         ```
     """
