@@ -542,3 +542,42 @@ def test_refine_wires_the_tools_the_preflight_checked(workspace, monkeypatch) ->
     assert seen["convert_script"] == tools.convert_script
     assert seen["quantize_bin"] == tools.quantize_bin
     assert seen["perplexity_bin"] == tools.perplexity_bin
+
+
+def test_refine_refuses_a_sidecar_path_that_is_a_directory(
+    workspace, wiring_log
+) -> None:
+    """`--out arms` means "into arms/" to an operator, not "onto it"."""
+    (workspace / "arms").mkdir()
+
+    result = _invoke(workspace, "--limit", "1", "--out", str(workspace / "arms"))
+
+    assert result.exit_code == 1
+    assert "is a directory" in result.output
+    assert wiring_log == []
+
+
+def test_refine_refuses_a_runlog_path_that_is_a_directory(
+    workspace, wiring_log
+) -> None:
+    (workspace / "logs").mkdir()
+
+    result = _invoke(workspace, "--limit", "1", "--runlog", str(workspace / "logs"))
+
+    assert result.exit_code == 1
+    assert "is a directory" in result.output
+    assert wiring_log == []
+
+
+def test_refine_refuses_an_out_dir_that_is_a_file(workspace, wiring_log) -> None:
+    blocked = workspace / "base-f16.gguf"
+    blocked.write_bytes(b"gguf")
+
+    result = _invoke(workspace, "--limit", "1", "--out-dir", str(blocked))
+
+    assert result.exit_code == 1
+    assert "error: --out-dir" in result.output
+    # A clean halt exits through typer; an unguarded OSError would
+    # surface the OSError itself here.
+    assert isinstance(result.exception, SystemExit)
+    assert wiring_log == []

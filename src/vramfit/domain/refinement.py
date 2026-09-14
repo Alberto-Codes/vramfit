@@ -476,11 +476,19 @@ def decline_reason(
     protected groups out of the pairing first, and `group_price`
     prices what is left.
 
-    A pin this map cannot resolve declines too. The pass reads no
-    checkpoint, so a pin spelled with a checkpoint-discovered
-    (ADR-0029) or folded (#576) name lands on no group here. The
-    pass cannot keep a group it cannot name out of a swap, so it
-    declines rather than measuring arms that may violate the pin.
+    A pin this map cannot resolve declines too. `fixed_groups` calls
+    `vramfit.domain.pins.pinned_group_names` with the map alone,
+    passing neither ``discovered_bytes`` nor ``merged_splits``, so
+    the pin match universe is the map's groups. A pin spelled with a
+    checkpoint-discovered (ADR-0029) or folded (#576) name is
+    reported as missed, and the pass declines rather than measuring
+    arms that may violate a constraint the recipe records.
+
+    That narrowing is a choice, not a limit. `vramfit refine` reads
+    the checkpoint's tensor headers through ``_resolve_row_widths``
+    one step before the pass runs, so the names that would widen the
+    universe are already in hand. Widening it is available and
+    deliberately untaken.
 
     Raises:
         VramfitError: If the recipe's protection records do not

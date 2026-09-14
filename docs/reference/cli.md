@@ -970,10 +970,13 @@ conclusion about the arms it never measured.
 A recipe with no legal swap declines before the first pack and costs
 nothing. The published 49B recipe is that case: 81 of its 82 groups
 sit at the 3-bit floor. A recipe carrying a pin the map cannot
-resolve declines too. The command reads no checkpoint, so a pin
-spelled with a checkpoint-discovered or merged-projection name lands
-on no group here, and the command declines rather than measuring arms
-that may violate it.
+resolve declines too. The pass resolves pins against the map's groups
+alone, so a pin spelled with a checkpoint-discovered or
+merged-projection name is reported as missed, and the command
+declines rather than measuring arms that may violate it. That is a
+choice and not a limit: the command reads the checkpoint's tensor
+headers for the row widths one step earlier, so the names that would
+widen the match are already in hand.
 
 The command writes a sidecar and never a refined recipe. Promoting a
 winning arm to an artifact needs a tier-3 slice and a serve test.

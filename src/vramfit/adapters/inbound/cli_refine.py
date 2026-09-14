@@ -171,18 +171,23 @@ def _check_destination(label: str, path: Path) -> None:
     """Refuse a destination the pass could not write when it finishes.
 
     The sidecar is the pass's only artifact and it is written last,
-    after every pack and every measurement. A directory that does not
-    exist discards all of that, so the destination is checked before
-    the first tool runs.
+    after every pack and every measurement, so every reason the write
+    could fail is checked before the first tool runs. The write
+    replaces a temporary file onto ``path``, which refuses a path
+    that names a directory as surely as one whose parent is missing.
+    The command offers both ``--out-dir`` and ``--out``, so an
+    ``--out`` naming an existing directory is the reachable mistake.
 
     Args:
         label: The option that named the path, for the message.
         path: The file the pass will write.
 
     Raises:
-        Exit: With code 1 when the parent directory is missing or
-            refuses a write.
+        Exit: With code 1 when the path names a directory, or its
+            parent is missing or refuses a write.
     """
+    if path.is_dir():
+        _halt(f"{label}: {path} is a directory, so the pass cannot write it")
     parent = path.parent
     if not parent.is_dir():
         _halt(f"{label}: directory {parent} does not exist")
@@ -336,8 +341,8 @@ def refine(
     frame and the sidecar write sit inside the guarded region, so an
     empty ``--runtime-build`` and a refused write each leave one
     ``error:`` line rather than a traceback. Every path the pass
-    needs — the tools, the matrix, and both destinations — is
-    checked before the first tool runs.
+    needs is checked before the first tool runs: the tools, the
+    matrix, both destinations, and the arm directory.
 
     Args:
         recipe_path: The recipe to refine.
@@ -399,7 +404,11 @@ def refine(
         return
     if corpus_bytes == 0:
         _halt(f"--eval-text: {eval_text} holds no bytes")
-    out_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        out_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as error:
+        _halt(f"--out-dir: {error}")
+        return
     run_log = SafeRunLog(JsonlRunLogFile(runlog_path), path=runlog_path)
     try:
         row_widths = _resolve_row_widths(recipe, model_dir)

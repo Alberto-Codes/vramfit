@@ -173,11 +173,12 @@ does not earn the refinement step.
   defect twice: a glob over assignment names that missed a folded
   merged-projection spelling, and a read of `protected_tensors` that
   missed every floor the assignment already met (issue #59).
-- A pin the map alone cannot resolve declines. The pass reads no
-  checkpoint, so the pin match universe is the map's groups. A pin
-  spelled with a checkpoint-discovered (ADR-0029) or folded (#576)
-  name lands on no group here, and the pass cannot keep a group it
-  cannot name out of a swap.
+- A pin the map alone cannot resolve declines. `fixed_groups` calls
+  `pinned_group_names` with the map alone, passing neither
+  `discovered_bytes` nor `merged_splits`, so the pin match universe
+  is the map's groups. A pin spelled with a checkpoint-discovered
+  (ADR-0029) or folded (#576) name is reported as missed, and the
+  pass declines rather than measuring arms that may violate it.
 - One definition states what clearing the evidence bar means.
   `vramfit.domain.paired.cleared_bar` decides which arm the pass
   selects and which winner a sidecar accepts, so no record can claim
@@ -199,6 +200,15 @@ does not earn the refinement step.
   where only 3 of the earlier arms sat. Decision 1 rules out ranking
   on the map. Whether it also rules out using the map to spread a
   sample is what #591 asks.
+- Whether to widen the pin match universe beyond the map's groups.
+  The narrowing above is a choice, not a limit: `vramfit refine`
+  reads the checkpoint's tensor headers through `_resolve_row_widths`
+  one step before the pass runs, so the `discovered_bytes` and
+  `merged_splits` that would widen the match are already in hand.
+  Widening would replace a decline with a measured pass for a recipe
+  planned under `--checkpoint` whose pin lands on an uncovered group.
+  Nothing has measured that case, so the option stays untaken rather
+  than refused.
 - Whether the pass should search beyond one swap. Every arm measured
   so far moves exactly two assignments, and nothing prices a
   two-swap neighbourhood yet.
