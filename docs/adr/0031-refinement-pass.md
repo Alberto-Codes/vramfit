@@ -204,6 +204,30 @@ does not earn the refinement step.
    A control that exceeds the budget stops the pass instead. Every
    other arm is read against it, so nothing downstream is readable.
 
+   **That ordering is structural, not a rule.** `refine_loop` packs
+   and judges in one call and measures in another, so the control
+   refusal lands between them because that is where the seam is.
+   Four separate reviews of this change found a refusal firing after
+   an expensive read, and each was answered by stating the ordering
+   rule better — cheapest-first, then a pre-flight boundary, then an
+   enumerated refusal set. The last and best-worded version was
+   violated two rounds after it was written, by the change that added
+   this very gate: the control's refusal sat after a 594-chunk
+   divergence run it then discarded. A rule someone must remember at
+   the moment of writing code is the weakest guarantee available, so
+   the opportunity was removed rather than the mistake forbidden.
+
+   The pre-flight's own ordering is still remembered rather than
+   enforced, and `cli_refine_preflight` says so. That boundary is
+   stated rather than implied, so a reader knows which half holds by
+   construction.
+
+   An arm the budget excludes is never reported as one that failed
+   the bar. It does not reach `select`, so the refusal names the
+   exclusion count alongside the arms that were judged — and when
+   every arm was excluded, the record says that rather than claiming
+   none was measured.
+
 ## Consequences
 
 - No outcome of the pass is a verdict on the recipe. The arms are a

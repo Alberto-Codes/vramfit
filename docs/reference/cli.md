@@ -972,7 +972,14 @@ its recipe was solved for. Such an arm is measured, recorded with its
 margin, reported as excluded, and kept out of selection — never
 dropped, because it cost card time. An arm that was never evaluated
 has no entry at all. A control that exceeds the budget stops the
-pass, because nothing downstream is readable against it.
+pass, because nothing downstream is readable against it — it refuses
+between its pack and its measurement, so the pass never pays to
+measure a control it will reject.
+
+When no arm wins and the budget excluded some, the summary names
+both counts: an arm excluded for budget is never reported as one
+that failed to clear the bar. When the budget excluded every arm,
+the summary says so rather than claiming nothing was measured.
 
 It also records `neighbourhood_moves`, how many byte-neutral moves
 the neighbourhood held before `--limit` sampled it. Read it beside
@@ -997,10 +1004,9 @@ never serialize alike.
 
 `--base-logits` is the sharpest of those: every divergence is
 computed against those bytes. The three hashes run last in the
-pre-flight, after every refusal that costs milliseconds, because the
-reference logits reach 39.7 GB on the 49B target. An empty
-`--runtime-build` or `--hardware` — an unset shell variable, say —
-refuses before the first byte is read.
+pre-flight, because the reference logits reach 39.7 GB on the 49B
+target. An empty `--runtime-build` or `--hardware` — an unset shell
+variable, say — refuses before the first byte is read.
 
 The command reports what it measured and never a verdict on the
 recipe. When no arm clears the bar it names the arms it evaluated and
@@ -1032,7 +1038,9 @@ Run log: refine_started (arms, neighbourhood_moves, bar) or
 refine_declined (reason, neighbourhood_moves),
 base_converted, then per arm arm_packing, arm_packed (with
 budget_margin), arm_measured, and arm_over_budget for an excluded
-arm, then refine_finished (winner, refusal).
+arm, then refine_finished (winner, refusal). An over-budget control
+refuses after its arm_packed and emits no arm_measured, because the
+pass refuses before spending the measurement.
 
 Exit codes: 1 when the recipe or map is invalid, the model directory
 does not exist, `--runtime-build` or `--hardware` is empty,

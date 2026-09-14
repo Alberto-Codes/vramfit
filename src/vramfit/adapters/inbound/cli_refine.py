@@ -29,15 +29,15 @@ importance matrix by content, each hashed once before the first arm
 runs. Two passes measured against different bytes never record the
 same frame.
 
-**No refusal anywhere in a pass may fire for a reason that was
-knowable before an expensive read.** The rule is not "the pre-flight
-block is ordered cheapest-first" — a refusal three levels down the
-call graph satisfies that reading and still costs a 39.7 GB hash.
-`_check_recipe_resolves` runs the domain refusals a pass makes before
-its first pack, and names them, so the next reader checks a stated
-set rather than re-deriving one from the call graph. The
-content-identity reads come after it, and one comment marks that
-boundary.
+Two refusals still depend on a reader remembering them, and they
+are named here because nothing structural enforces either.
+`_check_recipe_resolves` runs the domain refusals a pass makes
+before its first pack — it enumerates them, so the next reader
+checks a stated set rather than re-deriving one from the call
+graph — and the frame-label and destination checks run before the
+content-identity reads. Inside the pass the ordering is structural
+instead: `refine_loop` packs and judges in one call and measures in
+another, so a budget refusal cannot reach the meter.
 
 [vramfit.adapters.inbound.llama_cpp_layout][]'s `LlamaCppTools`
 names the tools once, for this command and for ``pack``. The
@@ -199,7 +199,9 @@ def _report_outcome(sidecar: RefinementSidecar) -> None:
     caller's budget was smaller, and no sample supports a conclusion
     about the arms it never measured. An arm the weight budget
     excluded is printed with its margin rather than omitted — it was
-    measured, so the reader sees it.
+    measured, so the reader sees it — and the no-winner line names
+    the exclusions separately, because "did not clear the bar" and
+    "was never judged on merit" are different facts.
 
     Args:
         sidecar: The pass's search record.
@@ -225,9 +227,23 @@ def _report_outcome(sidecar: RefinementSidecar) -> None:
             f"{arm.better_chunks}/{arm.chunks} better){excluded}"
         )
     if sidecar.winner is None:
-        typer.echo(
-            f"no arm among the {_sample_phrase(sidecar)} cleared {sidecar.bar} sigma"
-        )
+        excluded = [a for a in sidecar.arms if not a.fits_budget()]
+        judged = len(sidecar.arms) - len(excluded)
+        if not excluded:
+            typer.echo(
+                f"no arm among the {_sample_phrase(sidecar)} "
+                f"cleared {sidecar.bar} sigma"
+            )
+        elif judged:
+            typer.echo(
+                f"no arm among the {judged} judged cleared {sidecar.bar} sigma, "
+                f"and {len(excluded)} packed over the weight budget"
+            )
+        else:
+            typer.echo(
+                f"all {len(excluded)} measured arms packed over the weight "
+                "budget, so none was judged on merit"
+            )
         return
     won = sidecar.winning_arm()
     if won is not None:
@@ -328,7 +344,8 @@ def refine(
     matrix, both destinations, and the arm directory. The map must
     have priced this recipe, the frame labels must not be empty, and
     an assisted recipe packed without its matrix warns the way
-    ``pack`` warns. The corpus, the reference logits, and the matrix
+    ``pack`` warns. A control that packs over the weight budget
+    halts the pass before its measurement is spent. The corpus, the reference logits, and the matrix
     are each hashed once here, so the frame names bytes rather than
     paths — and they are hashed last, after every refusal a pass
     could make without them. `_check_recipe_resolves` runs the
@@ -395,13 +412,11 @@ def refine(
     _check_destination("--runlog", runlog_path)
     row_widths = _resolve_row_widths(recipe, model_dir)
     _check_recipe_resolves(recipe, map_, row_widths)
-    # No refusal anywhere in a pass may fire for a reason that was
-    # knowable before an expensive read. Every read below this line
-    # costs a whole file — the reference logits reach 39.7 GB on the
-    # 49B target — and the refusals a pass can still make below it
-    # need a packed arm or a measured one. The domain refusals that
-    # need neither are enumerated in `_check_recipe_resolves`, which
-    # runs above.
+    # Nothing structural keeps a new refusal above these reads, so
+    # this one is remembered rather than enforced: every read below
+    # costs a whole file, and the reference logits reach 39.7 GB on
+    # the 49B target. Inside the pass the ordering is structural
+    # instead — `refine_loop` judges a pack before it measures one.
     corpus = _corpus_identity(eval_text)
     reference = _file_identity("--base-logits", base_logits)
     matrix = None if imatrix is None else _file_identity("--imatrix", imatrix)

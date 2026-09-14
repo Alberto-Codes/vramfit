@@ -848,3 +848,50 @@ def test_refine_refuses_an_unresolvable_protection_before_any_hash(
     assert "matches no tensor" in result.output
     assert hashed == []
     assert wiring_log == []
+
+
+def test_refine_names_an_excluded_arms_margin_in_its_output(
+    workspace, monkeypatch
+) -> None:
+    """The operator sees why the arm left the selection, not just that it did."""
+    monkeypatch.setattr(
+        cli_refine,
+        "LlamaCppPacker",
+        lambda **kwargs: MemoryRecipePacker(
+            packed_bytes=10**9 + 4096,
+            has_base=True,
+            row_widths=stack_row_widths(G),
+            out_path=kwargs["out_path"],
+        ),
+    )
+
+    result = _invoke(workspace, "--limit", "1")
+
+    assert result.exit_code == 1
+    assert "the control packed 4096 bytes over the weight budget" in result.output
+
+
+def test_refine_reports_an_excluded_arm_with_its_margin(workspace, monkeypatch) -> None:
+    """An excluded arm is printed with its margin, never omitted."""
+    sizes = {"control": 500, "arm01": 10**9 + 4096}
+
+    monkeypatch.setattr(
+        cli_refine,
+        "LlamaCppPacker",
+        lambda **kwargs: MemoryRecipePacker(
+            packed_bytes=sizes.get(kwargs["out_path"].stem, 500),
+            has_base=True,
+            row_widths=stack_row_widths(G),
+            out_path=kwargs["out_path"],
+        ),
+    )
+
+    result = _invoke(workspace, "--limit", "1")
+
+    assert result.exit_code == 0, result.output
+    assert "excluded, 4096 bytes over the weight budget" in result.output
+    assert "packed over the weight budget" in result.output
+    assert "no arm was measured" not in result.output
+    sidecar = json.loads((workspace / "r.refinement.json").read_text())
+    assert sidecar["arms"][0]["budget_margin"] == -4096
+    assert sidecar["winner"] is None

@@ -112,6 +112,18 @@ def won_sidecar() -> RefinementSidecar:
     )
 
 
+def excluded_arm_sidecar() -> RefinementSidecar:
+    """A pass whose best-measuring arm packed over the weight budget.
+
+    The arm is measured and recorded with its negative margin, and
+    the pass keeps no winner: a reader must be able to tell it from
+    an arm that was never evaluated, which has no entry at all.
+    """
+    won = won_sidecar()
+    over = replace(won.arms[0], budget_margin=-104_857_600)
+    return replace(won, arms=(over, won.arms[1]), winner=None)
+
+
 def declined_sidecar() -> RefinementSidecar:
     """A pass that found no legal swap and measured nothing."""
     return RefinementSidecar(
@@ -251,6 +263,22 @@ class TestRefinementSidecarSinkContract:
         assert data["control"] is None
         assert data["arms"] == []
         assert data["winner"] is None
+
+    def test_an_excluded_arm_keeps_its_margin_beside_its_measurement(
+        self, build, tmp_path
+    ) -> None:
+        """Measured and excluded is not the same as never evaluated."""
+        sink, readback = build(tmp_path)
+
+        sink.save(excluded_arm_sidecar())
+
+        arms = readback()["arms"]
+        assert len(arms) == 2
+        over = arms[0]
+        assert over["budget_margin"] == -104_857_600
+        assert over["mean"] == 0.191855
+        assert over["chunks"] == 594
+        assert readback()["winner"] is None
 
     def test_second_save_wins(self, build, tmp_path) -> None:
         sink, readback = build(tmp_path)

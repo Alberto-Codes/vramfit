@@ -520,8 +520,16 @@ def test_an_over_budget_arm_is_reported_in_the_run_log(tmp_path) -> None:
     assert over == [{"arm": "arm01", "budget_margin": -1}]
 
 
-def test_an_over_budget_control_refuses_the_pass(tmp_path) -> None:
-    """Nothing downstream is readable against a control that does not fit."""
+def test_an_over_budget_control_refuses_without_measuring_anything(
+    tmp_path,
+) -> None:
+    """The verdict is known at the pack, and the measurement is the cost.
+
+    A full-window divergence run is the pass's dominant expense, so
+    the refusal lands between the pack and the meter. Asserting on
+    the meter's call record rather than the message is what pins the
+    ordering.
+    """
     meter = MemoryRuntimeDivergenceMeter(default=CONTROL_CHUNKS)
 
     with pytest.raises(RefinementRecordError, match="over the weight budget"):
@@ -536,3 +544,58 @@ def test_an_over_budget_control_refuses_the_pass(tmp_path) -> None:
             out_dir=tmp_path,
             row_widths={},
         )
+
+    assert meter.measured == []
+    assert list(tmp_path.glob("*.gguf")) == []
+
+
+def test_a_budget_exclusion_never_reads_as_an_arm_that_lost(tmp_path) -> None:
+    """The strongest measurement was excluded, not beaten."""
+    strong = tuple(c - 0.1 for c in CONTROL_CHUNKS)
+    meter = MemoryRuntimeDivergenceMeter(
+        default=CONTROL_CHUNKS,
+        series={str(tmp_path / "arm01.gguf"): strong},
+    )
+    seen: list[tuple[str, dict]] = []
+
+    run_pass(
+        _recipe({G0: 2, G1: 2, G2: 4, G3: 4}),
+        _map([G0, G1, G2, G3]),
+        _packer_for([], sizes={"arm01": 10**9 + 1}),
+        meter,
+        _frame(),
+        bar=7.8,
+        limit=2,
+        out_dir=tmp_path,
+        row_widths={},
+        report=lambda event, fields: seen.append((event, dict(fields))),
+    )
+
+    finished = next(f for event, f in seen if event == "refine_finished")
+    assert finished["winner"] is None
+    assert "packed over the weight budget" in finished["refusal"]
+    assert "1 of 2" in finished["refusal"]
+
+
+def test_every_arm_excluded_never_reads_as_none_measured(tmp_path) -> None:
+    """Fifteen real packs and measurements must not report as zero."""
+    meter = MemoryRuntimeDivergenceMeter(default=CONTROL_CHUNKS)
+    seen: list[tuple[str, dict]] = []
+
+    sidecar = run_pass(
+        _recipe({G0: 2, G1: 2, G2: 4, G3: 4}),
+        _map([G0, G1, G2, G3]),
+        _packer_for([], sizes={"arm01": 10**9 + 1, "arm02": 10**9 + 1}),
+        meter,
+        _frame(),
+        bar=7.8,
+        limit=2,
+        out_dir=tmp_path,
+        row_widths={},
+        report=lambda event, fields: seen.append((event, dict(fields))),
+    )
+
+    finished = next(f for event, f in seen if event == "refine_finished")
+    assert len(sidecar.arms) == 2
+    assert "no arm was measured" not in finished["refusal"]
+    assert "no arm was judged on merit" in finished["refusal"]

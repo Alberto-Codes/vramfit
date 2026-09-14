@@ -5,11 +5,16 @@ keeps the wiring and the reporting; the checks live here, so the
 composition root stays readable and a new refusal has an obvious
 home.
 
-**No refusal anywhere in a pass may fire for a reason that was
-knowable before an expensive read.** These functions are the cheap
-half of that rule. `_check_recipe_resolves` names the domain
-refusals a pass makes before its first pack, so the next reader
-checks a stated set rather than re-deriving one from the call graph.
+These refusals are remembered, not enforced: nothing in the code
+stops a later one from landing below the content-identity reads.
+`_check_recipe_resolves` enumerates the domain refusals a pass makes
+before its first pack, so the next reader checks a stated set rather
+than re-deriving one from the call graph.
+
+Inside the pass the ordering is structural instead.
+[vramfit.adapters.inbound.refine_loop][] packs and judges in one
+call and measures in another, so a budget refusal cannot reach the
+meter — there is no ordering to remember there.
 
 Examples:
     Refuse a checkout missing a tool:
@@ -17,10 +22,15 @@ Examples:
     ```python
     from pathlib import Path
 
-    from vramfit.adapters.inbound.llama_cpp_layout import LlamaCppTools
-    from vramfit.adapters.inbound.cli_refine_preflight import _check_toolchain
+    import typer
 
-    _check_toolchain(LlamaCppTools.under(Path("~/llama.cpp")))
+    from vramfit.adapters.inbound.cli_refine_preflight import _check_toolchain
+    from vramfit.adapters.inbound.llama_cpp_layout import LlamaCppTools
+
+    try:
+        _check_toolchain(LlamaCppTools.under(Path("~/llama.cpp")))
+    except typer.Exit:
+        print("the checkout misses a tool the pass runs")
     ```
 
 See Also:

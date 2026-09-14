@@ -17,6 +17,17 @@ over. An arm that does stays in the record with its measurement
 intact and leaves the selection: it cost card time, so it is
 excluded rather than dropped.
 
+`_pack` and `_measure` are two calls for that reason. Packing yields
+the size, and the size yields the verdict, so a caller holds the
+verdict before it spends the measurement — the pass's dominant cost.
+The control's refusal lands between them because that is where the
+seam is, not because a rule says to check early.
+
+`select` judges the arms it is given, and an excluded arm is not
+among them, so `_refusal_with_exclusions` names the exclusions the
+selection never saw. Without it a budget exclusion would read as an
+arm that failed the bar.
+
 When the neighbourhood is larger than the caller's arm budget, the
 loop takes an evenly spaced stride through the enumeration. The
 stride is deterministic and independent of the map, which is the
@@ -52,7 +63,7 @@ See Also:
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from vramfit.domain.model import Recipe, SensitivityMap
@@ -129,31 +140,78 @@ def _arm_recipe(recipe: Recipe, candidate: Candidate) -> Recipe:
     return replace(recipe, plan=plan, assignments=candidate.assignments)
 
 
-def _measure(
+@dataclass(frozen=True, slots=True)
+class PackedArm:
+    """One arm packed and judged, before anything is spent measuring it.
+
+    The seam this stage turns on. Packing produces a real file and a
+    real size, and the weight-budget verdict follows from that size
+    alone — so the caller holds the verdict before it decides whether
+    to pay for the measurement. `run_pass` refuses an over-budget
+    control here because this is where the knowledge is, not because
+    anyone remembered to check early.
+
+    Attributes:
+        name (str): The arm's name, which names its packed file.
+        path (Path): The packed file, still on disk.
+        packed_bytes (int): The file's real size.
+        budget_margin (int): ``weight_budget_bytes - packed_bytes``,
+            from `vramfit.domain.pack.weight_budget_margin`.
+            Non-negative means the arm fits.
+
+    Examples:
+        Judge before spending:
+
+        ```python
+        from pathlib import Path
+
+        from vramfit.adapters.inbound.refine_loop import PackedArm
+
+        packed = PackedArm(
+            name="arm01",
+            path=Path("arm01.gguf"),
+            packed_bytes=500,
+            budget_margin=-1,
+        )
+        assert not packed.fits_budget()
+        ```
+    """
+
+    name: str
+    path: Path
+    packed_bytes: int
+    budget_margin: int
+
+    def fits_budget(self) -> bool:
+        """Judge whether this pack fits the budget it was solved for.
+
+        Returns:
+            True when the margin is non-negative, which is what
+            `vramfit.domain.pack.weight_budget_margin` documents as
+            fitting.
+        """
+        return self.budget_margin >= 0
+
+
+def _pack(
     name: str,
     arm_recipe: Recipe,
     packer_for: Callable[[str], RecipePacker],
-    meter: RuntimeDivergenceMeter,
     out_dir: Path,
     report: Reporter,
-) -> tuple[tuple[float, ...], int, int]:
-    """Pack one arm, measure it, and drop the packed file.
-
-    A pass packs one file per arm and the 30B target's are about
-    21 GiB each, so a sixteen-arm pass on a rented pod keeps none of
-    them past its own measurement.
+) -> PackedArm:
+    """Pack one arm and judge its size, spending nothing further.
 
     Args:
         name: The arm's name, which names its packed file.
         arm_recipe: The recipe to pack.
         packer_for: Builds a packer writing to the given path.
-        meter: The runtime-frame divergence meter.
         out_dir: Directory the packed files go in.
         report: Progress reporter.
 
     Returns:
-        The arm's per-chunk divergences, its real packed bytes, and
-        its weight-budget margin.
+        The packed arm and its weight-budget verdict. The file is
+        still on disk — the caller drops it, measured or not.
     """
     packed = out_dir / f"{name}.gguf"
     report("arm_packing", {"arm": name, "out": str(packed)})
@@ -167,10 +225,65 @@ def _measure(
             "budget_margin": margin,
         },
     )
-    divergences = meter.measure(str(packed))
-    report("arm_measured", {"arm": name, "chunks": len(divergences)})
-    packed.unlink(missing_ok=True)
-    return divergences, result.packed_bytes, margin
+    return PackedArm(
+        name=name,
+        path=packed,
+        packed_bytes=result.packed_bytes,
+        budget_margin=margin,
+    )
+
+
+def _measure(
+    packed: PackedArm,
+    meter: RuntimeDivergenceMeter,
+    report: Reporter,
+) -> tuple[float, ...]:
+    """Measure a packed arm and drop its file.
+
+    A pass packs one file per arm and the 30B target's are about
+    21 GiB each, so a sixteen-arm pass on a rented pod keeps none of
+    them past its own measurement.
+
+    Args:
+        packed: The packed arm, already judged.
+        meter: The runtime-frame divergence meter.
+        report: Progress reporter.
+
+    Returns:
+        The arm's per-chunk divergences.
+    """
+    divergences = meter.measure(str(packed.path))
+    report("arm_measured", {"arm": packed.name, "chunks": len(divergences)})
+    packed.path.unlink(missing_ok=True)
+    return divergences
+
+
+def _refusal_with_exclusions(
+    refusal: str | None, excluded: Sequence[str], measured: int
+) -> str | None:
+    """Name the budget exclusions the selection never saw.
+
+    `select` judges the arms it is given. An arm the weight budget
+    excluded is not among them, so an unqualified refusal would
+    report it as one that failed the bar — and when every arm was
+    excluded, `select` says none was measured at all, after the pass
+    paid to measure them.
+
+    Args:
+        refusal: The refusal `select` returned, or None for a winner.
+        excluded: Names of the arms the budget excluded.
+        measured: How many arms the pass measured in total.
+
+    Returns:
+        The refusal, naming the exclusions when there were any.
+        None when an arm won.
+    """
+    if refusal is None or not excluded:
+        return refusal
+    over = f"{len(excluded)} of {measured} measured arms packed over the weight budget"
+    if len(excluded) == measured:
+        return f"{over}, so no arm was judged on merit"
+    return f"{refusal}; {over} and were not judged"
 
 
 def _record(
@@ -244,9 +357,11 @@ def run_pass(  # noqa: PLR0913 - the pass surface: two ports, a frame, and its b
     enumeration agreeing across two runs, and a declined record
     carries the moves that enumeration found rather than zero.
 
-    Every packed arm is judged against the weight budget. An arm that
-    exceeds it stays in the record with its measurement and leaves
-    the selection, so a pass never keeps a file `pack` would refuse.
+    Every packed arm is judged against the weight budget between its
+    pack and its measurement. An arm that exceeds it is still
+    measured, stays in the record, and leaves the selection, so a
+    pass never keeps a file `pack` would refuse. The control is
+    refused at that same seam, before its measurement is spent.
 
     Returns:
         The pass's complete search record, carrying the arms measured
@@ -287,41 +402,44 @@ def run_pass(  # noqa: PLR0913 - the pass surface: two ports, a frame, and its b
     # GGUF, and `pack` refuses without one.
     base_bytes = packer_for(str(out_dir / f"{CONTROL_ARM}.gguf")).convert()
     report("base_converted", {"base_bytes": base_bytes})
-    control_chunks, control_bytes, control_margin = _measure(
-        CONTROL_ARM, recipe, packer_for, meter, out_dir, report
-    )
+    control_pack = _pack(CONTROL_ARM, recipe, packer_for, out_dir, report)
+    if not control_pack.fits_budget():
+        control_pack.path.unlink(missing_ok=True)
+        raise RefinementRecordError(
+            f"the control packed {-control_pack.budget_margin} bytes over the "
+            "weight budget, so no arm is readable against it"
+        )
+    control_chunks = _measure(control_pack, meter, report)
     control = _record(
         CONTROL_ARM,
         None,
         compare(control_chunks, control_chunks),
-        control_bytes,
-        control_margin,
+        control_pack.packed_bytes,
+        control_pack.budget_margin,
     )
-    if not control.fits_budget():
-        raise RefinementRecordError(
-            f"the control packed {-control_margin} bytes over the weight "
-            "budget, so no arm is readable against it"
-        )
     records: list[ArmRecord] = []
     results: dict[str, PairedResult] = {}
+    excluded: list[str] = []
     for index, candidate in enumerate(arms, start=1):
         name = f"arm{index:02d}"
-        chunks, packed_bytes, margin = _measure(
-            name,
-            _arm_recipe(recipe, candidate),
-            packer_for,
-            meter,
-            out_dir,
-            report,
+        packed = _pack(
+            name, _arm_recipe(recipe, candidate), packer_for, out_dir, report
         )
+        chunks = _measure(packed, meter, report)
         paired = compare(chunks, control_chunks)
-        record = _record(name, candidate, paired, packed_bytes, margin)
-        records.append(record)
-        if record.fits_budget():
+        records.append(
+            _record(name, candidate, paired, packed.packed_bytes, packed.budget_margin)
+        )
+        if packed.fits_budget():
             results[name] = paired
         else:
-            report("arm_over_budget", {"arm": name, "budget_margin": margin})
+            excluded.append(name)
+            report(
+                "arm_over_budget",
+                {"arm": name, "budget_margin": packed.budget_margin},
+            )
     winner, refusal = select(results, bar)
+    refusal = _refusal_with_exclusions(refusal, excluded, len(records))
     report("refine_finished", {"winner": winner, "refusal": refusal})
     return RefinementSidecar(
         model_id=recipe.model_id,
