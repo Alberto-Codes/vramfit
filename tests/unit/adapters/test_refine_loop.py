@@ -124,18 +124,19 @@ def _run(tmp_path, meter, bits=None, limit=10, bar=1.0):
         bar=bar,
         limit=limit,
         out_dir=tmp_path,
+        row_widths={},
     )
 
 
 def test_stride_returns_every_candidate_when_the_limit_covers_them() -> None:
     recipe = _recipe({G0: 2, G1: 2, G2: 4, G3: 4})
-    found = neighbours(recipe, _map([G0, G1, G2, G3]))
+    found = neighbours(recipe, _map([G0, G1, G2, G3]), {})
     assert stride(found, 10) == found
 
 
 def test_stride_spreads_across_the_enumeration() -> None:
     recipe = _recipe({G0: 2, G1: 2, G2: 4, G3: 4})
-    found = neighbours(recipe, _map([G0, G1, G2, G3]))
+    found = neighbours(recipe, _map([G0, G1, G2, G3]), {})
     taken = stride(found, 2)
     assert len(taken) == 2
     assert taken[0] == found[0]
@@ -254,6 +255,7 @@ def test_run_pass_reports_its_progress(tmp_path) -> None:
         bar=1.0,
         limit=1,
         out_dir=tmp_path,
+        row_widths={},
         report=lambda event, fields: seen.append(event),
     )
 
@@ -284,6 +286,7 @@ def test_run_pass_arm_recipes_drop_the_solver_trace(tmp_path) -> None:
         bar=1.0,
         limit=1,
         out_dir=tmp_path,
+        row_widths={},
     )
 
     arm = packed[-1].packed[-1]
@@ -313,6 +316,7 @@ def test_run_pass_arm_recipes_keep_the_control_byte_total(tmp_path) -> None:
         bar=1.0,
         limit=4,
         out_dir=tmp_path,
+        row_widths={},
     )
 
     total = sum(a.bytes for a in recipe.assignments)

@@ -327,3 +327,24 @@ def test_refine_writes_a_run_log(workspace) -> None:
     assert events[0]["arms"] == 1
     assert events[0]["bar"] == 7.8
     assert "arm_measured" in names
+
+
+def test_refine_reports_an_empty_runtime_build_cleanly(workspace) -> None:
+    result = _invoke(workspace, "--limit", "1", "--runtime-build", "")
+
+    assert result.exit_code == 1
+    assert "error:" in result.output
+    assert "runtime_build" in result.output
+
+
+def test_refine_reports_a_failed_sidecar_write_cleanly(workspace, monkeypatch) -> None:
+    def refuse(self, sidecar):
+        raise OSError("read-only file system")
+
+    monkeypatch.setattr(cli_refine.JsonRefinementSidecarFile, "save", refuse)
+
+    result = _invoke(workspace, "--limit", "1")
+
+    assert result.exit_code == 1
+    assert "error:" in result.output
+    assert "read-only file system" in result.output

@@ -297,12 +297,17 @@ def _refine_last_step(
     return new_total
 
 
-def _predictor(
+def group_size_predictor(
     runtime: str | None,
     format_overhead: float,
     row_widths: Mapping[str, int],
 ) -> Callable[[str], Callable[[int, int], int]]:
     """Build the per-group size predictor for one solve.
+
+    The one pricing path. `solve` prices its candidates here and
+    `vramfit.domain.refinement` prices its neighbours here, so a
+    refined arm's predicted bytes are the bytes the plan step would
+    have predicted. A second table binding would drift from this one.
 
     A group whose measured rows refuse the 256 super-block prices
     through the ADR-0028 table where it has a row (8, 6, 5, 4, 2).
@@ -395,6 +400,10 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
     merged_splits: Mapping[str, Mapping[str, int]] | None = None,
 ) -> Recipe:
     """Assign a precision to every group so the total fits the budget.
+
+    Prices every candidate through `group_size_predictor`, the
+    predictor `vramfit.domain.refinement` reprices its neighbours
+    with, so a refined arm records the bytes this step would record.
 
     When a target runtime is given, the candidate set first filters
     through the ADR-0013 capability table — a precision the runtime
@@ -561,7 +570,7 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
     )
     widths = dict(row_widths or {})
 
-    price_for = _predictor(runtime, format_overhead, widths)
+    price_for = group_size_predictor(runtime, format_overhead, widths)
 
     def size(group: LayerGroup, bits: int) -> int:
         """Price one group, holding its protected tensors at floor.

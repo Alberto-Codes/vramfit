@@ -901,11 +901,14 @@ $ vramfit refine recipe.json --map map.json --llama-cpp ~/llama.cpp \
 ```
 
 An arm swaps two assignments: one group's precision rises to a
-second group's, and that second group's falls to the first's. The two
-groups trade their recorded byte figures, so every arm spends the
+second group's, and that second group's falls to the first's. The
+command reprices both groups at their new precisions through the same
+predictor `vramfit plan` used, and keeps the arm only when the two
+repriced groups spend what they spent before. So every arm spends the
 recipe's exact byte total and competes inside the same weight budget.
-A swap prices exactly only when both groups carry the same reference
-size, and the command skips any other pair. It also skips any pair
+Equal reference size is not the test and the command does not use it:
+a group's effective-bits table follows its measured row width, so one
+reference size can carry two prices. It also skips any pair
 naming a group the recipe already fixes: a group a `--pin` pattern
 covers, or a group holding a tensor a `--protect` pattern floors.
 Protections resolve from the recipe's verbatim patterns, not from its

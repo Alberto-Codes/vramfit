@@ -13,11 +13,16 @@ this module emits carries `predicted_delta` as recorded provenance,
 never as a selection key. `vramfit.domain.paired` selects from
 measurements instead.
 
-Pricing rides on the recipe, not on a rebuilt table. A swap is
-byte-neutral exactly when the two groups price identically at every
-precision, which holds when they carry the same reference size. The
-candidate then trades one recorded byte figure for the other and the
-total cannot move. `refuse_unpriced_move` states that condition.
+Byte-neutrality is priced, never assumed. Every candidate group is
+priced at its new precision through
+`vramfit.domain.solver.group_size_predictor`, the path the plan step
+itself used, and a move survives only when the two repriced groups
+spend what they spent before. Equal reference size is not the test:
+the predictor binds each group's effective-bits table from its
+measured row width, so two groups of one reference size price
+differently wherever the tables disagree — 2.25 against 2.625 bits
+per weight at nominal 2 (ADR-0028). The 30B target carries that
+pair, with 2688-wide and 4096-wide rows at one element count.
 
 A recipe also fixes some groups. A pin forces one group's
 precision, and a protection floor forces one tensor's precision
@@ -39,22 +44,29 @@ Examples:
     ```python
     from vramfit.domain.refinement import neighbours
 
-    candidates = neighbours(recipe, map_)
+    candidates = neighbours(recipe, map_, row_widths)
     ```
 
 See Also:
     - [vramfit.domain.paired][]: Selects a winner from measurements.
+    - [vramfit.domain.solver][]: `group_size_predictor` prices every
+      candidate, the way it priced the recipe.
 """
 
 from __future__ import annotations
 
-from collections.abc import Collection, Mapping
+from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass
 
 from vramfit.domain.errors import VramfitError
 from vramfit.domain.model import Assignment, Recipe, SensitivityMap
 from vramfit.domain.pins import pinned_group_names
 from vramfit.domain.protection import expand_protections
+from vramfit.domain.solver import group_size_predictor
+
+# One group's predicted bytes at one precision, from the solver's own
+# predictor bound to this recipe's runtime, overhead, and row widths.
+GroupPrice = Callable[[str, int], int]
 
 # The smallest number of distinct precisions a neighbourhood needs. A
 # recipe holding one precision has no pair to swap between.
@@ -212,19 +224,73 @@ def fixed_groups(recipe: Recipe, map_: SensitivityMap) -> frozenset[str]:
     return pinned | floored
 
 
+def group_price(
+    recipe: Recipe, map_: SensitivityMap, row_widths: Mapping[str, int]
+) -> GroupPrice:
+    """Bind the solver's predictor to this recipe.
+
+    The stage does not re-derive the pricing rule. `solve` bound the
+    same predictor from the same runtime, overhead, and row widths,
+    so a neighbour's predicted bytes are the bytes the plan step
+    would have predicted for that assignment.
+
+    Args:
+        recipe: The solved recipe, which states the runtime and the
+            overhead fraction.
+        map_: The map that priced it, whose groups state reference
+            sizes.
+        row_widths: Elements per row per group, from
+            `vramfit.domain.sizes.discovered_group_rows`. The width
+            binds each group's effective-bits table.
+
+    Returns:
+        A ``(group, bits) -> bytes`` predictor over the map's groups.
+
+    Examples:
+        Price one group at nominal 4:
+
+        ```python
+        price = group_price(recipe, map_, row_widths)
+        print(price("model.layers.0.mlp", 4))
+        ```
+    """
+    reference = _reference_bytes(map_)
+    price_for = group_size_predictor(
+        recipe.runtime, recipe.plan.format_overhead, row_widths
+    )
+
+    def price(group: str, bits: int) -> int:
+        """Price one of the map's groups at one precision.
+
+        Args:
+            group: The group's name.
+            bits: Target nominal precision.
+
+        Returns:
+            Predicted bytes at that precision.
+        """
+        return price_for(group)(reference[group], bits)
+
+    return price
+
+
 def refuse_unpriced_move(
     move: Move,
     reference_bytes: Mapping[str, int],
     sensitivity: Mapping[str, Mapping[int, float]],
     fixed: Collection[str],
+    price: GroupPrice,
 ) -> str | None:
-    """Report why a swap cannot be priced from the recipe alone.
+    """Report why a swap cannot stand as a byte-neutral neighbour.
 
-    The swap trades the two groups' recorded byte figures. That trade
-    is exact only when both groups price identically at every
-    precision, which this function tests by reference size. It also
-    refuses a precision the map never measured, because the
-    neighbour's recorded damage would then name no measurement.
+    The swap is byte-neutral when the two groups, repriced at their
+    new precisions, spend what they spent before. This function
+    prices them rather than assuming any relation between their
+    reference sizes: the predictor binds each group's effective-bits
+    table from its measured row width, so one reference size can
+    carry two prices (ADR-0028). It also refuses a precision the map
+    never measured, because the neighbour's recorded damage would
+    then name no measurement.
 
     A fixed group refuses first. A pin or a protection floor governs
     that group's precision, and the arm recipe carries the record
@@ -236,9 +302,10 @@ def refuse_unpriced_move(
         sensitivity: Damage per precision, per group name.
         fixed: Group names the recipe already fixes, from
             `fixed_groups`.
+        price: The recipe's own predictor, from `group_price`.
 
     Returns:
-        The refusal, or None when the swap prices exactly.
+        The refusal, or None when the swap spends the same bytes.
     """
     for name in (move.promoted, move.demoted):
         if name in fixed:
@@ -249,15 +316,18 @@ def refuse_unpriced_move(
     for name in (move.promoted, move.demoted):
         if name not in reference_bytes:
             return f"the map omits group {name}"
-    if reference_bytes[move.promoted] != reference_bytes[move.demoted]:
-        return (
-            f"groups {move.promoted} and {move.demoted} carry different "
-            "reference sizes, so swapping their bytes is not byte-neutral"
-        )
     for name in (move.promoted, move.demoted):
         for bits in (move.from_bits, move.to_bits):
             if bits not in sensitivity[name]:
                 return f"the map never measured {name} at {bits} bits"
+    before = price(move.promoted, move.from_bits) + price(move.demoted, move.to_bits)
+    after = price(move.promoted, move.to_bits) + price(move.demoted, move.from_bits)
+    if before != after:
+        return (
+            f"swapping {move.promoted} and {move.demoted} spends {after} bytes "
+            f"against the {before} they spend now, so the swap is not "
+            "byte-neutral"
+        )
     return None
 
 
@@ -265,17 +335,21 @@ def apply_move(
     move: Move,
     assignments: tuple[Assignment, ...],
     sensitivity: Mapping[str, Mapping[int, float]],
+    price: GroupPrice,
 ) -> tuple[Assignment, ...]:
     """Rewrite the two swapped assignments, leaving the rest in place.
 
-    Each rewritten assignment takes the other group's recorded byte
-    figure, which keeps the predicted total fixed. Its damage comes
-    from the map at the new precision.
+    Each rewritten assignment records its own predicted bytes at its
+    new precision, never the other group's figure. Two groups of one
+    reference size can price differently, so trading the recorded
+    figures would record a size the pack does not write. Its damage
+    comes from the map at the new precision.
 
     Args:
         move: The swap to apply.
         assignments: The recipe's assignments, in recipe order.
         sensitivity: Damage per precision, per group name.
+        price: The recipe's own predictor, from `group_price`.
 
     Returns:
         The neighbour's assignments, in the same order.
@@ -303,13 +377,13 @@ def apply_move(
         move.promoted: Assignment(
             group=move.promoted,
             bits=move.to_bits,
-            bytes=current[move.demoted].bytes,
+            bytes=price(move.promoted, move.to_bits),
             damage=sensitivity[move.promoted][move.to_bits],
         ),
         move.demoted: Assignment(
             group=move.demoted,
             bits=move.from_bits,
-            bytes=current[move.promoted].bytes,
+            bytes=price(move.demoted, move.from_bits),
             damage=sensitivity[move.demoted][move.from_bits],
         ),
     }
@@ -338,18 +412,22 @@ def predicted_delta(
     return added - removed
 
 
-def neighbours(recipe: Recipe, map_: SensitivityMap) -> tuple[Candidate, ...]:
+def neighbours(
+    recipe: Recipe, map_: SensitivityMap, row_widths: Mapping[str, int]
+) -> tuple[Candidate, ...]:
     """Enumerate every byte-neutral neighbour of a recipe.
 
     One neighbour per ordered pair of assignments whose precisions
-    differ and whose swap prices exactly. A pinned group and a group
-    carrying a protected tensor stay out of every move. The result
-    carries no ordering the caller should read as a ranking — it
-    follows the recipe's own assignment order.
+    differ and whose repriced swap spends the recipe's own bytes. A
+    pinned group and a group carrying a protected tensor stay out of
+    every move. The result carries no ordering the caller should read
+    as a ranking — it follows the recipe's own assignment order.
 
     Args:
         recipe: The solved recipe to search around.
         map_: The map that priced it.
+        row_widths: Elements per row per group, which bind each
+            group's effective-bits table.
 
     Returns:
         Every legal neighbour, empty when the recipe has none.
@@ -357,6 +435,7 @@ def neighbours(recipe: Recipe, map_: SensitivityMap) -> tuple[Candidate, ...]:
     sensitivity = _group_sensitivity(map_)
     reference = _reference_bytes(map_)
     fixed = fixed_groups(recipe, map_)
+    price = group_price(recipe, map_, row_widths)
     found: list[Candidate] = []
     for low in recipe.assignments:
         for high in recipe.assignments:
@@ -368,28 +447,34 @@ def neighbours(recipe: Recipe, map_: SensitivityMap) -> tuple[Candidate, ...]:
                 from_bits=low.bits,
                 to_bits=high.bits,
             )
-            if refuse_unpriced_move(move, reference, sensitivity, fixed) is not None:
+            refusal = refuse_unpriced_move(move, reference, sensitivity, fixed, price)
+            if refusal is not None:
                 continue
             found.append(
                 Candidate(
                     move=move,
-                    assignments=apply_move(move, recipe.assignments, sensitivity),
+                    assignments=apply_move(
+                        move, recipe.assignments, sensitivity, price
+                    ),
                     predicted_delta=predicted_delta(move, sensitivity),
                 )
             )
     return tuple(found)
 
 
-def decline_reason(recipe: Recipe, map_: SensitivityMap) -> str | None:
+def decline_reason(
+    recipe: Recipe, map_: SensitivityMap, row_widths: Mapping[str, int]
+) -> str | None:
     """Report why a recipe has no neighbourhood worth searching.
 
     A recipe whose groups all sit at one precision has no swap at
     all. The published 49B recipe places 81 of its 82 groups at the
     3-bit floor, and its one 8-bit group prices differently from
     every other, so the protocol's move does not exist there. A
-    recipe whose every free pair prices inexactly declines the same
-    way — `fixed_groups` takes pinned and protected groups out of the
-    pairing first.
+    A recipe whose every free pair would spend different bytes after
+    the swap declines the same way — `fixed_groups` takes pinned and
+    protected groups out of the pairing first, and `group_price`
+    prices what is left.
 
     A pin this map cannot resolve declines too. The pass reads no
     checkpoint, so a pin spelled with a checkpoint-discovered
@@ -404,6 +489,8 @@ def decline_reason(recipe: Recipe, map_: SensitivityMap) -> str | None:
     Args:
         recipe: The solved recipe to search around.
         map_: The map that priced it.
+        row_widths: Elements per row per group, which bind each
+            group's effective-bits table.
 
     Returns:
         The refusal, or None when at least one neighbour exists.
@@ -418,9 +505,10 @@ def decline_reason(recipe: Recipe, map_: SensitivityMap) -> str | None:
     if len(levels) < MIN_LEVELS:
         only = next(iter(levels))
         return f"every group sits at {only} bits, so no swap moves precision"
-    if not neighbours(recipe, map_):
+    if not neighbours(recipe, map_, row_widths):
         return (
-            "no free pair of groups both prices exactly and differs in "
-            "precision, so the recipe has no byte-neutral neighbour"
+            "no free pair of groups both spends the same bytes after the "
+            "swap and differs in precision, so the recipe has no "
+            "byte-neutral neighbour"
         )
     return None

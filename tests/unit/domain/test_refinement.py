@@ -20,10 +20,12 @@ from vramfit.domain.refinement import (
     apply_move,
     decline_reason,
     fixed_groups,
+    group_price,
     neighbours,
     predicted_delta,
     refuse_unpriced_move,
 )
+from vramfit.domain.solver import group_size_predictor
 
 pytestmark = pytest.mark.unit
 
@@ -95,14 +97,14 @@ def _recipe(bits, pins=None, protections=None, protected=()):
 def test_neighbours_of_a_two_level_recipe_keeps_total_bytes_fixed() -> None:
     recipe = _recipe({"g0": 2, "g1": 2, "g2": 4, "g3": 4})
     control = sum(a.bytes for a in recipe.assignments)
-    found = neighbours(recipe, _map())
+    found = neighbours(recipe, _map(), {})
     assert found
     assert all(c.total_bytes() == control for c in found)
 
 
 def test_neighbours_of_a_two_level_recipe_covers_every_pair() -> None:
     recipe = _recipe({"g0": 2, "g1": 2, "g2": 4, "g3": 4})
-    found = neighbours(recipe, _map())
+    found = neighbours(recipe, _map(), {})
     pairs = {(c.move.promoted, c.move.demoted) for c in found}
     assert pairs == {
         ("g0", "g2"),
@@ -115,14 +117,14 @@ def test_neighbours_of_a_two_level_recipe_covers_every_pair() -> None:
 def test_neighbours_changes_exactly_two_assignments() -> None:
     recipe = _recipe({"g0": 2, "g1": 2, "g2": 4, "g3": 4})
     before = {a.group: a for a in recipe.assignments}
-    for candidate in neighbours(recipe, _map()):
+    for candidate in neighbours(recipe, _map(), {}):
         changed = {a.group for a in candidate.assignments if a != before[a.group]}
         assert changed == {candidate.move.promoted, candidate.move.demoted}
 
 
 def test_neighbours_swaps_the_two_precisions() -> None:
     recipe = _recipe({"g0": 2, "g1": 2, "g2": 4, "g3": 4})
-    candidate = neighbours(recipe, _map())[0]
+    candidate = neighbours(recipe, _map(), {})[0]
     after = {a.group: a for a in candidate.assignments}
     assert after[candidate.move.promoted].bits == candidate.move.to_bits
     assert after[candidate.move.demoted].bits == candidate.move.from_bits
@@ -130,13 +132,13 @@ def test_neighbours_swaps_the_two_precisions() -> None:
 
 def test_neighbours_reads_damage_from_the_map() -> None:
     recipe = _recipe({"g0": 2, "g2": 4})
-    candidate = neighbours(recipe, _map())[0]
+    candidate = neighbours(recipe, _map(), {})[0]
     after = {a.group: a for a in candidate.assignments}
     assert after["g0"].damage == pytest.approx(0.10)
     assert after["g2"].damage == pytest.approx(0.30)
 
 
-def test_neighbours_skips_a_pair_of_unequal_reference_sizes() -> None:
+def test_neighbours_skips_a_pair_whose_swap_spends_different_bytes() -> None:
     map_ = _map(
         [
             ("g0", 1600, {8: 0.0, 4: 0.10, 2: 0.40}),
@@ -144,7 +146,7 @@ def test_neighbours_skips_a_pair_of_unequal_reference_sizes() -> None:
         ]
     )
     recipe = _recipe({"g0": 2, "g1": 4})
-    assert neighbours(recipe, map_) == ()
+    assert neighbours(recipe, map_, {}) == ()
 
 
 def test_neighbours_skips_a_precision_the_map_never_measured() -> None:
@@ -156,14 +158,14 @@ def test_neighbours_skips_a_precision_the_map_never_measured() -> None:
         precisions=(8, 4),
     )
     recipe = _recipe({"g0": 4, "g1": 8})
-    assert neighbours(recipe, map_) != ()
+    assert neighbours(recipe, map_, {}) != ()
     recipe_at_two = _recipe({"g0": 2, "g1": 4})
-    assert neighbours(recipe_at_two, map_) == ()
+    assert neighbours(recipe_at_two, map_, {}) == ()
 
 
 def test_predicted_delta_is_recorded_but_does_not_order_the_result() -> None:
     recipe = _recipe({"g0": 2, "g1": 2, "g2": 4, "g3": 4})
-    found = neighbours(recipe, _map())
+    found = neighbours(recipe, _map(), {})
     deltas = [c.predicted_delta for c in found]
     assert deltas != sorted(deltas)
 
@@ -193,6 +195,7 @@ def test_refuse_unpriced_move_names_a_group_the_map_omits() -> None:
         {"g1": 1600},
         {"g1": {2: 0.9, 4: 0.2}},
         frozenset(),
+        lambda group, bits: 0,
     )
     assert reason is not None
     assert "ghost" in reason
@@ -204,7 +207,7 @@ def test_neighbours_emits_no_move_touching_a_pinned_group() -> None:
         pins={"g0": 2},
     )
 
-    found = neighbours(recipe, _map())
+    found = neighbours(recipe, _map(), {})
 
     assert found
     assert all("g0" not in (c.move.promoted, c.move.demoted) for c in found)
@@ -217,7 +220,7 @@ def test_neighbours_emits_no_move_touching_a_protected_group() -> None:
         protected=(ProtectedTensor(tensor="g2.b.weight", bits=5),),
     )
 
-    found = neighbours(recipe, _map())
+    found = neighbours(recipe, _map(), {})
 
     assert found
     assert all("g2" not in (c.move.promoted, c.move.demoted) for c in found)
@@ -235,7 +238,7 @@ def test_neighbours_emits_no_move_touching_a_noop_protection_floor() -> None:
         protected=(),
     )
 
-    found = neighbours(recipe, _map())
+    found = neighbours(recipe, _map(), {})
 
     assert recipe.protected_tensors == ()
     assert found
@@ -264,7 +267,7 @@ def test_decline_reason_refuses_a_pin_this_map_cannot_resolve() -> None:
         pins={"model.layers.0.mixer.in_proj": 8},
     )
 
-    reason = decline_reason(recipe, _map())
+    reason = decline_reason(recipe, _map(), {})
 
     assert reason is not None
     assert "cannot resolve pin" in reason
@@ -273,7 +276,7 @@ def test_decline_reason_refuses_a_pin_this_map_cannot_resolve() -> None:
 def test_neighbours_of_a_wholly_pinned_recipe_is_empty() -> None:
     recipe = _recipe({"g0": 2, "g1": 2, "g2": 4, "g3": 4}, pins={"g*": 4})
 
-    assert neighbours(recipe, _map()) == ()
+    assert neighbours(recipe, _map(), {}) == ()
 
 
 def test_fixed_groups_names_pinned_and_protected_groups() -> None:
@@ -299,6 +302,7 @@ def test_refuse_unpriced_move_refuses_a_fixed_group() -> None:
         {"g0": 1600, "g1": 1600},
         {"g0": {2: 0.4, 4: 0.1}, "g1": {2: 0.9, 4: 0.2}},
         frozenset({"g0"}),
+        lambda group, bits: 0,
     )
 
     assert reason is not None
@@ -310,7 +314,10 @@ def test_apply_move_refuses_a_group_at_the_wrong_precision() -> None:
     move = Move(promoted="g0", demoted="g2", from_bits=2, to_bits=4)
     with pytest.raises(RefinementError, match="not the 2"):
         apply_move(
-            move, recipe.assignments, {g.name: g.sensitivity for g in _map().groups}
+            move,
+            recipe.assignments,
+            {g.name: g.sensitivity for g in _map().groups},
+            group_price(recipe, _map(), {}),
         )
 
 
@@ -319,13 +326,16 @@ def test_apply_move_refuses_a_group_the_recipe_omits() -> None:
     move = Move(promoted="g1", demoted="g2", from_bits=2, to_bits=4)
     with pytest.raises(RefinementError, match="omits group g1"):
         apply_move(
-            move, recipe.assignments, {g.name: g.sensitivity for g in _map().groups}
+            move,
+            recipe.assignments,
+            {g.name: g.sensitivity for g in _map().groups},
+            group_price(recipe, _map(), {}),
         )
 
 
 def test_decline_reason_reports_a_recipe_at_one_precision() -> None:
     recipe = _recipe({"g0": 4, "g1": 4, "g2": 4})
-    reason = decline_reason(recipe, _map())
+    reason = decline_reason(recipe, _map(), {})
     assert reason is not None
     assert "no swap moves precision" in reason
 
@@ -337,7 +347,7 @@ def test_decline_reason_reports_the_49b_shape() -> None:
     map_ = _map(groups, precisions=(8, 3))
     bits = {"g0": 8}
     bits.update({f"g{i}": 3 for i in range(1, 82)})
-    reason = decline_reason(_recipe_at(bits), map_)
+    reason = decline_reason(_recipe_at(bits), map_, {})
     assert reason is not None
     assert "no byte-neutral neighbour" in reason
 
@@ -374,7 +384,7 @@ def _recipe_at(bits):
 
 def test_decline_reason_returns_none_when_a_neighbour_exists() -> None:
     recipe = _recipe({"g0": 2, "g2": 4})
-    assert decline_reason(recipe, _map()) is None
+    assert decline_reason(recipe, _map(), {}) is None
 
 
 def test_candidate_total_bytes_sums_the_assignments() -> None:
@@ -387,3 +397,96 @@ def test_candidate_total_bytes_sums_the_assignments() -> None:
         predicted_delta=0.0,
     )
     assert candidate.total_bytes() == 600
+
+
+# The 30B target's shape: q_proj rows are 2688 wide and refuse the 256
+# super-block, o_proj rows are 4096 wide and divide it, and both stacks
+# hold 4096 * 2688 elements. One reference size, two effective-bits
+# tables (ADR-0028).
+STACK_BYTES = 22_020_096
+Q_PROJ, O_PROJ, K_PROJ = "q_proj", "o_proj", "k_proj"
+CROSS_WIDTHS = {Q_PROJ: 2688, O_PROJ: 4096, K_PROJ: 4096}
+
+
+def _cross_table_map():
+    """A map whose groups share one reference size across both tables."""
+    return _map(
+        [
+            (Q_PROJ, STACK_BYTES, {8: 0.0, 4: 0.10, 2: 0.40}),
+            (O_PROJ, STACK_BYTES, {8: 0.0, 4: 0.20, 2: 0.50}),
+            (K_PROJ, STACK_BYTES, {8: 0.0, 4: 0.30, 2: 0.60}),
+        ]
+    )
+
+
+def _cross_table_recipe(bits):
+    """Price a recipe over those groups the way the solver prices it."""
+    price_for = group_size_predictor("llama.cpp", 0.0, CROSS_WIDTHS)
+    assignments = tuple(
+        Assignment(
+            group=name,
+            bits=b,
+            bytes=price_for(name)(STACK_BYTES, b),
+            damage=0.1,
+        )
+        for name, b in bits.items()
+    )
+    plan = PlanMeta(
+        vram_budget_bytes=10**11,
+        kv_headroom_bytes=0,
+        weight_budget_bytes=10**11,
+        predicted_total_bytes=sum(a.bytes for a in assignments),
+        predicted_damage=0.4,
+        solver="greedy-damage-per-byte",
+        pins={},
+        protections={},
+        format_overhead=0.0,
+        trace=(),
+    )
+    return Recipe(
+        model_id="test/model",
+        plan=plan,
+        assignments=assignments,
+        runtime="llama.cpp",
+        within_group=None,
+        imatrix=None,
+        protected_tensors=(),
+    )
+
+
+def test_neighbours_refuses_a_swap_across_two_effective_bits_tables() -> None:
+    """Equal reference size, different row widths, different price."""
+    recipe = _cross_table_recipe({Q_PROJ: 2, O_PROJ: 4})
+
+    found = neighbours(recipe, _cross_table_map(), CROSS_WIDTHS)
+
+    assert found == ()
+
+
+def test_neighbours_keeps_a_swap_inside_one_effective_bits_table() -> None:
+    recipe = _cross_table_recipe({O_PROJ: 2, K_PROJ: 4})
+
+    found = neighbours(recipe, _cross_table_map(), CROSS_WIDTHS)
+
+    assert len(found) == 1
+    assert (found[0].move.promoted, found[0].move.demoted) == (O_PROJ, K_PROJ)
+
+
+def test_every_cross_table_neighbour_spends_the_recipes_total() -> None:
+    recipe = _cross_table_recipe({Q_PROJ: 2, O_PROJ: 4, K_PROJ: 4})
+    total = sum(a.bytes for a in recipe.assignments)
+
+    for candidate in neighbours(recipe, _cross_table_map(), CROSS_WIDTHS):
+        assert candidate.total_bytes() == total
+
+
+def test_neighbours_records_each_swapped_group_at_its_own_price() -> None:
+    recipe = _cross_table_recipe({O_PROJ: 2, K_PROJ: 4})
+    price_for = group_size_predictor("llama.cpp", 0.0, CROSS_WIDTHS)
+
+    candidate = neighbours(recipe, _cross_table_map(), CROSS_WIDTHS)[0]
+
+    for assignment in candidate.assignments:
+        assert assignment.bytes == price_for(assignment.group)(
+            STACK_BYTES, assignment.bits
+        )

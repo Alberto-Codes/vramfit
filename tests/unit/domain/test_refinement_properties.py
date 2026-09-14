@@ -16,20 +16,32 @@ from vramfit.domain.model import (
 )
 from vramfit.domain.paired import compare, per_chunk, select
 from vramfit.domain.refinement import decline_reason, neighbours
+from vramfit.domain.solver import group_size_predictor
 
 pytestmark = pytest.mark.unit
 
-# Every group carries one reference size, which is the condition a
-# byte-neutral swap needs. The C4 protocol ran on expert stacks, which
-# are the same size as each other.
-REFERENCE_BYTES = 1600
+# Every group carries one reference size, so reference size alone can
+# never separate these groups. Their row widths do: 2688 refuses the
+# 256 super-block and 4096 divides it, so a drawn pair can land on
+# either effective-bits table. The tables agree at 8 and 4 and
+# disagree at 2 — 2.25 against 2.625 bits per weight (ADR-0028) — so
+# a cross-table swap at nominal 2 is reachable and is not
+# byte-neutral. Both widths and the element count come from the 30B
+# target's q_proj and o_proj stacks.
+REFERENCE_BYTES = 22_020_096
 PRECISIONS = (8, 4, 2)
-SIZE_AT = {8: 800, 4: 400, 2: 200}
+ROW_WIDTHS = (2688, 4096)
+RUNTIME = "llama.cpp"
 
 
 @st.composite
-def _recipes(draw: st.DrawFn) -> tuple[Recipe, SensitivityMap]:
-    """Draw a recipe over equal-size groups and the map that priced it."""
+def _recipes(draw: st.DrawFn) -> tuple[Recipe, SensitivityMap, dict[str, int]]:
+    """Draw a recipe, the map that priced it, and its row widths.
+
+    Groups share one reference size and draw their row widths from
+    both sides of the super-block decision, so two groups of equal
+    reference size can price differently at nominal 2.
+    """
     count = draw(st.integers(min_value=2, max_value=6))
     names = [f"g{i}" for i in range(count)]
     curves = {
@@ -39,6 +51,7 @@ def _recipes(draw: st.DrawFn) -> tuple[Recipe, SensitivityMap]:
         for name in names
     }
     bits = {name: draw(st.sampled_from(PRECISIONS)) for name in names}
+    widths = {name: draw(st.sampled_from(ROW_WIDTHS)) for name in names}
     map_ = SensitivityMap(
         model_id="test/model",
         scan=ScanMeta(
@@ -59,11 +72,14 @@ def _recipes(draw: st.DrawFn) -> tuple[Recipe, SensitivityMap]:
             for name in names
         ),
     )
+    # Priced the way the solver priced it, so the recipe's recorded
+    # bytes are honest and the invariant below can fail.
+    price_for = group_size_predictor(RUNTIME, 0.0, widths)
     assignments = tuple(
         Assignment(
             group=name,
             bits=bits[name],
-            bytes=SIZE_AT[bits[name]],
+            bytes=price_for(name)(REFERENCE_BYTES, bits[name]),
             damage=curves[name][bits[name]],
         )
         for name in names
@@ -84,52 +100,68 @@ def _recipes(draw: st.DrawFn) -> tuple[Recipe, SensitivityMap]:
         model_id="test/model",
         plan=plan,
         assignments=assignments,
-        runtime=None,
+        runtime=RUNTIME,
         within_group=None,
         imatrix=None,
         protected_tensors=(),
     )
-    return recipe, map_
+    return recipe, map_, widths
 
 
 @given(_recipes())
 def test_every_neighbour_spends_the_recipes_bytes(
-    drawn: tuple[Recipe, SensitivityMap],
+    drawn: tuple[Recipe, SensitivityMap, dict[str, int]],
 ) -> None:
     """The equal-byte invariant the whole protocol rests on."""
-    recipe, map_ = drawn
+    recipe, map_, widths = drawn
     total = sum(a.bytes for a in recipe.assignments)
-    for candidate in neighbours(recipe, map_):
+    for candidate in neighbours(recipe, map_, widths):
         assert candidate.total_bytes() == total
 
 
 @given(_recipes())
 def test_every_neighbour_keeps_the_recipes_groups(
-    drawn: tuple[Recipe, SensitivityMap],
+    drawn: tuple[Recipe, SensitivityMap, dict[str, int]],
 ) -> None:
-    recipe, map_ = drawn
+    recipe, map_, widths = drawn
     names = [a.group for a in recipe.assignments]
-    for candidate in neighbours(recipe, map_):
+    for candidate in neighbours(recipe, map_, widths):
         assert [a.group for a in candidate.assignments] == names
 
 
 @given(_recipes())
 def test_every_neighbour_moves_exactly_two_assignments(
-    drawn: tuple[Recipe, SensitivityMap],
+    drawn: tuple[Recipe, SensitivityMap, dict[str, int]],
 ) -> None:
-    recipe, map_ = drawn
+    recipe, map_, widths = drawn
     before = {a.group: a for a in recipe.assignments}
-    for candidate in neighbours(recipe, map_):
+    for candidate in neighbours(recipe, map_, widths):
         changed = [a for a in candidate.assignments if a != before[a.group]]
         assert len(changed) == 2
 
 
 @given(_recipes())
 def test_decline_speaks_exactly_when_the_neighbourhood_is_empty(
-    drawn: tuple[Recipe, SensitivityMap],
+    drawn: tuple[Recipe, SensitivityMap, dict[str, int]],
 ) -> None:
-    recipe, map_ = drawn
-    assert (decline_reason(recipe, map_) is None) == bool(neighbours(recipe, map_))
+    recipe, map_, widths = drawn
+    assert (decline_reason(recipe, map_, widths) is None) == bool(
+        neighbours(recipe, map_, widths)
+    )
+
+
+@given(_recipes())
+def test_every_neighbour_prices_each_group_at_its_own_table(
+    drawn: tuple[Recipe, SensitivityMap, dict[str, int]],
+) -> None:
+    """No assignment carries another group's byte figure."""
+    recipe, map_, widths = drawn
+    price_for = group_size_predictor(recipe.runtime, 0.0, widths)
+    for candidate in neighbours(recipe, map_, widths):
+        for assignment in candidate.assignments:
+            assert assignment.bytes == price_for(assignment.group)(
+                REFERENCE_BYTES, assignment.bits
+            )
 
 
 @st.composite

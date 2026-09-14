@@ -740,9 +740,11 @@ change.
 **Byte-neutral swap** (short: **swap**)
 :   The move that produces a neighbour: one group's precision rises to
     a second group's, and that second group's falls to the first's.
-    The two groups trade their recorded byte figures, so the predicted
-    total cannot move. It prices exactly only when both groups carry
-    the same reference size.
+    Each group is repriced at its new precision through the solver's
+    own predictor, and the swap is byte-neutral when the two repriced
+    groups spend what they spent before. Equal reference size does not
+    imply equal price — the predictor binds each group's
+    effective-bits table from its measured row width.
 
 **Fixed group**
 :   A group the **refinement pass** takes out of every **byte-neutral

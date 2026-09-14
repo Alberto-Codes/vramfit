@@ -19,7 +19,17 @@ Examples:
     Run a pass over the first few neighbours:
 
     ```python
-    sidecar = run_pass(recipe, map_, packer_for, meter, frame, bar=7.8, limit=15)
+    sidecar = run_pass(
+        recipe,
+        map_,
+        packer_for,
+        meter,
+        frame,
+        bar=7.8,
+        limit=15,
+        out_dir=out_dir,
+        row_widths=row_widths,
+    )
     ```
 
 See Also:
@@ -183,6 +193,7 @@ def run_pass(  # noqa: PLR0913 - the pass surface: two ports, a frame, and its b
     bar: float,
     limit: int,
     out_dir: Path,
+    row_widths: Mapping[str, int],
     keep_packs: bool = False,
     report: Reporter = _silent,
 ) -> RefinementSidecar:
@@ -197,6 +208,8 @@ def run_pass(  # noqa: PLR0913 - the pass surface: two ports, a frame, and its b
         bar: Evidence bar in sigma, stated positive.
         limit: Most arms to measure.
         out_dir: Directory the packed files go in.
+        row_widths: Elements per row per group, which bind each
+            group's effective-bits table for candidate pricing.
         keep_packs: Keep each packed file instead of deleting it.
         report: Progress reporter.
 
@@ -205,7 +218,7 @@ def run_pass(  # noqa: PLR0913 - the pass surface: two ports, a frame, and its b
         swap returns a declined record, having measured nothing and
         reached no card.
     """
-    declined = decline_reason(recipe, map_)
+    declined = decline_reason(recipe, map_, row_widths)
     if declined is not None:
         report("refine_declined", {"reason": declined})
         return RefinementSidecar(
@@ -217,7 +230,7 @@ def run_pass(  # noqa: PLR0913 - the pass surface: two ports, a frame, and its b
             winner=None,
             declined=declined,
         )
-    arms = stride(neighbours(recipe, map_), limit)
+    arms = stride(neighbours(recipe, map_, row_widths), limit)
     report("refine_started", {"arms": len(arms), "bar": bar})
     # Every arm quantizes the same full-precision base, so the convert
     # stage runs once for the whole pass. It reuses an existing base

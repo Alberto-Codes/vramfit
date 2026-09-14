@@ -131,9 +131,20 @@ does not earn the refinement step.
   pass costs about 7 dollars and 1.5 hours on rented hardware.
 - That cost does not scale to every target. Decision 8 is what keeps
   an unaffordable or degenerate target from being forced.
-- A byte-neutral swap prices exactly only when both groups carry the
-  same reference size. The pass skips any other pair rather than
-  predicting a total it cannot stand behind.
+- **Byte-neutrality is priced, never assumed.** The pass prices every
+  candidate group at its new precision through
+  `vramfit.domain.solver.group_size_predictor`, the path the plan
+  step used, and keeps a swap only when the two repriced groups spend
+  what they spent before. Equal reference size is not the test. The
+  predictor binds each group's effective-bits table from its measured
+  row width, so two groups of one reference size price differently
+  wherever the tables disagree — 2.25 against 2.625 bits per weight
+  at nominal 2 (ADR-0028). The 30B target carries that pair: under
+  `--group-by stack` its `q_proj` rows are 2688 wide and its `o_proj`
+  rows 4096 wide, and both hold 4096 × 2688 elements. A swap priced
+  by reference size would have understated such an arm by about
+  516,096 bytes and spent more than the control inside the same
+  weight budget.
 - The pass also skips any pair naming a group the recipe already
   fixes — one a pin pattern covers, or one holding a tensor a
   protection pattern floors. The pack reads an arm's assignments and

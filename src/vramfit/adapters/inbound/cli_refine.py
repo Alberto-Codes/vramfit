@@ -195,6 +195,12 @@ def refine(
     one sidecar recording every arm, the winner, the stated bar, and
     the frame.
 
+    The measured row widths reach the pass, which reprices every
+    candidate group through the predictor the plan step used. The
+    frame and the sidecar write sit inside the guarded region, so an
+    empty ``--runtime-build`` and a refused write each leave one
+    ``error:`` line rather than a traceback.
+
     Args:
         recipe_path: The recipe to refine.
         map_path: The map that priced it.
@@ -282,27 +288,28 @@ def refine(
             row_widths=row_widths,
         )
 
-    # The frame names the evaluation corpus by content, never by path
-    # alone (ADR-0031 decision 5). This process reads and hashes those
-    # exact bytes as it runs, which is what "measured" marks.
-    frame = MeasurementFrame(
-        runtime_build=runtime_build,
-        hardware=hardware,
-        corpus=CorpusReference(
-            file=str(eval_text),
-            sha256=corpus_sha256,
-            size_bytes=corpus_bytes,
-            provenance="measured",
-        ),
-        reference=str(base_logits),
-    )
     meter = LlamaCppDivergenceMeter(
         perplexity_bin=llama_cpp / "build" / "bin" / "llama-perplexity",
         text_path=eval_text,
         base_logits=base_logits,
         threads=threads,
     )
+    sink: RefinementSidecarSink = JsonRefinementSidecarFile(sidecar_path)
     try:
+        # The frame names the evaluation corpus by content, never by
+        # path alone (ADR-0031 decision 5). This process reads and
+        # hashes those exact bytes as it runs, which "measured" marks.
+        frame = MeasurementFrame(
+            runtime_build=runtime_build,
+            hardware=hardware,
+            corpus=CorpusReference(
+                file=str(eval_text),
+                sha256=corpus_sha256,
+                size_bytes=corpus_bytes,
+                provenance="measured",
+            ),
+            reference=str(base_logits),
+        )
         sidecar = run_pass(
             recipe,
             map_,
@@ -312,13 +319,13 @@ def refine(
             bar=bar,
             limit=limit,
             out_dir=out_dir,
+            row_widths=row_widths,
             keep_packs=keep_packs,
             report=run_log.emit,
         )
-    except VramfitError as error:
+        sink.save(sidecar)
+    except (VramfitError, OSError) as error:
         _halt(str(error))
         return
-    sink: RefinementSidecarSink = JsonRefinementSidecarFile(sidecar_path)
-    sink.save(sidecar)
     _report_outcome(sidecar)
     typer.echo(f"wrote {sidecar_path}")
