@@ -267,7 +267,7 @@ def test_decline_reason_refuses_a_pin_this_map_cannot_resolve() -> None:
         pins={"model.layers.0.mixer.in_proj": 8},
     )
 
-    reason = decline_reason(recipe, _map(), {})
+    reason = decline_reason(recipe, _map(), neighbours(recipe, _map(), {}))
 
     assert reason is not None
     assert "cannot resolve pin" in reason
@@ -335,7 +335,7 @@ def test_apply_move_refuses_a_group_the_recipe_omits() -> None:
 
 def test_decline_reason_reports_a_recipe_at_one_precision() -> None:
     recipe = _recipe({"g0": 4, "g1": 4, "g2": 4})
-    reason = decline_reason(recipe, _map(), {})
+    reason = decline_reason(recipe, _map(), neighbours(recipe, _map(), {}))
     assert reason is not None
     assert "no swap moves precision" in reason
 
@@ -347,7 +347,9 @@ def test_decline_reason_reports_the_49b_shape() -> None:
     map_ = _map(groups, precisions=(8, 3))
     bits = {"g0": 8}
     bits.update({f"g{i}": 3 for i in range(1, 82)})
-    reason = decline_reason(_recipe_at(bits), map_, {})
+    reason = decline_reason(
+        _recipe_at(bits), map_, neighbours(_recipe_at(bits), map_, {})
+    )
     assert reason is not None
     assert "no byte-neutral neighbour" in reason
 
@@ -384,7 +386,7 @@ def _recipe_at(bits):
 
 def test_decline_reason_returns_none_when_a_neighbour_exists() -> None:
     recipe = _recipe({"g0": 2, "g2": 4})
-    assert decline_reason(recipe, _map(), {}) is None
+    assert decline_reason(recipe, _map(), neighbours(recipe, _map(), {})) is None
 
 
 def test_candidate_total_bytes_sums_the_assignments() -> None:

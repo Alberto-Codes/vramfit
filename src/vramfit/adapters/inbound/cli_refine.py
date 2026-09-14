@@ -22,9 +22,10 @@ importance matrix, and the destinations the sidecar and the run log
 are written to. A missing path costs no card time, and a finished
 pass is never discarded at its last step.
 
-`LlamaCppTools` names the three tools once. The pre-flight checks
-those paths and the wiring runs them, so the two cannot disagree
-about which file they mean.
+[vramfit.adapters.inbound.llama_cpp_layout][]'s `LlamaCppTools`
+names the tools once, for this command and for ``pack``. The
+pre-flight checks those paths and the wiring runs them, so the two
+cannot disagree about which file they mean.
 
 The command reports what it measured and never a verdict on the
 recipe. The arms are a sample of the neighbourhood whenever the arm
@@ -53,13 +54,14 @@ from __future__ import annotations
 
 import os
 import sys
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
 
 import typer
 
 from vramfit.adapters.inbound.cli_pack_check import _resolve_row_widths
+from vramfit.adapters.inbound.cli_pack_imatrix import _warn_imatrix_provenance
+from vramfit.adapters.inbound.llama_cpp_layout import LlamaCppTools
 from vramfit.adapters.inbound.refine_loop import run_pass
 from vramfit.adapters.inbound.run_log import SafeRunLog
 from vramfit.adapters.outbound.calibration_digest import content_identity
@@ -75,7 +77,11 @@ from vramfit.adapters.outbound.run_log_jsonl import JsonlRunLogFile
 from vramfit.adapters.outbound.sensitivity_map_json import load_sensitivity_map
 from vramfit.domain.errors import VramfitError
 from vramfit.domain.evals import CorpusReference
-from vramfit.domain.refinement_record import MeasurementFrame, RefinementSidecar
+from vramfit.domain.refinement_record import (
+    MatrixReference,
+    MeasurementFrame,
+    RefinementSidecar,
+)
 from vramfit.ports.outbound import RefinementSidecarSink
 
 
@@ -90,54 +96,6 @@ def _halt(message: str) -> None:
     """
     typer.echo(f"error: {message}", err=True)
     raise typer.Exit(code=1)
-
-
-@dataclass(frozen=True, slots=True)
-class LlamaCppTools:
-    """The three tools one pass runs, named once.
-
-    The pre-flight checks these paths and the wiring runs them, so
-    neither can mean a different file from the other. A second
-    spelling would let the check pass while the run dies after the
-    convert, which is the cost this record exists to prevent.
-
-    Attributes:
-        convert_script (Path): ``convert_hf_to_gguf.py``, which
-            writes the f16 base.
-        quantize_bin (Path): ``llama-quantize``, which packs each
-            arm.
-        perplexity_bin (Path): ``llama-perplexity``, which measures
-            each arm's divergence.
-
-    Examples:
-        Resolve a checkout's tools:
-
-        ```python
-        tools = LlamaCppTools.under(Path("~/llama.cpp"))
-        ```
-    """
-
-    convert_script: Path
-    quantize_bin: Path
-    perplexity_bin: Path
-
-    @classmethod
-    def under(cls, llama_cpp: Path) -> LlamaCppTools:
-        """Name the tools a checkout carries.
-
-        Args:
-            llama_cpp: The llama.cpp checkout.
-
-        Returns:
-            The three paths, built once for both the pre-flight and
-            the wiring.
-        """
-        built = llama_cpp / "build" / "bin"
-        return cls(
-            convert_script=llama_cpp / "convert_hf_to_gguf.py",
-            quantize_bin=built / "llama-quantize",
-            perplexity_bin=built / "llama-perplexity",
-        )
 
 
 def _check_toolchain(tools: LlamaCppTools) -> None:
@@ -193,6 +151,105 @@ def _check_destination(label: str, path: Path) -> None:
         _halt(f"{label}: directory {parent} does not exist")
     if not os.access(parent, os.W_OK):
         _halt(f"{label}: directory {parent} is not writable")
+
+
+def _check_input_files(
+    base_logits: Path, eval_text: Path, imatrix: Path | None
+) -> None:
+    """Refuse an input file the pass would only miss on the card.
+
+    Args:
+        base_logits: Reference logits every arm measures against.
+        eval_text: The evaluation corpus.
+        imatrix: The importance matrix, or None for an unassisted
+            pass.
+
+    Raises:
+        Exit: With code 1 when a named file does not exist.
+    """
+    named = (("--base-logits", base_logits), ("--eval-text", eval_text))
+    if imatrix is not None:
+        named = (*named, ("--imatrix", imatrix))
+    for label, path in named:
+        if not path.is_file():
+            _halt(f"{label}: {path} does not exist")
+
+
+def _make_arm_dir(out_dir: Path) -> None:
+    """Create the directory the arm packs go in.
+
+    It is created before the destinations are checked, so an ``--out``
+    inside it resolves against a parent that exists and an ``--out``
+    naming it refuses as the directory it now is.
+
+    Args:
+        out_dir: The arm directory.
+
+    Raises:
+        Exit: With code 1 when the directory cannot be created.
+    """
+    try:
+        out_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as error:
+        _halt(f"--out-dir: {error}")
+
+
+def _corpus_identity(eval_text: Path) -> CorpusReference:
+    """Name the evaluation corpus by the bytes this process reads.
+
+    Args:
+        eval_text: The evaluation corpus.
+
+    Returns:
+        The corpus reference, marked ``measured`` because this
+        process hashed those exact bytes as it ran.
+
+    Raises:
+        Exit: With code 1 when the corpus cannot be read or holds no
+            bytes.
+    """
+    try:
+        sha256, size_bytes = content_identity(eval_text)
+    except OSError as error:
+        _halt(f"--eval-text: {error}")
+        raise
+    if size_bytes == 0:
+        _halt(f"--eval-text: {eval_text} holds no bytes")
+    return CorpusReference(
+        file=str(eval_text),
+        sha256=sha256,
+        size_bytes=size_bytes,
+        provenance="measured",
+    )
+
+
+def _read_matrix_identity(imatrix: Path | None) -> MatrixReference | None:
+    """Name the importance matrix by content, or record that none ran.
+
+    Substituting a matrix changes every number the pass produces
+    (ADR-0020), so the frame names the bytes the pass consumed rather
+    than the path it was handed.
+
+    Args:
+        imatrix: The ``--imatrix`` value, or None.
+
+    Returns:
+        The matrix reference, or None for an unassisted pass.
+
+    Raises:
+        Exit: With code 1 when the matrix cannot be read or holds no
+            bytes.
+    """
+    if imatrix is None:
+        return None
+    try:
+        sha256, size_bytes = content_identity(imatrix)
+    except OSError as error:
+        _halt(f"--imatrix: {error}")
+        raise
+    if size_bytes == 0:
+        _halt(f"--imatrix: {imatrix} holds no bytes")
+    return MatrixReference(file=str(imatrix), sha256=sha256, size_bytes=size_bytes)
 
 
 def _sample_phrase(sidecar: RefinementSidecar) -> str:
@@ -342,7 +399,9 @@ def refine(
     empty ``--runtime-build`` and a refused write each leave one
     ``error:`` line rather than a traceback. Every path the pass
     needs is checked before the first tool runs: the tools, the
-    matrix, both destinations, and the arm directory.
+    matrix, both destinations, and the arm directory. The map must
+    have priced this recipe, and an assisted recipe packed without
+    its matrix warns the way ``pack`` warns.
 
     Args:
         recipe_path: The recipe to refine.
@@ -375,18 +434,23 @@ def refine(
     except ArtifactError as error:
         _halt(str(error))
         return
+    if map_.model_id != recipe.model_id:
+        _halt(
+            f'the map prices "{map_.model_id}" and the recipe names '
+            f'"{recipe.model_id}" — --map is not the map that priced '
+            "this recipe"
+        )
     model_dir = model if model is not None else Path(recipe.model_id)
     if not model_dir.is_dir():
         _halt(
             f'model directory "{model_dir}" does not exist — the recipe\'s '
             "model_id is not a local path, pass --model"
         )
-    inputs = (("--base-logits", base_logits), ("--eval-text", eval_text))
-    for label, path in inputs if imatrix is None else (*inputs, ("--imatrix", imatrix)):
-        if not path.is_file():
-            _halt(f"{label}: {path} does not exist")
+    _check_input_files(base_logits, eval_text, imatrix)
+    _warn_imatrix_provenance(recipe, imatrix)
     tools = LlamaCppTools.under(llama_cpp)
     _check_toolchain(tools)
+    _make_arm_dir(out_dir)
     sidecar_path = (
         out if out is not None else recipe_path.with_suffix(".refinement.json")
     )
@@ -397,18 +461,8 @@ def refine(
     )
     _check_destination("--out", sidecar_path)
     _check_destination("--runlog", runlog_path)
-    try:
-        corpus_sha256, corpus_bytes = content_identity(eval_text)
-    except OSError as error:
-        _halt(f"--eval-text: {error}")
-        return
-    if corpus_bytes == 0:
-        _halt(f"--eval-text: {eval_text} holds no bytes")
-    try:
-        out_dir.mkdir(parents=True, exist_ok=True)
-    except OSError as error:
-        _halt(f"--out-dir: {error}")
-        return
+    corpus = _corpus_identity(eval_text)
+    matrix = _read_matrix_identity(imatrix)
     run_log = SafeRunLog(JsonlRunLogFile(runlog_path), path=runlog_path)
     try:
         row_widths = _resolve_row_widths(recipe, model_dir)
@@ -457,13 +511,9 @@ def refine(
         frame = MeasurementFrame(
             runtime_build=runtime_build,
             hardware=hardware,
-            corpus=CorpusReference(
-                file=str(eval_text),
-                sha256=corpus_sha256,
-                size_bytes=corpus_bytes,
-                provenance="measured",
-            ),
+            corpus=corpus,
             reference=str(base_logits),
+            imatrix=matrix,
         )
         sidecar = run_pass(
             recipe,

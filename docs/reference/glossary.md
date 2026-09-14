@@ -762,11 +762,20 @@ change.
 :   The record one **refinement pass** writes beside the recipe it
     searched (ADR-0031). It carries every arm measured, the
     neighbourhood those arms were drawn from, the winner, the stated
-    **evidence bar**, the control, and the measurement frame. The arm
-    count and the neighbourhood count are separate figures, and an
+    **evidence bar**, the control, and the **measurement frame**. The
+    arm count and the neighbourhood count are separate figures, and an
     outcome reads correctly only with both. Lives in
     `vramfit.domain.refinement_record`. Not "report" or "results
     file".
+
+**Measurement frame** (short: **frame**)
+:   Everything a **refinement pass** consumed whose substitution would
+    change the number it reports: the runtime binary build, the
+    hardware, the evaluation corpus's **content identity**, and the
+    importance matrix's. Two passes measured in different frames do
+    not compare. An input the pass did not use is recorded as null,
+    never omitted — an unassisted pass states that it ran unassisted.
+    Lives in `vramfit.domain.refinement_record.MeasurementFrame`.
 
 **Neighbourhood decline**
 :   The refinement pass's answer when a recipe has no legal swap. The

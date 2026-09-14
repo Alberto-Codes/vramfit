@@ -43,6 +43,7 @@ def _frame() -> MeasurementFrame:
         hardware="H100 SXM",
         corpus=CorpusReference(file="wiki.test.raw"),
         reference="f16 base logits",
+        imatrix=None,
     )
 
 

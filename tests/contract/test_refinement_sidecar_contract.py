@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +26,7 @@ from vramfit.domain.evals import CorpusReference
 from vramfit.domain.refinement_record import (
     CONTROL_ARM,
     ArmRecord,
+    MatrixReference,
     MeasurementFrame,
     RefinementSidecar,
 )
@@ -42,6 +44,9 @@ def _frame() -> MeasurementFrame:
             provenance="measured",
         ),
         reference="f16 base logits",
+        imatrix=MatrixReference(
+            file="30b.imatrix", sha256="ab" * 32, size_bytes=2_097_152
+        ),
     )
 
 
@@ -181,6 +186,28 @@ class TestRefinementSidecarSinkContract:
         data = readback()
         assert [a["arm"] for a in data["arms"]] == ["arm01", "arm02"]
         assert data["winner"] == "arm01"
+
+    def test_saved_frame_keeps_the_matrix_content_identity(
+        self, build, tmp_path
+    ) -> None:
+        sink, readback = build(tmp_path)
+
+        sink.save(won_sidecar())
+
+        matrix = readback()["frame"]["imatrix"]
+        assert matrix["file"] == "30b.imatrix"
+        assert matrix["sha256"] == "ab" * 32
+        assert matrix["size_bytes"] == 2_097_152
+
+    def test_an_unassisted_pass_reads_back_a_null_matrix(self, build, tmp_path) -> None:
+        sink, readback = build(tmp_path)
+        unassisted = replace(declined_sidecar(), frame=replace(_frame(), imatrix=None))
+
+        sink.save(unassisted)
+
+        frame = readback()["frame"]
+        assert "imatrix" in frame
+        assert frame["imatrix"] is None
 
     def test_saved_frame_keeps_the_corpus_content_identity(
         self, build, tmp_path

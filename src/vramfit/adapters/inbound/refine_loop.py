@@ -217,13 +217,18 @@ def run_pass(  # noqa: PLR0913 - the pass surface: two ports, a frame, and its b
         keep_packs: Keep each packed file instead of deleting it.
         report: Progress reporter.
 
+    The neighbourhood is enumerated once. The decline reads that
+    same enumeration, so no caller relies on a decline and an
+    enumeration agreeing across two runs.
+
     Returns:
         The pass's complete search record, carrying the arms measured
         and the whole neighbourhood they were drawn from. A recipe
         with no legal swap returns a declined record, having measured
         nothing and reached no card.
     """
-    declined = decline_reason(recipe, map_, row_widths)
+    candidates = neighbours(recipe, map_, row_widths)
+    declined = decline_reason(recipe, map_, candidates)
     if declined is not None:
         report("refine_declined", {"reason": declined})
         return RefinementSidecar(
@@ -236,7 +241,6 @@ def run_pass(  # noqa: PLR0913 - the pass surface: two ports, a frame, and its b
             declined=declined,
             neighbourhood_moves=0,
         )
-    candidates = neighbours(recipe, map_, row_widths)
     arms = stride(candidates, limit)
     report(
         "refine_started",

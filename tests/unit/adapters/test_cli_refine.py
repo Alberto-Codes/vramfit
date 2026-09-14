@@ -67,7 +67,7 @@ def _map() -> SensitivityMap:
     )
 
 
-def _recipe(bits: dict[str, int]) -> Recipe:
+def _recipe(bits: dict[str, int], imatrix: str | None = None) -> Recipe:
     assignments = tuple(
         Assignment(group=n, bits=b, bytes=SIZE_AT[b], damage=0.1)
         for n, b in bits.items()
@@ -89,8 +89,8 @@ def _recipe(bits: dict[str, int]) -> Recipe:
         plan=plan,
         assignments=assignments,
         runtime="llama.cpp",
-        within_group=None,
-        imatrix=None,
+        within_group=None if imatrix is None else "kquant-imx",
+        imatrix=imatrix,
         protected_tensors=(),
     )
 
@@ -483,7 +483,6 @@ def test_refine_refuses_a_missing_sidecar_directory_before_any_tool_runs(
     assert result.exit_code == 1
     assert "--out" in result.output
     assert wiring_log == []
-    assert not (workspace / "arms").exists()
 
 
 def test_refine_refuses_a_missing_runlog_directory_before_any_tool_runs(
@@ -496,7 +495,6 @@ def test_refine_refuses_a_missing_runlog_directory_before_any_tool_runs(
     assert result.exit_code == 1
     assert "--runlog" in result.output
     assert wiring_log == []
-    assert not (workspace / "arms").exists()
 
 
 def test_refine_refuses_a_sidecar_directory_it_cannot_write(
@@ -580,4 +578,137 @@ def test_refine_refuses_an_out_dir_that_is_a_file(workspace, wiring_log) -> None
     # A clean halt exits through typer; an unguarded OSError would
     # surface the OSError itself here.
     assert isinstance(result.exception, SystemExit)
+    assert wiring_log == []
+
+
+def test_refine_accepts_an_out_inside_an_uncreated_arm_directory(workspace) -> None:
+    """--out-dir is created first, so --out inside it resolves."""
+    result = _invoke(
+        workspace, "--limit", "1", "--out", str(workspace / "arms" / "refine.json")
+    )
+
+    assert result.exit_code == 0, result.output
+    assert (workspace / "arms" / "refine.json").is_file()
+
+
+def test_refine_refuses_out_naming_the_uncreated_arm_directory(
+    workspace, wiring_log
+) -> None:
+    """`--out arms` before `arms` exists must refuse, not pay for a pass."""
+    assert not (workspace / "arms").exists()
+
+    result = _invoke(workspace, "--limit", "1", "--out", str(workspace / "arms"))
+
+    assert result.exit_code == 1
+    assert "is a directory" in result.output
+    assert wiring_log == []
+
+
+def test_refine_refuses_a_map_that_priced_another_model(workspace, wiring_log) -> None:
+    other = _map()
+    save_sensitivity_map(
+        SensitivityMap(
+            model_id="test/49b",
+            scan=other.scan,
+            groups=other.groups,
+        ),
+        workspace / "other.json",
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "refine",
+            str(workspace / "r.json"),
+            "--bar",
+            "7.8",
+            "--map",
+            str(workspace / "other.json"),
+            "--llama-cpp",
+            str(workspace / "llama.cpp"),
+            "--base-logits",
+            str(workspace / "base.logits"),
+            "--eval-text",
+            str(workspace / "wiki.test.raw"),
+            "--runtime-build",
+            "b10362",
+            "--hardware",
+            "H100 SXM",
+            "--model",
+            str(workspace / "ckpt"),
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "test/49b" in result.output
+    assert "test/model" in result.output
+    assert wiring_log == []
+    assert not (workspace / "r.refinement.json").exists()
+
+
+def test_refine_proceeds_when_the_map_priced_this_recipe(workspace) -> None:
+    result = _invoke(workspace, "--limit", "1")
+
+    assert result.exit_code == 0, result.output
+    sidecar = json.loads((workspace / "r.refinement.json").read_text())
+    assert sidecar["model_id"] == "test/model"
+
+
+def test_refine_records_the_imatrix_it_packed_with(workspace) -> None:
+    matrix = workspace / "m.imatrix"
+    matrix.write_bytes(b"imatrix bytes")
+
+    _invoke(workspace, "--limit", "1", "--imatrix", str(matrix))
+
+    frame = json.loads((workspace / "r.refinement.json").read_text())["frame"]
+    assert frame["imatrix"]["file"].endswith("m.imatrix")
+    assert frame["imatrix"]["sha256"] == sha256(b"imatrix bytes").hexdigest()
+    assert frame["imatrix"]["size_bytes"] == len(b"imatrix bytes")
+
+
+def test_refine_records_an_unassisted_pass_as_a_null_imatrix(workspace) -> None:
+    _invoke(workspace, "--limit", "1")
+
+    frame = json.loads((workspace / "r.refinement.json").read_text())["frame"]
+    assert "imatrix" in frame
+    assert frame["imatrix"] is None
+
+
+def test_an_assisted_and_an_unassisted_pass_do_not_serialize_alike(
+    workspace,
+) -> None:
+    matrix = workspace / "m.imatrix"
+    matrix.write_bytes(b"imatrix bytes")
+
+    _invoke(workspace, "--limit", "1")
+    unassisted = json.loads((workspace / "r.refinement.json").read_text())["frame"]
+    _invoke(workspace, "--limit", "1", "--imatrix", str(matrix))
+    assisted = json.loads((workspace / "r.refinement.json").read_text())["frame"]
+
+    assert unassisted != assisted
+
+
+def test_refine_warns_when_an_assisted_recipe_packs_without_its_matrix(
+    workspace,
+) -> None:
+    save_recipe(
+        _recipe({G[0]: 2, G[1]: 2, G[2]: 4, G[3]: 4}, imatrix="30b.imatrix"),
+        workspace / "assisted.json",
+    )
+
+    result = _invoke(workspace, "--limit", "1", recipe="assisted.json")
+
+    assert result.exit_code == 0, result.output
+    assert "warning:" in result.output
+    assert "30b.imatrix" in result.output
+
+
+def test_refine_refuses_an_empty_imatrix(workspace, wiring_log) -> None:
+    matrix = workspace / "m.imatrix"
+    matrix.write_bytes(b"")
+
+    result = _invoke(workspace, "--limit", "1", "--imatrix", str(matrix))
+
+    assert result.exit_code == 1
+    assert "holds no bytes" in result.output
     assert wiring_log == []

@@ -14,6 +14,11 @@ the neighbourhood held. The arms are a sample of that whenever the
 caller's budget was smaller, so a reader needs both numbers before
 reading any outcome.
 
+The frame carries every input whose substitution would change the
+number (ADR-0031 decision 5), so it names the importance matrix by
+content beside the evaluation corpus. An unassisted pass records a
+null matrix rather than omitting the field.
+
 `predicted_delta` serializes as provenance. Nothing in this package or
 the domain orders, filters, or selects on it (ADR-0031 decision 6).
 
@@ -44,14 +49,18 @@ from typing import Any, Final
 
 from vramfit.adapters.outbound.json_common import _save_json
 from vramfit.domain.evals import CorpusReference
-from vramfit.domain.refinement_record import ArmRecord, RefinementSidecar
+from vramfit.domain.refinement_record import (
+    ArmRecord,
+    MatrixReference,
+    RefinementSidecar,
+)
 
 # Schema version 1: the first refinement sidecar. It carries the
 # frame, the stated bar, the control, every arm, the neighbourhood
 # the arms were drawn from, and the outcome. `neighbourhood_moves`
-# joined version 1 rather than bumping it: no sidecar had been
-# published when the field landed, so nothing reads a document
-# without it.
+# and the frame's `imatrix` both joined version 1 rather than
+# bumping it: no sidecar had been published when either field
+# landed, so nothing reads a document without them.
 REFINEMENT_SIDECAR_SCHEMA_VERSION: Final[int] = 1
 
 
@@ -75,6 +84,25 @@ def _corpus_to_dict(corpus: CorpusReference) -> dict[str, Any]:
         "sha256": corpus.sha256,
         "size_bytes": corpus.size_bytes,
         "provenance": corpus.provenance,
+    }
+
+
+def _matrix_to_dict(matrix: MatrixReference | None) -> dict[str, Any] | None:
+    """Serialize the importance matrix the pass packed with.
+
+    Args:
+        matrix: The matrix reference, or None for an unassisted pass.
+
+    Returns:
+        The matrix entry's JSON object, or null. A null reads as
+        "this pass ran unassisted", which is a recorded state.
+    """
+    if matrix is None:
+        return None
+    return {
+        "file": matrix.file,
+        "sha256": matrix.sha256,
+        "size_bytes": matrix.size_bytes,
     }
 
 
@@ -109,7 +137,9 @@ def sidecar_to_dict(sidecar: RefinementSidecar) -> dict[str, Any]:
     """Serialize a refinement sidecar with the schema envelope.
 
     Writes ``neighbourhood_moves`` beside ``arms``, so a reader can
-    always tell a whole search from a sample of one.
+    always tell a whole search from a sample of one, and the frame's
+    ``imatrix``, so an assisted pass never reads like an unassisted
+    one.
 
     Args:
         sidecar: The record to serialize.
@@ -125,6 +155,9 @@ def sidecar_to_dict(sidecar: RefinementSidecar) -> dict[str, Any]:
             "hardware": sidecar.frame.hardware,
             "reference": sidecar.frame.reference,
             "corpus": _corpus_to_dict(sidecar.frame.corpus),
+            # Null records an unassisted pass. Without this an
+            # assisted and an unassisted pass serialize alike.
+            "imatrix": _matrix_to_dict(sidecar.frame.imatrix),
         },
         "bar": sidecar.bar,
         "control": (None if sidecar.control is None else _arm_to_dict(sidecar.control)),

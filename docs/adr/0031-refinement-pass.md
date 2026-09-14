@@ -103,12 +103,25 @@ does not earn the refinement step.
    assignments, so adding to it would compound a field that is
    already wrong for this case.
 
-5. **The sidecar records at minimum:** every arm evaluated, how many
+5. **The frame carries every input whose substitution would change
+   the number.** That is the rule. The instances are the runtime
+   binary build, the hardware, the evaluation corpus content
+   identity, and the importance matrix identity. Each one, swapped,
+   moves the measured divergence, so a record that omits it
+   serializes two different passes identically. An input the pass did
+   not use records as null rather than as an absent field, because
+   "ran unassisted" is a claim and silence is not.
+
+   This rule is written as a rule because three separate reviews of
+   this change found the same shape: the measurement was sound and
+   the record could not prove it — first the corpus identity, then
+   the neighbourhood size, then the matrix. A list of three cases
+   invites a fourth. The rule generates them.
+
+   **The sidecar records at minimum:** every arm evaluated, how many
    byte-neutral moves the neighbourhood held, the winner, the
    evidence bar the caller stated, the control result with its
-   sigma, and the frame the measurement ran in. The frame means the
-   runtime binary build, the hardware, and the evaluation corpus
-   content identity.
+   sigma, and the frame.
 
    The neighbourhood count is not the arm count. A pass measures the
    arms its budget affords, so 15 arms of 15 and 15 arms of 385 are
@@ -179,6 +192,11 @@ does not earn the refinement step.
   is the map's groups. A pin spelled with a checkpoint-discovered
   (ADR-0029) or folded (#576) name is reported as missed, and the
   pass declines rather than measuring arms that may violate it.
+- The pass refuses a map that did not price the recipe. `refine` is
+  the first command handed a recipe and a map as separate arguments,
+  and a mismatched pair declines cleanly at exit 0 — a comparison
+  that never happened, wearing the shape of a published no-winner
+  result. Comparing `model_id` closes it.
 - One definition states what clearing the evidence bar means.
   `vramfit.domain.paired.cleared_bar` decides which arm the pass
   selects and which winner a sidecar accepts, so no record can claim

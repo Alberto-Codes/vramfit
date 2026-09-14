@@ -935,9 +935,19 @@ Options: `--map` (required), `--llama-cpp` (required),
 `--keep-packs`, `--python-bin`, `--runlog`.
 
 The command checks every path it needs before the convert stage: the
-three llama.cpp tools, `--imatrix` when given, and the directories
-`--out` and `--runlog` write into. A missing path costs no card time,
-and a finished pass is never discarded at its last step.
+three llama.cpp tools, `--imatrix` when given, and the destinations
+`--out` and `--runlog` name. `--out-dir` is created first, so an
+`--out` inside it resolves. A missing path costs no card time, and a
+finished pass is never discarded at its last step.
+
+It refuses a `--map` whose `model_id` differs from the recipe's. Every
+other stage derives the recipe from the map inside one `plan` run, so
+`refine` is the first command that can be handed a mismatched pair,
+and a mismatched map otherwise declines cleanly — a comparison that
+never happened, reading as a published no-winner result.
+
+It warns, as `pack` does, when the recipe records an imatrix and
+`--imatrix` is absent or names a different file (ADR-0020).
 
 `--base-logits` names logits stored from the reference build. Write
 them once with `llama-perplexity --kl-divergence-base` over the f16
@@ -961,6 +971,12 @@ It also records `neighbourhood_moves`, how many byte-neutral moves
 the neighbourhood held before `--limit` sampled it. Read it beside
 the arm count: 15 arms of 15 and 15 arms of 385 are different
 results. A declined pass records 0.
+
+The frame carries every input whose substitution would change the
+number: the runtime build, the hardware, the evaluation corpus named
+by content, and the importance matrix named by content. A pass run
+without `--imatrix` records `"imatrix": null`, so an assisted pass
+and an unassisted one never serialize alike.
 
 The command reports what it measured and never a verdict on the
 recipe. When no arm clears the bar it names the arms it evaluated and
@@ -989,7 +1005,9 @@ then refine_finished (winner, refusal).
 Exit codes: 1 when the recipe or map is invalid, the model directory
 does not exist, `--base-logits` or `--eval-text` is not a file or
 cannot be read, `--eval-text` holds no bytes or measures fewer than
-two chunks, `--imatrix` is not a file, the `--llama-cpp` checkout
+two chunks, `--imatrix` is not a file or holds no bytes, the map
+prices a different `model_id` from the recipe, the `--llama-cpp`
+checkout
 misses `convert_hf_to_gguf.py`, `build/bin/llama-quantize` or
 `build/bin/llama-perplexity`, the `--out` or `--runlog` directory does
 not exist or refuses a write, the recipe's pins or protections do not

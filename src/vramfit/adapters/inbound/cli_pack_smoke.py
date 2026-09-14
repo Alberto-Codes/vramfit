@@ -21,6 +21,10 @@ See Also:
       drives these helpers.
     - [vramfit.adapters.outbound.gguf.smoke][]: The adapter
       `_build_smoke_tester` wires.
+
+The llama.cpp tool paths come from
+[vramfit.adapters.inbound.llama_cpp_layout][]'s `LlamaCppTools`, the
+one spelling ``refine`` reads too.
 """
 
 from __future__ import annotations
@@ -30,6 +34,7 @@ from pathlib import Path
 
 import typer
 
+from vramfit.adapters.inbound.llama_cpp_layout import LlamaCppTools
 from vramfit.adapters.inbound.run_log import SafeRunLog
 from vramfit.adapters.outbound.gguf.pack import TypeFallbackError
 from vramfit.adapters.outbound.gguf.smoke import LlamaCppSmokeTester
@@ -115,10 +120,12 @@ def _check_inputs(
             given file does not exist, ``--mmproj`` is empty, the
             threshold is not positive, or the ``--out`` directory
             does not exist.
+
+    The tool paths come from `LlamaCppTools`, so this check names the
+    files the wiring runs.
     """
-    convert_script = llama_cpp / "convert_hf_to_gguf.py"
-    quantize_bin = llama_cpp / "build" / "bin" / "llama-quantize"
-    if not convert_script.is_file() or not quantize_bin.is_file():
+    tools = LlamaCppTools.under(llama_cpp)
+    if not tools.convert_script.is_file() or not tools.quantize_bin.is_file():
         raise typer.BadParameter(
             f"--llama-cpp: {llama_cpp} misses convert_hf_to_gguf.py or "
             "build/bin/llama-quantize — build the tools first"
@@ -133,7 +140,7 @@ def _check_inputs(
             # failure to serve time.
             raise typer.BadParameter(f"--mmproj: {mmproj} is empty")
     if smoke_text is not None:
-        perplexity_bin = llama_cpp / "build" / "bin" / "llama-perplexity"
+        perplexity_bin = tools.perplexity_bin
         if not smoke_text.is_file():
             raise typer.BadParameter(f"--smoke-text: {smoke_text} is not a file")
         if not perplexity_bin.is_file():
@@ -167,10 +174,11 @@ def _build_smoke_tester(
         threads: Tool thread count.
 
     Returns:
-        The wired smoke tester.
+        The wired smoke tester, reading the perplexity binary
+        `LlamaCppTools` names.
     """
     return LlamaCppSmokeTester(
-        perplexity_bin=llama_cpp / "build" / "bin" / "llama-perplexity",
+        perplexity_bin=LlamaCppTools.under(llama_cpp).perplexity_bin,
         model_path=out,
         text_path=smoke_text,
         chunks=chunks,

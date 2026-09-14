@@ -9,6 +9,7 @@ from vramfit.domain.paired import cleared_bar
 from vramfit.domain.refinement_record import (
     CONTROL_ARM,
     ArmRecord,
+    MatrixReference,
     MeasurementFrame,
     RefinementRecordError,
     RefinementSidecar,
@@ -23,6 +24,7 @@ def _frame() -> MeasurementFrame:
         hardware="H100 SXM",
         corpus=CorpusReference(file="wiki.test.raw"),
         reference="f16 base logits",
+        imatrix=None,
     )
 
 
@@ -238,6 +240,7 @@ def test_a_frame_that_names_no_instrument_is_refused() -> None:
             hardware="H100 SXM",
             corpus=CorpusReference(file="wiki.test.raw"),
             reference="f16 base logits",
+            imatrix=None,
         )
 
 
@@ -304,3 +307,24 @@ def test_a_declined_pass_counts_no_neighbourhood_move() -> None:
             declined="no byte-neutral neighbour",
             neighbourhood_moves=385,
         )
+
+
+def test_a_matrix_reference_names_its_bytes() -> None:
+    matrix = MatrixReference(file="30b.imatrix", sha256="ab" * 32, size_bytes=1024)
+
+    assert matrix.size_bytes == 1024
+
+
+def test_a_matrix_reference_refuses_a_malformed_digest() -> None:
+    with pytest.raises(RefinementRecordError, match="64 lowercase hex"):
+        MatrixReference(file="30b.imatrix", sha256="AB" * 32, size_bytes=1024)
+
+
+def test_a_matrix_reference_refuses_an_empty_file() -> None:
+    with pytest.raises(RefinementRecordError, match="file must not be empty"):
+        MatrixReference(file="", sha256="ab" * 32, size_bytes=1024)
+
+
+def test_a_matrix_reference_refuses_a_non_positive_size() -> None:
+    with pytest.raises(RefinementRecordError, match="size_bytes must be positive"):
+        MatrixReference(file="30b.imatrix", sha256="ab" * 32, size_bytes=0)

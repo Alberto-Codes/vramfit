@@ -38,13 +38,18 @@ This stage re-derives neither rule. Pins resolve through
 second resolution drifts from the first, and every instance of that
 drift found so far let a refined arm violate its own plan.
 
+The caller enumerates once. `decline_reason` judges the
+neighbourhood it is handed rather than rebuilding one, so a decline
+and the arms a pass measures always describe the same enumeration.
+
 Examples:
-    Enumerate a recipe's neighbourhood:
+    Enumerate a recipe's neighbourhood and judge it:
 
     ```python
-    from vramfit.domain.refinement import neighbours
+    from vramfit.domain.refinement import decline_reason, neighbours
 
     candidates = neighbours(recipe, map_, row_widths)
+    declined = decline_reason(recipe, map_, candidates)
     ```
 
 See Also:
@@ -55,7 +60,7 @@ See Also:
 
 from __future__ import annotations
 
-from collections.abc import Callable, Collection, Mapping
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 
 from vramfit.domain.errors import VramfitError
@@ -463,7 +468,7 @@ def neighbours(
 
 
 def decline_reason(
-    recipe: Recipe, map_: SensitivityMap, row_widths: Mapping[str, int]
+    recipe: Recipe, map_: SensitivityMap, candidates: Sequence[Candidate]
 ) -> str | None:
     """Report why a recipe has no neighbourhood worth searching.
 
@@ -497,8 +502,9 @@ def decline_reason(
     Args:
         recipe: The solved recipe to search around.
         map_: The map that priced it.
-        row_widths: Elements per row per group, which bind each
-            group's effective-bits table.
+        candidates: The neighbourhood `neighbours` enumerated. The
+            caller enumerates once and passes the result, so the
+            decline reads the same neighbourhood the pass measures.
 
     Returns:
         The refusal, or None when at least one neighbour exists.
@@ -513,7 +519,7 @@ def decline_reason(
     if len(levels) < MIN_LEVELS:
         only = next(iter(levels))
         return f"every group sits at {only} bits, so no swap moves precision"
-    if not neighbours(recipe, map_, row_widths):
+    if not candidates:
         return (
             "no free pair of groups both spends the same bytes after the "
             "swap and differs in precision, so the recipe has no "

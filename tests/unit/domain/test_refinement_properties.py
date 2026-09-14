@@ -145,9 +145,8 @@ def test_decline_speaks_exactly_when_the_neighbourhood_is_empty(
     drawn: tuple[Recipe, SensitivityMap, dict[str, int]],
 ) -> None:
     recipe, map_, widths = drawn
-    assert (decline_reason(recipe, map_, widths) is None) == bool(
-        neighbours(recipe, map_, widths)
-    )
+    candidates = neighbours(recipe, map_, widths)
+    assert (decline_reason(recipe, map_, candidates) is None) == bool(candidates)
 
 
 @given(_recipes())

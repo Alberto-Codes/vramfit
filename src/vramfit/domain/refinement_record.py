@@ -11,6 +11,11 @@ The record carries every arm the pass measured, not only the winner.
 An arm that lost is evidence about the neighbourhood, and the losing
 arms are what show the map did not order it.
 
+The frame carries every input whose substitution would change the
+number (ADR-0031 decision 5): the runtime build, the hardware, the
+evaluation corpus's content identity, and the importance matrix's. An
+input the pass did not use records as None, never as an absent field.
+
 It also carries how large the neighbourhood was. A caller's arm
 budget is usually smaller than the neighbourhood, so the arms are a
 sample of it. `neighbourhood_moves` beside ``len(arms)`` is what
@@ -52,6 +57,10 @@ from vramfit.domain.paired import cleared_bar
 # that reproduced the published frame.
 CONTROL_ARM = "control"
 
+# A SHA-256 digest as the frame records it: 64 lowercase hex digits.
+_SHA256_HEX_LEN = 64
+_HEX_DIGITS = frozenset("0123456789abcdef")
+
 
 class RefinementRecordError(VramfitError, ValueError):
     """A refinement sidecar does not describe a readable pass.
@@ -66,12 +75,64 @@ class RefinementRecordError(VramfitError, ValueError):
 
 
 @dataclass(frozen=True, slots=True)
+class MatrixReference:
+    """The importance matrix a pass packed with, named by content.
+
+    An assisted pack consumes a matrix (ADR-0016), and substituting
+    one changes every number the pass produces (ADR-0020). The frame
+    therefore names the bytes, not the path alone: a path names no
+    bytes once the file behind it changes.
+
+    Attributes:
+        file (str): The matrix path the pass was given.
+        sha256 (str): SHA-256 of those bytes, 64 lowercase hex
+            digits.
+        size_bytes (int): Size of those bytes. Pairs with `sha256`
+            as the glossary's content identity.
+
+    Examples:
+        The 30B pack's matrix:
+
+        ```python
+        from vramfit.domain.refinement_record import MatrixReference
+
+        matrix = MatrixReference(file="30b.imatrix", sha256="ab" * 32, size_bytes=1024)
+        ```
+    """
+
+    file: str
+    sha256: str
+    size_bytes: int
+
+    def __post_init__(self) -> None:
+        """Enforce that the reference names bytes.
+
+        Raises:
+            RefinementRecordError: If the path is empty, the digest
+                is not 64 lowercase hex digits, or the byte count is
+                not positive. Half a content identity names nothing.
+        """
+        if not self.file:
+            raise RefinementRecordError("file must not be empty")
+        if len(self.sha256) != _SHA256_HEX_LEN or not set(self.sha256) <= _HEX_DIGITS:
+            raise RefinementRecordError("sha256 must be 64 lowercase hex digits")
+        if self.size_bytes <= 0:
+            raise RefinementRecordError("size_bytes must be positive")
+
+
+@dataclass(frozen=True, slots=True)
 class MeasurementFrame:
     """Where a refinement pass's numbers came from.
 
     ADR-0027 binds damage numbers to one instrument, so the record
     names the instrument rather than assuming it. Two passes measured
     in different frames do not compare.
+
+    The frame carries every input whose substitution would change the
+    number (ADR-0031 decision 5). That rule is what puts the matrix
+    beside the corpus: an assisted pass and an unassisted one produce
+    different numbers, so a record that omitted the matrix would
+    serialize the two identically.
 
     Attributes:
         runtime_build (str): The runtime binary's build identity,
@@ -81,6 +142,9 @@ class MeasurementFrame:
             content where the pass recorded it.
         reference (str): What the divergences were measured against,
             e.g. ``f16 base logits``.
+        imatrix (MatrixReference | None): The importance matrix every
+            arm packed with, or None when the pass ran unassisted.
+            None is a recorded state, never an absent field.
 
     Examples:
         The 2026-09-11 frame:
@@ -94,6 +158,7 @@ class MeasurementFrame:
             hardware="H100 SXM",
             corpus=CorpusReference(file="wiki.test.raw"),
             reference="f16 base logits",
+            imatrix=None,
         )
         ```
     """
@@ -102,6 +167,7 @@ class MeasurementFrame:
     hardware: str
     corpus: CorpusReference
     reference: str
+    imatrix: MatrixReference | None
 
     def __post_init__(self) -> None:
         """Enforce that the frame names its instrument.
