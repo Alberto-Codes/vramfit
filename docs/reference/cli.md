@@ -1053,13 +1053,13 @@ does not exist, `--runtime-build` or `--hardware` is empty,
 `--base-logits` or `--eval-text` is not a file or cannot be read,
 `--base-logits` holds no bytes, `--eval-text` holds no bytes or
 measures fewer than two chunks, the control packs over the weight
-budget, `--imatrix` is not a file or holds no bytes, the map
-prices a different `model_id` from the recipe, the `--llama-cpp`
-checkout
+budget, `--imatrix` is not a file or holds no bytes, the map prices a
+different `model_id` from the recipe, the `--llama-cpp` checkout
 misses `convert_hf_to_gguf.py`, `build/bin/llama-quantize` or
-`build/bin/llama-perplexity`, the `--out` or `--runlog` directory does
-not exist or refuses a write, the recipe's protections do not resolve
-against the map, a group has no row width, or a toolchain stage
-fails. A pin that does not resolve declines at exit 0 rather than
-refusing. 2 when
+`build/bin/llama-perplexity`, either built binary is not executable,
+`--out-dir` cannot be created, `--out` or `--runlog` names a
+directory, the directory `--out` or `--runlog` sits in does not exist
+or refuses a write, the recipe's protections do not resolve against
+the map, a group has no row width, or a toolchain stage fails. A pin
+that does not resolve declines at exit 0 rather than refusing. 2 when
 `--bar` is not stated.

@@ -365,6 +365,14 @@ change.
     perturb weights inside the bf16 model, measure calibration KL.
     The **runtime frame** is the packed artifact under the runtime's
     own numerics ([ADR-0021](../adr/0021-runtime-frame-measurement.md)).
+    A **refinement pass** records its frame by one rule: every input
+    whose substitution would change the number
+    ([ADR-0031](../adr/0031-refinement-pass.md) decision 5). Those
+    inputs are the runtime binary build, the hardware, and the
+    **content identity** of the evaluation corpus, the reference
+    logits, and the importance matrix. An input the pass did not use
+    records as null, never omitted. That record lives in
+    `vramfit.domain.refinement_record.MeasurementFrame`.
     **Frame-matched** describes a comparison run entirely inside one
     frame. Not "environment", "setup", or "context".
 
@@ -805,16 +813,6 @@ change.
     outcome reads correctly only with both. Lives in
     `vramfit.domain.refinement_record`. Not "report" or "results
     file".
-
-**Measurement frame** (short: **frame**)
-:   Everything a **refinement pass** consumed whose substitution would
-    change the number it reports: the runtime binary build, the
-    hardware, and the **content identity** of the evaluation corpus,
-    the reference logits, and the importance matrix. Two passes
-    measured in different frames do not compare. An input the pass did
-    not use is recorded as null, never omitted — an unassisted pass
-    states that it ran unassisted. Lives in
-    `vramfit.domain.refinement_record.MeasurementFrame`.
 
 **Neighbourhood decline**
 :   The refinement pass's answer when it will not measure a recipe's
