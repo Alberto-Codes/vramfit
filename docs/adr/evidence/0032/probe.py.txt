@@ -1,0 +1,71 @@
+from pathlib import Path
+import hashlib
+import shlex
+import subprocess
+import sys
+import numpy as np
+from gguf import GGMLQuantizationType, GGUFReader, GGUFWriter
+
+root = Path(__file__).resolve().parent
+binary = Path(sys.argv[1]).resolve()
+print('binary:', binary, flush=True)
+print('binary_sha256:', hashlib.sha256(binary.read_bytes()).hexdigest(), flush=True)
+writer = GGUFWriter(root / 'mixed.gguf', 'llama')
+writer.add_name('Q2_0 passthrough probe')
+writer.add_context_length(512)
+writer.add_layer_norm_rms_eps(1e-5)
+writer.add_block_count(1)
+writer.add_embedding_length(256)
+writer.add_feed_forward_length(256)
+writer.add_head_count(4)
+writer.add_expert_count(2)
+writer.add_expert_used_count(1)
+# Deliberately chosen finite blocks, not an assisted encoder.
+blocks = np.zeros((2, 256, 4, 18), dtype=np.uint8)
+blocks[..., :2] = np.frombuffer(np.float16(0.25).tobytes(), dtype=np.uint8)
+blocks[..., 2:] = np.arange(16, dtype=np.uint8) * 17
+writer.add_tensor('blk.0.ffn_down_exps.weight', blocks.reshape(2, 256, 72), raw_dtype=GGMLQuantizationType.Q2_0)
+writer.add_tensor('blk.0.attn_q.weight', np.random.default_rng(7).standard_normal((256, 256)).astype(np.float16))
+writer.add_tensor('blk.0.attn_norm.weight', np.ones(256, dtype=np.float32))
+writer.write_header_to_file()
+writer.write_kv_data_to_file()
+writer.write_tensors_to_file()
+writer.close()
+
+def read(path):
+    return {t.name: (t.tensor_type.name, tuple(t.shape), t.data.tobytes()) for t in GGUFReader(path).tensors}
+
+before = read(root / 'mixed.gguf')
+matrix = GGUFWriter(root / 'imatrix.gguf', 'imatrix')
+matrix.add_type('imatrix')
+matrix.add_array('imatrix.datasets', ['synthetic-passthrough'])
+matrix.add_uint32('imatrix.chunk_count', 1)
+matrix.add_uint32('imatrix.chunk_size', 512)
+for name, experts in [('blk.0.ffn_down_exps.weight', 2), ('blk.0.attn_q.weight', 1)]:
+    matrix.add_tensor(name + '.in_sum2', np.ones((experts, 256), dtype=np.float32))
+    matrix.add_tensor(name + '.counts', np.ones(experts, dtype=np.float32))
+matrix.write_header_to_file()
+matrix.write_kv_data_to_file()
+matrix.write_tensors_to_file()
+matrix.close()
+for label, target in [('matching', 'q2_0'), ('matching-imatrix', 'q2_0'), ('mismatch', 'q4_0')]:
+    argv = [str(binary), '--pure', '--tensor-type', rf'blk\.0\.ffn_down_exps\.weight={target}', '--tensor-type', r'blk\.0\.attn_q\.weight=q4_0', str(root / 'mixed.gguf'), str(root / f'{label}.gguf'), 'Q2_K', '1']
+    if label == 'matching-imatrix':
+        argv[1:1] = ['--imatrix', str(root / 'imatrix.gguf')]
+    print('\n$', shlex.join(argv), flush=True)
+    result = subprocess.run(argv, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    print(result.stdout, end='', flush=True)
+    print('exit:', result.returncode, flush=True)
+    if label.startswith('matching'):
+        assert result.returncode == 0
+        after = read(root / f'{label}.gguf')
+        for name, (kind, shape, payload) in before.items():
+            out_kind, out_shape, out_payload = after[name]
+            print(f'{name}: {kind} -> {out_kind}; shape={out_shape}; bytes={len(payload)} -> {len(out_payload)}; identical={payload == out_payload}', flush=True)
+            print('input_sha256:', hashlib.sha256(payload).hexdigest(), flush=True)
+            print('output_sha256:', hashlib.sha256(out_payload).hexdigest(), flush=True)
+        assert before['blk.0.ffn_down_exps.weight'] == after['blk.0.ffn_down_exps.weight']
+        assert after['blk.0.attn_q.weight'][0] == 'Q4_0'
+    else:
+        assert result.returncode != 0
+print('\nPASS: matching Q2_0 payload copied exactly; float peer quantized; mismatched quantized type refused.', flush=True)
