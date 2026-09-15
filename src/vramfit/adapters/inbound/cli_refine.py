@@ -5,8 +5,14 @@ recipe and the map that priced it, measures the checkpoint's row
 widths the way ``pack`` does, wires the `RecipePacker` port to the
 llama.cpp adapter once per arm and the `RuntimeDivergenceMeter` port
 to ``llama-perplexity``, runs the pass
-([vramfit.adapters.inbound.refine_loop][]), and writes the search
-record beside the recipe.
+([vramfit.adapters.inbound.refine_loop][]), and hands it the sink
+that writes the search record beside the recipe.
+
+The pass owns that write. It banks the record when the control is
+measured, after every arm, and last with the winner, so a pass that
+stops partway leaves the arms it paid for. This module used to write
+once after the pass returned, which lost every measurement a pass did
+not finish.
 
 Every arm is packed and measured. Nothing is ranked by the map,
 because the map does not order the neighbourhood it prices
@@ -44,6 +50,11 @@ names the tools once, for this command and for ``pack``. The
 pre-flight checks those paths and the wiring runs them, so the two
 cannot disagree about which file they mean.
 
+The control's measurement reaches the terminal when it lands, through
+`_live_report`, rather than only in the closing summary. It is the
+gate every arm is read against, and it finishes about four minutes
+into a 59-minute pass on the 30B target.
+
 The command reports what it measured and never a verdict on the
 recipe. The arms are a sample of the neighbourhood whenever the arm
 budget was smaller, and the sidecar records both counts. An arm that
@@ -80,8 +91,9 @@ See Also:
 from __future__ import annotations
 
 import sys
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, cast
 
 import typer
 
@@ -97,7 +109,13 @@ from vramfit.adapters.inbound.cli_refine_preflight import (
     _make_arm_dir,
 )
 from vramfit.adapters.inbound.llama_cpp_layout import LlamaCppTools
-from vramfit.adapters.inbound.refine_loop import run_pass
+from vramfit.adapters.inbound.refine_loop import (
+    CHUNKS_FIELD,
+    CONTROL_MEASURED,
+    MEAN_FIELD,
+    Reporter,
+    run_pass,
+)
 from vramfit.adapters.inbound.run_log import SafeRunLog
 from vramfit.adapters.outbound.calibration_digest import content_identity
 from vramfit.adapters.outbound.gguf.divergence import LlamaCppDivergenceMeter
@@ -179,6 +197,59 @@ def _file_identity(label: str, path: Path) -> FileIdentity:
     return FileIdentity(file=str(path), sha256=sha256, size_bytes=size_bytes)
 
 
+def _control_line(mean: float, chunks: int) -> str:
+    """Word the control's measurement, for every surface that shows it.
+
+    The pass reports this number when it lands and the closing
+    summary heads its table with it, so one function words both. Two
+    surfaces wording one measurement is how the exclusion count
+    drifted inside a single change (ADR-0031).
+
+    Args:
+        mean: The control's mean divergence.
+        chunks: Chunks it measured.
+
+    Returns:
+        The line.
+    """
+    return f"control: {mean:.6f} mean divergence over {chunks} chunks"
+
+
+def _live_report(run_log: SafeRunLog) -> Reporter:
+    """Carry the pass's progress to the run log and the terminal.
+
+    Everything reaches the run log. The control's measurement also
+    reaches the terminal, because it is the gate: every arm's number
+    is read against it, and it lands about four minutes into a
+    59-minute pass on the 30B target. An operator who can see it
+    there can stop a pass whose control did not reproduce its frame,
+    rather than paying for the remaining arms first.
+
+    Args:
+        run_log: The run log every event reaches.
+
+    Returns:
+        The reporter to hand the pass.
+    """
+
+    def report(event: str, fields: Mapping[str, object]) -> None:
+        """Record one event, echoing the control's measurement.
+
+        Args:
+            event: Past-tense event name.
+            fields: Event payload.
+        """
+        run_log.emit(event, fields)
+        if event == CONTROL_MEASURED:
+            # `_measurement` builds this payload from an `ArmRecord`,
+            # whose mean is a float and whose chunk count is an int.
+            mean = cast("float", fields[MEAN_FIELD])
+            chunks = cast("int", fields[CHUNKS_FIELD])
+            typer.echo(_control_line(mean, chunks))
+
+    return report
+
+
 def _report_outcome(sidecar: RefinementSidecar) -> None:
     """Print what the pass measured.
 
@@ -194,6 +265,10 @@ def _report_outcome(sidecar: RefinementSidecar) -> None:
     nothing of its own, so it cannot say the pass judged an arm the
     run log calls excluded.
 
+    The control's line comes from `_control_line`, which `_live_report`
+    already printed when the control landed. One function words that
+    measurement for both surfaces.
+
     Args:
         sidecar: The pass's search record.
     """
@@ -203,9 +278,7 @@ def _report_outcome(sidecar: RefinementSidecar) -> None:
     control = sidecar.control
     if control is None:
         return
-    typer.echo(
-        f"control: {control.mean:.6f} mean divergence over {control.chunks} chunks"
-    )
+    typer.echo(_control_line(control.mean, control.chunks))
     for arm in sorted(sidecar.arms, key=lambda a: a.mean):
         excluded = (
             ""
@@ -311,7 +384,10 @@ def refine(
     have priced this recipe, the frame labels must not be empty, and
     an assisted recipe packed without its matrix warns the way
     ``pack`` warns. A control that packs over the weight budget
-    halts the pass before its measurement is spent. The corpus, the reference logits, and the matrix
+    halts the pass before its measurement is spent. The pass banks
+    the sidecar as it runs, so a run that stops partway still leaves
+    its measured arms behind and its control reaches the terminal
+    before the first arm packs. The corpus, the reference logits, and the matrix
     are each hashed once here, so the frame names bytes rather than
     paths — and they are hashed last, after every refusal a pass
     could make without them. `_check_recipe_resolves` runs the
@@ -439,13 +515,13 @@ def refine(
             packer_for,
             meter,
             frame,
+            sink,
             bar=bar,
             limit=limit,
             out_dir=out_dir,
             row_widths=row_widths,
-            report=run_log.emit,
+            report=_live_report(run_log),
         )
-        sink.save(sidecar)
     except (VramfitError, OSError) as error:
         _halt(str(error))
         return

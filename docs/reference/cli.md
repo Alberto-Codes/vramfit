@@ -964,6 +964,29 @@ winner, the stated bar, the control with its sigma, and the frame,
 enumerated once below. The map's predicted delta is recorded as
 provenance and orders nothing.
 
+**The pass writes that file as it runs.** It writes once when the
+control is measured, again after each arm, and last with the winner.
+A pass that stops at arm 12 of 16 therefore leaves twelve measured
+arms and its control behind, each with its mean, delta, sigma, and
+better-chunk count. Every write replaces the file in one step, so an
+interrupted pass leaves the record before it rather than a truncated
+one. An arm costs about 0.48 USD of card time and its packed file is
+deleted once measured, so an arm the pass did not write is an arm
+nobody can read or re-measure.
+
+Each record carries `finished`. Read it before `winner`. A null
+winner means the pass judged every arm and kept none only when
+`finished` is true. False marks a record the pass wrote before
+selection ran, whose arms are real measurements. A declined pass is
+finished: declining is an outcome, not an interruption.
+
+The control's measured mean also prints to the terminal when it
+lands, before the first arm packs. The control is the gate — every
+arm's number is read against it — and it finishes about four minutes
+into a pass that runs about 59 minutes on the 30B target. An operator
+whose control did not reproduce its published frame can stop the pass
+there rather than paying for the remaining arms.
+
 Each arm also records `budget_margin`,
 `weight_budget_bytes - packed_bytes`, the same figure `vramfit pack`
 gates on. Byte-neutrality equalizes *predicted* bytes, so a swap can
@@ -1040,13 +1063,20 @@ winning arm to an artifact needs a tier-3 slice and a serve test.
 
 Run log: refine_started (arms, neighbourhood_moves, bar) or
 refine_declined (reason, neighbourhood_moves),
-base_converted, then per arm arm_packing, arm_packed (with
-budget_margin), arm_measured, and arm_over_budget for an excluded
-arm, then refine_finished (winner, judged, excluded, refusal). The
-finished event carries the exclusions whether or not an arm won, and
-`refusal` is null on a winning pass. An over-budget control
-refuses after its arm_packed and emits no arm_measured, because the
-pass refuses before spending the measurement.
+base_converted, then the control's arm_packing, arm_packed (with
+budget_margin), and control_measured, then per arm arm_packing,
+arm_packed, arm_measured, and arm_over_budget for an excluded
+arm, then refine_finished (winner, judged, excluded, refusal).
+
+control_measured and arm_measured carry the same fields: arm, mean,
+delta, sigma, better_chunks, and chunks. A name and a chunk count is
+not a result, and a log that recorded one could not reconstruct a
+lost pass.
+
+The finished event carries the exclusions whether or not an arm won,
+and `refusal` is null on a winning pass. An over-budget control
+refuses after its arm_packed and emits no control_measured, because
+the pass refuses before spending the measurement.
 
 Exit codes: 1 when the recipe or map is invalid, the model directory
 does not exist, `--runtime-build` or `--hardware` is empty,

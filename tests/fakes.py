@@ -462,16 +462,25 @@ class MemoryRuntimeDivergenceMeter:
     meter read it. The real tool cannot measure a file that is not
     there, so a suite proving the caller deletes a pack *after*
     measuring it reads this rather than inferring the order.
+
+    `fail` raises on every call and `fail_after` raises once that
+    many calls have returned. The real tool can die at any arm — a
+    rented pod reaching its deadline, an out-of-memory kill — so a
+    suite proving what a caller keeps from a pass that stopped
+    partway configures where it stopped.
     """
 
     default: tuple[float, ...] = (0.2, 0.3, 0.25, 0.4)
     series: dict[str, tuple[float, ...]] = field(default_factory=dict)
     fail: bool = False
+    fail_after: int | None = None
     measured: list[str] = field(default_factory=list)
     present: list[bool] = field(default_factory=list)
 
     def measure(self, packed: str) -> tuple[float, ...]:
-        if self.fail:
+        if self.fail or (
+            self.fail_after is not None and len(self.measured) >= self.fail_after
+        ):
             raise PackError("divergence failed with exit code 3:\nconfigured failure")
         self.measured.append(packed)
         self.present.append(Path(packed).is_file())

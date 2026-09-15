@@ -10,6 +10,12 @@ selection — a measured arm is never dropped from the record. The
 losing arms are the evidence that the sensitivity map did not order
 the neighbourhood, which is the finding the whole stage rests on.
 
+The pass writes this document as it runs, so a document may describe
+a pass still under way. `_save_json` replaces the file in one step,
+which is what lets it: an interrupted write leaves the record before
+it rather than a truncated one. `finished` says which state the
+document describes, and a reader reads it before `winner`.
+
 It also records `neighbourhood_moves`, how many byte-neutral moves
 the neighbourhood held. The arms are a sample of that whenever the
 caller's budget was smaller, so a reader needs both numbers before
@@ -57,15 +63,22 @@ from vramfit.domain.refinement_record import (
     RefinementSidecar,
 )
 
-# Schema version 1: the first refinement sidecar. It carries the
-# frame, the stated bar, the control, every arm, the neighbourhood
-# the arms were drawn from, and the outcome. `neighbourhood_moves`
-# and the frame's `imatrix` both joined version 1 rather than
-# bumping it, the frame's `reference` became a content identity in
-# the same way, and each arm's `budget_margin` joined it too: no
-# sidecar had been published when any of those landed, so nothing
-# reads a document of the older shape.
-REFINEMENT_SIDECAR_SCHEMA_VERSION: Final[int] = 1
+# Schema version 2: version 1 carried the frame, the stated bar, the
+# control, every arm, the neighbourhood the arms were drawn from, and
+# the outcome. `neighbourhood_moves`, the frame's `imatrix`, the
+# frame's `reference` as a content identity, and each arm's
+# `budget_margin` all joined version 1 rather than bumping it: no
+# sidecar had been published when any of those landed, and each added
+# a fact without changing one already written.
+#
+# `finished` is the first change of the second kind, so it bumps. A
+# version 1 document's null `winner` means the pass judged every arm
+# and kept none. In version 2 it means that only when `finished` is
+# true, because the pass now writes this document as it runs and a
+# document it wrote at arm 12 of 16 carries a null winner too. A
+# reader that cannot tell the versions apart reads a stopped pass as
+# a completed one.
+REFINEMENT_SIDECAR_SCHEMA_VERSION: Final[int] = 2
 
 
 def _corpus_to_dict(corpus: CorpusReference) -> dict[str, Any]:
@@ -156,6 +169,10 @@ def sidecar_to_dict(sidecar: RefinementSidecar) -> dict[str, Any]:
     ``reference`` and ``imatrix`` by content, so two passes that
     measured against different bytes never read alike.
 
+    Writes ``finished`` beside ``winner``. The pass writes this
+    document as it runs, so a null winner means the pass kept nothing
+    only when ``finished`` is true.
+
     Args:
         sidecar: The record to serialize.
 
@@ -184,6 +201,10 @@ def sidecar_to_dict(sidecar: RefinementSidecar) -> dict[str, Any]:
         # budget was smaller than the neighbourhood.
         "neighbourhood_moves": sidecar.neighbourhood_moves,
         "winner": sidecar.winner,
+        # Read before `winner`. False marks a pass that stopped before
+        # selection ran, whose arms are real measurements the pass
+        # banked as it took them.
+        "finished": sidecar.finished,
         "declined": sidecar.declined,
     }
 
