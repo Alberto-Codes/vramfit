@@ -68,6 +68,7 @@ ADR that supersedes the old one.
 | [0029](0029-plan-independent-size-source.md) | Plan reads tensor sizes from a source independent of the map | Accepted |
 | [0030](0030-vision-budget-sidecar.md) | Vision serves through a projector sidecar and a measured budget line | Accepted, amended 2026-08-29, 2026-08-31 |
 | [0031](0031-refinement-pass.md) | The refinement pass measures in the runtime frame and records its search in a sidecar | Accepted |
+| [0032](0032-assisted-q2-encoder-home.md) | Pre-encode assisted Q2_0 tensors before stock whole-file quantization | Proposed |
 
 ## Template
 

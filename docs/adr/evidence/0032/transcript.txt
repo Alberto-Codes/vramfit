@@ -1,0 +1,134 @@
+binary: /var/home/Alberto-Codes/Projects/firstmate/.treehouse/vramfit-383298/3/vramfit/scratch/stock-b10362/llama-quantize
+binary_sha256: 7ee236b4fb67c0924a636baba94f9be3f5d56b9a32a29cc0c7ef03688bccf61a
+
+$ /var/home/Alberto-Codes/Projects/firstmate/.treehouse/vramfit-383298/3/vramfit/scratch/stock-b10362/llama-quantize --pure --tensor-type 'blk\.0\.ffn_down_exps\.weight=q2_0' --tensor-type 'blk\.0\.attn_q\.weight=q4_0' /var/home/Alberto-Codes/Projects/firstmate/.treehouse/vramfit-383298/3/vramfit/scratch/q2-passthrough/mixed.gguf /var/home/Alberto-Codes/Projects/firstmate/.treehouse/vramfit-383298/3/vramfit/scratch/q2-passthrough/matching.gguf Q2_K 1
+load_backend: loaded RPC backend from /var/home/Alberto-Codes/Projects/firstmate/.treehouse/vramfit-383298/3/vramfit/scratch/stock-b10362/libggml-rpc.so
+ggml_vulkan: Found 2 Vulkan devices:
+ggml_vulkan: 0 = NVIDIA GeForce RTX 4090 (NVIDIA) | uma: 0 | fp16: 1 | bf16: 1 | fp4: 0 | warp size: 32 | shared memory: 49152 | int dot: 1 | matrix cores: NV_coopmat2
+ggml_vulkan: 1 = AMD Ryzen 7 7800X3D 8-Core Processor (RADV RAPHAEL_MENDOCINO) (radv) | uma: 1 | fp16: dot2 | bf16: 0 | fp4: 0 | warp size: 32 | shared memory: 65536 | int dot: 1 | matrix cores: none
+load_backend: loaded Vulkan backend from /var/home/Alberto-Codes/Projects/firstmate/.treehouse/vramfit-383298/3/vramfit/scratch/stock-b10362/libggml-vulkan.so
+load_backend: loaded CPU backend from /var/home/Alberto-Codes/Projects/firstmate/.treehouse/vramfit-383298/3/vramfit/scratch/stock-b10362/libggml-cpu-zen4.so
+llama_print_build_info: build = 10362 (4801e3c56)
+llama_print_build_info: built with GNU 11.4.0 for Linux x86_64
+llama_quantize: quantizing '/var/home/Alberto-Codes/Projects/firstmate/.treehouse/vramfit-383298/3/vramfit/scratch/q2-passthrough/mixed.gguf' to '/var/home/Alberto-Codes/Projects/firstmate/.treehouse/vramfit-383298/3/vramfit/scratch/q2-passthrough/matching.gguf' as Q2_K using 1 threads
+llama_model_loader: loaded meta data with 10 key-value pairs and 3 tensors from /var/home/Alberto-Codes/Projects/firstmate/.treehouse/vramfit-383298/3/vramfit/scratch/q2-passthrough/mixed.gguf (version GGUF V3 (latest))
+llama_model_loader: Dumping metadata keys/values. Note: KV overrides do not apply in this output.
+llama_model_loader: - kv   0:                       general.architecture str              = llama
+llama_model_loader: - kv   1:                               general.name str              = Q2_0 passthrough probe
+llama_model_loader: - kv   2:                       llama.context_length u32              = 512
+llama_model_loader: - kv   3:     llama.attention.layer_norm_rms_epsilon f32              = 0.000010
+llama_model_loader: - kv   4:                          llama.block_count u32              = 1
+llama_model_loader: - kv   5:                     llama.embedding_length u32              = 256
+llama_model_loader: - kv   6:                  llama.feed_forward_length u32              = 256
+llama_model_loader: - kv   7:                 llama.attention.head_count u32              = 4
+llama_model_loader: - kv   8:                         llama.expert_count u32              = 2
+llama_model_loader: - kv   9:                    llama.expert_used_count u32              = 1
+llama_model_loader: - type  f32:    1 tensors
+llama_model_loader: - type  f16:    1 tensors
+llama_model_loader: - type q2_0:    1 tensors
+llama_tensor_get_type: blk.0.attn_q.weight                  - applying manual override: q2_K -> q4_0
+llama_tensor_get_type: blk.0.ffn_down_exps.weight           - applying manual override: q2_K -> q2_0
+[   1/   3] blk.0.attn_norm.weight               - [   256,      1,      1,      1], type =    f32, size =    0.001 MiB
+[   2/   3] blk.0.attn_q.weight                  - [   256,    256,      1,      1], type =    f16, converting to q4_0 .. size =     0.12 MiB ->     0.04 MiB
+[   3/   3] blk.0.ffn_down_exps.weight           - [   256,    256,      2,      1], type =   q2_0, size =    0.035 MiB
+llama_model_quantize_impl: model size  =     0.16 MiB (6.87 BPW)
+llama_model_quantize_impl: quant size  =     0.07 MiB (3.04 BPW)
+
+llama_quantize: quantize time =     1.02 ms
+llama_quantize:    total time =     1.02 ms
+exit: 0
+blk.0.ffn_down_exps.weight: Q2_0 -> Q2_0; shape=(np.uint64(256), np.uint64(256), np.uint64(2)); bytes=36864 -> 36864; identical=True
+input_sha256: 12e50e60f457343c4d88658257ce3aa153d67690446e7941adec635a00440541
+output_sha256: 12e50e60f457343c4d88658257ce3aa153d67690446e7941adec635a00440541
+blk.0.attn_q.weight: F16 -> Q4_0; shape=(np.uint64(256), np.uint64(256)); bytes=131072 -> 36864; identical=False
+input_sha256: ea2e6085ea71d8762d66ff1af5755b504c92fad72c6d1dd56b24764893c38c60
+output_sha256: f048540ea9e7f544a6bc59f56afab1588302dc11ecfebbd81306e041c26c28a2
+blk.0.attn_norm.weight: F32 -> F32; shape=(np.uint64(256),); bytes=1024 -> 1024; identical=True
+input_sha256: 893a106828fbdb9521e1d868c985aab7ad2ae2f606edc55329265a5e7676006c
+output_sha256: 893a106828fbdb9521e1d868c985aab7ad2ae2f606edc55329265a5e7676006c
+
+$ /var/home/Alberto-Codes/Projects/firstmate/.treehouse/vramfit-383298/3/vramfit/scratch/stock-b10362/llama-quantize --imatrix /var/home/Alberto-Codes/Projects/firstmate/.treehouse/vramfit-383298/3/vramfit/scratch/q2-passthrough/imatrix.gguf --pure --tensor-type 'blk\.0\.ffn_down_exps\.weight=q2_0' --tensor-type 'blk\.0\.attn_q\.weight=q4_0' /var/home/Alberto-Codes/Projects/firstmate/.treehouse/vramfit-383298/3/vramfit/scratch/q2-passthrough/mixed.gguf /var/home/Alberto-Codes/Projects/firstmate/.treehouse/vramfit-383298/3/vramfit/scratch/q2-passthrough/matching-imatrix.gguf Q2_K 1
+load_backend: loaded RPC backend from /var/home/Alberto-Codes/Projects/firstmate/.treehouse/vramfit-383298/3/vramfit/scratch/stock-b10362/libggml-rpc.so
+ggml_vulkan: Found 2 Vulkan devices:
+ggml_vulkan: 0 = NVIDIA GeForce RTX 4090 (NVIDIA) | uma: 0 | fp16: 1 | bf16: 1 | fp4: 0 | warp size: 32 | shared memory: 49152 | int dot: 1 | matrix cores: NV_coopmat2
+ggml_vulkan: 1 = AMD Ryzen 7 7800X3D 8-Core Processor (RADV RAPHAEL_MENDOCINO) (radv) | uma: 1 | fp16: dot2 | bf16: 0 | fp4: 0 | warp size: 32 | shared memory: 65536 | int dot: 1 | matrix cores: none
+load_backend: loaded Vulkan backend from /var/home/Alberto-Codes/Projects/firstmate/.treehouse/vramfit-383298/3/vramfit/scratch/stock-b10362/libggml-vulkan.so
+load_backend: loaded CPU backend from /var/home/Alberto-Codes/Projects/firstmate/.treehouse/vramfit-383298/3/vramfit/scratch/stock-b10362/libggml-cpu-zen4.so
+llama_print_build_info: build = 10362 (4801e3c56)
+llama_print_build_info: built with GNU 11.4.0 for Linux x86_64
+llama_quantize: quantizing '/var/home/Alberto-Codes/Projects/firstmate/.treehouse/vramfit-383298/3/vramfit/scratch/q2-passthrough/mixed.gguf' to '/var/home/Alberto-Codes/Projects/firstmate/.treehouse/vramfit-383298/3/vramfit/scratch/q2-passthrough/matching-imatrix.gguf' as Q2_K using 1 threads
+llama_model_loader: loaded meta data with 10 key-value pairs and 3 tensors from /var/home/Alberto-Codes/Projects/firstmate/.treehouse/vramfit-383298/3/vramfit/scratch/q2-passthrough/mixed.gguf (version GGUF V3 (latest))
+llama_model_loader: Dumping metadata keys/values. Note: KV overrides do not apply in this output.
+llama_model_loader: - kv   0:                       general.architecture str              = llama
+llama_model_loader: - kv   1:                               general.name str              = Q2_0 passthrough probe
+llama_model_loader: - kv   2:                       llama.context_length u32              = 512
+llama_model_loader: - kv   3:     llama.attention.layer_norm_rms_epsilon f32              = 0.000010
+llama_model_loader: - kv   4:                          llama.block_count u32              = 1
+llama_model_loader: - kv   5:                     llama.embedding_length u32              = 256
+llama_model_loader: - kv   6:                  llama.feed_forward_length u32              = 256
+llama_model_loader: - kv   7:                 llama.attention.head_count u32              = 4
+llama_model_loader: - kv   8:                         llama.expert_count u32              = 2
+llama_model_loader: - kv   9:                    llama.expert_used_count u32              = 1
+llama_model_loader: - type  f32:    1 tensors
+llama_model_loader: - type  f16:    1 tensors
+llama_model_loader: - type q2_0:    1 tensors
+
+llama_model_quantize_impl: have importance matrix data with 2 entries
+llama_tensor_get_type: blk.0.attn_q.weight                  - applying manual override: q2_K -> q4_0
+llama_tensor_get_type: blk.0.ffn_down_exps.weight           - applying manual override: q2_K -> q2_0
+[   1/   3] blk.0.attn_norm.weight               - [   256,      1,      1,      1], type =    f32, size =    0.001 MiB
+[   2/   3] blk.0.attn_q.weight                  - [   256,    256,      1,      1], type =    f16, converting to q4_0 .. load_imatrix: imatrix datasets=['synthetic-passthrough']
+load_imatrix: loaded 2 importance matrix entries from /var/home/Alberto-Codes/Projects/firstmate/.treehouse/vramfit-383298/3/vramfit/scratch/q2-passthrough/imatrix.gguf computed on 1 chunks
+prepare_imatrix: have 2 importance matrix entries
+size =     0.12 MiB ->     0.04 MiB
+[   3/   3] blk.0.ffn_down_exps.weight           - [   256,    256,      2,      1], type =   q2_0, size =    0.035 MiB
+llama_model_quantize_impl: model size  =     0.16 MiB (6.87 BPW)
+llama_model_quantize_impl: quant size  =     0.07 MiB (3.04 BPW)
+
+llama_quantize: quantize time =     2.01 ms
+llama_quantize:    total time =     2.01 ms
+exit: 0
+blk.0.ffn_down_exps.weight: Q2_0 -> Q2_0; shape=(np.uint64(256), np.uint64(256), np.uint64(2)); bytes=36864 -> 36864; identical=True
+input_sha256: 12e50e60f457343c4d88658257ce3aa153d67690446e7941adec635a00440541
+output_sha256: 12e50e60f457343c4d88658257ce3aa153d67690446e7941adec635a00440541
+blk.0.attn_q.weight: F16 -> Q4_0; shape=(np.uint64(256), np.uint64(256)); bytes=131072 -> 36864; identical=False
+input_sha256: ea2e6085ea71d8762d66ff1af5755b504c92fad72c6d1dd56b24764893c38c60
+output_sha256: 7bed0790a79fd976185197eb5848bb532aae67ae374b226482e2d8dfa965cd9b
+blk.0.attn_norm.weight: F32 -> F32; shape=(np.uint64(256),); bytes=1024 -> 1024; identical=True
+input_sha256: 893a106828fbdb9521e1d868c985aab7ad2ae2f606edc55329265a5e7676006c
+output_sha256: 893a106828fbdb9521e1d868c985aab7ad2ae2f606edc55329265a5e7676006c
+
+$ /var/home/Alberto-Codes/Projects/firstmate/.treehouse/vramfit-383298/3/vramfit/scratch/stock-b10362/llama-quantize --pure --tensor-type 'blk\.0\.ffn_down_exps\.weight=q4_0' --tensor-type 'blk\.0\.attn_q\.weight=q4_0' /var/home/Alberto-Codes/Projects/firstmate/.treehouse/vramfit-383298/3/vramfit/scratch/q2-passthrough/mixed.gguf /var/home/Alberto-Codes/Projects/firstmate/.treehouse/vramfit-383298/3/vramfit/scratch/q2-passthrough/mismatch.gguf Q2_K 1
+load_backend: loaded RPC backend from /var/home/Alberto-Codes/Projects/firstmate/.treehouse/vramfit-383298/3/vramfit/scratch/stock-b10362/libggml-rpc.so
+ggml_vulkan: Found 2 Vulkan devices:
+ggml_vulkan: 0 = NVIDIA GeForce RTX 4090 (NVIDIA) | uma: 0 | fp16: 1 | bf16: 1 | fp4: 0 | warp size: 32 | shared memory: 49152 | int dot: 1 | matrix cores: NV_coopmat2
+ggml_vulkan: 1 = AMD Ryzen 7 7800X3D 8-Core Processor (RADV RAPHAEL_MENDOCINO) (radv) | uma: 1 | fp16: dot2 | bf16: 0 | fp4: 0 | warp size: 32 | shared memory: 65536 | int dot: 1 | matrix cores: none
+load_backend: loaded Vulkan backend from /var/home/Alberto-Codes/Projects/firstmate/.treehouse/vramfit-383298/3/vramfit/scratch/stock-b10362/libggml-vulkan.so
+load_backend: loaded CPU backend from /var/home/Alberto-Codes/Projects/firstmate/.treehouse/vramfit-383298/3/vramfit/scratch/stock-b10362/libggml-cpu-zen4.so
+llama_print_build_info: build = 10362 (4801e3c56)
+llama_print_build_info: built with GNU 11.4.0 for Linux x86_64
+llama_quantize: quantizing '/var/home/Alberto-Codes/Projects/firstmate/.treehouse/vramfit-383298/3/vramfit/scratch/q2-passthrough/mixed.gguf' to '/var/home/Alberto-Codes/Projects/firstmate/.treehouse/vramfit-383298/3/vramfit/scratch/q2-passthrough/mismatch.gguf' as Q2_K using 1 threads
+llama_model_loader: loaded meta data with 10 key-value pairs and 3 tensors from /var/home/Alberto-Codes/Projects/firstmate/.treehouse/vramfit-383298/3/vramfit/scratch/q2-passthrough/mixed.gguf (version GGUF V3 (latest))
+llama_model_loader: Dumping metadata keys/values. Note: KV overrides do not apply in this output.
+llama_model_loader: - kv   0:                       general.architecture str              = llama
+llama_model_loader: - kv   1:                               general.name str              = Q2_0 passthrough probe
+llama_model_loader: - kv   2:                       llama.context_length u32              = 512
+llama_model_loader: - kv   3:     llama.attention.layer_norm_rms_epsilon f32              = 0.000010
+llama_model_loader: - kv   4:                          llama.block_count u32              = 1
+llama_model_loader: - kv   5:                     llama.embedding_length u32              = 256
+llama_model_loader: - kv   6:                  llama.feed_forward_length u32              = 256
+llama_model_loader: - kv   7:                 llama.attention.head_count u32              = 4
+llama_model_loader: - kv   8:                         llama.expert_count u32              = 2
+llama_model_loader: - kv   9:                    llama.expert_used_count u32              = 1
+llama_model_loader: - type  f32:    1 tensors
+llama_model_loader: - type  f16:    1 tensors
+llama_model_loader: - type q2_0:    1 tensors
+llama_tensor_get_type: blk.0.attn_q.weight                  - applying manual override: q2_K -> q4_0
+llama_tensor_get_type: blk.0.ffn_down_exps.weight           - applying manual override: q2_K -> q4_0
+[   1/   3] blk.0.attn_norm.weight               - [   256,      1,      1,      1], type =    f32, size =    0.001 MiB
+[   2/   3] blk.0.attn_q.weight                  - [   256,    256,      1,      1], type =    f16, converting to q4_0 .. size =     0.12 MiB ->     0.04 MiB
+[   3/   3] blk.0.ffn_down_exps.weight           - [   256,    256,      2,      1], type =   q2_0, llama_model_quantize: failed to quantize: requantizing from type q2_0 is disabled
+llama_quantize: failed to quantize model from '/var/home/Alberto-Codes/Projects/firstmate/.treehouse/vramfit-383298/3/vramfit/scratch/q2-passthrough/mixed.gguf'
+exit: 1
+
+PASS: matching Q2_0 payload copied exactly; float peer quantized; mismatched quantized type refused.
