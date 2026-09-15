@@ -145,6 +145,18 @@ The third cannot deliver the measured benefit or matching provenance.
    checkpoints, recipes, and pack selection. It must record the encoder
    revision and matrix provenance with the packed result.
 
+   A pre-encoded tensor packs **assisted**. The label follows the fit,
+   not the binary that performed it. The matrix weighted the encoder's
+   candidate selection, so those bytes count toward the artifact's
+   assisted share. A Q2_0 tensor the matrix does not cover, and one an
+   exclusion drops, packs unassisted as before.
+
+   The glossary's pack-side rule reads assisted as “its type reads the
+   matrix.” That wording describes stock `llama-quantize`, and it scores
+   a pre-encoded tensor unassisted. This record does not edit the
+   glossary, because it stays Proposed. Acceptance carries the matching
+   glossary amendment, and the open questions below track it.
+
    Never relabel an old map or resume its nominal-2 cells under the new
    identity. Old recipes remain reproducible through their stock path.
    A recipe priced with the new method must use the new packing path.
@@ -220,3 +232,28 @@ The third cannot deliver the measured benefit or matching provenance.
   [issue #599](https://github.com/Alberto-Codes/vramfit/issues/599) under
   [chart #158](https://github.com/Alberto-Codes/vramfit/issues/158).
   This change contains only the record and its evidence.
+
+## Open questions
+
+- The successor `within_group` token has no name. Decision 3 requires a
+  distinct token and states none, because the string is a vocabulary
+  decision. [Issue #599](https://github.com/Alberto-Codes/vramfit/issues/599)
+  owns it. The implementation cannot write a map before it closes.
+- The glossary's pack-side assisted rule needs its matching amendment.
+  Decision 3 rules a pre-encoded tensor assisted.
+  [The glossary](../reference/glossary.md) still defines the pack sense
+  by which binary reads the matrix. The two records disagree on this
+  tensor class until acceptance carries the amendment.
+- The preprocessor's full-file cost stays unmeasured. The probe wrote
+  36,864 Q2_0 payload bytes on a synthetic fixture. The 30B target's
+  eleven Q2_0 stacks sit inside a 16,922,476,352 B pack, and the
+  temporary mixed GGUF adds a second full-size file. The implementation
+  measures peak memory and disk before the funded run.
+- Passthrough holds on b10362 (`4801e3c56`) and on no other build. The
+  probe tested one quantizer. Decision 1 forbids `--allow-requantize`,
+  so a build that drops the passthrough refuses the pack rather than
+  requantizing the payload silently. A toolchain change repeats the probe.
+- What the re-priced map does to the allocation stays unknown. The rebuy
+  changed the encoder and kept the shipped recipe's allocation, so no
+  measurement on record says whether cheaper nominal-2 cells move the
+  solver's choices. Decision 4 requires the new map before anyone answers.
