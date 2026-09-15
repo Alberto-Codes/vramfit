@@ -11,6 +11,12 @@ stops a later one from landing below the content-identity reads.
 before its first pack, so the next reader checks a stated set rather
 than re-deriving one from the call graph.
 
+Two checks guard the sidecar destination. `_check_destination`
+refuses a path the pass could not write. `_check_no_banked_pass`
+refuses a path that already records a measured pass, because each
+write replaces the file and an arm nobody can re-measure costs about
+0.48 USD of card time.
+
 Inside the pass the ordering is structural instead.
 [vramfit.adapters.inbound.refine_loop][] packs and judges in one
 call and measures in another, so a budget refusal cannot reach the
@@ -46,6 +52,7 @@ from pathlib import Path
 import typer
 
 from vramfit.adapters.inbound.llama_cpp_layout import LlamaCppTools
+from vramfit.adapters.outbound.refinement_sidecar_json import read_measured_pass
 from vramfit.domain.errors import VramfitError
 from vramfit.domain.model import Recipe, SensitivityMap
 from vramfit.domain.refinement import neighbours
@@ -92,12 +99,13 @@ def _check_toolchain(tools: LlamaCppTools) -> None:
 
 
 def _check_destination(label: str, path: Path) -> None:
-    """Refuse a destination the pass could not write when it finishes.
+    """Refuse a destination the pass could not write.
 
-    The sidecar is the pass's only artifact and it is written last,
-    after every pack and every measurement, so every reason the write
-    could fail is checked before the first tool runs. The write
-    replaces a temporary file onto ``path``, which refuses a path
+    The sidecar is the pass's only artifact. The pass writes it
+    repeatedly as it runs, starting when the control measures. Every
+    reason the write could fail is checked before the first tool
+    runs, so an unwritable destination costs no measurement. The
+    write replaces a temporary file onto ``path``, which refuses a path
     that names a directory as surely as one whose parent is missing.
     The command offers both ``--out-dir`` and ``--out``, so an
     ``--out`` naming an existing directory is the reachable mistake.
@@ -117,6 +125,41 @@ def _check_destination(label: str, path: Path) -> None:
         _halt(f"{label}: directory {parent} does not exist")
     if not os.access(parent, os.W_OK):
         _halt(f"{label}: directory {parent} is not writable")
+
+
+def _check_no_banked_pass(path: Path, *, overwrite: bool) -> None:
+    """Refuse a destination that already records a measured pass.
+
+    The pass writes this file as it runs, so a destination can hold
+    the arms an earlier run banked before it stopped. Each write
+    replaces the file, and the default path is deterministic, so a
+    re-run on the same recipe would destroy those arms about four
+    minutes in. An arm costs about 0.48 USD of card time and nobody
+    can re-measure a deleted one.
+
+    A declined pass measured nothing, so it never refuses. Neither
+    does a path holding another artifact, which `read_measured_pass`
+    reports as no record.
+
+    Args:
+        path: The sidecar destination.
+        overwrite: Whether the caller stated the replacement.
+
+    Raises:
+        Exit: With code 1 when the file records a measured pass and
+            the caller did not state ``--overwrite``.
+    """
+    if overwrite:
+        return
+    banked = read_measured_pass(path)
+    if banked is None:
+        return
+    arms = "1 arm" if banked.arms == 1 else f"{banked.arms} arms"
+    state = "finished" if banked.finished else "stopped"
+    _halt(
+        f"--out: {path} already holds a {state} pass with {arms}. "
+        "Pass --overwrite to replace it."
+    )
 
 
 def _check_recipe_resolves(

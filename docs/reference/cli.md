@@ -932,13 +932,23 @@ Options: `--map` (required), `--llama-cpp` (required),
 `--runtime-build` (required), `--hardware` (required), `--bar`
 (required), `--model`, `--base-gguf`, `--imatrix`, `--out-dir`
 (default `arms`), `--out`, `--limit` (default 15), `--threads`,
-`--python-bin`, `--runlog`.
+`--python-bin`, `--runlog`, `--overwrite`.
 
 The command checks every path it needs before the convert stage: the
 three llama.cpp tools, `--imatrix` when given, and the destinations
 `--out` and `--runlog` name. `--out-dir` is created first, so an
-`--out` inside it resolves. A missing path costs no card time, and a
-finished pass is never discarded at its last step.
+`--out` inside it resolves. A missing path costs no card time, and an
+unwritable destination costs no measurement.
+
+**It refuses an `--out` that already records a measured pass.** Each
+write replaces that file and the default path is deterministic, so a
+re-run on the same recipe would destroy the arms an earlier pass
+banked, about four minutes in. The refusal names the file, whether
+that pass finished or stopped, and how many arms it holds. A
+control-only record reads as `0 arms`, because the control is a
+measurement too. Pass `--overwrite` to replace the record anyway. A
+declined pass measured nothing and never refuses, and neither does a
+path holding another artifact.
 
 It refuses a `--map` whose `model_id` differs from the recipe's. Every
 other stage derives the recipe from the map inside one `plan` run, so
@@ -963,6 +973,29 @@ Writes one refinement sidecar, by default beside the recipe at
 winner, the stated bar, the control with its sigma, and the frame,
 enumerated once below. The map's predicted delta is recorded as
 provenance and orders nothing.
+
+**The pass writes that file as it runs.** It writes once when the
+control is measured, again after each arm, and last with the winner.
+A pass that stops at arm 12 of 16 therefore leaves twelve measured
+arms and its control behind, each with its mean, delta, sigma, and
+better-chunk count. Every write replaces the file in one step, so an
+interrupted pass leaves the record before it rather than a truncated
+one. An arm costs about 0.48 USD of card time and its packed file is
+deleted once measured, so an arm the pass did not write is an arm
+nobody can read or re-measure.
+
+Each record carries `finished`. Read it before `winner`. A null
+winner means the pass judged every arm and kept none only when
+`finished` is true. False marks a record the pass wrote before
+selection ran, whose arms are real measurements. A declined pass is
+finished: declining is an outcome, not an interruption.
+
+The control's measured mean also prints to the terminal when it
+lands, before the first arm packs. The control is the gate — every
+arm's number is read against it — and it finishes about four minutes
+into a pass that runs about 59 minutes on the 30B target. An operator
+whose control did not reproduce its published frame can stop the pass
+there rather than paying for the remaining arms.
 
 Each arm also records `budget_margin`,
 `weight_budget_bytes - packed_bytes`, the same figure `vramfit pack`
@@ -1040,13 +1073,27 @@ winning arm to an artifact needs a tier-3 slice and a serve test.
 
 Run log: refine_started (arms, neighbourhood_moves, bar) or
 refine_declined (reason, neighbourhood_moves),
-base_converted, then per arm arm_packing, arm_packed (with
-budget_margin), arm_measured, and arm_over_budget for an excluded
-arm, then refine_finished (winner, judged, excluded, refusal). The
-finished event carries the exclusions whether or not an arm won, and
-`refusal` is null on a winning pass. An over-budget control
-refuses after its arm_packed and emits no arm_measured, because the
-pass refuses before spending the measurement.
+base_converted, then the control's arm_packing, arm_packed, and
+control_measured, then per arm arm_packing, arm_packed,
+arm_measured, and arm_over_budget for an excluded
+arm, then refine_finished (winner, judged, excluded, refusal). Every
+arm_packed carries budget_margin, control and candidate alike.
+
+control_measured and arm_measured carry the same fields: arm, mean,
+delta, sigma, better_chunks, and chunks. A name and a chunk count is
+not a result, and a log that recorded one could not reconstruct a
+lost pass.
+
+The finished event carries the exclusions whether or not an arm won,
+and `refusal` is null on a winning pass. An over-budget control
+refuses after its arm_packed and emits no control_measured, because
+the pass refuses before spending the measurement.
+
+Every failure inside the pass prints one more line beside the
+`error:` line: `banked: <path>` when the pass had written a record,
+and `banked: nothing` when it stopped before its control measured.
+An operator on a pod with a deletion deadline reads from that line
+alone whether anything survived and where it is.
 
 Exit codes: 1 when the recipe or map is invalid, the model directory
 does not exist, `--runtime-build` or `--hardware` is empty,
@@ -1059,7 +1106,8 @@ misses `convert_hf_to_gguf.py`, `build/bin/llama-quantize` or
 `build/bin/llama-perplexity`, either built binary is not executable,
 `--out-dir` cannot be created, `--out` or `--runlog` names a
 directory, the directory `--out` or `--runlog` sits in does not exist
-or refuses a write, the recipe's protections do not resolve against
+or refuses a write, `--out` already records a measured pass and
+`--overwrite` is absent, the recipe's protections do not resolve against
 the map, a group has no row width, or a toolchain stage fails. A pin
 that does not resolve declines at exit 0 rather than refusing. 2 when
 `--bar` is not stated.

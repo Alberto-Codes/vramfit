@@ -30,11 +30,17 @@ arms of the 2026-09-11 sweep, which is why the pass measures at all.
 `vramfit.domain.paired.select` cannot see the field, because it reads
 `PairedResult` and that type carries no prediction.
 
-`outcome` classifies a finished pass once. It splits the arms into
-the ones selection judged and the ones the weight budget excluded,
-and it names the arm kept. Every surface that reports a pass renders
-that structure rather than re-deriving the split, so the terminal and
-the run log cannot describe one pass two ways.
+`outcome` classifies a pass once. It splits the arms into the ones
+selection judged and the ones the weight budget excluded, and it
+names the arm kept. Every surface that reports a pass renders that
+structure rather than re-deriving the split, so the terminal and the
+run log cannot describe one pass two ways.
+
+The record is written as the pass runs, not once at the end. An arm
+costs about 0.48 USD of card time, so a pass that stops at arm 12 of
+16 must leave those twelve behind. `finished` is what keeps the two
+empty-winner states apart: a pass that judged every arm and kept
+none, and a pass that stopped before selection ran.
 
 Examples:
     Read the winning arm's measured mean:
@@ -502,6 +508,17 @@ class RefinementSidecar:
             found, because "no neighbourhood" and "a neighbourhood
             the pass could not prove safe" are different facts about
             the recipe.
+        finished (bool): Whether the pass measured every arm it
+            selected and ran selection. The pass banks this record
+            after the control and after every arm, so a pass that
+            stops partway leaves the arms it paid for. False marks
+            such a record.
+
+            Read it before ``winner``. Both a finished pass that kept
+            nothing and a pass that stopped before selecting carry an
+            empty winner, and only this field separates them. A
+            declined pass is finished: declining is an outcome
+            (ADR-0031 decision 8), not an interruption.
 
     Examples:
         A declined pass measured nothing:
@@ -525,6 +542,7 @@ class RefinementSidecar:
     winner: str | None
     declined: str | None
     neighbourhood_moves: int
+    finished: bool
 
     def __post_init__(self) -> None:
         """Enforce that the record's claims match its measurements.
@@ -535,8 +553,9 @@ class RefinementSidecar:
                 arms measured, a pass that ran carries no control,
                 arm names repeat, an arm measured a different chunk
                 count from the control, the winner names no measured
-                arm or one that never cleared the bar, or a declined
-                pass still carries a measurement.
+                arm or one that never cleared the bar, a pass that
+                stopped before selecting names a winner, or a
+                declined pass still carries a measurement.
         """
         if not self.model_id:
             raise RefinementRecordError("model_id must not be empty")
@@ -544,6 +563,11 @@ class RefinementSidecar:
             raise RefinementRecordError("bar must not be negative")
         if self.neighbourhood_moves < 0:
             raise RefinementRecordError("neighbourhood_moves must not be negative")
+        if not self.finished and self.winner is not None:
+            raise RefinementRecordError(
+                f"the pass stopped before selecting, so it cannot name "
+                f"{self.winner} as its winner"
+            )
         if self.declined is not None:
             self._check_declined()
             return
@@ -565,14 +589,18 @@ class RefinementSidecar:
 
         Raises:
             RefinementRecordError: If the record carries any
-                measurement. Declining happens before the first pack,
+                measurement, or reports that the pass stopped before
+                finishing. Declining happens before the first pack,
                 which is what keeps an unreachable target off the
-                card.
+                card, and it is an outcome rather than an
+                interruption (ADR-0031 decision 8).
         """
         if self.arms or self.winner is not None or self.control is not None:
             raise RefinementRecordError(
                 "a declined pass measures nothing and keeps nothing"
             )
+        if not self.finished:
+            raise RefinementRecordError("a declined pass is an outcome, so it finished")
 
     def _check_measured(self) -> None:
         """Enforce that the arms pair against one control.
@@ -631,7 +659,7 @@ class RefinementSidecar:
         return next((a for a in self.arms if a.arm == self.winner), None)
 
     def outcome(self) -> PassOutcome:
-        """Classify this finished pass, once, for every surface.
+        """Classify this pass, once, for every surface.
 
         Returns:
             The arms selection judged, the arms the weight budget

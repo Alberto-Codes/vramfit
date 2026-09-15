@@ -10,6 +10,16 @@ selection — a measured arm is never dropped from the record. The
 losing arms are the evidence that the sensitivity map did not order
 the neighbourhood, which is the finding the whole stage rests on.
 
+The pass writes this document as it runs, so a document may describe
+a pass still under way. `_save_json` replaces the file in one step,
+which is what lets it: an interrupted write leaves the record before
+it rather than a truncated one. `finished` says which state the
+document describes, and a reader reads it before `winner`.
+
+`read_measured_pass` reads a destination back before a new pass
+replaces one. It answers what the earlier pass banked, so a re-run
+refuses rather than destroying arms nobody can re-measure.
+
 It also records `neighbourhood_moves`, how many byte-neutral moves
 the neighbourhood held. The arms are a sample of that whenever the
 caller's budget was smaller, so a reader needs both numbers before
@@ -45,6 +55,7 @@ See Also:
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
@@ -57,15 +68,22 @@ from vramfit.domain.refinement_record import (
     RefinementSidecar,
 )
 
-# Schema version 1: the first refinement sidecar. It carries the
-# frame, the stated bar, the control, every arm, the neighbourhood
-# the arms were drawn from, and the outcome. `neighbourhood_moves`
-# and the frame's `imatrix` both joined version 1 rather than
-# bumping it, the frame's `reference` became a content identity in
-# the same way, and each arm's `budget_margin` joined it too: no
-# sidecar had been published when any of those landed, so nothing
-# reads a document of the older shape.
-REFINEMENT_SIDECAR_SCHEMA_VERSION: Final[int] = 1
+# Schema version 2: version 1 carried the frame, the stated bar, the
+# control, every arm, the neighbourhood the arms were drawn from, and
+# the outcome. `neighbourhood_moves`, the frame's `imatrix`, the
+# frame's `reference` as a content identity, and each arm's
+# `budget_margin` all joined version 1 rather than bumping it: no
+# sidecar had been published when any of those landed, and each added
+# a fact without changing one already written.
+#
+# `finished` is the first change of the second kind, so it bumps. A
+# version 1 document's null `winner` means the pass judged every arm
+# and kept none. In version 2 it means that only when `finished` is
+# true, because the pass now writes this document as it runs and a
+# document it wrote at arm 12 of 16 carries a null winner too. A
+# reader that cannot tell the versions apart reads a stopped pass as
+# a completed one.
+REFINEMENT_SIDECAR_SCHEMA_VERSION: Final[int] = 2
 
 
 def _corpus_to_dict(corpus: CorpusReference) -> dict[str, Any]:
@@ -156,6 +174,10 @@ def sidecar_to_dict(sidecar: RefinementSidecar) -> dict[str, Any]:
     ``reference`` and ``imatrix`` by content, so two passes that
     measured against different bytes never read alike.
 
+    Writes ``finished`` beside ``winner``. The pass writes this
+    document as it runs, so a null winner means the pass kept nothing
+    only when ``finished`` is true.
+
     Args:
         sidecar: The record to serialize.
 
@@ -184,6 +206,10 @@ def sidecar_to_dict(sidecar: RefinementSidecar) -> dict[str, Any]:
         # budget was smaller than the neighbourhood.
         "neighbourhood_moves": sidecar.neighbourhood_moves,
         "winner": sidecar.winner,
+        # Read before `winner`. False marks a pass that stopped before
+        # selection ran, whose arms are real measurements the pass
+        # banked as it took them.
+        "finished": sidecar.finished,
         "declined": sidecar.declined,
     }
 
@@ -196,6 +222,65 @@ def save_refinement_sidecar(sidecar: RefinementSidecar, path: Path) -> None:
         path: Destination file.
     """
     _save_json(sidecar_to_dict(sidecar), path)
+
+
+@dataclass(frozen=True, slots=True)
+class MeasuredPass:
+    """What a pass already banked at one destination.
+
+    A caller about to replace a record needs two facts about it: how
+    many arms it banked, and whether the pass reached selection. An
+    arm costs about 0.48 USD of card time, and a stopped pass and a
+    finished one are different situations for an operator.
+
+    Attributes:
+        arms (int): Arms the record banked. Zero marks the record a
+            pass wrote when its control measured.
+        finished (bool): Whether the pass reached selection.
+
+    Examples:
+        Count what a destination already holds:
+
+        ```python
+        banked = read_measured_pass(Path("recipe.refinement.json"))
+        print(0 if banked is None else banked.arms)
+        ```
+    """
+
+    arms: int
+    finished: bool
+
+
+def read_measured_pass(path: Path) -> MeasuredPass | None:
+    """Read what a pass already banked at this path.
+
+    Reads this package's own artifact, and only the two fields a
+    caller deciding to replace it needs. It refuses nothing and
+    raises nothing: a path holding no file, no JSON, or another
+    artifact answers None, so a caller acts on a record it can read
+    and never on one it cannot. A declined pass measured nothing, so
+    it answers None too. A version 1 document carries no ``finished``
+    field and was written only after selection, so it reads as
+    finished.
+
+    Args:
+        path: The destination to examine.
+
+    Returns:
+        The banked arm count and whether the pass finished, or None
+        when the file records no measurement.
+    """
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict) or data.get("control") is None:
+        return None
+    arms = data.get("arms")
+    finished = data.get("finished", True)
+    if not isinstance(arms, list) or not isinstance(finished, bool):
+        return None
+    return MeasuredPass(arms=len(arms), finished=finished)
 
 
 @dataclass(frozen=True, slots=True)
