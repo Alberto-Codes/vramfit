@@ -341,13 +341,15 @@ change.
     decision 4). Not "device", "card", or "machine".
 
 **Pass outcome**
-:   What one finished **refinement pass** judged, excluded, and kept:
-    the **arms** selection could choose between, the **excluded
-    arms** the **weight budget** kept out of it, and the winner. One
+:   What one **refinement pass** judged, excluded, and kept: the
+    **arms** selection could choose between, the **excluded arms**
+    the **weight budget** kept out of it, and the winner. One
     classification, derived from the **refinement sidecar** and never
     stored beside it. Every surface that reports a pass renders it —
     the terminal summary and the run log — so no two can describe one
-    pass differently. Lives in
+    pass differently. It words a pass that reached selection. A
+    **stopped pass** has no wording surface, and its `finished` field
+    is what a reader checks. Lives in
     `vramfit.domain.refinement_record.PassOutcome`. A judged arm is
     simply an arm that is not excluded.
 
@@ -810,9 +812,29 @@ change.
     neighbourhood those arms were drawn from, the winner, the stated
     **evidence bar**, the control, and the **measurement frame**. The
     arm count and the neighbourhood count are separate figures, and an
-    outcome reads correctly only with both. Lives in
-    `vramfit.domain.refinement_record`. Not "report" or "results
-    file".
+    outcome reads correctly only with both. The pass writes the file
+    as it runs — once at the control, again after each arm, last with
+    the winner — so a **stopped pass** leaves the arms it paid for.
+    Lives in `vramfit.domain.refinement_record`. Not "report" or
+    "results file".
+
+**Stopped pass**
+:   A **refinement pass** that did not reach selection: its meter,
+    its packer, or its pod died partway. Its **refinement sidecar**
+    carries `finished: false` and the arms it measured, each with the
+    figures that read it. It is a real result, not a fragment, and
+    not a **neighbourhood decline** — a decline is an outcome reached
+    before the first pack. Read `finished` before `winner`: a
+    finished pass that kept nothing and a stopped pass carry the same
+    empty winner.
+
+**Banked record**
+:   A **refinement sidecar** the pass has already written. The pass
+    banks the record when the control measures, again after every
+    arm, and last with the winner, so a **stopped pass** leaves one
+    behind. A halt inside the pass names it. A later pass refuses
+    that destination unless the caller states `--overwrite`. Not
+    "checkpoint" or "partial save".
 
 **Neighbourhood decline**
 :   The refinement pass's answer when it will not measure a recipe's

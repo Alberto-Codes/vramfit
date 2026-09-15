@@ -209,8 +209,9 @@ def test_refine_writes_a_sidecar_beside_the_recipe(workspace) -> None:
 
     assert result.exit_code == 0, result.output
     sidecar = json.loads((workspace / "r.refinement.json").read_text())
-    assert sidecar["vramfit_schema"] == 1
+    assert sidecar["vramfit_schema"] == 2
     assert len(sidecar["arms"]) == 2
+    assert sidecar["finished"] is True
 
 
 def test_refine_records_the_frame_it_measured_in(workspace) -> None:
@@ -238,7 +239,7 @@ def test_refine_records_a_different_corpus_differently(workspace) -> None:
     first = json.loads((workspace / "r.refinement.json").read_text())["frame"]
 
     (workspace / "wiki.test.raw").write_text("other text")
-    _invoke(workspace, "--limit", "1")
+    _invoke(workspace, "--limit", "1", "--overwrite")
     second = json.loads((workspace / "r.refinement.json").read_text())["frame"]
 
     assert first["corpus"]["file"] == second["corpus"]["file"]
@@ -694,7 +695,7 @@ def test_an_assisted_and_an_unassisted_pass_do_not_serialize_alike(
 
     _invoke(workspace, "--limit", "1")
     unassisted = json.loads((workspace / "r.refinement.json").read_text())["frame"]
-    _invoke(workspace, "--limit", "1", "--imatrix", str(matrix))
+    _invoke(workspace, "--limit", "1", "--overwrite", "--imatrix", str(matrix))
     assisted = json.loads((workspace / "r.refinement.json").read_text())["frame"]
 
     assert unassisted != assisted
@@ -758,7 +759,7 @@ def test_two_passes_over_different_reference_logits_do_not_serialize_alike(
     first = json.loads((workspace / "r.refinement.json").read_text())["frame"]
 
     (workspace / "base.logits").write_bytes(b"rebuilt logits")
-    _invoke(workspace, "--limit", "1")
+    _invoke(workspace, "--limit", "1", "--overwrite")
     second = json.loads((workspace / "r.refinement.json").read_text())["frame"]
 
     assert first["reference"]["file"] == second["reference"]["file"]
@@ -950,3 +951,183 @@ def test_refine_names_the_neighbourhood_when_the_budget_excluded_an_arm(
     assert "1 judged of 2 evaluated of a neighbourhood of 4" in result.output
     assert "1 packed over the weight budget" in result.output
     assert json.loads((workspace / "r.refinement.json").read_text())["winner"] is None
+
+
+def test_refine_keeps_the_arms_a_stopped_pass_measured(workspace, monkeypatch) -> None:
+    """A pass that dies partway leaves its measured arms on disk (#592).
+
+    Each arm costs about 0.48 USD of card time and its packed file is
+    deleted once measured, so an arm the command does not write is an
+    arm nobody can read or re-measure.
+    """
+    monkeypatch.setattr(
+        cli_refine,
+        "LlamaCppDivergenceMeter",
+        lambda **kwargs: MemoryRuntimeDivergenceMeter(default=CHUNKS, fail_after=2),
+    )
+
+    result = _invoke(workspace, "--limit", "3")
+
+    assert result.exit_code == 1
+    banked = json.loads((workspace / "r.refinement.json").read_text())
+    assert banked["finished"] is False
+    assert [arm["arm"] for arm in banked["arms"]] == ["arm01"]
+    assert banked["control"]["chunks"] == len(CHUNKS)
+
+
+def test_refine_names_the_sidecar_when_the_pass_stops(workspace, monkeypatch) -> None:
+    """The failure output alone tells the operator where the arms are.
+
+    A rented card carries a deletion deadline, so an operator who
+    must infer the path from a naming convention loses the arms the
+    pass paid for.
+    """
+    monkeypatch.setattr(
+        cli_refine,
+        "LlamaCppDivergenceMeter",
+        lambda **kwargs: MemoryRuntimeDivergenceMeter(default=CHUNKS, fail_after=2),
+    )
+
+    result = _invoke(workspace, "--limit", "3")
+
+    assert result.exit_code == 1
+    # `result.stderr` and not `result.output`: on the pinned click
+    # 8.4.2 `output` holds both streams, so it would pass whichever
+    # channel carried the line (#293). The halt writes it to stderr
+    # beside the error, which is where an operator reads it.
+    assert f"banked: {workspace / 'r.refinement.json'}" in result.stderr
+
+
+def test_refine_names_no_sidecar_when_the_control_pack_fails(
+    workspace, monkeypatch
+) -> None:
+    """A halt before the first bank names no path, because none exists.
+
+    The control packs before any record is written. A path named
+    here sends the operator hunting for a file the pass never wrote.
+    """
+    monkeypatch.setattr(
+        cli_refine,
+        "LlamaCppPacker",
+        lambda **kwargs: MemoryRecipePacker(
+            packed_bytes=500,
+            has_base=True,
+            row_widths=stack_row_widths(G),
+            out_path=kwargs["out_path"],
+            fail_stage="quantize" if kwargs["out_path"].stem == "control" else None,
+        ),
+    )
+
+    result = _invoke(workspace, "--limit", "3")
+
+    assert result.exit_code == 1
+    # Pinned to stderr for the reason the sibling test states.
+    assert str(workspace / "r.refinement.json") not in result.stderr
+    assert "banked: nothing" in result.stderr
+    assert not (workspace / "r.refinement.json").exists()
+
+
+def _bank_a_stopped_pass(workspace, monkeypatch) -> None:
+    """Leave a real banked record at the default destination.
+
+    The meter dies after the control and two arms, so the file the
+    next invocation meets is one a pass wrote rather than one this
+    suite hand-built.
+    """
+    monkeypatch.setattr(
+        cli_refine,
+        "LlamaCppDivergenceMeter",
+        lambda **kwargs: MemoryRuntimeDivergenceMeter(default=CHUNKS, fail_after=3),
+    )
+    assert _invoke(workspace, "--limit", "3").exit_code == 1
+    monkeypatch.setattr(
+        cli_refine,
+        "LlamaCppDivergenceMeter",
+        lambda **kwargs: MemoryRuntimeDivergenceMeter(default=CHUNKS),
+    )
+
+
+def test_refine_refuses_a_destination_that_already_banked_arms(
+    workspace, monkeypatch
+) -> None:
+    """A re-run must not destroy the arms the aborted pass paid for.
+
+    Each write replaces the file and the default path is
+    deterministic, so the control's bank would wipe them about four
+    minutes in.
+    """
+    _bank_a_stopped_pass(workspace, monkeypatch)
+    banked = (workspace / "r.refinement.json").read_text()
+
+    result = _invoke(workspace, "--limit", "3")
+
+    assert result.exit_code == 1
+    assert "stopped pass with 2 arms" in result.output
+    assert "--overwrite" in result.output
+    assert (workspace / "r.refinement.json").read_text() == banked
+
+
+def test_refine_replaces_a_banked_record_when_overwrite_is_stated(
+    workspace, monkeypatch
+) -> None:
+    """Overwriting is a legitimate choice, stated rather than silent."""
+    _bank_a_stopped_pass(workspace, monkeypatch)
+
+    result = _invoke(workspace, "--limit", "3", "--overwrite")
+
+    assert result.exit_code == 0, result.output
+    sidecar = json.loads((workspace / "r.refinement.json").read_text())
+    assert sidecar["finished"] is True
+    assert len(sidecar["arms"]) == 3
+
+
+def test_refine_runs_over_a_destination_holding_another_artifact(workspace) -> None:
+    """Only a readable record of a measurement refuses."""
+    (workspace / "r.refinement.json").write_text('{"vramfit_schema": 1}')
+
+    result = _invoke(workspace, "--limit", "1")
+
+    assert result.exit_code == 0, result.output
+    assert len(json.loads((workspace / "r.refinement.json").read_text())["arms"]) == 1
+
+
+def test_refine_runs_again_over_a_declined_pass(workspace) -> None:
+    """A decline measured nothing, so re-running it costs nothing."""
+    save_recipe(_recipe({G[0]: 4, G[1]: 4, G[2]: 4}), workspace / "flat.json")
+    assert _invoke(workspace, recipe="flat.json").exit_code == 0
+
+    result = _invoke(workspace, recipe="flat.json")
+
+    assert result.exit_code == 0, result.output
+    assert "declined:" in result.output
+
+
+def test_refine_prints_the_control_before_the_pass_that_stopped_ends(
+    workspace, monkeypatch
+) -> None:
+    """The gate reaches the terminal before the arms are paid for.
+
+    On the 30B target the control finishes about four minutes into a
+    59-minute pass. An operator who reads it there can stop a pass
+    whose control did not reproduce its published frame.
+    """
+    monkeypatch.setattr(
+        cli_refine,
+        "LlamaCppDivergenceMeter",
+        lambda **kwargs: MemoryRuntimeDivergenceMeter(default=CHUNKS, fail_after=1),
+    )
+
+    result = _invoke(workspace, "--limit", "3")
+
+    assert result.exit_code == 1
+    assert "control: 0.300000 mean divergence over 4 chunks" in result.output
+
+
+def test_refine_logs_each_measurement_with_its_figures(workspace) -> None:
+    _invoke(workspace, "--limit", "1")
+
+    events = read_run_log(workspace / "r.refinement.runlog.jsonl")
+    measured = {line["event"]: line for line in events}
+    assert measured["control_measured"]["mean"] == pytest.approx(0.3)
+    assert measured["arm_measured"]["sigma"] == pytest.approx(0.0)
+    assert measured["arm_measured"]["better_chunks"] == 0

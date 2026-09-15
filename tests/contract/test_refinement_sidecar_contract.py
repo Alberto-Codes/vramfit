@@ -109,6 +109,7 @@ def won_sidecar() -> RefinementSidecar:
         winner="arm01",
         declined=None,
         neighbourhood_moves=385,
+        finished=True,
     )
 
 
@@ -135,7 +136,19 @@ def declined_sidecar() -> RefinementSidecar:
         winner=None,
         declined="every group sits at 3 bits, so no swap moves precision",
         neighbourhood_moves=0,
+        finished=True,
     )
+
+
+def stopped_sidecar() -> RefinementSidecar:
+    """A pass the sink received before selection ran.
+
+    The pass saves through this port at the control and after every
+    arm, so an unfinished record is an ordinary thing to persist and
+    not an error state.
+    """
+    won = won_sidecar()
+    return replace(won, arms=(won.arms[0],), winner=None, finished=False)
 
 
 def _real_sink(
@@ -183,6 +196,35 @@ class TestRefinementSidecarSinkContract:
         data = readback()
         assert len(data["arms"]) == 2
         assert data["neighbourhood_moves"] == 385
+
+    def test_saved_stopped_pass_reads_back_unfinished(self, build, tmp_path) -> None:
+        sink, readback = build(tmp_path)
+        sidecar = stopped_sidecar()
+
+        sink.save(sidecar)
+
+        data = readback()
+        assert data["finished"] is False
+        assert data["winner"] is None
+        assert [a["arm"] for a in data["arms"]] == ["arm01"]
+        assert data == sidecar_to_dict(sidecar)
+
+    def test_a_later_save_replaces_the_earlier_record(self, build, tmp_path) -> None:
+        """A pass banks one record repeatedly, so the last save wins."""
+        sink, readback = build(tmp_path)
+        sink.save(stopped_sidecar())
+
+        sink.save(won_sidecar())
+
+        assert readback() == sidecar_to_dict(won_sidecar())
+
+    def test_saved_declined_pass_reads_back_finished(self, build, tmp_path) -> None:
+        """Declining is an outcome, not an interruption."""
+        sink, readback = build(tmp_path)
+
+        sink.save(declined_sidecar())
+
+        assert readback()["finished"] is True
 
     def test_declined_pass_reads_back_no_neighbourhood_move(
         self, build, tmp_path

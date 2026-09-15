@@ -68,7 +68,7 @@ def _arm(
     )
 
 
-def _sidecar(
+def _sidecar(  # noqa: PLR0913 - one keyword per record field the suites vary
     *,
     model_id: str = "test/model",
     bar: float = 7.8,
@@ -77,6 +77,7 @@ def _sidecar(
     winner: str | None = "arm11",
     declined: str | None = None,
     neighbourhood_moves: int | None = None,
+    finished: bool = True,
 ) -> RefinementSidecar:
     measured = (_arm(),) if arms is None else arms
     if neighbourhood_moves is None:
@@ -90,6 +91,7 @@ def _sidecar(
         winner=winner,
         declined=declined,
         neighbourhood_moves=neighbourhood_moves,
+        finished=finished,
     )
 
 
@@ -169,6 +171,7 @@ def test_a_pass_that_ran_without_a_control_is_refused() -> None:
             winner=None,
             declined=None,
             neighbourhood_moves=1,
+            finished=True,
         )
 
 
@@ -436,3 +439,34 @@ def test_a_declined_pass_classifies_as_nothing_measured() -> None:
     assert outcome.measured() == 0
     assert outcome.winner is None
     assert outcome.strongest_judged() is None
+
+
+# --- A record the pass banked before it finished (#592) ---
+
+
+def test_a_stopped_pass_that_names_a_winner_is_refused() -> None:
+    # Selection never ran, so the record cannot claim its result.
+    with pytest.raises(RefinementRecordError, match="stopped before selecting"):
+        _sidecar(finished=False)
+
+
+def test_a_declined_pass_that_reports_stopping_is_refused() -> None:
+    # Declining is an outcome, not an interruption (ADR-0031
+    # decision 8).
+    with pytest.raises(RefinementRecordError, match="an outcome"):
+        _sidecar(
+            arms=(),
+            winner=None,
+            declined="every group sits at the 3-bit floor",
+            neighbourhood_moves=0,
+            finished=False,
+        )
+
+
+def test_a_stopped_pass_carries_its_arms_and_its_control() -> None:
+    outcome = _sidecar(
+        arms=(_arm(),), winner=None, neighbourhood_moves=385, finished=False
+    ).outcome()
+
+    assert outcome.measured() == 1
+    assert outcome.winner is None

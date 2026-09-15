@@ -2,16 +2,22 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
 
 from tests.fakes import (
     MemoryRecipePacker,
+    MemoryRefinementSidecarStore,
     MemoryRuntimeDivergenceMeter,
     stack_row_widths,
 )
 from vramfit.adapters.inbound.refine_loop import run_pass, stride
+from vramfit.adapters.outbound.gguf.types import PackError
+from vramfit.adapters.outbound.refinement_sidecar_json import (
+    JsonRefinementSidecarFile,
+)
 from vramfit.domain.evals import CorpusReference
 from vramfit.domain.model import (
     Assignment,
@@ -136,6 +142,7 @@ def _run(tmp_path, meter, bits=None, limit=10, bar=1.0):
         _packer_for([]),
         meter,
         _frame(),
+        MemoryRefinementSidecarStore(),
         bar=bar,
         limit=limit,
         out_dir=tmp_path,
@@ -267,6 +274,7 @@ def test_run_pass_reports_its_progress(tmp_path) -> None:
         _packer_for([]),
         meter,
         _frame(),
+        MemoryRefinementSidecarStore(),
         bar=1.0,
         limit=1,
         out_dir=tmp_path,
@@ -298,6 +306,7 @@ def test_run_pass_arm_recipes_drop_the_solver_trace(tmp_path) -> None:
         build,
         MemoryRuntimeDivergenceMeter(default=CONTROL_CHUNKS),
         _frame(),
+        MemoryRefinementSidecarStore(),
         bar=1.0,
         limit=1,
         out_dir=tmp_path,
@@ -328,6 +337,7 @@ def test_run_pass_arm_recipes_keep_the_control_byte_total(tmp_path) -> None:
         build,
         MemoryRuntimeDivergenceMeter(default=CONTROL_CHUNKS),
         _frame(),
+        MemoryRefinementSidecarStore(),
         bar=1.0,
         limit=4,
         out_dir=tmp_path,
@@ -382,6 +392,7 @@ def test_a_pin_miss_decline_records_the_moves_it_enumerated(tmp_path) -> None:
         _packer_for([]),
         meter,
         _frame(),
+        MemoryRefinementSidecarStore(),
         bar=1.0,
         limit=10,
         out_dir=tmp_path,
@@ -405,6 +416,7 @@ def test_refine_declined_carries_the_enumerated_count(tmp_path) -> None:
         _packer_for([]),
         meter,
         _frame(),
+        MemoryRefinementSidecarStore(),
         bar=1.0,
         limit=10,
         out_dir=tmp_path,
@@ -426,6 +438,7 @@ def test_refine_started_carries_both_counts(tmp_path) -> None:
         _packer_for([]),
         meter,
         _frame(),
+        MemoryRefinementSidecarStore(),
         bar=1.0,
         limit=1,
         out_dir=tmp_path,
@@ -485,6 +498,7 @@ def test_an_arm_packing_to_the_budget_exactly_stays_selectable(tmp_path) -> None
         _packer_for([], sizes={"arm01": 10**9}),
         meter,
         _frame(),
+        MemoryRefinementSidecarStore(),
         bar=1.0,
         limit=1,
         out_dir=tmp_path,
@@ -510,6 +524,7 @@ def test_an_over_budget_arm_is_measured_recorded_and_unselectable(tmp_path) -> N
         _packer_for([], sizes={"arm01": 10**9 + 1}),
         meter,
         _frame(),
+        MemoryRefinementSidecarStore(),
         bar=1.0,
         limit=1,
         out_dir=tmp_path,
@@ -534,6 +549,7 @@ def test_an_over_budget_arm_is_reported_in_the_run_log(tmp_path) -> None:
         _packer_for([], sizes={"arm01": 10**9 + 1}),
         meter,
         _frame(),
+        MemoryRefinementSidecarStore(),
         bar=1.0,
         limit=1,
         out_dir=tmp_path,
@@ -564,6 +580,7 @@ def test_an_over_budget_control_refuses_without_measuring_anything(
             _packer_for([], sizes={"control": 10**9 + 1}),
             meter,
             _frame(),
+            MemoryRefinementSidecarStore(),
             bar=1.0,
             limit=1,
             out_dir=tmp_path,
@@ -589,6 +606,7 @@ def test_a_budget_exclusion_never_reads_as_an_arm_that_lost(tmp_path) -> None:
         _packer_for([], sizes={"arm01": 10**9 + 1}),
         meter,
         _frame(),
+        MemoryRefinementSidecarStore(),
         bar=7.8,
         limit=2,
         out_dir=tmp_path,
@@ -615,6 +633,7 @@ def test_every_arm_excluded_never_reads_as_none_measured(tmp_path) -> None:
         _packer_for([], sizes={"arm01": 10**9 + 1, "arm02": 10**9 + 1}),
         meter,
         _frame(),
+        MemoryRefinementSidecarStore(),
         bar=7.8,
         limit=2,
         out_dir=tmp_path,
@@ -654,6 +673,7 @@ def test_a_winning_pass_still_records_the_arms_the_budget_excluded(tmp_path) -> 
         _packer_for([], sizes={"arm01": 10**9 + 1}),
         meter,
         _frame(),
+        MemoryRefinementSidecarStore(),
         bar=7.8,
         limit=2,
         out_dir=tmp_path,
@@ -667,3 +687,215 @@ def test_a_winning_pass_still_records_the_arms_the_budget_excluded(tmp_path) -> 
     assert finished["judged"] == 1
     assert finished["excluded"] == ["arm01"]
     assert finished["refusal"] is None
+
+
+# --- What a pass that stops partway leaves behind (#592) ---
+#
+# A pass on a rented card can stop at any arm. Each arm costs about
+# 0.48 USD, the packed file is deleted once it is measured, and the
+# pod carries a deletion deadline, so an arm the pass measured and
+# did not write is an arm nobody can read or re-measure.
+#
+# These suites give every arm a distinct divergence series. An
+# assertion that reads a banked arm's own mean therefore fails on a
+# record that banked a different arm, or banked the right names with
+# the wrong figures. A fixture priced identically would pass on both.
+
+# One series per packed file, each a different full-window mean, so a
+# banked measurement identifies the arm it came from.
+ARM_CHUNKS = {
+    "control": (0.30, 0.30, 0.30, 0.30, 0.30, 0.30),
+    "arm01": (0.20, 0.20, 0.20, 0.20, 0.20, 0.20),
+    "arm02": (0.25, 0.25, 0.25, 0.25, 0.25, 0.25),
+    "arm03": (0.10, 0.10, 0.10, 0.10, 0.10, 0.10),
+}
+
+
+def _series(tmp_path: Path) -> dict[str, tuple[float, ...]]:
+    """Map each arm's packed path to its own divergence series."""
+    return {str(tmp_path / f"{arm}.gguf"): s for arm, s in ARM_CHUNKS.items()}
+
+
+def _stopped_run(tmp_path: Path, sink, *, after: int):
+    """Run a pass whose meter dies once ``after`` measurements return."""
+    meter = MemoryRuntimeDivergenceMeter(
+        default=ARM_CHUNKS["control"], series=_series(tmp_path), fail_after=after
+    )
+    with pytest.raises(PackError):
+        run_pass(
+            _recipe({G0: 2, G1: 2, G2: 4, G3: 4}),
+            _map([G0, G1, G2, G3]),
+            _packer_for([]),
+            meter,
+            _frame(),
+            sink,
+            bar=1.0,
+            limit=3,
+            out_dir=tmp_path,
+            row_widths={},
+        )
+
+
+def test_run_pass_banks_every_arm_it_measured_before_it_stopped(tmp_path) -> None:
+    # The control and two arms measure, and the third arm's meter
+    # dies. The two arms are real results and must survive.
+    path = tmp_path / "r.refinement.json"
+    _stopped_run(tmp_path, JsonRefinementSidecarFile(path), after=3)
+
+    banked = json.loads(path.read_text())
+    assert [arm["arm"] for arm in banked["arms"]] == ["arm01", "arm02"]
+    assert banked["control"]["mean"] == pytest.approx(0.30)
+    assert banked["arms"][0]["mean"] == pytest.approx(0.20)
+    assert banked["arms"][1]["mean"] == pytest.approx(0.25)
+
+
+def test_run_pass_banks_a_stopped_arm_with_the_figures_that_read_it(tmp_path) -> None:
+    # An arm name and a chunk count is not a result. A banked arm
+    # carries what the pass would have selected on: its paired delta,
+    # its sigma, and how many chunks measured below the control.
+    path = tmp_path / "r.refinement.json"
+    _stopped_run(tmp_path, JsonRefinementSidecarFile(path), after=2)
+
+    arm = json.loads(path.read_text())["arms"][0]
+    assert arm["delta"] == pytest.approx(-0.10)
+    assert arm["sigma"] < 0
+    assert arm["better_chunks"] == 6
+    assert arm["chunks"] == 6
+    assert arm["promoted"] and arm["demoted"]
+
+
+def test_run_pass_marks_a_record_it_banked_before_selecting(tmp_path) -> None:
+    # Selection never ran, so the empty winner means "not selected
+    # yet" and not "no arm cleared the bar".
+    path = tmp_path / "r.refinement.json"
+    _stopped_run(tmp_path, JsonRefinementSidecarFile(path), after=3)
+
+    banked = json.loads(path.read_text())
+    assert banked["finished"] is False
+    assert banked["winner"] is None
+
+
+def test_run_pass_banks_the_control_before_the_first_arm_packs(tmp_path) -> None:
+    # The control is the gate. It lands about four minutes into a
+    # 59-minute pass, and an operator who can read it there can stop
+    # a pass whose control did not reproduce its frame.
+    path = tmp_path / "r.refinement.json"
+    _stopped_run(tmp_path, JsonRefinementSidecarFile(path), after=1)
+
+    banked = json.loads(path.read_text())
+    assert banked["control"]["mean"] == pytest.approx(0.30)
+    assert banked["control"]["chunks"] == 6
+    assert banked["arms"] == []
+    assert banked["finished"] is False
+
+
+def test_run_pass_reports_the_control_before_it_packs_any_candidate(tmp_path) -> None:
+    # The control packs first too, so the ordering that matters is
+    # against the first candidate's pack: everything an operator pays
+    # for after this point is read against the number just reported.
+    meter = MemoryRuntimeDivergenceMeter(default=CONTROL_CHUNKS)
+    seen: list[tuple[str, dict]] = []
+
+    run_pass(
+        _recipe({G0: 2, G1: 2, G2: 4, G3: 4}),
+        _map([G0, G1, G2, G3]),
+        _packer_for([]),
+        meter,
+        _frame(),
+        MemoryRefinementSidecarStore(),
+        bar=1.0,
+        limit=2,
+        out_dir=tmp_path,
+        row_widths={},
+        report=lambda event, fields: seen.append((event, dict(fields))),
+    )
+
+    names = [event for event, _ in seen]
+    first_candidate = next(
+        i
+        for i, (event, fields) in enumerate(seen)
+        if event == "arm_packing" and fields["arm"] == "arm01"
+    )
+    assert names.index("control_measured") < first_candidate
+
+
+def test_run_pass_reports_each_measurement_with_the_figures_that_read_it(
+    tmp_path,
+) -> None:
+    # The run log used to carry an arm name and a chunk count, which
+    # cannot reconstruct a lost pass.
+    meter = MemoryRuntimeDivergenceMeter(
+        default=ARM_CHUNKS["control"], series=_series(tmp_path)
+    )
+    seen: list[tuple[str, dict]] = []
+
+    run_pass(
+        _recipe({G0: 2, G1: 2, G2: 4, G3: 4}),
+        _map([G0, G1, G2, G3]),
+        _packer_for([]),
+        meter,
+        _frame(),
+        MemoryRefinementSidecarStore(),
+        bar=1.0,
+        limit=1,
+        out_dir=tmp_path,
+        row_widths={},
+        report=lambda event, fields: seen.append((event, dict(fields))),
+    )
+
+    control = next(f for event, f in seen if event == "control_measured")
+    arm = next(f for event, f in seen if event == "arm_measured")
+    assert control["mean"] == pytest.approx(0.30)
+    assert control["delta"] == pytest.approx(0.0)
+    assert arm["arm"] == "arm01"
+    assert arm["mean"] == pytest.approx(0.20)
+    assert arm["delta"] == pytest.approx(-0.10)
+    assert arm["better_chunks"] == 6
+
+
+def test_run_pass_banks_a_declined_record(tmp_path) -> None:
+    # Declining is an outcome (ADR-0031 decision 8), so the record
+    # reaches the sink like any other.
+    sink = MemoryRefinementSidecarStore()
+    meter = MemoryRuntimeDivergenceMeter(default=CONTROL_CHUNKS)
+
+    run_pass(
+        _recipe({G0: 2, G1: 2, G2: 2, G3: 2}),
+        _map([G0, G1, G2, G3]),
+        _packer_for([]),
+        meter,
+        _frame(),
+        sink,
+        bar=1.0,
+        limit=3,
+        out_dir=tmp_path,
+        row_widths={},
+    )
+
+    assert sink.last.declined is not None
+    assert sink.last.finished is True
+
+
+def test_run_pass_banks_the_finished_record_last(tmp_path) -> None:
+    sink = MemoryRefinementSidecarStore()
+    meter = MemoryRuntimeDivergenceMeter(
+        default=ARM_CHUNKS["control"], series=_series(tmp_path)
+    )
+
+    sidecar = run_pass(
+        _recipe({G0: 2, G1: 2, G2: 4, G3: 4}),
+        _map([G0, G1, G2, G3]),
+        _packer_for([]),
+        meter,
+        _frame(),
+        sink,
+        bar=1.0,
+        limit=2,
+        out_dir=tmp_path,
+        row_widths={},
+    )
+
+    # One bank for the control, one per arm, and one on selection.
+    assert len(sink.saved) == 4
+    assert sink.last == sidecar
+    assert sink.last.finished is True

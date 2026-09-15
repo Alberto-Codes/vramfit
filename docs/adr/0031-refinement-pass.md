@@ -314,6 +314,30 @@ does not earn the refinement step.
   wrong version cannot be written. Where two surfaces must agree
   about meaning, pass a structure and never a string — a string lets
   each reader re-derive the meaning, and two derivations drift.
+- **Observed 2026-09-14 (#592): a pass that holds its measurements
+  until the end can lose all of them.** The validation run above
+  measured 0.48 USD per arm against a pod deletion deadline, and the
+  packed file is deleted once its arm is measured. Accumulating the
+  arms and writing the sidecar once after selection therefore turned
+  any interruption into a total loss, and the run log could not close
+  the gap: it recorded an arm name and a chunk count, not the figures
+  that read the arm.
+
+  The pass now writes the sidecar as it runs — at the control, after
+  each arm, and last with the winner — and `finished` separates a
+  pass that judged every arm and kept none from one that stopped
+  before selection ran. The sink is a parameter of `run_pass` rather
+  than a step its caller takes afterwards, which is the same
+  structural answer the rule-versus-shape consequence above records.
+  `finished` changes what a null `winner` means, so the sidecar's
+  `vramfit_schema` bumps to 2 under decision 3.
+
+  The same run measured the control finishing about 4 minutes into a
+  59-minute pass, while its result first appeared in the sidecar
+  after every arm had run. The control is the gate, so the pass now
+  reports it when it lands and the command prints it. A pass whose
+  control does not reproduce its frame can be stopped at minute four
+  instead of costing 8 USD first.
 - The solver keeps its approximation and its scope. ADR-0007 is
   amended in reach, not replaced.
 - One more artifact rides a refined publication.
