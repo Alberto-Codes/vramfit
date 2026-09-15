@@ -38,12 +38,18 @@ partial output, which is never an accepted artifact.
   which failed before quantization because `llama.context_length` was absent.
   The corrected fixture adds context length and RMS normalization metadata.
 
+The archived files normalize two path roots and change nothing else.
+`<repo>` replaces the session's working directory, and `<llama.cpp>`
+replaces the local llama.cpp checkout. Every command, argument, exit
+code, byte count, and hash reads as the session produced it.
+
 The session copied the archived stock toolchain into `scratch/stock-b10362`
 and repeated the successful probes there. The committed transcript is that
-repeat, with its output unchanged. The session executed:
+repeat, with its output unchanged apart from those two roots. The session
+executed:
 
 ```bash
-PYTHONPATH=/var/home/Alberto-Codes/llama.cpp/gguf-py \
+PYTHONPATH=<llama.cpp>/gguf-py \
   python scratch/q2-passthrough/probe.py \
   scratch/stock-b10362/llama-quantize \
   > scratch/q2-passthrough/local-transcript.txt 2>&1

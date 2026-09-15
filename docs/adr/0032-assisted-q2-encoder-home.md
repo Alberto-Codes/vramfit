@@ -9,16 +9,22 @@
   for a subsequent re-solve. His 2026-09-14 “go” commissioned this record.
   These rulings came through the task brief. They prohibit vendoring the
   reference patch or waiting for upstream.
-- **Proposes amendments to:** three clauses. ADR-0016 carries two
+- **Proposes amendments to:** two clauses. ADR-0016 carries two
   decision lists, so each reference below names its list.
   - [ADR-0016's original decision 2](0016-imatrix-in-the-pack-path.md#decision),
     the CPU-subprocess-driver clause.
   - [ADR-0016's 2026-08-21 amendment, decision 2](0016-imatrix-in-the-pack-path.md#amendment-the-assisted-shares-differ-2026-08-21-issue-278),
     the "cost of the width, not a toolchain handicap" clause. Decision 5
     below corrects it.
-  - [ADR-0018's assisted q0 method](0018-kquant-within-group-method.md#amendment-q0-imx-gets-built-2026-08-21-issue-350).
-
-  The maintainer accepts this architecture through review. This record
+- **Adds to, and does not amend,**
+  [ADR-0018's assisted q0 method](0018-kquant-within-group-method.md#amendment-q0-imx-gets-built-2026-08-21-issue-350).
+  Its decision 1 reads that nominal 2 takes the reference path under the
+  token `q0-imx`. That stays true, because decision 3 below keeps the
+  token's stock-Q2_0 meaning and adds a distinct successor.
+  [Issue #599](https://github.com/Alberto-Codes/vramfit/issues/599)
+  names the successor and decides whether its record amends ADR-0018
+  or this one.
+- The maintainer accepts this architecture through review. This record
   implements no encoder and starts no re-solve.
 
 ## Context
@@ -227,12 +233,16 @@ The third cannot deliver the measured benefit or matching provenance.
   equate the torch scan frame with runtime damage or validate additive predictions.
 - Acceptance requires a tiny end-to-end pack/load test with a stock runtime,
   plus scan reconstruction of the blocks that pack actually emits.
-- The next task implements these requirements. The maintainer starts that task
-  and the funded re-solve. [Issue #597](https://github.com/Alberto-Codes/vramfit/issues/597)
-  closed with this record, so the open handoff is
-  [issue #599](https://github.com/Alberto-Codes/vramfit/issues/599) under
+- The next task implements these requirements. The maintainer starts that
+  task and the funded re-solve.
+  [Issue #597](https://github.com/Alberto-Codes/vramfit/issues/597) closed
+  with this record. Two open tickets carry the handoff under
   [chart #158](https://github.com/Alberto-Codes/vramfit/issues/158).
-  This change contains only the record and its evidence.
+  [Issue #599](https://github.com/Alberto-Codes/vramfit/issues/599) names
+  the successor token.
+  [Issue #601](https://github.com/Alberto-Codes/vramfit/issues/601) builds
+  the encoder and the preprocessor, and it waits for acceptance of this
+  record. This change contains only the record and its evidence.
 
 ## Open questions
 
@@ -246,10 +256,28 @@ The third cannot deliver the measured benefit or matching provenance.
   by which binary reads the matrix. The two records disagree on this
   tensor class until acceptance carries the amendment.
 - The preprocessor's full-file cost stays unmeasured. The probe wrote
-  36,864 Q2_0 payload bytes on a synthetic fixture. The 30B target's
-  eleven Q2_0 stacks sit inside a 16,922,476,352 B pack, and the
-  temporary mixed GGUF adds a second full-size file. The implementation
+  36,864 Q2_0 payload bytes on a synthetic fixture. Decision 1 reads the
+  f16 base and writes the temporary mixed GGUF beside it, so the two
+  coexist and the pack does not exist yet. The temporary file is that
+  base with eleven stacks swapped to 2.25 bits, which makes it somewhat
+  smaller than the base and several times the 16,922,476,352 B pack. The
+  30B target's f16 reference measures 63,181,504,640 B
+  ([card ledger](../../publication/nemotron-30b-a3b-fit16gib/card-ledger.md)).
+  Scratch space sized against the pack falls short. The implementation
   measures peak memory and disk before the funded run.
+- Whether the shared encoder reaches pack without torch stays unsettled.
+  Decision 2 owns the fit once, and the pack path calls it. The shipped
+  assisted fit imports torch.
+  [ADR-0005](0005-heavy-deps-as-extras.md)'s 2026-09-04 amendment gives
+  `vramfit[gguf]` "gguf-py and numpy and no torch" for the reads pack
+  does itself. [ADR-0008](0008-hexagonal-architecture.md)'s import-linter
+  contract "No heavy ML deps outside the scan adapter package" forbids
+  torch across `vramfit`, and its one carve-out reads
+  `vramfit.adapters.outbound.scan.* -> torch`. The pack adapter imports
+  neither torch nor anything under `scan` today. This record neither
+  widens that carve-out nor rules a second torch-free fit, which
+  decision 2 forbids. The implementing task cannot choose either,
+  so the maintainer settles the boundary at acceptance.
 - Passthrough holds on b10362 (`4801e3c56`) and on no other build. The
   probe tested one quantizer. Decision 1 forbids `--allow-requantize`,
   so a build that drops the passthrough refuses the pack rather than

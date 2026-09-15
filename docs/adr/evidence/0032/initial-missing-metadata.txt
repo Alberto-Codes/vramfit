@@ -1,5 +1,5 @@
 Selected stderr from the initial fixture attempt:
 
 llama_model_quantize: failed to quantize: key not found in model: llama.context_length
-llama_quantize: failed to quantize model from '/var/home/Alberto-Codes/Projects/firstmate/.treehouse/vramfit-383298/3/vramfit/scratch/q2-passthrough/mixed.gguf'
+llama_quantize: failed to quantize model from '<repo>/scratch/q2-passthrough/mixed.gguf'
 exit: 1
