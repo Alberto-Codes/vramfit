@@ -32,6 +32,7 @@ ADR that supersedes the old one.
 | **Deprecated** | No longer applies, without a direct replacement. |
 | **Superseded by ADR-NNNN** | Replaced by a newer decision. |
 | **Amended by ADR-NNNN** | Still in force; a later record revises one named clause. |
+| **Contested by ADR-NNNN** | Still in force. A Proposed record disputes one named clause and supersedes nothing until it reaches Accepted. |
 
 ## Records
 
