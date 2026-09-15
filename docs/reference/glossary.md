@@ -271,10 +271,13 @@ change.
     the same shape through `quantize_row_q4_0_impl`, and its reader
     accepts fused expert stacks — one imatrix row per expert
     ([ADR-0018](../adr/0018-kquant-within-group-method.md),
-    2026-08-21 amendment). `Q2_0` has no assisted path, because
+    2026-08-21 amendment). Stock `Q2_0` has no assisted path, because
     `quantize_q2_0` ignores the matrix (ADR-0018, 2026-08-17
-    amendment, token renamed by the 2026-08-18 amendment). Not
-    "imatrix mode" or "weighted scanning".
+    amendment, token renamed by the 2026-08-18 amendment).
+    [ADR-0032](../adr/0032-assisted-q2-encoder-home.md) proposes a
+    vramfit-owned assisted Q2_0 **encoder** under a successor token.
+    That ADR stays Proposed, so `q0-imx` keeps nominal 2 unassisted.
+    Not "imatrix mode" or "weighted scanning".
 
     The same pair names the pack side. A tensor packs **assisted** when
     its type reads the matrix and the matrix covers its name, and
@@ -899,6 +902,32 @@ change.
 :   The full-precision (f16) GGUF conversion of the source checkpoint
     that `llama-quantize` consumes. Created once per model, reused
     across packs. Not "intermediate file".
+
+**Encoder**
+:   The numerical fit that turns a float tensor into stored
+    quantization blocks — the scales and the level index per element.
+    vramfit owns one encoder per assisted type, behind the outbound
+    adapters, and the scan meter and the pack path share it
+    ([ADR-0032](../adr/0032-assisted-q2-encoder-home.md) decision 2).
+    Distinct from the **within-group method**, the token a map records.
+    Not "quantizer", which names stock `llama-quantize` and the ported
+    reference round trips.
+
+**Pre-encoding**
+:   Writing tensors that an **encoder** already fitted into a temporary
+    mixed GGUF, before stock `llama-quantize` runs. The stock pass
+    copies those payloads and quantizes the rest
+    ([ADR-0032](../adr/0032-assisted-q2-encoder-home.md) decision 1).
+    The verb is **pre-encode**. Not "pre-quantize" or "patching the
+    base".
+
+**Preprocessor**
+:   The vramfit-owned CPU subprocess that pre-encodes. It reads the
+    **base GGUF**, replaces only the selected tensors, and writes the
+    temporary mixed GGUF. It never writes the base GGUF or a published
+    artifact. The pack adapter stays a subprocess driver around it
+    ([ADR-0032](../adr/0032-assisted-q2-encoder-home.md) decision 1).
+    Not "rewriter" or "shim".
 
 **Type override**
 :   One (tensor pattern → quantization type) pair driven into the

@@ -105,12 +105,17 @@ The original archive file has SHA-256
 `2af983ad9337e36182031a48c4b9bf4a9389b3110aabdfb1f1ddddb07024b8c8`.
 These are archived measurements, not evaluations performed for this ADR.
 
-| Quantity | Same-pod control | Assisted Q2_0 arm |
+Every figure below names the archive block it comes from.
+
+| Quantity | Control `ctl-repro` | Assisted `c2-assisted-q2_0` |
 | --- | ---: | ---: |
 | File bytes | 16,922,476,352 | 16,922,476,352 |
 | Mean KLD | 0.204318 ± 0.001160 | 0.071428 ± 0.000432 |
 | Same-top agreement | 83.127 ± 0.096 % | 89.441 ± 0.079 % |
 | PPL ratio | 1.161096 ± 0.002417 | 1.036637 ± 0.001263 |
+
+Both blocks ran on one pod. The comparison above uses those two blocks
+and no other.
 
 The archive's `REPORT.md`, sections 0 and 7.4, specifies the measurement
 frame: stock b10362, CUDA, H100 SXM, full 594-chunk WikiText-2 split,
@@ -122,8 +127,19 @@ the patched encoder and the stock evaluator.
 `d5f7ba40b5722c0cab32f594cc62b52b13c84c3827de1c2b678089070f5614a6`.
 The report calls the equal-size files “byte-identical.” Their recorded
 hashes differ. This ADR uses the precise claim: identical byte counts.
-The published control is also distinct: 16,922,476,480 B and mean
-KLD 0.204322. The result above compares the two same-pod packs.
+
+The archive holds two control blocks, and they name two files.
+`ctl-published` names 16,922,476,480 B with SHA-256 `85ed06fa…c062`. It
+records mean KLD 0.204322, same top 83.146 ± 0.096 %, and PPL
+7.917417 ± 0.054002 (lines 1–17). `ctl-repro` names 16,922,476,352 B
+with SHA-256 `5f63a831…618ec`. It records mean KLD 0.204318, same top
+83.127 ± 0.096 %, and PPL 7.917699 ± 0.054005 (lines 19–35).
+
+The [publication ledger](../../../../publication/nemotron-30b-a3b-fit16gib/card-ledger.md)
+binds the `ctl-published` byte count and hash to the `ctl-repro`
+figures. [Issue #598](https://github.com/Alberto-Codes/vramfit/issues/598)
+carries that provenance question to the maintainer. This change reads
+the published files and edits none of them.
 
 The [reference patch](https://huggingface.co/vcruz305/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF/blob/main/q2_0_weighted_optimizer.patch)
 is identified by SHA-256

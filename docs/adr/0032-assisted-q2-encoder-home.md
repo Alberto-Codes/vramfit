@@ -17,16 +17,20 @@
 ## Context
 
 The 2026-09-05 rebuy changed the encoder for eleven Q2_0 stacks while
-keeping the shipped 30B recipe's allocation. Its same-pod control measured
-0.204318 mean KLD. The assisted arm measured 0.071428, with same-top
-agreement rising from 83.127 % to 89.441 %. Both files contain
-16,922,476,352 B. Their contents differ, as their SHA-256 hashes confirm.
-The stock b10362 runtime evaluated the assisted arm.
+keeping the shipped 30B recipe's allocation. Its `ctl-repro` block
+measured 0.204318 mean KLD. Its `c2-assisted-q2_0` block measured
+0.071428, and same-top agreement rose from 83.127 % to 89.441 %. Both
+files contain 16,922,476,352 B. Their contents differ, as their SHA-256
+hashes confirm. The stock b10362 runtime evaluated the assisted arm.
+
+Every figure above names its archive block. The archive also holds a
+`ctl-published` block, which records a different file and different
+numbers. This record cites blocks and edits no published artifact.
 
 The archived report records a 65.0 % KLD reduction and a 6.31-point
 same-top gain. These measure the whole pack, not isolated stack damage.
 The [evidence record](evidence/0032/README.md#rebuy-evidence) preserves
-those results and distinguishes the same-pod control from the published file.
+those results and names the source block of each figure.
 
 For scale, [ADR-0031](0031-refinement-pass.md) records the refinement
 stage's 5.74 % improvement. The relative reductions differ by roughly
