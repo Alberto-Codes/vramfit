@@ -27,8 +27,8 @@ resolve against this map, a measurement too short to pair, and a
 toolchain failure all halt the same way. Every path the pass needs
 is checked before the convert stage: the three llama.cpp tools, the
 importance matrix, and the destinations the sidecar and the run log
-are written to. A missing path costs no card time, and a finished
-pass is never discarded at its last step.
+are written to. A missing path costs no card time, and an
+unwritable destination costs no measurement.
 
 `_check_no_banked_pass` guards the same destination against the
 other loss. Each write replaces the file, so a re-run on the same

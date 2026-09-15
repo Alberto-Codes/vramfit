@@ -937,8 +937,8 @@ Options: `--map` (required), `--llama-cpp` (required),
 The command checks every path it needs before the convert stage: the
 three llama.cpp tools, `--imatrix` when given, and the destinations
 `--out` and `--runlog` name. `--out-dir` is created first, so an
-`--out` inside it resolves. A missing path costs no card time, and a
-finished pass is never discarded at its last step.
+`--out` inside it resolves. A missing path costs no card time, and an
+unwritable destination costs no measurement.
 
 **It refuses an `--out` that already records a measured pass.** Each
 write replaces that file and the default path is deterministic, so a

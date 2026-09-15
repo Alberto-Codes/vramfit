@@ -329,6 +329,8 @@ does not earn the refinement step.
   before selection ran. The sink is a parameter of `run_pass` rather
   than a step its caller takes afterwards, which is the same
   structural answer the rule-versus-shape consequence above records.
+  `finished` changes what a null `winner` means, so the sidecar's
+  `vramfit_schema` bumps to 2 under decision 3.
 
   The same run measured the control finishing about 4 minutes into a
   59-minute pass, while its result first appeared in the sidecar
