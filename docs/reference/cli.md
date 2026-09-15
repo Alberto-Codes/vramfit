@@ -932,13 +932,23 @@ Options: `--map` (required), `--llama-cpp` (required),
 `--runtime-build` (required), `--hardware` (required), `--bar`
 (required), `--model`, `--base-gguf`, `--imatrix`, `--out-dir`
 (default `arms`), `--out`, `--limit` (default 15), `--threads`,
-`--python-bin`, `--runlog`.
+`--python-bin`, `--runlog`, `--overwrite`.
 
 The command checks every path it needs before the convert stage: the
 three llama.cpp tools, `--imatrix` when given, and the destinations
 `--out` and `--runlog` name. `--out-dir` is created first, so an
 `--out` inside it resolves. A missing path costs no card time, and a
 finished pass is never discarded at its last step.
+
+**It refuses an `--out` that already records a measured pass.** Each
+write replaces that file and the default path is deterministic, so a
+re-run on the same recipe would destroy the arms an earlier pass
+banked, about four minutes in. The refusal names the file, whether
+that pass finished or stopped, and how many arms it holds. A
+control-only record reads as `0 arms`, because the control is a
+measurement too. Pass `--overwrite` to replace the record anyway. A
+declined pass measured nothing and never refuses, and neither does a
+path holding another artifact.
 
 It refuses a `--map` whose `model_id` differs from the recipe's. Every
 other stage derives the recipe from the map inside one `plan` run, so
@@ -1078,6 +1088,12 @@ and `refusal` is null on a winning pass. An over-budget control
 refuses after its arm_packed and emits no control_measured, because
 the pass refuses before spending the measurement.
 
+Every failure inside the pass prints one more line beside the
+`error:` line: `banked: <path>` when the pass had written a record,
+and `banked: nothing` when it stopped before its control measured.
+An operator on a pod with a deletion deadline reads from that line
+alone whether anything survived and where it is.
+
 Exit codes: 1 when the recipe or map is invalid, the model directory
 does not exist, `--runtime-build` or `--hardware` is empty,
 `--base-logits` or `--eval-text` is not a file or cannot be read,
@@ -1089,7 +1105,8 @@ misses `convert_hf_to_gguf.py`, `build/bin/llama-quantize` or
 `build/bin/llama-perplexity`, either built binary is not executable,
 `--out-dir` cannot be created, `--out` or `--runlog` names a
 directory, the directory `--out` or `--runlog` sits in does not exist
-or refuses a write, the recipe's protections do not resolve against
+or refuses a write, `--out` already records a measured pass and
+`--overwrite` is absent, the recipe's protections do not resolve against
 the map, a group has no row width, or a toolchain stage fails. A pin
 that does not resolve declines at exit 0 rather than refusing. 2 when
 `--bar` is not stated.

@@ -16,6 +16,10 @@ which is what lets it: an interrupted write leaves the record before
 it rather than a truncated one. `finished` says which state the
 document describes, and a reader reads it before `winner`.
 
+`read_measured_pass` reads a destination back before a new pass
+replaces one. It answers what the earlier pass banked, so a re-run
+refuses rather than destroying arms nobody can re-measure.
+
 It also records `neighbourhood_moves`, how many byte-neutral moves
 the neighbourhood held. The arms are a sample of that whenever the
 caller's budget was smaller, so a reader needs both numbers before
@@ -51,6 +55,7 @@ See Also:
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
@@ -217,6 +222,65 @@ def save_refinement_sidecar(sidecar: RefinementSidecar, path: Path) -> None:
         path: Destination file.
     """
     _save_json(sidecar_to_dict(sidecar), path)
+
+
+@dataclass(frozen=True, slots=True)
+class MeasuredPass:
+    """What a pass already banked at one destination.
+
+    A caller about to replace a record needs two facts about it: how
+    many arms it banked, and whether the pass reached selection. An
+    arm costs about 0.48 USD of card time, and a stopped pass and a
+    finished one are different situations for an operator.
+
+    Attributes:
+        arms (int): Arms the record banked. Zero marks the record a
+            pass wrote when its control measured.
+        finished (bool): Whether the pass reached selection.
+
+    Examples:
+        Count what a destination already holds:
+
+        ```python
+        banked = read_measured_pass(Path("recipe.refinement.json"))
+        print(0 if banked is None else banked.arms)
+        ```
+    """
+
+    arms: int
+    finished: bool
+
+
+def read_measured_pass(path: Path) -> MeasuredPass | None:
+    """Read what a pass already banked at this path.
+
+    Reads this package's own artifact, and only the two fields a
+    caller deciding to replace it needs. It refuses nothing and
+    raises nothing: a path holding no file, no JSON, or another
+    artifact answers None, so a caller acts on a record it can read
+    and never on one it cannot. A declined pass measured nothing, so
+    it answers None too. A version 1 document carries no ``finished``
+    field and was written only after selection, so it reads as
+    finished.
+
+    Args:
+        path: The destination to examine.
+
+    Returns:
+        The banked arm count and whether the pass finished, or None
+        when the file records no measurement.
+    """
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict) or data.get("control") is None:
+        return None
+    arms = data.get("arms")
+    finished = data.get("finished", True)
+    if not isinstance(arms, list) or not isinstance(finished, bool):
+        return None
+    return MeasuredPass(arms=len(arms), finished=finished)
 
 
 @dataclass(frozen=True, slots=True)

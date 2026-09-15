@@ -601,9 +601,11 @@ class RefinementSidecarSink(Protocol):
     last. Every call replaces the record the sink holds, so the last
     record written is the whole record. An implementation makes that
     replacement safe against an interrupted write, because a caller
-    banks measurements it cannot repeat. No reader exists yet,
-    because nothing reads a refined recipe's search record back —
-    ADR-0025 landed its reader only when a rule needed executing.
+    banks measurements it cannot repeat. The port stays write-only.
+    One rule reads a record back — a pass refuses a destination that
+    already records measurements — and the JSON module serves it
+    directly, the way ADR-0025 landed its reader only when a rule
+    needed executing.
 
     Examples:
         The JSON file adapter satisfies this port:

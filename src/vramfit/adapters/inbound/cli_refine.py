@@ -30,6 +30,11 @@ importance matrix, and the destinations the sidecar and the run log
 are written to. A missing path costs no card time, and a finished
 pass is never discarded at its last step.
 
+`_check_no_banked_pass` guards the same destination against the
+other loss. Each write replaces the file, so a re-run on the same
+recipe would destroy the arms an earlier pass banked. It refuses
+there, and ``--overwrite`` states the replacement.
+
 A failure inside the pass states what it banked, on that same
 channel. It names the sidecar path when a record landed, and says
 that nothing landed when the pass died before its control measured.
@@ -111,6 +116,7 @@ from vramfit.adapters.inbound.cli_refine_preflight import (
     _check_destination,
     _check_frame_labels,
     _check_input_files,
+    _check_no_banked_pass,
     _check_recipe_resolves,
     _check_toolchain,
     _halt,
@@ -236,6 +242,13 @@ class _BankedRecord:
         sink (RefinementSidecarSink): The sink every save reaches.
         path (Path): The file that sink writes.
         saved (bool): Whether one save returned.
+
+    Examples:
+        Hand the pass a sink that remembers what it wrote:
+
+        ```python
+        banked = _BankedRecord(JsonRefinementSidecarFile(path), path)
+        ```
     """
 
     sink: RefinementSidecarSink
@@ -413,6 +426,10 @@ def refine(
         Path | None,
         typer.Option(help="Run-log path. Default: beside the sidecar."),
     ] = None,
+    overwrite: Annotated[
+        bool,
+        typer.Option(help="Replace a sidecar that already records a measured pass."),
+    ] = False,
 ) -> None:
     """Search a recipe's equal-byte neighbourhood in the runtime frame.
 
@@ -427,7 +444,9 @@ def refine(
     empty ``--runtime-build`` and a refused write each leave one
     ``error:`` line rather than a traceback. Every path the pass
     needs is checked before the first tool runs: the tools, the
-    matrix, both destinations, and the arm directory. The map must
+    matrix, both destinations, and the arm directory. A destination
+    that already records a measured pass refuses, because the write
+    replaces it — ``--overwrite`` states the replacement. The map must
     have priced this recipe, the frame labels must not be empty, and
     an assisted recipe packed without its matrix warns the way
     ``pack`` warns. A control that packs over the weight budget
@@ -460,6 +479,8 @@ def refine(
         threads: Tool thread count.
         python_bin: Convert-script interpreter, or None for this one.
         runlog: Run-log path, or None to place it beside the sidecar.
+        overwrite: Whether to replace a sidecar that already records
+            a measured pass.
 
     Raises:
         Exit: With code 1 when an input refuses, a measurement
@@ -499,6 +520,7 @@ def refine(
     )
     _check_destination("--out", sidecar_path)
     _check_destination("--runlog", runlog_path)
+    _check_no_banked_pass(sidecar_path, overwrite=overwrite)
     row_widths = _resolve_row_widths(recipe, model_dir)
     _check_recipe_resolves(recipe, map_, row_widths)
     # Nothing structural keeps a new refusal above these reads, so

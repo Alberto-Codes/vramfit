@@ -659,7 +659,7 @@ class RefinementSidecar:
         return next((a for a in self.arms if a.arm == self.winner), None)
 
     def outcome(self) -> PassOutcome:
-        """Classify this finished pass, once, for every surface.
+        """Classify this pass, once, for every surface.
 
         Returns:
             The arms selection judged, the arms the weight budget

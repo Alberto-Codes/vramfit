@@ -239,7 +239,7 @@ def test_refine_records_a_different_corpus_differently(workspace) -> None:
     first = json.loads((workspace / "r.refinement.json").read_text())["frame"]
 
     (workspace / "wiki.test.raw").write_text("other text")
-    _invoke(workspace, "--limit", "1")
+    _invoke(workspace, "--limit", "1", "--overwrite")
     second = json.loads((workspace / "r.refinement.json").read_text())["frame"]
 
     assert first["corpus"]["file"] == second["corpus"]["file"]
@@ -695,7 +695,7 @@ def test_an_assisted_and_an_unassisted_pass_do_not_serialize_alike(
 
     _invoke(workspace, "--limit", "1")
     unassisted = json.loads((workspace / "r.refinement.json").read_text())["frame"]
-    _invoke(workspace, "--limit", "1", "--imatrix", str(matrix))
+    _invoke(workspace, "--limit", "1", "--overwrite", "--imatrix", str(matrix))
     assisted = json.loads((workspace / "r.refinement.json").read_text())["frame"]
 
     assert unassisted != assisted
@@ -759,7 +759,7 @@ def test_two_passes_over_different_reference_logits_do_not_serialize_alike(
     first = json.loads((workspace / "r.refinement.json").read_text())["frame"]
 
     (workspace / "base.logits").write_bytes(b"rebuilt logits")
-    _invoke(workspace, "--limit", "1")
+    _invoke(workspace, "--limit", "1", "--overwrite")
     second = json.loads((workspace / "r.refinement.json").read_text())["frame"]
 
     assert first["reference"]["file"] == second["reference"]["file"]
@@ -1020,6 +1020,81 @@ def test_refine_names_no_sidecar_when_the_control_pack_fails(
     assert str(workspace / "r.refinement.json") not in result.output
     assert "banked: nothing" in result.output
     assert not (workspace / "r.refinement.json").exists()
+
+
+def _bank_a_stopped_pass(workspace, monkeypatch) -> None:
+    """Leave a real banked record at the default destination.
+
+    The meter dies after the control and two arms, so the file the
+    next invocation meets is one a pass wrote rather than one this
+    suite hand-built.
+    """
+    monkeypatch.setattr(
+        cli_refine,
+        "LlamaCppDivergenceMeter",
+        lambda **kwargs: MemoryRuntimeDivergenceMeter(default=CHUNKS, fail_after=3),
+    )
+    assert _invoke(workspace, "--limit", "3").exit_code == 1
+    monkeypatch.setattr(
+        cli_refine,
+        "LlamaCppDivergenceMeter",
+        lambda **kwargs: MemoryRuntimeDivergenceMeter(default=CHUNKS),
+    )
+
+
+def test_refine_refuses_a_destination_that_already_banked_arms(
+    workspace, monkeypatch
+) -> None:
+    """A re-run must not destroy the arms the aborted pass paid for.
+
+    Each write replaces the file and the default path is
+    deterministic, so the control's bank would wipe them about four
+    minutes in.
+    """
+    _bank_a_stopped_pass(workspace, monkeypatch)
+    banked = (workspace / "r.refinement.json").read_text()
+
+    result = _invoke(workspace, "--limit", "3")
+
+    assert result.exit_code == 1
+    assert "stopped pass with 2 arms" in result.output
+    assert "--overwrite" in result.output
+    assert (workspace / "r.refinement.json").read_text() == banked
+
+
+def test_refine_replaces_a_banked_record_when_overwrite_is_stated(
+    workspace, monkeypatch
+) -> None:
+    """Overwriting is a legitimate choice, stated rather than silent."""
+    _bank_a_stopped_pass(workspace, monkeypatch)
+
+    result = _invoke(workspace, "--limit", "3", "--overwrite")
+
+    assert result.exit_code == 0, result.output
+    sidecar = json.loads((workspace / "r.refinement.json").read_text())
+    assert sidecar["finished"] is True
+    assert len(sidecar["arms"]) == 3
+
+
+def test_refine_runs_over_a_destination_holding_another_artifact(workspace) -> None:
+    """Only a readable record of a measurement refuses."""
+    (workspace / "r.refinement.json").write_text('{"vramfit_schema": 1}')
+
+    result = _invoke(workspace, "--limit", "1")
+
+    assert result.exit_code == 0, result.output
+    assert len(json.loads((workspace / "r.refinement.json").read_text())["arms"]) == 1
+
+
+def test_refine_runs_again_over_a_declined_pass(workspace) -> None:
+    """A decline measured nothing, so re-running it costs nothing."""
+    save_recipe(_recipe({G[0]: 4, G[1]: 4, G[2]: 4}), workspace / "flat.json")
+    assert _invoke(workspace, recipe="flat.json").exit_code == 0
+
+    result = _invoke(workspace, recipe="flat.json")
+
+    assert result.exit_code == 0, result.output
+    assert "declined:" in result.output
 
 
 def test_refine_prints_the_control_before_the_pass_that_stopped_ends(
