@@ -994,6 +994,34 @@ def test_refine_names_the_sidecar_when_the_pass_stops(workspace, monkeypatch) ->
     assert str(workspace / "r.refinement.json") in result.output
 
 
+def test_refine_names_no_sidecar_when_the_control_pack_fails(
+    workspace, monkeypatch
+) -> None:
+    """A halt before the first bank names no path, because none exists.
+
+    The control packs before any record is written. A path named
+    here sends the operator hunting for a file the pass never wrote.
+    """
+    monkeypatch.setattr(
+        cli_refine,
+        "LlamaCppPacker",
+        lambda **kwargs: MemoryRecipePacker(
+            packed_bytes=500,
+            has_base=True,
+            row_widths=stack_row_widths(G),
+            out_path=kwargs["out_path"],
+            fail_stage="quantize" if kwargs["out_path"].stem == "control" else None,
+        ),
+    )
+
+    result = _invoke(workspace, "--limit", "3")
+
+    assert result.exit_code == 1
+    assert str(workspace / "r.refinement.json") not in result.output
+    assert "banked: nothing" in result.output
+    assert not (workspace / "r.refinement.json").exists()
+
+
 def test_refine_prints_the_control_before_the_pass_that_stopped_ends(
     workspace, monkeypatch
 ) -> None:

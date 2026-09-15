@@ -92,12 +92,13 @@ def _check_toolchain(tools: LlamaCppTools) -> None:
 
 
 def _check_destination(label: str, path: Path) -> None:
-    """Refuse a destination the pass could not write when it finishes.
+    """Refuse a destination the pass could not write.
 
-    The sidecar is the pass's only artifact and it is written last,
-    after every pack and every measurement, so every reason the write
-    could fail is checked before the first tool runs. The write
-    replaces a temporary file onto ``path``, which refuses a path
+    The sidecar is the pass's only artifact. The pass writes it
+    repeatedly as it runs, starting when the control measures. Every
+    reason the write could fail is checked before the first tool
+    runs, so an unwritable destination costs no measurement. The
+    write replaces a temporary file onto ``path``, which refuses a path
     that names a directory as surely as one whose parent is missing.
     The command offers both ``--out-dir`` and ``--out``, so an
     ``--out`` naming an existing directory is the reachable mistake.

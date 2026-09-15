@@ -30,9 +30,12 @@ importance matrix, and the destinations the sidecar and the run log
 are written to. A missing path costs no card time, and a finished
 pass is never discarded at its last step.
 
-A failure inside the pass names the sidecar path on that same
-channel. The pass banks its measurements there as it runs, so the
-operator copies them off a rented card without inferring the path.
+A failure inside the pass states what it banked, on that same
+channel. It names the sidecar path when a record landed, and says
+that nothing landed when the pass died before its control measured.
+`_BankedRecord` answers which, by wrapping the sink every bank
+reaches. A named path the operator cannot find is worse than
+silence, because it sends them hunting on a rented card.
 
 The frame names the evaluation corpus, the reference logits, and the
 importance matrix by content, each hashed once before the first arm
@@ -96,6 +99,7 @@ from __future__ import annotations
 
 import sys
 from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, cast
 
@@ -217,6 +221,45 @@ def _control_line(mean: float, chunks: int) -> str:
         The line.
     """
     return f"control: {mean:.6f} mean divergence over {chunks} chunks"
+
+
+@dataclass(slots=True)
+class _BankedRecord:
+    """Wrap the sidecar sink and answer whether a record landed.
+
+    Every bank reaches the sink through ``save``, so this wrapper
+    knows what survived a halt without a flag a raise site must set.
+    It notes the write only after the delegated call returns, so a
+    write that failed never counts as banked.
+
+    Attributes:
+        sink (RefinementSidecarSink): The sink every save reaches.
+        path (Path): The file that sink writes.
+        saved (bool): Whether one save returned.
+    """
+
+    sink: RefinementSidecarSink
+    path: Path
+    saved: bool = False
+
+    def save(self, sidecar: RefinementSidecar) -> None:
+        """Persist the record, then note that it landed.
+
+        Args:
+            sidecar: The search record so far.
+        """
+        self.sink.save(sidecar)
+        self.saved = True
+
+    def line(self) -> str:
+        """Word what the pass left behind.
+
+        Returns:
+            The sidecar path when a record landed, and the fact that
+            none did otherwise. One function words both, so a halt
+            cannot name a file the pass never wrote.
+        """
+        return f"banked: {self.path}" if self.saved else "banked: nothing"
 
 
 def _live_report(run_log: SafeRunLog) -> Reporter:
@@ -501,7 +544,7 @@ def refine(
         base_logits=base_logits,
         threads=threads,
     )
-    sink: RefinementSidecarSink = JsonRefinementSidecarFile(sidecar_path)
+    banked = _BankedRecord(JsonRefinementSidecarFile(sidecar_path), sidecar_path)
     try:
         # The frame names the evaluation corpus by content, never by
         # path alone (ADR-0031 decision 5). This process reads and
@@ -519,7 +562,7 @@ def refine(
             packer_for,
             meter,
             frame,
-            sink,
+            banked,
             bar=bar,
             limit=limit,
             out_dir=out_dir,
@@ -527,7 +570,7 @@ def refine(
             report=_live_report(run_log),
         )
     except (VramfitError, OSError) as error:
-        typer.echo(f"sidecar: {sidecar_path}", err=True)
+        typer.echo(banked.line(), err=True)
         _halt(str(error))
         return
     _report_outcome(sidecar)
