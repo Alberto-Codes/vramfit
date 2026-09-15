@@ -906,12 +906,11 @@ change.
 **Encoder**
 :   The numerical fit that turns a float tensor into stored
     quantization blocks — the scales and the level index per element.
-    The scan adapter ships two today,
+    Distinct from the **within-group method**, the token a map records.
+    Not "quantizer", which names stock `llama-quantize` and the ported
+    reference round trips. The term governs new naming, and the shipped
     `q0_assisted_quantize_dequantize` and `q0_ref_quantize_dequantize`
-    in `src/vramfit/adapters/outbound/scan/`, and their names stand.
-    The term governs new naming. Not "quantizer", which names stock
-    `llama-quantize`. Distinct from the **within-group method**, the
-    token a map records.
+    keep their names.
     [ADR-0032](../adr/0032-assisted-q2-encoder-home.md) decision 2
     proposes one shared Q2_0 encoder, which the scan meter and the pack
     path both call. That ADR stays Proposed, so no encoder reaches the

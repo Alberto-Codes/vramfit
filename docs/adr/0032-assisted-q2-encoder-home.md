@@ -179,6 +179,11 @@ The third cannot deliver the measured benefit or matching provenance.
    the stack quantization” also stands, because it describes stock
    llama.cpp and this record changes no stock behavior.
 
+   ADR-0016 carries a contested note beside the clause, and the ADR
+   index marks its row. This record is Proposed, so those markers read
+   contested and not superseded. Acceptance turns them into the
+   correction this decision states.
+
 ## Consequences and implementation handoff
 
 - vramfit owns one numerical encoder and a GGUF preprocessing stage.
@@ -201,8 +206,9 @@ The third cannot deliver the measured benefit or matching provenance.
   disabled`. The negative control in
   [transcript.txt](evidence/0032/transcript.txt) records that exit.
   The operator sees a mid-pack abort and no artifact, after the
-  preprocessor already wrote a full-size temporary GGUF. Issue #516 tracks
-  the matcher divergence that reaches this case. The implementation must
+  preprocessor already wrote a full-size temporary GGUF. Issue #305 tracks
+  the matcher divergence that reaches this case, where an override passes
+  the #303 check and still changes no type. The implementation must
   refuse before the preprocessor writes, not after.
 - Same scan and pack semantics remove this encoder mismatch. They do not
   equate the torch scan frame with runtime damage or validate additive predictions.
