@@ -154,8 +154,9 @@ The third cannot deliver the measured benefit or matching provenance.
    The glossary's pack-side rule reads assisted as “its type reads the
    matrix.” That wording describes stock `llama-quantize`, and it scores
    a pre-encoded tensor unassisted. This record does not edit the
-   glossary, because it stays Proposed. Acceptance carries the matching
-   glossary amendment, and the open questions below track it.
+   glossary's pack-side assisted rule, because it stays Proposed.
+   Acceptance carries the matching glossary amendment, and the open
+   questions below track it.
 
    Never relabel an old map or resume its nominal-2 cells under the new
    identity. Old recipes remain reproducible through their stock path.
