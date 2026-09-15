@@ -209,6 +209,15 @@ class TestRefinementSidecarSinkContract:
         assert [a["arm"] for a in data["arms"]] == ["arm01"]
         assert data == sidecar_to_dict(sidecar)
 
+    def test_a_later_save_replaces_the_earlier_record(self, build, tmp_path) -> None:
+        """A pass banks one record repeatedly, so the last save wins."""
+        sink, readback = build(tmp_path)
+        sink.save(stopped_sidecar())
+
+        sink.save(won_sidecar())
+
+        assert readback() == sidecar_to_dict(won_sidecar())
+
     def test_saved_declined_pass_reads_back_finished(self, build, tmp_path) -> None:
         """Declining is an outcome, not an interruption."""
         sink, readback = build(tmp_path)

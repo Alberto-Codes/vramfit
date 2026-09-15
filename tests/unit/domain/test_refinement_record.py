@@ -444,37 +444,6 @@ def test_a_declined_pass_classifies_as_nothing_measured() -> None:
 # --- A record the pass banked before it finished (#592) ---
 
 
-def test_a_stopped_pass_is_not_worded_as_one_that_cleared_nothing() -> None:
-    # Both an unfinished pass and a finished pass that kept nothing
-    # carry an empty winner. Only one of them judged its arms.
-    sidecar = _sidecar(
-        arms=(_arm(sigma=-2.0),),
-        winner=None,
-        neighbourhood_moves=385,
-        finished=False,
-    )
-
-    summary = sidecar.outcome().summary()
-
-    assert "stopped before selecting" in summary
-    assert "the strongest reached -2.0" in summary
-    assert "cleared" not in summary
-
-
-def test_a_stopped_pass_with_every_arm_excluded_says_none_was_judged() -> None:
-    sidecar = _sidecar(
-        arms=(_arm(budget_margin=-1),),
-        winner=None,
-        neighbourhood_moves=385,
-        finished=False,
-    )
-
-    summary = sidecar.outcome().summary()
-
-    assert "stopped before selecting" in summary
-    assert "none was judged on merit" in summary
-
-
 def test_a_stopped_pass_that_names_a_winner_is_refused() -> None:
     # Selection never ran, so the record cannot claim its result.
     with pytest.raises(RefinementRecordError, match="stopped before selecting"):
@@ -500,5 +469,4 @@ def test_a_stopped_pass_carries_its_arms_and_its_control() -> None:
     ).outcome()
 
     assert outcome.measured() == 1
-    assert outcome.finished is False
     assert outcome.winner is None

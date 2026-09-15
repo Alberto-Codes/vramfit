@@ -975,6 +975,25 @@ def test_refine_keeps_the_arms_a_stopped_pass_measured(workspace, monkeypatch) -
     assert banked["control"]["chunks"] == len(CHUNKS)
 
 
+def test_refine_names_the_sidecar_when_the_pass_stops(workspace, monkeypatch) -> None:
+    """The failure output alone tells the operator where the arms are.
+
+    A rented card carries a deletion deadline, so an operator who
+    must infer the path from a naming convention loses the arms the
+    pass paid for.
+    """
+    monkeypatch.setattr(
+        cli_refine,
+        "LlamaCppDivergenceMeter",
+        lambda **kwargs: MemoryRuntimeDivergenceMeter(default=CHUNKS, fail_after=2),
+    )
+
+    result = _invoke(workspace, "--limit", "3")
+
+    assert result.exit_code == 1
+    assert str(workspace / "r.refinement.json") in result.output
+
+
 def test_refine_prints_the_control_before_the_pass_that_stopped_ends(
     workspace, monkeypatch
 ) -> None:

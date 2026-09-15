@@ -376,10 +376,6 @@ class PassOutcome:
         bar (float): The evidence bar in sigma the pass ran against.
         neighbourhood_moves (int): How many byte-neutral moves the
             neighbourhood held, before any stride sampled it.
-        finished (bool): Whether the pass measured every arm it
-            selected and ran selection. False marks a pass that
-            stopped partway, whose arms are real measurements and
-            whose empty winner means selection never ran.
 
     Examples:
         Report a finished pass:
@@ -395,7 +391,6 @@ class PassOutcome:
     winner: ArmRecord | None
     bar: float
     neighbourhood_moves: int
-    finished: bool
 
     def measured(self) -> int:
         """Count the arms the pass packed and measured.
@@ -434,24 +429,6 @@ class PassOutcome:
             return f"{len(self.judged)} judged of {phrase}"
         return phrase
 
-    def stopped_phrase(self) -> str:
-        """Word a pass that stopped before it finished.
-
-        A pass that stopped banked real measurements and reached no
-        selection, so it never judged an arm and failed no bar. This
-        wording says which, because the alternative reading — a pass
-        that weighed these arms and kept none — is the same empty
-        winner field.
-
-        Returns:
-            What the pass banked and how strong the best of it was.
-        """
-        stopped = f"the pass stopped before selecting: {self.sample_phrase()}"
-        strongest = self.strongest_judged()
-        if strongest is None:
-            return f"{stopped}, and none was judged on merit"
-        return f"{stopped}, and the strongest reached {strongest.sigma:+.1f} sigma"
-
     def summary(self) -> str:
         """State the outcome in one sentence.
 
@@ -459,11 +436,8 @@ class PassOutcome:
             What the pass kept or why it kept nothing, against the
             arms it judged and the neighbourhood they came from. An
             excluded arm is named as excluded and never as one that
-            failed the bar, and a pass that stopped partway is named
-            as stopped and never as one that cleared nothing.
+            failed the bar.
         """
-        if not self.finished:
-            return self.stopped_phrase()
         over = f"{len(self.excluded)} packed over the weight budget"
         if self.winner is not None:
             kept = (
@@ -689,9 +663,8 @@ class RefinementSidecar:
 
         Returns:
             The arms selection judged, the arms the weight budget
-            excluded, the arm the pass kept, and whether the pass
-            finished. A declined pass measured nothing, so every part
-            is empty.
+            excluded, and the arm the pass kept. A declined pass
+            measured nothing, so every part is empty.
         """
         return PassOutcome(
             judged=tuple(a for a in self.arms if a.fits_budget()),
@@ -699,5 +672,4 @@ class RefinementSidecar:
             winner=self.winning_arm(),
             bar=self.bar,
             neighbourhood_moves=self.neighbourhood_moves,
-            finished=self.finished,
         )

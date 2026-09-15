@@ -30,6 +30,10 @@ importance matrix, and the destinations the sidecar and the run log
 are written to. A missing path costs no card time, and a finished
 pass is never discarded at its last step.
 
+A failure inside the pass names the sidecar path on that same
+channel. The pass banks its measurements there as it runs, so the
+operator copies them off a rented card without inferring the path.
+
 The frame names the evaluation corpus, the reference logits, and the
 importance matrix by content, each hashed once before the first arm
 runs. Two passes measured against different bytes never record the
@@ -523,6 +527,7 @@ def refine(
             report=_live_report(run_log),
         )
     except (VramfitError, OSError) as error:
+        typer.echo(f"sidecar: {sidecar_path}", err=True)
         _halt(str(error))
         return
     _report_outcome(sidecar)

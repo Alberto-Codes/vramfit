@@ -345,10 +345,11 @@ change.
     **arms** selection could choose between, the **excluded arms**
     the **weight budget** kept out of it, and the winner. One
     classification, derived from the **refinement sidecar** and never
-    stored beside it. It words a **stopped pass** as stopped, never
-    as one that cleared nothing. Every surface that reports a pass renders it —
+    stored beside it. Every surface that reports a pass renders it —
     the terminal summary and the run log — so no two can describe one
-    pass differently. Lives in
+    pass differently. It words a pass that reached selection. A
+    **stopped pass** has no wording surface, and its `finished` field
+    is what a reader checks. Lives in
     `vramfit.domain.refinement_record.PassOutcome`. A judged arm is
     simply an arm that is not excluded.
 
