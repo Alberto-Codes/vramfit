@@ -906,27 +906,33 @@ change.
 **Encoder**
 :   The numerical fit that turns a float tensor into stored
     quantization blocks — the scales and the level index per element.
-    vramfit owns one encoder per assisted type, behind the outbound
-    adapters, and the scan meter and the pack path share it
-    ([ADR-0032](../adr/0032-assisted-q2-encoder-home.md) decision 2).
-    Distinct from the **within-group method**, the token a map records.
-    Not "quantizer", which names stock `llama-quantize` and the ported
-    reference round trips.
+    The scan adapter ships two today,
+    `q0_assisted_quantize_dequantize` and `q0_ref_quantize_dequantize`
+    in `src/vramfit/adapters/outbound/scan/`, and their names stand.
+    The term governs new naming. Not "quantizer", which names stock
+    `llama-quantize`. Distinct from the **within-group method**, the
+    token a map records.
+    [ADR-0032](../adr/0032-assisted-q2-encoder-home.md) decision 2
+    proposes one shared Q2_0 encoder, which the scan meter and the pack
+    path both call. That ADR stays Proposed, so no encoder reaches the
+    pack path yet.
 
 **Pre-encoding**
 :   Writing tensors that an **encoder** already fitted into a temporary
-    mixed GGUF, before stock `llama-quantize` runs. The stock pass
-    copies those payloads and quantizes the rest
-    ([ADR-0032](../adr/0032-assisted-q2-encoder-home.md) decision 1).
+    mixed GGUF, before stock `llama-quantize` runs, so the stock pass
+    copies those payloads and quantizes the rest.
+    [ADR-0032](../adr/0032-assisted-q2-encoder-home.md) decision 1
+    proposes it and stays Proposed, so no pack path pre-encodes today.
     The verb is **pre-encode**. Not "pre-quantize" or "patching the
     base".
 
 **Preprocessor**
-:   The vramfit-owned CPU subprocess that pre-encodes. It reads the
+:   The CPU subprocess that pre-encodes.
+    [ADR-0032](../adr/0032-assisted-q2-encoder-home.md) decision 1
+    proposes it, and vramfit ships none yet. As proposed it reads the
     **base GGUF**, replaces only the selected tensors, and writes the
     temporary mixed GGUF. It never writes the base GGUF or a published
-    artifact. The pack adapter stays a subprocess driver around it
-    ([ADR-0032](../adr/0032-assisted-q2-encoder-home.md) decision 1).
+    artifact, and the pack adapter stays a subprocess driver around it.
     Not "rewriter" or "shim".
 
 **Type override**

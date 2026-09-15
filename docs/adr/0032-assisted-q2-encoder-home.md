@@ -9,8 +9,15 @@
   for a subsequent re-solve. His 2026-09-14 “go” commissioned this record.
   These rulings came through the task brief. They prohibit vendoring the
   reference patch or waiting for upstream.
-- **Proposes amendments to:** [ADR-0016 decision 2](0016-imatrix-in-the-pack-path.md#decision)
-  and [ADR-0018's assisted q0 method](0018-kquant-within-group-method.md#amendment-q0-imx-gets-built-2026-08-21-issue-350).
+- **Proposes amendments to:** three clauses. ADR-0016 carries two
+  decision lists, so each reference below names its list.
+  - [ADR-0016's original decision 2](0016-imatrix-in-the-pack-path.md#decision),
+    the CPU-subprocess-driver clause.
+  - [ADR-0016's 2026-08-21 amendment, decision 2](0016-imatrix-in-the-pack-path.md#amendment-the-assisted-shares-differ-2026-08-21-issue-278),
+    the "cost of the width, not a toolchain handicap" clause. Decision 5
+    below corrects it.
+  - [ADR-0018's assisted q0 method](0018-kquant-within-group-method.md#amendment-q0-imx-gets-built-2026-08-21-issue-350).
+
   The maintainer accepts this architecture through review. This record
   implements no encoder and starts no re-solve.
 
@@ -74,18 +81,19 @@ The probe establishes tensor passthrough, including a three-dimensional
 expert stack. It does not measure encoder accuracy, full-model loading,
 production memory use, or passthrough on every llama.cpp version.
 
-## Options and ADR-0016 decision 2
+## Options and ADR-0016's original decision 2
 
-Decision 2 keeps matrix generation outside pack and calls pack a
+That clause keeps matrix generation outside pack and calls pack a
 “CPU subprocess driver.” It does not already authorize an in-process
 vramfit tensor encoder. Merely running on the CPU does not settle
-that boundary.
+that boundary. ADR-0016's 2026-08-21 amendment also numbers a decision
+2, and this section never means that one.
 
-| Option | Relationship to decision 2 | Consequence |
+| Option | Relationship to the driver clause | Consequence |
 | --- | --- | --- |
 | Pre-encode selected Q2_0 tensors into a temporary base GGUF | A CPU subprocess preserves the driver's role. This ADR explicitly extends its responsibilities to that preprocessing step. | The probe proves stock passthrough. vramfit owns one encoder and selected-tensor GGUF rewriting. |
 | Implement whole-file quantization inside vramfit | An in-process implementation contradicts the driver boundary. A subprocess preserves its literal form but replaces the delegated toolchain's responsibility. | Requires broader authority and ownership of every supported quantizer, override rule, metadata path, and file layout. |
-| Add the encoder only to the scan meter | Leaves pack unchanged and therefore fits decision 2. | Measures a hypothetical assisted artifact. Stock packing still emits unassisted Q2_0, so those prices cannot support the funded re-solve. |
+| Add the encoder only to the scan meter | Leaves pack unchanged and therefore fits the driver clause. | Measures a hypothetical assisted artifact. Stock packing still emits unassisted Q2_0, so those prices cannot support the funded re-solve. |
 
 The first option needs no upstream change and carries no third-party patch.
 The second adds ownership the measured gain does not require.
@@ -94,7 +102,7 @@ The third cannot deliver the measured benefit or matching provenance.
 ## Decision
 
 1. **Select pre-encoding through a vramfit-owned CPU subprocess.**
-   Amend ADR-0016 decision 2 to permit this preprocessing stage.
+   Amend ADR-0016's original decision 2 to permit this preprocessing stage.
    The pack adapter remains a subprocess driver. Matrix generation
    remains outside pack. Stock `llama-quantize` retains final whole-file
    quantization and assembly.
@@ -129,6 +137,10 @@ The third cannot deliver the measured benefit or matching provenance.
 
    Introduce a distinct serialized `within_group` token for this successor
    to `q0-imx`. The existing token keeps its stock-Q2_0 meaning.
+   This record states no token, because the string is a vocabulary
+   decision and ADR-0018 renamed one such token once already.
+   [Issue #599](https://github.com/Alberto-Codes/vramfit/issues/599)
+   owns the naming, and the implementation waits for it.
    The implementation must carry the new identity through map fingerprints,
    checkpoints, recipes, and pack selection. It must record the encoder
    revision and matrix provenance with the packed result.
@@ -148,6 +160,25 @@ The third cannot deliver the measured benefit or matching provenance.
    artifact identities for the re-solve. An old unassisted-Q2_0 map plus
    an assisted pack is a different experiment and cannot satisfy this gate.
 
+5. **Correct ADR-0016's 2026-08-21 amendment, decision 2.**
+   That clause states: “The asymmetry is a cost of the width, not a
+   toolchain handicap. No type reaches an assisted fit at 2.25 bits on
+   rows of 2688 and 1856.” The rebuy refutes it. `Q2_0` is 2.25
+   effective bits on exactly those rows
+   ([ADR-0028](0028-expert-stack-type-table.md) decision 1). The
+   `c2-assisted-q2_0` arm reached an assisted fit there and took mean
+   KLD from 0.204318 to 0.071428.
+
+   The conclusion inverts. It was a toolchain handicap, because stock
+   `quantize_q2_0` discards the matrix. The width admits an assisted
+   fit, and the stock encoder declines to compute one.
+
+   The amendment's decisions 1 and 3 stand. Its assisted-share figures
+   stand, because they measure what stock llama.cpp packed. ADR-0028's
+   consequence “At nominal 2 and 8 the importance matrix does not shape
+   the stack quantization” also stands, because it describes stock
+   llama.cpp and this record changes no stock behavior.
+
 ## Consequences and implementation handoff
 
 - vramfit owns one numerical encoder and a GGUF preprocessing stage.
@@ -159,10 +190,27 @@ The third cannot deliver the measured benefit or matching provenance.
 - Toolchain changes require the passthrough probe again. The implementation
   must test overrides, matrix exclusions, zero-count experts, and the target
   row widths of 2688 and 1856.
+- **A pre-encoded tensor loses ADR-0012 decision 3's record-and-continue
+  floor.** Today a layer that no override reaches takes the `--pure`
+  floor. The pack step records it in `PackResult.floored_layers`, prints
+  one `warning:` line, and finishes the artifact (ADR-0012, 2026-08-16
+  amendment, issue #307). Pre-encoding removes that outcome for the
+  tensors it rewrites. A pre-encoded Q2_0 tensor that the quantizer's own
+  matching then floors is an existing Q2_0 tensor at a different resolved
+  type, so `llama-quantize` exits 1 with `requantizing from type q2_0 is
+  disabled`. The negative control in
+  [transcript.txt](evidence/0032/transcript.txt) records that exit.
+  The operator sees a mid-pack abort and no artifact, after the
+  preprocessor already wrote a full-size temporary GGUF. Issue #516 tracks
+  the matcher divergence that reaches this case. The implementation must
+  refuse before the preprocessor writes, not after.
 - Same scan and pack semantics remove this encoder mismatch. They do not
   equate the torch scan frame with runtime damage or validate additive predictions.
 - Acceptance requires a tiny end-to-end pack/load test with a stock runtime,
   plus scan reconstruction of the blocks that pack actually emits.
 - The next task implements these requirements. The maintainer starts that task
   and the funded re-solve. [Issue #597](https://github.com/Alberto-Codes/vramfit/issues/597)
-  tracks this handoff. This change contains only the record and its evidence.
+  closed with this record, so the open handoff is
+  [issue #599](https://github.com/Alberto-Codes/vramfit/issues/599) under
+  [chart #158](https://github.com/Alberto-Codes/vramfit/issues/158).
+  This change contains only the record and its evidence.

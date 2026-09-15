@@ -114,8 +114,7 @@ Every figure below names the archive block it comes from.
 | Same-top agreement | 83.127 ± 0.096 % | 89.441 ± 0.079 % |
 | PPL ratio | 1.161096 ± 0.002417 | 1.036637 ± 0.001263 |
 
-Both blocks ran on one pod. The comparison above uses those two blocks
-and no other.
+The comparison above uses those two blocks and no other.
 
 The archive's `REPORT.md`, sections 0 and 7.4, specifies the measurement
 frame: stock b10362, CUDA, H100 SXM, full 594-chunk WikiText-2 split,
