@@ -1073,10 +1073,11 @@ winning arm to an artifact needs a tier-3 slice and a serve test.
 
 Run log: refine_started (arms, neighbourhood_moves, bar) or
 refine_declined (reason, neighbourhood_moves),
-base_converted, then the control's arm_packing, arm_packed (with
-budget_margin), and control_measured, then per arm arm_packing,
-arm_packed, arm_measured, and arm_over_budget for an excluded
-arm, then refine_finished (winner, judged, excluded, refusal).
+base_converted, then the control's arm_packing, arm_packed, and
+control_measured, then per arm arm_packing, arm_packed,
+arm_measured, and arm_over_budget for an excluded
+arm, then refine_finished (winner, judged, excluded, refusal). Every
+arm_packed carries budget_margin, control and candidate alike.
 
 control_measured and arm_measured carry the same fields: arm, mean,
 delta, sigma, better_chunks, and chunks. A name and a chunk count is

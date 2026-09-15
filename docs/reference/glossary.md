@@ -828,6 +828,14 @@ change.
     finished pass that kept nothing and a stopped pass carry the same
     empty winner.
 
+**Banked record**
+:   A **refinement sidecar** the pass has already written. The pass
+    banks the record when the control measures, again after every
+    arm, and last with the winner, so a **stopped pass** leaves one
+    behind. A halt inside the pass names it. A later pass refuses
+    that destination unless the caller states `--overwrite`. Not
+    "checkpoint" or "partial save".
+
 **Neighbourhood decline**
 :   The refinement pass's answer when it will not measure a recipe's
     neighbourhood. The published 49B recipe is the empty case: 81 of
