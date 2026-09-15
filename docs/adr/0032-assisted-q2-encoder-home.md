@@ -4,11 +4,10 @@
 - **Date:** 2026-09-14
 - **Origin:** [Issue #597](https://github.com/Alberto-Codes/vramfit/issues/597),
   a `chart:discuss` child of [chart #158](https://github.com/Alberto-Codes/vramfit/issues/158).
-- **Authority:** The maintainer authorized reimplementation on 2026-09-05:
-  “a but reimplement we do our own arch etc.” He funded about one pod-hour
-  for a subsequent re-solve. His 2026-09-14 “go” commissioned this record.
-  These rulings came through the task brief. They prohibit vendoring the
-  reference patch or waiting for upstream.
+- **Authority:** Reimplementation was authorized on 2026-09-05, with
+  approximately one pod-hour funded for a subsequent re-solve. This record
+  was commissioned on 2026-09-14. These rulings prohibit vendoring the
+  reference patch and prohibit waiting for upstream.
 - **Proposes amendments to:** two clauses. ADR-0016 carries two
   decision lists, so each reference below names its list.
   - [ADR-0016's original decision 2](0016-imatrix-in-the-pack-path.md#decision),
