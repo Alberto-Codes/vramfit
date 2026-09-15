@@ -991,7 +991,11 @@ def test_refine_names_the_sidecar_when_the_pass_stops(workspace, monkeypatch) ->
     result = _invoke(workspace, "--limit", "3")
 
     assert result.exit_code == 1
-    assert str(workspace / "r.refinement.json") in result.output
+    # `result.stderr` and not `result.output`: on the pinned click
+    # 8.4.2 `output` holds both streams, so it would pass whichever
+    # channel carried the line (#293). The halt writes it to stderr
+    # beside the error, which is where an operator reads it.
+    assert f"banked: {workspace / 'r.refinement.json'}" in result.stderr
 
 
 def test_refine_names_no_sidecar_when_the_control_pack_fails(
@@ -1017,8 +1021,9 @@ def test_refine_names_no_sidecar_when_the_control_pack_fails(
     result = _invoke(workspace, "--limit", "3")
 
     assert result.exit_code == 1
-    assert str(workspace / "r.refinement.json") not in result.output
-    assert "banked: nothing" in result.output
+    # Pinned to stderr for the reason the sibling test states.
+    assert str(workspace / "r.refinement.json") not in result.stderr
+    assert "banked: nothing" in result.stderr
     assert not (workspace / "r.refinement.json").exists()
 
 
