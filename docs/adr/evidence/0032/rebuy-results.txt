@@ -1,0 +1,107 @@
+--- ctl-published ---
+file: /workspace/rebuy/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-fit16gib.gguf
+bytes: 16922476480
+sha256: 85ed06fac2f879ee83f83264f3b7cad9bde4947983976205ea8c2c5d6291c062
+0.44.301.415 I kl_divergence: computing over 594 chunks, n_ctx=512, batch_size=2048, n_seq=4
+chunk             PPL               ln(PPL(Q)/PPL(base))          KL Divergence              Δp RMS            Same top p
+Mean PPL(Q)                   :   7.917417 ±   0.054002
+Mean PPL(base)                :   6.819158 ±   0.046077
+Cor(ln(PPL(Q)), ln(PPL(base))):  95.31%
+Mean ln(PPL(Q)/PPL(base))     :   0.149329 ±   0.002081
+Mean PPL(Q)/PPL(base)         :   1.161055 ±   0.002416
+Mean PPL(Q)-PPL(base)         :   1.098259 ±   0.017216
+Mean    KLD:   0.204322 ±   0.001160
+Maximum KLD:  10.358469
+99.9%   KLD:   5.124432
+Median  KLD:   0.076788
+Same top p: 83.146 ± 0.096 %
+
+--- ctl-repro ---
+file: /workspace/rebuy/ctl-repro.gguf
+bytes: 16922476352
+sha256: 5f63a831138cb17d01be9b7d1ca599da32f44488ffc5dfb7dcf26b12c93618ec
+0.49.684.398 I kl_divergence: computing over 594 chunks, n_ctx=512, batch_size=2048, n_seq=4
+chunk             PPL               ln(PPL(Q)/PPL(base))          KL Divergence              Δp RMS            Same top p
+Mean PPL(Q)                   :   7.917699 ±   0.054005
+Mean PPL(base)                :   6.819158 ±   0.046077
+Cor(ln(PPL(Q)), ln(PPL(base))):  95.31%
+Mean ln(PPL(Q)/PPL(base))     :   0.149365 ±   0.002081
+Mean PPL(Q)/PPL(base)         :   1.161096 ±   0.002417
+Mean PPL(Q)-PPL(base)         :   1.098540 ±   0.017219
+Mean    KLD:   0.204318 ±   0.001160
+Maximum KLD:  10.506808
+99.9%   KLD:   5.159615
+Median  KLD:   0.076860
+Same top p: 83.127 ± 0.096 %
+
+--- c1-iq4nl ---
+file: /workspace/rebuy/c1-iq4nl.gguf
+bytes: 16922476352
+sha256: 7d8c0ebc489cd0de2e65d7fdf2f25fe05a3226c30c11e903fa071a91716a06ff
+1.06.753.202 I kl_divergence: computing over 594 chunks, n_ctx=512, batch_size=2048, n_seq=4
+chunk             PPL               ln(PPL(Q)/PPL(base))          KL Divergence              Δp RMS            Same top p
+Mean PPL(Q)                   :   7.937282 ±   0.054184
+Mean PPL(base)                :   6.819158 ±   0.046077
+Cor(ln(PPL(Q)), ln(PPL(base))):  95.31%
+Mean ln(PPL(Q)/PPL(base))     :   0.151835 ±   0.002082
+Mean PPL(Q)/PPL(base)         :   1.163968 ±   0.002424
+Mean PPL(Q)-PPL(base)         :   1.118124 ±   0.017325
+Mean    KLD:   0.204464 ±   0.001152
+Maximum KLD:  10.816854
+99.9%   KLD:   5.120579
+Median  KLD:   0.077489
+Same top p: 83.104 ± 0.096 %
+
+--- c2-assisted-q2_0 ---
+file: /workspace/rebuy/c2-assisted-q2_0.gguf
+bytes: 16922476352
+sha256: 23c02d1635efcb3f4ea0fc4154385ae131fd7a52a637540b7b064f2318e1e327
+1.08.888.474 I kl_divergence: computing over 594 chunks, n_ctx=512, batch_size=2048, n_seq=4
+chunk             PPL               ln(PPL(Q)/PPL(base))          KL Divergence              Δp RMS            Same top p
+Mean PPL(Q)                   :   7.068991 ±   0.047539
+Mean PPL(base)                :   6.819158 ±   0.046077
+Cor(ln(PPL(Q)), ln(PPL(base))):  98.37%
+Mean ln(PPL(Q)/PPL(base))     :   0.035982 ±   0.001218
+Mean PPL(Q)/PPL(base)         :   1.036637 ±   0.001263
+Mean PPL(Q)-PPL(base)         :   0.249833 ±   0.008579
+Mean    KLD:   0.071428 ±   0.000432
+Maximum KLD:   5.186277
+99.9%   KLD:   2.074638
+Median  KLD:   0.026025
+Same top p: 89.441 ± 0.079 %
+
+--- c3-dense-q5_0 ---
+file: /workspace/rebuy/c3-dense-q5_0.gguf
+bytes: 16363866944
+sha256: e858c3387ace45c1705a9a0525a72a2f2440ae85add5b0a20e3e5da00f6c38f1
+1.27.684.134 I kl_divergence: computing over 594 chunks, n_ctx=512, batch_size=2048, n_seq=4
+chunk             PPL               ln(PPL(Q)/PPL(base))          KL Divergence              Δp RMS            Same top p
+Mean PPL(Q)                   :   7.935943 ±   0.054355
+Mean PPL(base)                :   6.819158 ±   0.046077
+Cor(ln(PPL(Q)), ln(PPL(base))):  95.19%
+Mean ln(PPL(Q)/PPL(base))     :   0.151666 ±   0.002112
+Mean PPL(Q)/PPL(base)         :   1.163772 ±   0.002458
+Mean PPL(Q)-PPL(base)         :   1.116784 ±   0.017592
+Mean    KLD:   0.209928 ±   0.001173
+Maximum KLD:  10.572269
+99.9%   KLD:   5.201995
+Median  KLD:   0.080595
+Same top p: 82.692 ± 0.097 %
+
+--- c3b-dense-head-q5_0 ---
+file: /workspace/rebuy/c3b-dense-head-q5_0.gguf
+bytes: 16099625792
+sha256: 4dd2c75bb99002217cf13b3bf3c2fe24b422d092783ed1aa0b8b719911cda8fd
+1.37.715.248 I kl_divergence: computing over 594 chunks, n_ctx=512, batch_size=2048, n_seq=4
+chunk             PPL               ln(PPL(Q)/PPL(base))          KL Divergence              Δp RMS            Same top p
+Mean PPL(Q)                   :   7.958424 ±   0.054528
+Mean PPL(base)                :   6.819158 ±   0.046077
+Cor(ln(PPL(Q)), ln(PPL(base))):  95.13%
+Mean ln(PPL(Q)/PPL(base))     :   0.154495 ±   0.002125
+Mean PPL(Q)/PPL(base)         :   1.167068 ±   0.002480
+Mean PPL(Q)-PPL(base)         :   1.139265 ±   0.017773
+Mean    KLD:   0.213174 ±   0.001181
+Maximum KLD:  11.040048
+99.9%   KLD:   5.244077
+Median  KLD:   0.083826
+Same top p: 82.465 ± 0.098 %
