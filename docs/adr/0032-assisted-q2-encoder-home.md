@@ -62,9 +62,13 @@ The reference patch specifies a different Q2_0 scale search, described
 in [issue #461](https://github.com/Alberto-Codes/vramfit/issues/461#issuecomment-5486773582).
 It tries three signed scale seeds and four Lloyd iterations per seed.
 It scores candidates after fp16 scale rounding against levels
-`{-1, 0, 1, 2}`. The existing Q4_0 helper supplies precedent, not an
-unchanged Q2_0 implementation. The patch is a specification to
-reimplement and verify. vramfit must not carry or apply it.
+`{-1, 0, 1, 2}`. The same comment records two further facts. The patch
+changes the unassisted path too, so `quantize_row_q2_0_ref` runs the
+same Lloyd search at weight 1.0. The published numbers do not separate
+the search gain from the importance-matrix gain. The existing Q4_0
+helper supplies precedent, not an unchanged Q2_0 implementation. The
+patch is a specification to reimplement and verify. vramfit must not
+carry or apply it.
 
 ## Experiment: can stock packing preserve pre-encoded tensors?
 
@@ -155,7 +159,9 @@ The third cannot deliver the measured benefit or matching provenance.
    not the binary that performed it. The matrix weighted the encoder's
    candidate selection, so those bytes count toward the artifact's
    assisted share. A Q2_0 tensor the matrix does not cover, and one an
-   exclusion drops, packs unassisted as before.
+   exclusion drops, packs unassisted as before. The open questions below
+   record that no measurement separates the matrix's contribution from
+   the search's, which this accounting assumes.
 
    The glossary's pack-side rule reads assisted as “its type reads the
    matrix.” That wording describes stock `llama-quantize`, and it scores
@@ -178,6 +184,8 @@ The third cannot deliver the measured benefit or matching provenance.
    Record the base, matrix, map, recipe, encoder, toolchain, and final
    artifact identities for the re-solve. An old unassisted-Q2_0 map plus
    an assisted pack is a different experiment and cannot satisfy this gate.
+   The open questions below bound what this re-solve's prices may claim,
+   because the measured gain does not separate the search from the matrix.
 
 5. **Correct ADR-0016's 2026-08-21 amendment, decision 2.**
    That clause states: “The asymmetry is a cost of the width, not a
@@ -286,3 +294,14 @@ The third cannot deliver the measured benefit or matching provenance.
   changed the encoder and kept the shipped recipe's allocation, so no
   measurement on record says whether cheaper nominal-2 cells move the
   solver's choices. Decision 4 requires the new map before anyone answers.
+- No measurement separates the search gain from the matrix gain. The
+  `c2-assisted-q2_0` arm ran the patched encoder
+  ([evidence](evidence/0032/README.md#rebuy-evidence)), and that patch
+  also runs the Lloyd search unassisted at weight 1.0. The 0.204318 to
+  0.071428 result therefore credits both changes together, and a
+  weight-1.0 search would deliver part of it on tensors the matrix never
+  covers. Running the two apart settles it, and the split that
+  [issue #601](https://github.com/Alberto-Codes/vramfit/issues/601)
+  builds is where that measurement belongs. Until the separation exists,
+  decision 3's assisted-share accounting and any nominal-2 cell price
+  drawn from it are not publishable numbers.

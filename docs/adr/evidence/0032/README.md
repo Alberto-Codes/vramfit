@@ -38,14 +38,20 @@ partial output, which is never an accepted artifact.
   which failed before quantization because `llama.context_length` was absent.
   The corrected fixture adds context length and RMS normalization metadata.
 
-The archived files normalize two path roots and change nothing else.
-`<repo>` replaces the session's working directory, and `<llama.cpp>`
-replaces the local llama.cpp checkout. Every command, argument, exit
-code, byte count, and hash reads as the session produced it.
+The archived transcripts normalize one path root and change nothing
+else. `<repo>` replaces the session's working directory in
+[transcript.txt](transcript.txt) and
+[initial-missing-metadata.txt](initial-missing-metadata.txt). Every
+command, argument, exit code, byte count, and hash in them reads as the
+session produced it.
+
+This page substitutes a second root below. `<llama.cpp>` stands for the
+local llama.cpp checkout in the reproduce command. Neither transcript
+carries that root.
 
 The session copied the archived stock toolchain into `scratch/stock-b10362`
 and repeated the successful probes there. The committed transcript is that
-repeat, with its output unchanged apart from those two roots. The session
+repeat, with its output unchanged apart from that one root. The session
 executed:
 
 ```bash
