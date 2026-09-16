@@ -105,8 +105,10 @@ so the conclusion does not depend on interpreting a progress line.
   records that discovery. No inference or GPU measurement ran.
 - The fixture has a two-expert stack with logical shape `[256, 256, 2]`,
   one F16 attention tensor, and one F32 norm. It is not a runnable model.
-- This probe establishes passthrough on this build. Production integration
-  still needs real row widths, complete metadata preservation, and load tests.
+- This probe establishes passthrough on this build.
+  [The row-width section](#target-row-widths-2688-and-1856) below records
+  the real widths and a runtime load on the same build. Production
+  integration still needs complete metadata preservation.
 
 ## Target row widths 2688 and 1856
 
