@@ -145,9 +145,13 @@ logic + hypothesis properties), `contract` (verified fakes — required
 for every new port), `integration` (real resources, resource-gated),
 `e2e` (console script), plus `gpu`/`slow` axes.
 
-The stock-toolchain pack suite reads `VRAMFIT_LLAMA_CPP_BIN`, a
-directory holding built `llama-quantize` and `llama-bench`. The suite
-skips when the variable is unset or a tool is missing.
+Two assisted `Q2_0` pack suites read `VRAMFIT_LLAMA_CPP_BIN`, a
+directory holding built `llama-quantize` and `llama-bench`.
+`test_q2_0_stock_toolchain` runs a 64-wide expert stack, and
+`test_q2_0_real_row_widths` runs the 30B target's own 2688 and 1856.
+Both skip when the variable is unset or a tool is missing. Both carry
+the `integration` and `slow` markers, so the default run deselects
+them.
 
 GPU-dependent tests must carry the `gpu` marker and skip cleanly when CUDA is
 absent -- CI runners have no GPU, so anything unmarked must pass on CPU.

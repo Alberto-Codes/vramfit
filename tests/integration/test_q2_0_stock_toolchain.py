@@ -15,13 +15,15 @@ assignment maps to ``q2_0`` through the ADR-0028 table: the case the
 encoder pre-encodes. Every other tensor has 256-wide rows and packs
 stock, so the file mixes one pre-encoded stack with k-quant tensors
 the way a real pack does.
+
+`tests.integration.q2_0_fixture` owns the GGUF fixture both assisted
+``Q2_0`` suites write.
 """
 
 # ruff: noqa: E402 - the importorskip guards must run before adapter imports
 from __future__ import annotations
 
 import hashlib
-import os
 import subprocess
 import sys
 from dataclasses import replace
@@ -33,8 +35,20 @@ torch = pytest.importorskip("torch", reason="scan extra not installed")
 np = pytest.importorskip("numpy", reason="scan extra not installed")
 pytest.importorskip("gguf", reason="scan extra not installed")
 
-from gguf import GGMLQuantizationType, GGUFWriter
+from gguf import GGMLQuantizationType
 
+from tests.integration.q2_0_fixture import (
+    DOWN,
+    DOWN_GROUP,
+    GATE,
+    GATE_GROUP,
+    UP,
+    UP_GROUP,
+    payload,
+    tool,
+    write_imatrix,
+    write_model,
+)
 from vramfit.adapters.outbound.gguf.header import read_header
 from vramfit.adapters.outbound.gguf.mixed_gguf import write_mixed_gguf
 from vramfit.adapters.outbound.gguf.pack import LlamaCppPacker
@@ -46,7 +60,6 @@ from vramfit.adapters.outbound.gguf.pre_encode import (
 from vramfit.adapters.outbound.gguf.q2_0_blocks import (
     Q2_0_TYPE_ID,
     dequantize_q2_0,
-    q2_0_payload_bytes,
 )
 from vramfit.adapters.outbound.gguf.types import PackError
 from vramfit.adapters.outbound.scan.imatrix import load_imatrix
@@ -62,102 +75,37 @@ from vramfit.domain.pack import TypeOverride
 
 pytestmark = [pytest.mark.integration, pytest.mark.slow]
 
-TOOLS = os.environ.get("VRAMFIT_LLAMA_CPP_BIN")
 N_EMBD = 256
 N_FF = 64
-N_EXPERT = 2
-N_VOCAB = 32
-DOWN = "blk.0.ffn_down_exps.weight"
-UP = "blk.0.ffn_up_exps.weight"
-GATE = "blk.0.ffn_gate_exps.weight"
-DOWN_GROUP = "model.layers.0.mlp.experts.down_proj"
 # The down stack's 64-wide rows take the ADR-0028 table at nominal 2.
 # The gate and up stacks' 256-wide rows take the k-quant table.
 STACKS = {
     DOWN_GROUP: DOWN,
-    "model.layers.0.mlp.experts.up_proj": UP,
-    "model.layers.0.mlp.experts.gate_proj": GATE,
+    UP_GROUP: UP,
+    GATE_GROUP: GATE,
 }
 
 
-def _tool(name: str) -> Path:
-    if TOOLS is None:
-        pytest.skip("VRAMFIT_LLAMA_CPP_BIN names no stock llama.cpp build directory")
-    path = Path(TOOLS) / name
-    if not path.is_file():
-        pytest.skip(f"{path} is not a file")
-    return path
-
-
 def _write_model(path: Path, rng: np.random.Generator) -> dict[str, np.ndarray]:
-    """Write a runnable one-layer MoE llama in f16 with a tiny SPM vocab."""
-    writer = GGUFWriter(path, "llama")
-    writer.add_name("vramfit q2_0 pre-encode fixture")
-    writer.add_context_length(64)
-    writer.add_embedding_length(N_EMBD)
-    writer.add_block_count(1)
-    writer.add_feed_forward_length(N_FF)
-    writer.add_head_count(2)
-    writer.add_head_count_kv(2)
-    writer.add_rope_dimension_count(N_EMBD // 2)
-    writer.add_layer_norm_rms_eps(1e-5)
-    writer.add_expert_count(N_EXPERT)
-    writer.add_expert_used_count(1)
-    writer.add_vocab_size(N_VOCAB)
-    writer.add_file_type(1)
-    writer.add_tokenizer_model("llama")
-    tokens = ["<unk>", "<s>", "</s>"] + [f"<0x{i:02X}>" for i in range(N_VOCAB - 3)]
-    writer.add_token_list(tokens)
-    writer.add_token_scores([0.0] * N_VOCAB)
-    writer.add_token_types([2, 3, 3] + [1] * (N_VOCAB - 3))
-    writer.add_bos_token_id(1)
-    writer.add_eos_token_id(2)
-    writer.add_unk_token_id(0)
-
-    def normal(*shape: int) -> np.ndarray:
-        return (rng.standard_normal(shape) * 0.05).astype(np.float16)
-
-    tensors = {
-        "token_embd.weight": normal(N_VOCAB, N_EMBD),
-        "output_norm.weight": np.ones(N_EMBD, dtype=np.float32),
-        "blk.0.attn_norm.weight": np.ones(N_EMBD, dtype=np.float32),
-        "blk.0.ffn_norm.weight": np.ones(N_EMBD, dtype=np.float32),
-        "blk.0.attn_q.weight": normal(N_EMBD, N_EMBD),
-        "blk.0.attn_k.weight": normal(N_EMBD, N_EMBD),
-        "blk.0.attn_v.weight": normal(N_EMBD, N_EMBD),
-        "blk.0.attn_output.weight": normal(N_EMBD, N_EMBD),
-        "blk.0.ffn_gate_inp.weight": normal(N_EXPERT, N_EMBD).astype(np.float32),
-        GATE: normal(N_EXPERT, N_FF, N_EMBD),
-        UP: normal(N_EXPERT, N_FF, N_EMBD),
-        DOWN: normal(N_EXPERT, N_EMBD, N_FF),
-    }
-    for name, data in tensors.items():
-        writer.add_tensor(name, data)
-    writer.write_header_to_file()
-    writer.write_kv_data_to_file()
-    writer.write_tensors_to_file()
-    writer.close()
-    return tensors
+    return write_model(
+        path,
+        rng,
+        n_embd=N_EMBD,
+        n_ff=N_FF,
+        name="vramfit q2_0 pre-encode fixture",
+    )
 
 
 def _write_imatrix(
     path: Path, rng: np.random.Generator, *, zero_count_expert: bool
 ) -> None:
-    writer = GGUFWriter(path, "imatrix")
-    writer.add_type("imatrix")
-    # The stock loader requires the three provenance keys.
-    writer.add_array("imatrix.datasets", ["synthetic-fixture"])
-    writer.add_uint32("imatrix.chunk_count", 4)
-    writer.add_uint32("imatrix.chunk_size", 64)
-    for name, columns in ((DOWN, N_FF), (UP, N_EMBD), (GATE, N_EMBD)):
-        sums = rng.uniform(0.5, 4.0, size=(N_EXPERT, columns)).astype(np.float32)
-        counts = np.array([4.0, 0.0 if zero_count_expert else 4.0], dtype=np.float32)
-        writer.add_tensor(f"{name}.in_sum2", sums)
-        writer.add_tensor(f"{name}.counts", counts)
-    writer.write_header_to_file()
-    writer.write_kv_data_to_file()
-    writer.write_tensors_to_file()
-    writer.close()
+    write_imatrix(
+        path,
+        rng,
+        n_embd=N_EMBD,
+        n_ff=N_FF,
+        zero_count_expert=zero_count_expert,
+    )
 
 
 def _recipe(imatrix: Path) -> Recipe:
@@ -206,28 +154,19 @@ def _packer(
         threads=2,
         imatrix=imatrix,
         row_widths={
-            "model.layers.0.mlp.experts.down_proj": N_FF,
-            "model.layers.0.mlp.experts.up_proj": N_EMBD,
-            "model.layers.0.mlp.experts.gate_proj": N_EMBD,
+            DOWN_GROUP: N_FF,
+            UP_GROUP: N_EMBD,
+            GATE_GROUP: N_EMBD,
         },
     )
-
-
-def _payload(packed: Path, name: str) -> bytes:
-    header = read_header(packed)
-    info = next(t for t in header.tensors if t.name == name)
-    assert info.type_id == Q2_0_TYPE_ID
-    with packed.open("rb") as handle:
-        handle.seek(header.data_start + info.offset)
-        return handle.read(q2_0_payload_bytes(info.elements))
 
 
 class TestPackAndLoad:
     def test_pack_pre_encodes_every_stack_and_the_stock_runtime_loads_the_file(
         self, tmp_path: Path
     ) -> None:
-        quantize = _tool("llama-quantize")
-        bench = _tool("llama-bench")
+        quantize = tool("llama-quantize")
+        bench = tool("llama-bench")
         rng = np.random.default_rng(601)
         base = tmp_path / "base-f16.gguf"
         tensors = _write_model(base, rng)
@@ -254,7 +193,7 @@ class TestPackAndLoad:
         priced = perturb(
             weight, 2, DOWN_GROUP, "q0-imx2", 32, entries[DOWN].column_weights
         )
-        decoded = dequantize_q2_0(_payload(packer.out_path, DOWN), weight.numel())
+        decoded = dequantize_q2_0(payload(packer.out_path, DOWN), weight.numel())
         assert np.array_equal(decoded, priced.reshape(-1).numpy())
         # The zero-count expert weighs 1 in both places, so its rows
         # still fit through the encoder rather than the stock path.
@@ -262,7 +201,7 @@ class TestPackAndLoad:
             torch.from_numpy(tensors[DOWN].astype(np.float32)), 2, "d", "q0", 32, None
         )
         assert not np.array_equal(
-            dequantize_q2_0(_payload(packer.out_path, DOWN), stock.numel()),
+            dequantize_q2_0(payload(packer.out_path, DOWN), stock.numel()),
             stock.reshape(-1).numpy(),
         )
 
@@ -291,7 +230,7 @@ class TestPackAndLoad:
     def test_a_pack_without_the_matrix_refuses_before_any_tool_runs(
         self, tmp_path: Path
     ) -> None:
-        quantize = _tool("llama-quantize")
+        quantize = tool("llama-quantize")
         rng = np.random.default_rng(7)
         base = tmp_path / "base-f16.gguf"
         _write_model(base, rng)
@@ -316,7 +255,7 @@ class TestPassthroughProbe:
     def test_stock_quantize_preserves_q2_0_and_refuses_a_requantize(
         self, tmp_path: Path
     ) -> None:
-        quantize = _tool("llama-quantize")
+        quantize = tool("llama-quantize")
         rng = np.random.default_rng(32)
         base = tmp_path / "base-f16.gguf"
         _write_model(base, rng)
@@ -341,7 +280,7 @@ class TestPassthroughProbe:
             base, mixed, {t.name: (t.payload, Q2_0_TYPE_ID) for t in report.tensors}
         )
         digest = report.tensors[0].sha256
-        assert hashlib.sha256(_payload(mixed, DOWN)).hexdigest() == digest
+        assert hashlib.sha256(payload(mixed, DOWN)).hexdigest() == digest
 
         # Matching override: the payload copies through unchanged, with
         # and without an imatrix, and the float peer quantizes.
@@ -365,7 +304,7 @@ class TestPassthroughProbe:
                 argv, capture_output=True, text=True, timeout=300, check=False
             )
             assert run.returncode == 0, run.stdout + run.stderr
-            assert hashlib.sha256(_payload(out, DOWN)).hexdigest() == digest
+            assert hashlib.sha256(payload(out, DOWN)).hexdigest() == digest
             by_name = {t.name: t.type_id for t in read_header(out).tensors}
             assert by_name["blk.0.attn_q.weight"] == GGMLQuantizationType.Q4_0
 

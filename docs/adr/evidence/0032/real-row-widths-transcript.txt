@@ -1,0 +1,145 @@
+The suite run that discharged ADR-0032's target-row-width consequence.
+
+suite: tests/integration/test_q2_0_real_row_widths.py
+build: 10362 (4801e3c56)
+toolchain hashes: real-row-widths-toolchain-sha256.txt
+
+This file substitutes three roots and changes nothing else. <repo>
+replaces the session's working directory. <toolchain> replaces the
+stock llama.cpp build directory. <tmp> replaces the pytest temporary
+directory. Every argument, exit code, tensor shape, and figure reads
+as the session produced it.
+
+Run 1 points VRAMFIT_LLAMA_CPP_BIN straight at the stock build. It
+records the suite's own result. `run_tool` swallows a passing tool's
+output, so run 2 repeats the same suite against <wrapper>, a directory
+of two shell scripts. Each script appends its argv and the tool's
+complete merged output to a log, then runs the pinned binary at
+<toolchain> and exits with its code. Section 3 is that log.
+
+== 1. The suite, against the stock build directly ==
+
+$ VRAMFIT_LLAMA_CPP_BIN=<toolchain> uv run pytest tests/integration/test_q2_0_real_row_widths.py -m 'integration and slow' -p no:randomly -vv
+============================= test session starts ==============================
+platform linux -- Python 3.12.12, pytest-9.1.1, pluggy-1.6.0 -- <repo>/.venv/bin/python
+cachedir: .pytest_cache
+hypothesis profile 'fast' -> deadline=None, max_examples=25
+rootdir: <repo>
+configfile: pyproject.toml
+plugins: mock-3.15.1, cov-7.1.0, typeguard-4.6.0, anyio-4.14.2, hypothesis-6.161.8
+collecting ... collected 1 item
+
+tests/integration/test_q2_0_real_row_widths.py::TestRealRowWidths::test_pack_pre_encodes_both_target_widths_and_the_runtime_loads_the_file PASSED [100%]
+
+============================== 1 passed in 9.38s ===============================
+exit: 0
+
+== 2. The same suite, through the recording wrapper ==
+
+$ VRAMFIT_LLAMA_CPP_BIN=<wrapper> uv run pytest tests/integration/test_q2_0_real_row_widths.py -m 'integration and slow' -p no:randomly -vv
+============================= test session starts ==============================
+platform linux -- Python 3.12.12, pytest-9.1.1, pluggy-1.6.0 -- <repo>/.venv/bin/python
+cachedir: .pytest_cache
+hypothesis profile 'fast' -> deadline=None, max_examples=25
+rootdir: <repo>
+configfile: pyproject.toml
+plugins: mock-3.15.1, cov-7.1.0, typeguard-4.6.0, anyio-4.14.2, hypothesis-6.161.8
+collecting ... collected 1 item
+
+tests/integration/test_q2_0_real_row_widths.py::TestRealRowWidths::test_pack_pre_encodes_both_target_widths_and_the_runtime_loads_the_file PASSED [100%]
+
+============================== 1 passed in 8.98s ===============================
+exit: 0
+
+== 3. The two stock tool calls run 2 made, with their complete output ==
+
+$ <toolchain>/llama-quantize '--pure' '--imatrix' '<tmp>/test_pack_pre_encodes_both_tar0/imatrix.gguf' '--token-embedding-type' 'q8_0' '--output-tensor-type' 'q8_0' '--tensor-type' 'blk\.0\.ffn_down_exps\.=q2_0' '--tensor-type' 'blk\.0\.ffn_gate_exps\.=q2_0' '--tensor-type' 'blk\.0\.ffn_up_exps\.=q4_0' '--tensor-type' 'blk\.0\.attn_q\.=q4_0' '--tensor-type' 'blk\.0\.attn_k\.=q4_0' '--tensor-type' 'blk\.0\.attn_v\.=q4_0' '--tensor-type' 'blk\.0\.attn_output\.=q4_0' '<tmp>/test_pack_pre_encodes_both_tar0/packed.mixed.gguf' '<tmp>/test_pack_pre_encodes_both_tar0/packed.gguf' 'Q2_K' '2'
+load_backend: loaded RPC backend from <toolchain>/libggml-rpc.so
+ggml_vulkan: Found 2 Vulkan devices:
+ggml_vulkan: 0 = NVIDIA GeForce RTX 4090 (NVIDIA) | uma: 0 | fp16: 1 | bf16: 1 | fp4: 0 | warp size: 32 | shared memory: 49152 | int dot: 1 | matrix cores: NV_coopmat2
+ggml_vulkan: 1 = AMD Ryzen 7 7800X3D 8-Core Processor (RADV RAPHAEL_MENDOCINO) (radv) | uma: 1 | fp16: dot2 | bf16: 0 | fp4: 0 | warp size: 32 | shared memory: 65536 | int dot: 1 | matrix cores: none
+load_backend: loaded Vulkan backend from <toolchain>/libggml-vulkan.so
+load_backend: loaded CPU backend from <toolchain>/libggml-cpu-zen4.so
+llama_print_build_info: build = 10362 (4801e3c56)
+llama_print_build_info: built with GNU 11.4.0 for Linux x86_64
+llama_quantize: quantizing '<tmp>/test_pack_pre_encodes_both_tar0/packed.mixed.gguf' to '<tmp>/test_pack_pre_encodes_both_tar0/packed.gguf' as Q2_K using 2 threads
+llama_model_loader: loaded meta data with 21 key-value pairs and 12 tensors from <tmp>/test_pack_pre_encodes_both_tar0/packed.mixed.gguf (version GGUF V3 (latest))
+llama_model_loader: Dumping metadata keys/values. Note: KV overrides do not apply in this output.
+llama_model_loader: - kv   0:                       general.architecture str              = llama
+llama_model_loader: - kv   1:                               general.name str              = vramfit q2_0 real-row-width fixture
+llama_model_loader: - kv   2:                       llama.context_length u32              = 64
+llama_model_loader: - kv   3:                     llama.embedding_length u32              = 2688
+llama_model_loader: - kv   4:                          llama.block_count u32              = 1
+llama_model_loader: - kv   5:                  llama.feed_forward_length u32              = 1856
+llama_model_loader: - kv   6:                 llama.attention.head_count u32              = 2
+llama_model_loader: - kv   7:              llama.attention.head_count_kv u32              = 2
+llama_model_loader: - kv   8:                 llama.rope.dimension_count u32              = 1344
+llama_model_loader: - kv   9:     llama.attention.layer_norm_rms_epsilon f32              = 0.000010
+llama_model_loader: - kv  10:                         llama.expert_count u32              = 2
+llama_model_loader: - kv  11:                    llama.expert_used_count u32              = 1
+llama_model_loader: - kv  12:                           llama.vocab_size u32              = 32
+llama_model_loader: - kv  13:                          general.file_type u32              = 1
+llama_model_loader: - kv  14:                       tokenizer.ggml.model str              = llama
+llama_model_loader: - kv  15:                      tokenizer.ggml.tokens arr[str,32]      = ["<unk>", "<s>", "</s>", "<0x00>", "<...
+llama_model_loader: - kv  16:                      tokenizer.ggml.scores arr[f32,32]      = [0.000000, 0.000000, 0.000000, 0.0000...
+llama_model_loader: - kv  17:                  tokenizer.ggml.token_type arr[i32,32]      = [2, 3, 3, 1, 1, 1, 1, 1, 1, 1, 1, 1, ...
+llama_model_loader: - kv  18:                tokenizer.ggml.bos_token_id u32              = 1
+llama_model_loader: - kv  19:                tokenizer.ggml.eos_token_id u32              = 2
+llama_model_loader: - kv  20:            tokenizer.ggml.unknown_token_id u32              = 0
+llama_model_loader: - type  f32:    4 tensors
+llama_model_loader: - type  f16:    6 tensors
+llama_model_loader: - type q2_0:    2 tensors
+
+llama_model_quantize_impl: have importance matrix data with 3 entries
+llama_tensor_get_type: blk.0.attn_k.weight                  - applying manual override: q2_K -> q4_0
+llama_tensor_get_type: blk.0.attn_output.weight             - applying manual override: q2_K -> q4_0
+llama_tensor_get_type: blk.0.attn_q.weight                  - applying manual override: q2_K -> q4_0
+llama_tensor_get_type: blk.0.attn_v.weight                  - applying manual override: q2_K -> q4_0
+llama_tensor_get_type: blk.0.ffn_down_exps.weight           - applying manual override: q2_K -> q2_0
+llama_tensor_get_type: blk.0.ffn_gate_exps.weight           - applying manual override: q2_K -> q2_0
+llama_tensor_get_type: blk.0.ffn_up_exps.weight             - applying manual override: q2_K -> q4_0
+[   1/  12] output_norm.weight                   - [  2688,      1,      1,      1], type =    f32, size =    0.010 MiB
+[   2/  12] token_embd.weight                    - [  2688,     32,      1,      1], type =    f16, 
+====== llama_model_quantize_impl: did not find weights for token_embd.weight
+converting to q8_0 .. load_imatrix: imatrix datasets=['synthetic-fixture']
+load_imatrix: loaded 3 importance matrix entries from <tmp>/test_pack_pre_encodes_both_tar0/imatrix.gguf computed on 4 chunks
+prepare_imatrix: have 3 importance matrix entries
+size =     0.16 MiB ->     0.09 MiB
+[   3/  12] blk.0.attn_k.weight                  - [  2688,   2688,      1,      1], type =    f16, 
+====== llama_model_quantize_impl: did not find weights for blk.0.attn_k.weight
+converting to q4_0 .. size =    13.78 MiB ->     3.88 MiB
+[   4/  12] blk.0.attn_norm.weight               - [  2688,      1,      1,      1], type =    f32, size =    0.010 MiB
+[   5/  12] blk.0.attn_output.weight             - [  2688,   2688,      1,      1], type =    f16, 
+====== llama_model_quantize_impl: did not find weights for blk.0.attn_output.weight
+converting to q4_0 .. size =    13.78 MiB ->     3.88 MiB
+[   6/  12] blk.0.attn_q.weight                  - [  2688,   2688,      1,      1], type =    f16, 
+====== llama_model_quantize_impl: did not find weights for blk.0.attn_q.weight
+converting to q4_0 .. size =    13.78 MiB ->     3.88 MiB
+[   7/  12] blk.0.attn_v.weight                  - [  2688,   2688,      1,      1], type =    f16, 
+====== llama_model_quantize_impl: did not find weights for blk.0.attn_v.weight
+converting to q4_0 .. size =    13.78 MiB ->     3.88 MiB
+[   8/  12] blk.0.ffn_down_exps.weight           - [  1856,   2688,      2,      1], type =   q2_0, size =    2.676 MiB
+[   9/  12] blk.0.ffn_gate_exps.weight           - [  2688,   1856,      2,      1], type =   q2_0, size =    2.676 MiB
+[  10/  12] blk.0.ffn_gate_inp.weight            - [  2688,      2,      1,      1], type =    f32, size =    0.021 MiB
+[  11/  12] blk.0.ffn_norm.weight                - [  2688,      1,      1,      1], type =    f32, size =    0.010 MiB
+[  12/  12] blk.0.ffn_up_exps.weight             - [  2688,   1856,      2,      1], type =    f16, converting to q4_0 .. size =    19.03 MiB ->     5.35 MiB
+llama_model_quantize_impl: model size  =    79.72 MiB (11.35 BPW)
+llama_model_quantize_impl: quant size  =    26.35 MiB (3.75 BPW)
+
+llama_quantize: quantize time =   234.05 ms
+llama_quantize:    total time =   234.05 ms
+exit: 0
+
+$ <toolchain>/llama-bench '-m' '<tmp>/test_pack_pre_encodes_both_tar0/packed.gguf' '-p' '8' '-n' '0' '-ngl' '0' '-r' '1'
+load_backend: loaded RPC backend from <toolchain>/libggml-rpc.so
+ggml_vulkan: Found 2 Vulkan devices:
+ggml_vulkan: 0 = NVIDIA GeForce RTX 4090 (NVIDIA) | uma: 0 | fp16: 1 | bf16: 1 | fp4: 0 | warp size: 32 | shared memory: 49152 | int dot: 1 | matrix cores: NV_coopmat2
+ggml_vulkan: 1 = AMD Ryzen 7 7800X3D 8-Core Processor (RADV RAPHAEL_MENDOCINO) (radv) | uma: 1 | fp16: dot2 | bf16: 0 | fp4: 0 | warp size: 32 | shared memory: 65536 | int dot: 1 | matrix cores: none
+load_backend: loaded Vulkan backend from <toolchain>/libggml-vulkan.so
+load_backend: loaded CPU backend from <toolchain>/libggml-cpu-zen4.so
+| model                          |       size |     params | backend    | ngl |            test |                  t/s |
+| ------------------------------ | ---------: | ---------: | ---------- | --: | --------------: | -------------------: |
+| llama ?B Q4_0                  |  26.35 MiB |    58.93 M | Vulkan     |   0 |             pp8 |       3955.05 ± 0.00 |
+
+build: 4801e3c56 (10362)
+exit: 0

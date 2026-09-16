@@ -108,6 +108,45 @@ so the conclusion does not depend on interpreting a progress line.
 - This probe establishes passthrough on this build. Production integration
   still needs real row widths, complete metadata preservation, and load tests.
 
+## Target row widths 2688 and 1856
+
+- **Recorded:** 2026-09-16
+
+The passthrough probe above ran on 256-wide and 64-wide rows. The 30B
+acceptance target carries rows of 2688 and 1856 instead (ADR-0026,
+ADR-0028). `tests/integration/test_q2_0_real_row_widths.py` runs the
+pack path at those two widths on the same build.
+
+The suite builds a two-expert llama fixture, assigns the down and gate
+stacks nominal 2, and calls `LlamaCppPacker.pack`. Nothing in the suite
+names `q2_0`: the ADR-0028 routing reads the measured row width and
+chooses the type.
+
+| Claim | Where the transcript shows it |
+| --- | --- |
+| The routing maps both nominal-2 stacks to `q2_0` | `applying manual override: q2_K -> q2_0` on the down and gate stacks |
+| The stock pass preserves both payloads | `[   8/  12]` and `[   9/  12]` report `type = q2_0` and copy the size |
+| A routed peer at 2688 still quantizes | `blk.0.ffn_up_exps.weight` converts to `q4_0` |
+| Stock ggml reads the blocks back | `llama-bench` returns `pp8` at exit 0 |
+
+The two pre-encoded stacks read `[  1856,   2688,      2,      1]` and
+`[  2688,   1856,      2,      1]`, which is 29 and 42 blocks per row.
+
+- [real-row-widths-transcript.txt](real-row-widths-transcript.txt): the
+  suite's own output, the wrapper run that records the tool calls, and
+  the complete stdout and stderr of both stock tools.
+- [real-row-widths-toolchain-sha256.txt](real-row-widths-toolchain-sha256.txt):
+  the executables and the loaded libraries.
+
+`run_tool` discards a passing tool's output, so the transcript's third
+section comes from a second run of the same suite against a directory
+of two shell scripts. Each script records its argv and the tool's
+merged output, then runs the pinned binary and exits with its code.
+The transcript substitutes three path roots and changes nothing else.
+
+The fixture is 79.72 MiB and the run takes under ten seconds. It is not
+a damage measurement, and it proves nothing about fit quality.
+
 ## Rebuy evidence
 
 [rebuy-results.txt](rebuy-results.txt) copies `results.txt` from `nemotron-30b-a3b/rebuy-2026-09-05/` beneath the frozen run root

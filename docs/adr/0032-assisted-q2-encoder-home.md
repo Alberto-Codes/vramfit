@@ -239,6 +239,26 @@ The third cannot deliver the measured benefit or matching provenance.
 - Toolchain changes require the passthrough probe again. The implementation
   must test overrides, matrix exclusions, zero-count experts, and the target
   row widths of 2688 and 1856.
+- **Observed 2026-09-16: the target row widths are tested, and the
+  pack refuses a recipe that leaves a 2688-wide dense tensor to the
+  Q2_K floor.** `tests/integration/test_q2_0_real_row_widths.py`
+  drives `LlamaCppPacker.pack` on a two-expert fixture shaped at 2688
+  and 1856. The routing maps both nominal-2 stacks to `q2_0` from
+  their measured widths, the payloads survive the stock pass, the
+  scan meter decodes them to its own fit, and `llama-bench` runs a
+  forward pass over the packed file. That discharges the row-width
+  half of the clause above.
+  [The transcript](evidence/0032/real-row-widths-transcript.txt) and
+  [the toolchain hashes](evidence/0032/real-row-widths-toolchain-sha256.txt)
+  record the run on build 10362 (`4801e3c56`).
+
+  A nominal-2 stack sets the `--pure` base ftype to Q2_K (ADR-0012),
+  and the 256 super-block does not divide 2688. The first run of this
+  fixture left the attention tensors and the embedding uncovered, so
+  the quantizer rewrote five types and the pack halted on the
+  type-fallback warning pair (ADR-0028 decision 3). The refusal is
+  correct. It means a target of this shape needs an assignment for
+  every dense group the file carries, not only for the routed stacks.
 - **A pre-encoded tensor loses ADR-0012 decision 3's record-and-continue
   floor.** Today a layer that no override reaches takes the `--pure`
   floor. The pack step records it in `PackResult.floored_layers`, prints
