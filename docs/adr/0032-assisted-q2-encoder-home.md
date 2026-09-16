@@ -16,8 +16,9 @@
   Acceptance alone is discharged. The open questions below stay live,
   including the unsettled torch boundary and the unnamed successor
   token. This change implements no encoder and starts no re-solve.
-  The decision and Consequences bodies below keep their original
-  wording.
+  The Consequences bullet on the end-to-end pack/load test binds the
+  implementing task, not this record's status. The decision and
+  Consequences bodies below keep their original wording.
 - **Origin:** [Issue #597](https://github.com/Alberto-Codes/vramfit/issues/597),
   a `chart:discuss` child of [chart #158](https://github.com/Alberto-Codes/vramfit/issues/158).
 - **Authority:** Reimplementation was authorized on 2026-09-05, with
