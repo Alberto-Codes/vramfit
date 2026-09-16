@@ -958,7 +958,7 @@ change.
     copies those payloads and quantizes the rest.
     Accepted [ADR-0032](../adr/0032-assisted-q2-encoder-home.md) decision 1
     selects it. `vramfit pack` pre-encodes when the recipe's
-    `within_group` token names the encoder's method, and the
+    `within_group` token is `q0-imx2`, and the
     `model_packed` event lists the tensors under `pre_encoded`.
     The verb is **pre-encode**. Not "pre-quantize" or "patching the
     base".

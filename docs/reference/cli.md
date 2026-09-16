@@ -842,8 +842,8 @@ tensor would keep the fit the recipe asked to drop, and the record
 would state an exclusion that never applied. Packing such a recipe
 without `--imatrix` warns that the exclusions change nothing.
 
-A recipe priced with the assisted `Q2_0` encoder's method takes the
-pre-encoding stage ([ADR-0032](../adr/0032-assisted-q2-encoder-home.md)).
+A recipe recording `q0-imx2` takes the pre-encoding stage
+([ADR-0032](../adr/0032-assisted-q2-encoder-home.md)).
 The command selects the `Q2_0` tensors the matrix covers, runs the
 encoder as a separate program under `--python-bin`, and writes a
 temporary mixed GGUF beside `--out`. `llama-quantize` then reads
