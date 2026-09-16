@@ -17,9 +17,6 @@
   becomes a method to build. #381 measured that assistance re-orders
   the nominal-4 column across the 46 expert stacks. Maintainer ruling
   2026-08-21. See "Amendment: `q0-imx` gets built" below.
-- **Amendment (2026-09-16, issue #599):** the assisted Q2_0 scan
-  method ADR-0032 created takes the token `q0-imx2`. Maintainer
-  ruling 2026-09-16. See "Amendment: the token `q0-imx2`" below.
 - **Note (2026-09-04, issue #331):** the `q0` method carries the
   straddling-row scope limit as a recorded limit, not a refusal.
   Maintainer ruling 2026-09-04. `q0_ref` pads a short tail and
@@ -30,6 +27,9 @@
   a target carries a row 64 does not divide. That target reopens the
   question, and the refusal, if built, keys on the mapped type's
   block size, as the 2026-08-17 decision 4 does for `kquant`.
+- **Amendment (2026-09-16, issue #599):** the assisted Q2_0 scan
+  method ADR-0032 created takes the token `q0-imx2`. Maintainer
+  ruling 2026-09-16. See "Amendment: the token `q0-imx2`" below.
 
 ## Context
 
