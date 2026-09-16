@@ -249,7 +249,11 @@ def pack(
     ] = None,
     threads: Annotated[
         int,
-        typer.Option(min=1, help="Thread count for the quantizer and the smoke test."),
+        typer.Option(
+            min=1,
+            help="Thread count for the quantizer, the assisted Q2_0 encoder, "
+            "and the smoke test.",
+        ),
     ] = 8,
     imatrix: Annotated[
         Path | None,
@@ -302,17 +306,18 @@ def pack(
     bytes, and the ``model_packed`` event records it under
     ``file_type`` (ADR-0012 decision 3 as amended 2026-09-04). The
     ``--python-bin`` interpreter
-    runs the convert script — the ``pack`` extra provisions its
-    dependencies. ``--imatrix`` hands the quantizer an importance
-    matrix (ADR-0016). The command then reads that matrix's
-    ``.counts`` tensors against the base GGUF and reports every
-    expert the matrix counts zero times — the quantizer fits such
-    an expert unassisted and prints no warning (ADR-0026 decision
-    5). A matrix the reader cannot vouch for halts before the
-    quantizer runs, and the report lands in the result only beside
-    its matrix path. The read needs gguf-py, which the gguf extra
-    provisions without torch (#310). A recipe priced on an assisted
-    map records its imatrix — the command warns when ``--imatrix``
+    runs the convert script and the assisted ``Q2_0`` encoder — the
+    ``pack`` extra provisions their dependencies. ``--threads`` sizes
+    the quantizer, that encoder, and the smoke test. ``--imatrix``
+    hands the quantizer an importance matrix (ADR-0016). The command
+    then reads that matrix's ``.counts`` tensors against the base GGUF
+    and reports every expert the matrix counts zero times — the
+    quantizer fits such an expert unassisted and prints no warning
+    (ADR-0026 decision 5). A matrix the reader cannot vouch for halts
+    before the quantizer runs, and the report lands in the result
+    only beside its matrix path. The read needs gguf-py, which the
+    gguf extra provisions without torch (#310). A recipe priced on an
+    assisted map records its imatrix — the command warns when ``--imatrix``
     is absent or names a different file, because the pack would not
     match the map's frame (ADR-0020). A recipe with imatrix exclusions
     packs the marked tensors on the unweighted fit, and the command

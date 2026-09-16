@@ -707,8 +707,9 @@ vramfit pack RECIPE
                          assisted Q2_0 encoder — install
                          vramfit[pack] to provision it
                          [default: current]
-  --threads INT          Thread count for the quantizer and the
-                         smoke test  [default: 8]
+  --threads INT          Thread count for the quantizer, the assisted
+                         Q2_0 encoder, and the smoke test
+                         [default: 8]
   --imatrix PATH         Importance matrix for the quantizer
                          (ADR-0016)  [default: none]
   --mmproj PATH          Vendor mmproj shipped beside --out as the
