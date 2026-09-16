@@ -524,7 +524,9 @@ class TestTorchDamageMeter:
         calibration = tmp_path / "calib.txt"
         calibration.write_text(CALIBRATION_TEXT)
 
-        with pytest.raises(ValueError, match="kquant or q0 within-group method"):
+        with pytest.raises(
+            ValueError, match="kquant, q0, or q0-imx2 within-group method"
+        ):
             TorchDamageMeter(
                 "/nonexistent-model",
                 calibration,
@@ -807,7 +809,9 @@ class TestTorchDamageMeter:
         calibration = tmp_path / "calib.txt"
         calibration.write_text(CALIBRATION_TEXT)
 
-        with pytest.raises(ValueError, match="kquant or q0 within-group method"):
+        with pytest.raises(
+            ValueError, match="kquant, q0, or q0-imx2 within-group method"
+        ):
             TorchDamageMeter(
                 "/nonexistent-model",
                 calibration,
