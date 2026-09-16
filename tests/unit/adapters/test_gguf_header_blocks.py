@@ -257,3 +257,33 @@ class TestGgufHeaderRecord:
     def test_elements_multiplies_the_dims(self) -> None:
         assert TensorInfo("a", (128, 4, 2), 1, 0).elements == 1024
         assert struct.calcsize("<Q") == 8
+
+
+def write_raw_gguf(path: Path, *, alignment: int) -> None:
+    """Write a one-tensor GGUF by hand, with the alignment the caller states."""
+    body = bytearray(b"GGUF")
+    body += struct.pack("<I", 3) + struct.pack("<Q", 1) + struct.pack("<Q", 1)
+    key = b"general.alignment"
+    body += struct.pack("<Q", len(key)) + key + struct.pack("<I", 4)
+    body += struct.pack("<I", alignment)
+    name = b"a"
+    body += struct.pack("<Q", len(name)) + name + struct.pack("<I", 1)
+    body += struct.pack("<Q", 64) + struct.pack("<I", 0) + struct.pack("<Q", 0)
+    body += bytes(32) + bytes(256)
+    path.write_bytes(bytes(body))
+
+
+class TestAlignment:
+    @pytest.mark.parametrize("alignment", [0, 24], ids=["zero", "not-a-power-of-two"])
+    def test_unusable_alignment_refuses_as_a_pack_error(
+        self, tmp_path: Path, alignment: int
+    ) -> None:
+        path = tmp_path / "odd.gguf"
+        write_raw_gguf(path, alignment=alignment)
+        with pytest.raises(PackError, match="not a positive power of two"):
+            read_header(path)
+
+    def test_power_of_two_alignment_reads(self, tmp_path: Path) -> None:
+        path = tmp_path / "ok.gguf"
+        write_raw_gguf(path, alignment=64)
+        assert read_header(path).alignment == 64

@@ -341,8 +341,8 @@ def pack(
     refuse outright. A recipe priced with the assisted ``Q2_0``
     encoder's method pre-encodes its covered ``Q2_0`` tensors through
     vramfit's own encoder before the quantizer runs, and the
-    ``model_packed`` event records the tensors, the encoder revision,
-    and the stage's measured cost (ADR-0032). The
+    ``model_packed`` event records the tensors and the encoder
+    revision (ADR-0032). The
     command re-checks the packed file's real
     bytes against the recipe's weight budget — nominal-bit
     predictions undershoot GGUF's effective bits. A protected

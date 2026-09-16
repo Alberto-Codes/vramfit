@@ -268,8 +268,9 @@ def _parse(parser: _Parser) -> GgufHeader:
 
     Raises:
         PackError: If the file is not a little-endian GGUF v2 or v3,
-            ends early, or declares ``general.file_type`` at a type
-            other than uint32.
+            ends early, declares ``general.file_type`` at a type
+            other than uint32, or declares a ``general.alignment``
+            that is not a positive power of two.
     """
     if parser.handle.read(4) != _MAGIC:
         raise PackError("no GGUF magic")
@@ -292,6 +293,14 @@ def _parse(parser: _Parser) -> GgufHeader:
             file_type = int(parser.read("<I"))
         elif key == ALIGNMENT_KEY and value_type == _UINT32_TYPE:
             alignment = int(parser.read("<I"))
+            # gguf.h requires a positive power of two. Zero would
+            # divide the data-section computation below, and the
+            # loader refuses anything else, so a malformed value is
+            # refused here as the file's defect.
+            if alignment <= 0 or alignment & (alignment - 1):
+                raise PackError(
+                    f"{ALIGNMENT_KEY} is {alignment}, not a positive power of two"
+                )
         else:
             parser.skip_value(value_type)
     infos_offset = parser.offset

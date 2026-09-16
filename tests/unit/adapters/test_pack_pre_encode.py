@@ -251,10 +251,32 @@ class TestPreEncodingPack:
         assert not workspace["encoder_argv"].exists()
         assert not workspace["quantize_argv"].exists()
 
-    def test_uncovered_stack_packs_unassisted(self, workspace: dict[str, Path]) -> None:
+    def test_partly_covered_matrix_pre_encodes_only_the_covered_stack(
+        self, workspace: dict[str, Path]
+    ) -> None:
         write_imatrix(workspace["imatrix"], (STACK,))
         result = packer(workspace).pack(recipe())
         assert result.pre_encoded == (STACK,)
+        assert UP not in result.pre_encoded
+
+    def test_cleanup_error_never_masks_the_stage_failure(
+        self, workspace: dict[str, Path]
+    ) -> None:
+        # An encoder that leaves a subdirectory behind and then fails
+        # would trip a naive unlink during cleanup. The stage's own
+        # failure must surface, and the leftover stays for inspection.
+        workspace["encoder"].write_text(
+            "import os, sys\n"
+            "a = sys.argv[1:]\n"
+            "out = a[a.index('--out-dir') + 1]\n"
+            "os.makedirs(os.path.join(out, 'nested', 'deeper'), exist_ok=True)\n"
+            "print('error: encoder gave up', file=sys.stderr)\n"
+            "sys.exit(1)\n"
+        )
+        p = packer(workspace)
+        with pytest.raises(PackError, match="encoder gave up"):
+            p.pack(recipe())
+        assert not p.mixed_gguf.exists()
 
     def test_lost_payload_refuses_and_keeps_the_file(
         self, workspace: dict[str, Path]

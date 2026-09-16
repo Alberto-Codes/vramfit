@@ -58,7 +58,9 @@ would floor one, runs the encoder as a separate program under
 ``python_bin``, writes the temporary mixed GGUF beside the output,
 hands that file to the quantizer with the same flags and never
 ``--allow-requantize``, and verifies the packed payload bytes after
-the zero exit ([vramfit.adapters.outbound.gguf.pre_encode][]). A
+the zero exit ([vramfit.adapters.outbound.gguf.pre_encode][]). When
+the stage itself fails, its temporaries go on a best-effort basis, so
+a cleanup error never masks the failure being reported. A
 failure inside that stage removes its temporaries. A failure after
 it keeps the temporary mixed GGUF and the payload directory, and
 names both.
@@ -86,7 +88,9 @@ See Also:
 
 from __future__ import annotations
 
+import contextlib
 import re
+import shutil
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -465,12 +469,15 @@ class LlamaCppPacker:
         )
 
     def _discard_pre_encode_files(self) -> None:
-        """Remove the temporary mixed GGUF and the payload directory."""
-        self.mixed_gguf.unlink(missing_ok=True)
-        if self.pre_encode_dir.is_dir():
-            for child in self.pre_encode_dir.iterdir():
-                child.unlink()
-            self.pre_encode_dir.rmdir()
+        """Remove the temporary mixed GGUF and the payload directory.
+
+        Best effort: the cleanup runs on a failure path, and a
+        cleanup error must never replace the failure being reported.
+        Whatever cannot be removed stays where it is.
+        """
+        with contextlib.suppress(OSError):
+            self.mixed_gguf.unlink(missing_ok=True)
+        shutil.rmtree(self.pre_encode_dir, ignore_errors=True)
 
     def _quantize(
         self,
