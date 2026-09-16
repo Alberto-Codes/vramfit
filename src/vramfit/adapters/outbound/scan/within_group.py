@@ -18,13 +18,11 @@ The methods:
   ``Q8_0``, which reach the rows no K-quant tiles. With imatrix
   weights, nominal 4 fits through the assisted ``Q4_0`` port
   (ADR-0018, 2026-08-21 amendment).
-- ``q0-successor`` — ``q0`` with nominal 2 fitting through
+- ``q0-imx2`` — ``q0`` with nominal 2 fitting through
   vramfit's own assisted ``Q2_0`` encoder wherever the parameter
   carries column weights, the encoder the pack pre-encodes with
   (ADR-0032 decision 3). Uncovered parameters keep the reference
-  arithmetic, because stock ``llama-quantize`` packs them. The name
-  is provisional: issue #599 names the serialized token, and the
-  scan command exposes the method once it lands.
+  arithmetic, because stock ``llama-quantize`` packs them.
 
 Examples:
     Perturb one tensor under the q0 method:
@@ -65,14 +63,14 @@ from vramfit.adapters.outbound.scan.q2_0_assisted import (
 )
 from vramfit.adapters.outbound.scan.quantize import rtn_quantize_dequantize
 
-WithinGroupMethod = Literal["rtn", "kquant", "q0", "q0-successor"]
+WithinGroupMethod = Literal["rtn", "kquant", "q0", "q0-imx2"]
 # The method names the meter and the CLI accept. An unknown value
 # must refuse rather than fall back — a silent RTN fallback would
 # record every damage under the wrong token.
-METHODS: tuple[WithinGroupMethod, ...] = ("rtn", "kquant", "q0", "q0-successor")
+METHODS: tuple[WithinGroupMethod, ...] = ("rtn", "kquant", "q0", "q0-imx2")
 # The methods that read the q0 imatrix reader family.
-_Q0_FAMILY: tuple[WithinGroupMethod, ...] = ("q0", "q0-successor")
-# The nominal precision the successor method routes to the assisted
+_Q0_FAMILY: tuple[WithinGroupMethod, ...] = ("q0", "q0-imx2")
+# The nominal precision `q0-imx2` routes to the assisted
 # Q2_0 encoder (ADR-0032 decision 3).
 _ENCODER_BITS = 2
 
@@ -87,7 +85,7 @@ def resolve_method_weights(
     One reader serves one method family (ADR-0018, 2026-08-21
     amendment, decision 2): the ``q0`` reader accepts fused expert
     stacks, and the ``kquant`` reader keeps its fused-stack refusal
-    and its super-block gate, unchanged. ``q0-successor`` reads
+    and its super-block gate, unchanged. ``q0-imx2`` reads
     through the ``q0`` reader, because it applies the same imatrix,
     expert-row mapping, and zero-count fallback (ADR-0032 decision 3).
 
@@ -163,7 +161,7 @@ def perturb(
             to price unassisted (ADR-0020). ``kquant`` reads a 1-D
             column vector. ``q0`` also reads a 2-D per-expert
             tensor on a fused expert stack (ADR-0018, 2026-08-21
-            amendment). ``q0-successor`` reads the same layouts and
+            amendment). ``q0-imx2`` reads the same layouts and
             routes a weighted nominal-2 cell to the assisted
             ``Q2_0`` encoder (ADR-0032). ``rtn`` never reads them.
 
@@ -178,11 +176,7 @@ def perturb(
             parameter.
     """
     try:
-        if (
-            method == "q0-successor"
-            and column_weights is not None
-            and bits == _ENCODER_BITS
-        ):
+        if method == "q0-imx2" and column_weights is not None and bits == _ENCODER_BITS:
             return q2_0_assisted_quantize_dequantize(param, column_weights)
         if method in _Q0_FAMILY:
             if column_weights is not None:

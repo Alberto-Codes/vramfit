@@ -442,16 +442,18 @@ vramfit scan MODEL
   --trust-remote-code    Allow model repos with custom code (the
                          north-star target needs this)
   --resume / --no-resume Continue from the checkpoint file  [default: resume]
-  --within-group TEXT    Within-group method: rtn | kquant | q0
+  --within-group TEXT    Within-group method: rtn | kquant | q0 | q0-imx2
                          (ADR-0018). kquant prices cells with the
                          ported K-quant reference quantizers (8, 4,
                          3, 2). q0 prices them with the ported
                          block quantizers Q2_0, Q4_0, and Q8_0 (8,
                          4, 2), which reach the rows no K-quant
-                         tiles. Each pairs only with precisions its
+                         tiles. q0-imx2 also assists the nominal-2
+                         fit. Each pairs only with precisions its
                          port covers  [default: rtn]
-  --imatrix PATH         GGUF imatrix for assisted K-quant pricing
-                         (ADR-0020). Requires --within-group kquant.
+  --imatrix PATH         GGUF imatrix for assisted pricing
+                         (ADR-0018, ADR-0020). Requires --within-group kquant,
+                         q0, or q0-imx2. q0-imx2 requires this file.
                          Use the file the pack step will consume
                          [default: none]
   --runlog PATH          Run-log path (JSONL)
@@ -597,13 +599,14 @@ vramfit validate RECIPE
   --trust-remote-code    Allow model repos with custom code
   --gpu-memory SIZE      Byte cap on GPU 0 model shards (e.g. 17GiB).
                          Requires --device auto  [default: none]
-  --within-group TEXT    Within-group method: rtn | kquant | q0
+  --within-group TEXT    Within-group method: rtn | kquant | q0 | q0-imx2
                          (ADR-0018)  [default: the recipe's recorded
                          method, or rtn without a record]
-  --imatrix PATH         GGUF imatrix for assisted K-quant measurement
+  --imatrix PATH         GGUF imatrix for assisted measurement
                          (ADR-0020). Required when the recipe was
-                         priced on an assisted map — use the map's
-                         imatrix file  [default: none]
+                         priced on an assisted map. --within-group
+                         q0-imx2 requires this file too — use the
+                         map's imatrix file  [default: none]
   --runlog PATH          Run-log path (JSONL)
                          [default: <recipe stem>.validation.runlog.jsonl]
 ```
@@ -840,8 +843,8 @@ tensor would keep the fit the recipe asked to drop, and the record
 would state an exclusion that never applied. Packing such a recipe
 without `--imatrix` warns that the exclusions change nothing.
 
-A recipe priced with the assisted `Q2_0` encoder's method takes the
-pre-encoding stage ([ADR-0032](../adr/0032-assisted-q2-encoder-home.md)).
+A recipe recording `q0-imx2` takes the pre-encoding stage
+([ADR-0032](../adr/0032-assisted-q2-encoder-home.md)).
 The command selects the `Q2_0` tensors the matrix covers, runs the
 encoder as a separate program under `--python-bin`, and writes a
 temporary mixed GGUF beside `--out`. `llama-quantize` then reads

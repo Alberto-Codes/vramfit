@@ -3,7 +3,7 @@
 The two commands build the same meter, so their overlapping options
 follow one rule each: the ``--gpu-memory`` cap parses with the
 project size grammar and requires ``--device auto``, and
-``--imatrix`` pairs with the kquant or q0 within-group method
+``--imatrix`` pairs with the kquant, q0, or q0-imx2 within-group method
 (ADR-0018, ADR-0020) — RTN has no weighted C counterpart. The
 scan's ``--within-group`` parser lives here beside that pairing
 rule, which it calls.
@@ -37,6 +37,7 @@ from vramfit.domain.scan import (
     KQUANT_IMX_METHOD,
     KQUANT_METHOD,
     KQUANT_PRECISIONS,
+    Q0_IMX2_METHOD,
     Q0_IMX_METHOD,
     Q0_REF_METHOD,
     Q0_REF_PRECISIONS,
@@ -54,16 +55,20 @@ def check_imatrix(imatrix: Path | None, method: str) -> None:
 
     Raises:
         typer.BadParameter: If the imatrix arrives with the ``rtn``
-            method (ADR-0018, ADR-0020), or the file does not
+            method (ADR-0018, ADR-0020), the ``q0-imx2`` method
+            arrives without one, or the file does not
             exist. ``kquant`` fits its covered tensors with the
-            weights, and ``q0`` fits nominal 4 through
-            ``quantize_row_q4_0_impl``.
+            weights. ``q0`` fits nominal 4 through
+            ``quantize_row_q4_0_impl``; ``q0-imx2`` also fits nominal 2,
+            so it cannot price without the matrix.
     """
     if imatrix is None:
+        if method == "q0-imx2":
+            raise typer.BadParameter("--within-group q0-imx2 requires --imatrix")
         return
-    if method not in ("kquant", "q0"):
+    if method not in ("kquant", "q0", "q0-imx2"):
         raise typer.BadParameter(
-            "--imatrix requires --within-group kquant or q0 "
+            "--imatrix requires --within-group kquant, q0, or q0-imx2 "
             "(ADR-0018, ADR-0020) — RTN has no weighted C counterpart"
         )
     if not imatrix.is_file():
@@ -128,7 +133,7 @@ def parse_gpu_memory(gpu_memory: str | None, device: str) -> int | None:
 
 def parse_within_group(
     text: str, precisions: tuple[int, ...], imatrix: Path | None
-) -> tuple[Literal["rtn", "kquant", "q0"], str]:
+) -> tuple[Literal["rtn", "kquant", "q0", "q0-imx2"], str]:
     """Validate the ``--within-group`` choice against the precisions.
 
     Args:
@@ -140,21 +145,25 @@ def parse_within_group(
         The validated method name and its fingerprint token — the
         token is the vocabulary run logs and maps share (ADR-0018).
         An imatrix turns the kquant or q0 token into its assisted
-        one (ADR-0018, ADR-0020).
+        one. ``q0-imx2`` directly names the assisted 2-bit path.
 
     Raises:
-        typer.BadParameter: If the method is unknown, ``kquant`` or
-            ``q0`` is combined with precisions outside its port
+        typer.BadParameter: If the method is unknown, ``kquant``,
+            ``q0``, or ``q0-imx2`` meets precisions outside its port
             coverage (ADR-0018), ``--imatrix`` arrives with the rtn
-            method, or the imatrix file does not exist — each
+            method, ``q0-imx2`` lacks an imatrix, or the file does not exist — each
             rejected before the model load burns an hour.
     """
-    if text not in ("rtn", "kquant", "q0"):
+    if text not in ("rtn", "kquant", "q0", "q0-imx2"):
         raise typer.BadParameter(
-            f'--within-group: expected "rtn", "kquant", or "q0", got "{text}"'
+            f'--within-group: expected "rtn", "kquant", "q0", or "q0-imx2", got "{text}"'
         )
     check_imatrix(imatrix, text)
-    covered = {"kquant": KQUANT_PRECISIONS, "q0": Q0_REF_PRECISIONS}.get(text)
+    covered = {
+        "kquant": KQUANT_PRECISIONS,
+        "q0": Q0_REF_PRECISIONS,
+        "q0-imx2": Q0_REF_PRECISIONS,
+    }.get(text)
     if covered is not None:
         uncovered = [p for p in precisions if p not in covered]
         if uncovered:
@@ -167,4 +176,6 @@ def parse_within_group(
         return text, SCAN_METHOD
     if text == "q0":
         return text, Q0_REF_METHOD if imatrix is None else Q0_IMX_METHOD
+    if text == "q0-imx2":
+        return text, Q0_IMX2_METHOD
     return text, KQUANT_METHOD if imatrix is None else KQUANT_IMX_METHOD

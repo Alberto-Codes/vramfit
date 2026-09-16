@@ -109,8 +109,8 @@ provisions without torch.
 
 ## Pre-encoding assisted Q2_0 tensors
 
-Stock `llama-quantize` discards the matrix at `Q2_0`. A recipe priced
-with the assisted `Q2_0` encoder's method takes a second path
+Stock `llama-quantize` discards the matrix at `Q2_0`. A recipe recording
+`q0-imx2` takes a second path
 ([ADR-0032](../adr/0032-assisted-q2-encoder-home.md)): pack selects
 the `Q2_0` tensors the matrix covers, runs vramfit's encoder as a
 separate program under `--python-bin`, writes a temporary mixed GGUF

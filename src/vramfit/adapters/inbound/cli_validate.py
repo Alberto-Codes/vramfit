@@ -12,9 +12,9 @@ marginal scanning. The frame resolves from the recipe's recorded
 method token, a contradicting flag is refused (ADR-0019), and an
 ``--imatrix`` that differs from the recipe's recorded file draws a
 warning — a different file contaminates the comparison (ADR-0020).
-Both assisted tokens resolve this way: ``kquant-imx`` measures
-through ``kquant`` and ``q0-imx`` through ``q0``, each with the
-imatrix.
+Assisted tokens resolve this way: ``kquant-imx`` measures through
+``kquant``, ``q0-imx`` through ``q0``, and ``q0-imx2`` through its
+assisted 2-bit method. Each uses the imatrix.
 The pass loads the same ``transformers`` the scan did, so it reports
 a merged projection under the name the scan measured.
 `vramfit.domain.projections.merged_assignments` folds the recipe's
@@ -67,6 +67,7 @@ from vramfit.domain.scan import (
     KQUANT_IMX_METHOD,
     KQUANT_METHOD,
     KQUANT_PRECISIONS,
+    Q0_IMX2_METHOD,
     Q0_IMX_METHOD,
     Q0_REF_METHOD,
     Q0_REF_PRECISIONS,
@@ -78,24 +79,26 @@ from vramfit.ports.outbound import DamageMeter
 # Method token -> the meter method that measures it. An assisted
 # token measures through its method with the imatrix (ADR-0018,
 # ADR-0020).
-_TOKEN_TO_METHOD: dict[str, Literal["rtn", "kquant", "q0"]] = {
+_TOKEN_TO_METHOD: dict[str, Literal["rtn", "kquant", "q0", "q0-imx2"]] = {
     SCAN_METHOD: "rtn",
     KQUANT_METHOD: "kquant",
     KQUANT_IMX_METHOD: "kquant",
     Q0_REF_METHOD: "q0",
     Q0_IMX_METHOD: "q0",
+    Q0_IMX2_METHOD: "q0-imx2",
 }
 # Each method's ported precision coverage (ADR-0018). RTN covers
 # every precision, so it is absent.
 _METHOD_COVERAGE: dict[str, tuple[int, ...]] = {
     "kquant": KQUANT_PRECISIONS,
     "q0": Q0_REF_PRECISIONS,
+    "q0-imx2": Q0_REF_PRECISIONS,
 }
 
 
 def _resolve_within_group(
     text: str | None, imatrix: Path | None, recipe: Recipe
-) -> tuple[Literal["rtn", "kquant", "q0"], str]:
+) -> tuple[Literal["rtn", "kquant", "q0", "q0-imx2"], str]:
     """Resolve the pass's method against the recipe's provenance.
 
     The pass only checks additivity when its frame matches the map
@@ -118,10 +121,11 @@ def _resolve_within_group(
         under.
 
     Raises:
-        typer.BadParameter: If the method is unknown, ``kquant`` or
-            ``q0`` meets assignments outside its port coverage
-            (ADR-0018), ``--imatrix`` arrives with the rtn method
-            or is not a file, the recipe records a token this
+        typer.BadParameter: If the method is unknown, ``kquant``,
+            ``q0``, or ``q0-imx2`` meets assignments outside its port
+            coverage (ADR-0018), ``--imatrix`` arrives with the rtn
+            method, ``q0-imx2`` lacks an imatrix, the file does not
+            exist, the recipe records a token this
             version does not know, or the resolved frame contradicts
             the recipe's recorded method (ADR-0019).
     """
@@ -133,11 +137,11 @@ def _resolve_within_group(
         )
     if text is None:
         method = _TOKEN_TO_METHOD[recorded] if recorded is not None else "rtn"
-    elif text in ("rtn", "kquant", "q0"):
+    elif text in ("rtn", "kquant", "q0", "q0-imx2"):
         method = text
     else:
         raise typer.BadParameter(
-            f'--within-group: expected "rtn", "kquant", or "q0", got "{text}"'
+            f'--within-group: expected "rtn", "kquant", "q0", or "q0-imx2", got "{text}"'
         )
     # Record conflicts refuse first — their messages name the real
     # cause. A flag-level message here ("--imatrix requires kquant")
@@ -159,6 +163,8 @@ def _resolve_within_group(
         token = SCAN_METHOD
     elif method == "q0":
         token = Q0_REF_METHOD if imatrix is None else Q0_IMX_METHOD
+    elif method == "q0-imx2":
+        token = Q0_IMX2_METHOD
     else:
         token = KQUANT_METHOD if imatrix is None else KQUANT_IMX_METHOD
     return method, token
@@ -185,7 +191,7 @@ def _check_provenance(
         typer.BadParameter: If an explicit method flag contradicts
             the record, ``--imatrix`` meets a recipe priced on an
             unassisted map, or the recipe records an assisted map —
-            ``kquant-imx`` or ``q0-imx`` —
+            ``kquant-imx``, ``q0-imx``, or ``q0-imx2`` —
             and no imatrix was given (ADR-0019, ADR-0020).
     """
     if recorded is None:
@@ -319,8 +325,9 @@ def validate(
         str | None,
         typer.Option(
             help="Within-group method: rtn, kquant for the "
-            "K-quant-faithful port, or q0 for the block "
-            "quantizers Q2_0/Q4_0/Q8_0 (ADR-0018). Default: the "
+            "K-quant-faithful port, q0 for the block "
+            "quantizers Q2_0/Q4_0/Q8_0, or q0-imx2 for assisted "
+            "2-bit (ADR-0018). Default: the "
             "method the recipe records, or rtn for recipes without "
             "the record."
         ),
@@ -372,7 +379,7 @@ def validate(
     Raises:
         typer.BadParameter: If ``--group-by``, ``--within-group``, or
             ``--gpu-memory`` is malformed — ``--within-group`` takes
-            ``rtn``, ``kquant``, or ``q0`` — ``--gpu-memory`` is given
+            ``rtn``, ``kquant``, ``q0``, or ``q0-imx2`` — ``--gpu-memory`` is given
             without ``--device auto``, ``--within-group kquant`` or
             ``q0`` meets recipe assignments the port does not
             cover,

@@ -26,7 +26,7 @@ from vramfit.adapters.outbound.gguf.types import (
 from vramfit.adapters.outbound.json_common import ArtifactError
 from vramfit.domain.budget import ModelShape
 from vramfit.domain.evals import EvalsSidecar
-from vramfit.domain.model import Q0_IMX_SUCCESSOR_METHOD, Recipe, SensitivityMap
+from vramfit.domain.model import Q0_IMX2_METHOD, Recipe, SensitivityMap
 from vramfit.domain.pack import PackResult
 from vramfit.domain.refinement_record import RefinementSidecar
 from vramfit.domain.runtime import K_QUANT_SUPER_BLOCK, routes_by_row_width
@@ -333,7 +333,7 @@ class MemoryRecipePacker:
         # a recipe priced with the assisted Q2_0 encoder's method needs
         # the matrix that weighted its fit. The fake pre-encodes
         # nothing, so its result records no pre-encoded tensor.
-        if recipe.within_group == Q0_IMX_SUCCESSOR_METHOD and self.imatrix is None:
+        if recipe.within_group == Q0_IMX2_METHOD and self.imatrix is None:
             raise PackError(
                 f'the recipe was priced with method "{recipe.within_group}", '
                 "whose Q2_0 cells the assisted encoder fitted, and the pack has "

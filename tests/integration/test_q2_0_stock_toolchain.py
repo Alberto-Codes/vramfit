@@ -53,7 +53,7 @@ from vramfit.adapters.outbound.scan.imatrix import load_imatrix
 from vramfit.adapters.outbound.scan.q2_0_assisted import Q2_0_ENCODER_REVISION
 from vramfit.adapters.outbound.scan.within_group import perturb
 from vramfit.domain.model import (
-    Q0_IMX_SUCCESSOR_METHOD,
+    Q0_IMX2_METHOD,
     Assignment,
     PlanMeta,
     Recipe,
@@ -185,7 +185,7 @@ def _recipe(imatrix: Path) -> Recipe:
             for group in STACKS
         ),
         runtime="llama.cpp",
-        within_group=Q0_IMX_SUCCESSOR_METHOD,
+        within_group=Q0_IMX2_METHOD,
         imatrix=str(imatrix),
         protected_tensors=(),
     )
@@ -248,11 +248,11 @@ class TestPackAndLoad:
         assert not packer.pre_encode_dir.exists()
 
         # The scan reconstructs the blocks pack emitted: the meter's
-        # successor method prices each stack to the bytes' decoding.
+        # `q0-imx2` method prices each stack to the bytes' decoding.
         entries = load_imatrix(imatrix)
         weight = torch.from_numpy(tensors[DOWN].astype(np.float32))
         priced = perturb(
-            weight, 2, DOWN_GROUP, "q0-successor", 32, entries[DOWN].column_weights
+            weight, 2, DOWN_GROUP, "q0-imx2", 32, entries[DOWN].column_weights
         )
         decoded = dequantize_q2_0(_payload(packer.out_path, DOWN), weight.numel())
         assert np.array_equal(decoded, priced.reshape(-1).numpy())

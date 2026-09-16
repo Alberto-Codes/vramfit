@@ -477,6 +477,32 @@ class TestValidateCommand:
         assert "--imatrix" in result.output
         assert "assisted" in result.output
 
+    @pytest.mark.parametrize("explicit_method", [False, True])
+    def test_q0_imx2_recipe_validates_with_matching_meter(
+        self, tmp_path, monkeypatch, explicit_method
+    ) -> None:
+        builds = install_meter(
+            monkeypatch, MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES))
+        )
+        imatrix = tmp_path / "im.gguf"
+        imatrix.write_bytes(b"GGUF")
+        recipe_path = tmp_path / "recipe.json"
+        save_recipe(
+            make_recipe(DEFAULT_RECIPE, within_group="q0-imx2", imatrix=str(imatrix)),
+            recipe_path,
+        )
+
+        method_flag = ("--within-group", "q0-imx2") if explicit_method else ()
+        result = invoke_validate(
+            tmp_path, recipe_path, *method_flag, "--imatrix", str(imatrix)
+        )
+
+        assert result.exit_code == 0, result.output
+        assert builds[0]["within_group"] == "q0-imx2"
+        assert builds[0]["imatrix"] == imatrix.resolve()
+        events = events_of(recipe_path.with_name("recipe.validation.runlog.jsonl"))
+        assert events[0]["within_group"] == "q0-imx2"
+
     def test_wrong_imatrix_file_warns_about_the_recorded_one(
         self, tmp_path, monkeypatch
     ) -> None:

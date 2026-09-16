@@ -13,7 +13,7 @@ from vramfit.adapters.inbound import cli_pack, cli_pack_imatrix
 from vramfit.adapters.inbound.cli import app
 from vramfit.adapters.outbound.recipe_json import save_recipe
 from vramfit.adapters.outbound.run_log_jsonl import read_run_log
-from vramfit.domain.model import Q0_IMX_SUCCESSOR_METHOD, Recipe
+from vramfit.domain.model import Q0_IMX2_METHOD, Recipe
 from vramfit.domain.pack import PackResult, TypeOverride
 
 pytestmark = pytest.mark.unit
@@ -63,7 +63,7 @@ def test_pack_records_and_echoes_the_pre_encoding_stage(
     imatrix = tmp_path / "m.gguf"
     imatrix.write_bytes(b"not read: the count source is faked")
     recipe = make_recipe(
-        str(model_dir), within_group=Q0_IMX_SUCCESSOR_METHOD, imatrix=str(imatrix)
+        str(model_dir), within_group=Q0_IMX2_METHOD, imatrix=str(imatrix)
     )
     recipe_path = tmp_path / "recipe.json"
     save_recipe(recipe, recipe_path)

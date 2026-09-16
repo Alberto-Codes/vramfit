@@ -185,32 +185,32 @@ class TestQuantizeDequantize:
         assert Q2_0_ENCODER_REVISION == "vramfit-q2_0-assisted-1"
 
 
-class TestSuccessorMethodDispatch:
+class TestQ0Imx2MethodDispatch:
     def test_weighted_nominal_two_routes_to_the_encoder(self) -> None:
         weight = torch.randn(4, 128)
         qw = torch.rand(128)
-        priced = perturb(weight, 2, "p", "q0-successor", 32, qw)
+        priced = perturb(weight, 2, "p", "q0-imx2", 32, qw)
         assert torch.equal(priced, q2_0_assisted_quantize_dequantize(weight, qw))
 
     def test_weighted_nominal_two_differs_from_the_stock_q0_imx_route(self) -> None:
         weight = torch.randn(4, 128)
         qw = torch.rand(128)
-        successor = perturb(weight, 2, "p", "q0-successor", 32, qw)
+        assisted = perturb(weight, 2, "p", "q0-imx2", 32, qw)
         stock = perturb(weight, 2, "p", "q0", 32, qw)
-        assert not torch.equal(successor, stock)
+        assert not torch.equal(assisted, stock)
 
     @pytest.mark.parametrize("bits", [4, 8])
     def test_other_precisions_keep_the_q0_imx_route(self, bits: int) -> None:
         weight = torch.randn(4, 128)
         qw = torch.rand(128)
         assert torch.equal(
-            perturb(weight, bits, "p", "q0-successor", 32, qw),
+            perturb(weight, bits, "p", "q0-imx2", 32, qw),
             perturb(weight, bits, "p", "q0", 32, qw),
         )
 
     def test_uncovered_nominal_two_keeps_the_reference_arithmetic(self) -> None:
         weight = torch.randn(4, 128)
         assert torch.equal(
-            perturb(weight, 2, "p", "q0-successor", 32, None),
+            perturb(weight, 2, "p", "q0-imx2", 32, None),
             perturb(weight, 2, "p", "q0", 32, None),
         )

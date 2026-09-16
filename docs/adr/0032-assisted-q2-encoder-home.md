@@ -14,8 +14,9 @@
   [issue #601](https://github.com/Alberto-Codes/vramfit/issues/601)
   waits for acceptance of this record. That wait ends here.
   Acceptance alone is discharged. The open questions below stay live,
-  including the unsettled torch boundary and the unnamed successor
-  token. This change implements no encoder and starts no re-solve.
+  including the unsettled torch boundary and ~~the unnamed successor
+  token~~. Resolved 2026-09-16 by issue #599, which named the token
+  `q0-imx2`. This change implements no encoder and starts no re-solve.
   The Consequences bullet on the end-to-end pack/load test binds the
   implementing task, not this record's status. The decision and
   Consequences bodies below keep their original wording.
@@ -270,10 +271,14 @@ The third cannot deliver the measured benefit or matching provenance.
 
 ## Open questions
 
-- The successor `within_group` token has no name. Decision 3 requires a
+- ~~The successor `within_group` token has no name. Decision 3 requires a
   distinct token and states none, because the string is a vocabulary
   decision. [Issue #599](https://github.com/Alberto-Codes/vramfit/issues/599)
-  owns it. The implementation cannot write a map before it closes.
+  owns it. The implementation cannot write a map before it closes.~~
+  Resolved 2026-09-16 by the maintainer's naming on
+  [issue #599](https://github.com/Alberto-Codes/vramfit/issues/599). The
+  token is `q0-imx2`, and `vramfit scan --within-group q0-imx2` writes a
+  map that records it.
 - ~~The glossary's pack-side assisted rule needs its matching amendment.
   Decision 3 rules a pre-encoded tensor assisted.
   [The glossary](../reference/glossary.md) still defines the pack sense

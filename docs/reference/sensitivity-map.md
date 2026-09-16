@@ -236,21 +236,18 @@ below remain, the sub-4-bit pricing claims do not.
   `Q8_0`, which reach the rows no K-quant tiles), or `q0-imx`
   (the same port with the imatrix weighting the nominal-4 fit,
   [ADR-0018](../adr/0018-kquant-within-group-method.md)'s
-  2026-08-21 amendment). A successor to `q0-imx` prices nominal 2
+  2026-08-21 amendment), or `q0-imx2`, which prices nominal 2
   with vramfit's assisted `Q2_0` encoder
   ([ADR-0032](../adr/0032-assisted-q2-encoder-home.md) decision 3).
-  The code carries it under a provisional string until
-  [issue #599](https://github.com/Alberto-Codes/vramfit/issues/599)
-  names the token, and no map records it before then. The writer
-  always records it. The loader accepts an absent field as
+  The writer always records it. The loader accepts an absent field as
   `rtn-block32` — every map written before the field existed
   measured with that method. Damage values are only comparable
   between maps with the same token.
 - **`scan.imatrix`** — the path of the imatrix that assisted the
   scan, or null for an unassisted scan
   ([ADR-0020](../adr/0020-imatrix-assisted-pricing.md)). The field
-  pairs with the assisted tokens, `kquant-imx` and `q0-imx`: the
-  loader rejects a map that
+  pairs with the assisted tokens, `kquant-imx`, `q0-imx`, and
+  `q0-imx2`: the loader rejects a map that
   claims assistance without naming its imatrix, or the reverse. An
   assisted map is only comparable to a pack that consumed the same
   imatrix file. The loader accepts an absent field as null.

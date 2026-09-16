@@ -251,9 +251,15 @@ change.
     its assisted path: nominal 4 fits with imatrix weights through
     the ported `quantize_row_q4_0_impl`, and nominal 2 and 8 keep
     the reference arithmetic. The 2026-08-21 amendment rules the
-    build.
-    A method
-    change is a new scan — the token lives in the fingerprint and in
+    build. `q0-imx2` applies the matrix at both assisted widths,
+    including 2-bit through vramfit's own `Q2_0` encoder. Nominal
+    8 keeps the reference arithmetic because stock `Q8_0` discards
+    the matrix. The `2` means the matrix reaches 2 bits. It does not
+    mean a second version of `q0-imx`. The `imx` signal tells a map reader that a
+    matrix was used, which matters when comparing maps. The name
+    describes the result rather than the pre-encoding step, so it
+    stays true if that mechanism changes. A method change is a new
+    scan — the token lives in the fingerprint and in
     the map's `scan.within_group`, and the recipe carries its map's
     token for the validation pass. Not "quantization mode" or
     "simulation method".
@@ -274,12 +280,9 @@ change.
     2026-08-21 amendment). Stock `Q2_0` has no assisted path, because
     `quantize_q2_0` ignores the matrix (ADR-0018, 2026-08-17
     amendment, token renamed by the 2026-08-18 amendment).
-    Accepted [ADR-0032](../adr/0032-assisted-q2-encoder-home.md) selects a
-    vramfit-owned assisted Q2_0 **encoder** under a successor token.
-    vramfit ships that encoder. The code carries the successor token
-    as a provisional string until
-    [issue #599](https://github.com/Alberto-Codes/vramfit/issues/599)
-    names it. Decision 3 keeps `q0-imx` nominal 2 unassisted.
+    Accepted [ADR-0032](../adr/0032-assisted-q2-encoder-home.md) selects
+    vramfit's assisted Q2_0 **encoder** under `q0-imx2`. Decision 3
+    keeps `q0-imx` nominal 2 unassisted.
     Not "imatrix mode" or "weighted scanning".
 
     The same pair names the pack side. A tensor packs **assisted** when
@@ -955,7 +958,7 @@ change.
     copies those payloads and quantizes the rest.
     Accepted [ADR-0032](../adr/0032-assisted-q2-encoder-home.md) decision 1
     selects it. `vramfit pack` pre-encodes when the recipe's
-    `within_group` token names the encoder's method, and the
+    `within_group` token is `q0-imx2`, and the
     `model_packed` event lists the tensors under `pre_encoded`.
     The verb is **pre-encode**. Not "pre-quantize" or "patching the
     base".

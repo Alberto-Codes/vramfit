@@ -123,7 +123,7 @@ from vramfit.adapters.outbound.gguf.types import (
 )
 from vramfit.adapters.outbound.safetensors_sizes import SafetensorsSizes
 from vramfit.domain.errors import VramfitError
-from vramfit.domain.model import Q0_IMX_SUCCESSOR_METHOD, Recipe
+from vramfit.domain.model import Q0_IMX2_METHOD, Recipe
 from vramfit.domain.pack import PackResult, TypeOverride
 from vramfit.domain.sizes import discovered_group_rows
 
@@ -407,7 +407,7 @@ class LlamaCppPacker:
                 payload directory and the mixed GGUF, and the
                 message names both.
         """
-        if recipe.within_group != Q0_IMX_SUCCESSOR_METHOD:
+        if recipe.within_group != Q0_IMX2_METHOD:
             return None
         if self.imatrix is None:
             raise PackError(
