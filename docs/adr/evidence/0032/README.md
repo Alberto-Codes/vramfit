@@ -178,11 +178,40 @@ merged output, then runs the pinned binary and exits with its code.
 The transcript substitutes three path roots and changes nothing else.
 
 The suite pins the embedding at 8 bits. `token_embedding_type` maps
-that group through the ADR-0012 k-quant table and reads no row width,
-so nominal 4 or 2 halts the pack after the whole quantize pass at
-these widths.
+that group through the ADR-0012 k-quant table and reads no row width.
+Nominal 4 emits `--token-embedding-type q4_k` and nominal 2 emits
+`q2_k`, and neither 256-block type divides a 2688-wide row.
+
+Neither case prints a `falling back to` line for `token_embd.weight`.
+`llama-quantize` aborts inside `[   2/  12] token_embd.weight` on
+`ggml.c:7933: GGML_ASSERT(start % type_traits[type].blck_size == 0) failed`
+and exits 134. `pack` raises `PackError`, and the landed files record
+the two forms its message takes: `quantize killed by signal SIGABRT`
+and `quantize failed with exit code 134`. The pass stops at tensor 2
+of 12, so it costs a small part of the quantize rather than the whole
+pass.
 [Issue #608](https://github.com/Alberto-Codes/vramfit/issues/608)
 carries that defect.
+
+An unassigned dense group fails by a different mechanism. Leaving the
+four 2688-wide attention tensors to the Q2_K floor makes the quantizer
+print four `not divisible by 256 (required for type q2_K) -> falling
+back to q4_0` warnings. That pass runs to the end and exits 0, and
+`pack` then raises `TypeFallbackError` naming the four rewrites
+(ADR-0028 decision 3). Only this mechanism costs the whole quantize
+pass. The record keeps the two apart.
+
+| File | What it records |
+| --- | --- |
+| [embed4-probe-out.txt](embed4-probe-out.txt) | the refusal `pack` raises at nominal 4 |
+| [embed2-probe-out.txt](embed2-probe-out.txt) | the refusal `pack` raises at nominal 2 |
+| [adr-note-refusals.txt](adr-note-refusals.txt) | the unassigned dense group beside the nominal-4 case |
+| [refusal-quantize-out.txt](refusal-quantize-out.txt) | the quantizer's own argv, warnings, tensor lines, assertions, and exit codes for all three |
+
+Each file comes from its own run on the same build, so the temporary
+paths differ between them. Each substitutes `<toolchain>` for the stock
+llama.cpp build directory and `<tmp>` for the probe's temporary
+directory, and changes nothing else.
 
 The fixture is 79.72 MiB and the run takes under ten seconds. It is not
 a damage measurement. The bound above compares two fits on one metric

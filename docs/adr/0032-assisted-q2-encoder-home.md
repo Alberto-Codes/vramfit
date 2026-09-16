@@ -264,11 +264,29 @@ The third cannot deliver the measured benefit or matching provenance.
   An assignment for every dense group is necessary and not
   sufficient. `token_embedding_type` maps the embedding group
   straight through the ADR-0012 k-quant table and never reads a row
-  width, so `--token-embedding-type` carries a 256-block type on
-  2688-wide rows whenever the embedding takes nominal 4 or 2. The
-  quantizer rewrites that type, and the pack halts on the same
-  warning pair — after the whole quantize pass is paid for. The
-  suite pins the embedding at 8 for that reason.
+  width. Nominal 4 emits `--token-embedding-type q4_k` and nominal 2
+  emits `q2_k`, so a 256-block type reaches 2688-wide rows.
+
+  That case does not reach the fallback above. The quantizer prints no
+  `falling back to` line for `token_embd.weight`. It aborts inside
+  `[   2/  12] token_embd.weight` on
+  `ggml.c:7933: GGML_ASSERT(start % type_traits[type].blck_size == 0) failed`
+  and exits 134. `pack` raises `PackError` for the aborted tool, not
+  `TypeFallbackError`. The pass stops at tensor 2 of 12, so the
+  operator pays a small part of the quantize cost rather than the whole
+  pass. The suite pins the embedding at 8 for that reason.
+
+  Only the unassigned dense group above costs the whole pass. That
+  quantize runs to the end and exits 0, and `pack` refuses afterwards.
+
+  [embed4-probe-out.txt](evidence/0032/embed4-probe-out.txt) and
+  [embed2-probe-out.txt](evidence/0032/embed2-probe-out.txt) record what
+  `pack` raises.
+  [adr-note-refusals.txt](evidence/0032/adr-note-refusals.txt) runs the
+  unassigned dense group beside the nominal-4 case.
+  [refusal-quantize-out.txt](evidence/0032/refusal-quantize-out.txt)
+  records the quantizer's own argv, warnings, tensor lines, assertions,
+  and exit codes for all three.
   [Issue #608](https://github.com/Alberto-Codes/vramfit/issues/608)
   carries the mechanism and the candidate remedies. A reader planning
   a 30B pack needs both halves of this constraint.

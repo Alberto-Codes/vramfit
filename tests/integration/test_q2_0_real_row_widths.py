@@ -96,8 +96,9 @@ ATTENTION_GROUPS = (
 )
 # The embedding takes `--token-embedding-type` from the ADR-0012
 # k-quant table, which no row width reaches. 8 is the one precision
-# whose block divides 2688. Nominal 4 or 2 maps to a 256-block
-# k-quant that the quantizer rewrites at this width, which is
+# whose block divides 2688. Nominal 4 or 2 sends a 256-block k-quant
+# to a 2688-wide row, and the quantizer aborts on a ggml block-size
+# assertion at tensor 2 of 12, which is
 # [issue #608](https://github.com/Alberto-Codes/vramfit/issues/608).
 EMBEDDING_GROUP = "model.embed_tokens"
 EMBEDDING_BITS = 8
