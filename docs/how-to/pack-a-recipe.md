@@ -126,12 +126,12 @@ also refuses a pack without `--imatrix`, because the recipe priced
 an assisted fit. A tensor the matrix does not cover, or one the
 recipe excludes, packs stock as before.
 
-The `model_packed` event records the tensors under `pre_encoded`,
-the encoder revision under `q2_0_encoder`, and the stage's measured
-cost under `pre_encode_cost`: the encoder's peak resident set, the
-temporary file's size, and the payloads' size. The temporary file is
+The `model_packed` event records the tensors under `pre_encoded`
+and the encoder revision under `q2_0_encoder`. The temporary file is
 roughly the base with the selected stacks at 2.25 bits, so `--out`
-needs that much free space during the pack. The encoder needs the
+needs that much free space during the pack. A failure inside the
+stage removes the temporary mixed GGUF and the payload directory. A
+failure after it keeps both and names them. The encoder needs the
 scan extra, which the pack extra includes.
 
 ## The smoke test

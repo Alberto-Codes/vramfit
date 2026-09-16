@@ -10,8 +10,8 @@ floating-point rows from the base, resolves the imatrix rows the way
 ``llama-quant.cpp`` slices them per expert, runs the one shared fit
 in [vramfit.adapters.outbound.scan.q2_0_assisted][], and streams the
 stored blocks into a payload file. It then writes a JSON report the
-pack side reads back: the encoder revision, the process's peak
-resident set, and one payload path, size, and SHA-256 per tensor.
+pack side reads back: the encoder revision, and one payload path,
+size, and SHA-256 per tensor.
 
 The imatrix read is `imatrix.load_imatrix`, the scan meter's own
 reader, so the zero-count fallback and the per-expert row mapping
@@ -38,7 +38,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import resource
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -206,7 +205,9 @@ def encode(args: argparse.Namespace) -> dict[str, Any]:
         args: The parsed arguments.
 
     Returns:
-        The report as a JSON-ready mapping.
+        The report as a JSON-ready mapping: the encoder revision,
+        and one payload path, size, digest, and element count per
+        tensor.
 
     Raises:
         EncodeError: If a tensor is missing, unreadable, uncovered
@@ -236,12 +237,7 @@ def encode(args: argparse.Namespace) -> dict[str, Any]:
             "sha256": digest,
             "elements": int(tensor.data.size),
         }
-    peak_kib = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-    return {
-        "encoder": Q2_0_ENCODER_REVISION,
-        "peak_rss_bytes": int(peak_kib) * 1024,
-        "tensors": tensors,
-    }
+    return {"encoder": Q2_0_ENCODER_REVISION, "tensors": tensors}
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -251,7 +247,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         argv: The arguments, or None for ``sys.argv``.
 
     Returns:
-        0 on success, 1 on a refusal the message explains.
+        0 on success, after printing the tensor count and the
+        encoder revision. 1 on a refusal the message explains.
 
     Examples:
         Encode one tensor from a test harness:
@@ -267,8 +264,5 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (EncodeError, ValueError, OSError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
-    print(
-        f"pre-encoded {len(report['tensors'])} tensor(s) with {report['encoder']}, "
-        f"peak RSS {report['peak_rss_bytes']} bytes"
-    )
+    print(f"pre-encoded {len(report['tensors'])} tensor(s) with {report['encoder']}")
     return 0

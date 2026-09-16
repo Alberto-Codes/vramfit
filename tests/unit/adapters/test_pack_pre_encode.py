@@ -23,7 +23,7 @@ pytest.importorskip("gguf", reason="gguf extra not installed")
 from gguf import GGUFWriter
 
 from vramfit.adapters.outbound.gguf.header import read_header
-from vramfit.adapters.outbound.gguf.pack import LlamaCppPacker
+from vramfit.adapters.outbound.gguf.pack import LlamaCppPacker, TypeFallbackError
 from vramfit.adapters.outbound.gguf.q2_0_blocks import Q2_0_TYPE_ID, q2_0_payload_bytes
 from vramfit.adapters.outbound.gguf.types import PackError
 from vramfit.domain.model import (
@@ -59,7 +59,7 @@ names = [args[i + 1] for i, a in enumerate(args) if a == "--tensor"]
 out = opt("--out-dir")
 os.makedirs(out, exist_ok=True)
 sizes = json.loads(os.environ["STUB_SIZES"])
-report = {"encoder": "stub-encoder", "peak_rss_bytes": 4096, "tensors": {}}
+report = {"encoder": "stub-encoder", "tensors": {}}
 for i, name in enumerate(names):
     path = os.path.join(out, f"{i}.q2_0")
     payload = bytes([0x11 * (i + 1)]) * sizes[name]
@@ -207,10 +207,6 @@ class TestPreEncodingPack:
 
         assert result.pre_encoded == (STACK, UP)
         assert result.q2_0_encoder == "stub-encoder"
-        assert result.pre_encode_cost is not None
-        assert result.pre_encode_cost.payload_bytes == 2 * q2_0_payload_bytes(1024)
-        assert result.pre_encode_cost.peak_rss_bytes == 4096
-        assert result.pre_encode_cost.mixed_gguf_bytes == result.packed_bytes
         assert result.file_type == "Q2_0"
         header = read_header(workspace["out"])
         assert {t.name: t.type_id for t in header.tensors}[STACK] == Q2_0_TYPE_ID
@@ -228,7 +224,6 @@ class TestPreEncodingPack:
         assert not workspace["encoder_argv"].exists()
         assert result.pre_encoded == ()
         assert result.q2_0_encoder is None
-        assert result.pre_encode_cost is None
 
     def test_successor_recipe_without_imatrix_refuses_before_any_tool_runs(
         self, workspace: dict[str, Path]
@@ -272,10 +267,13 @@ class TestPreEncodingPack:
             ).replace("sys.argv[-4]", repr(str(workspace["base"])))
         )
         p = packer(workspace)
-        with pytest.raises(PackError, match="not Q2_0"):
+        with pytest.raises(PackError, match="not Q2_0") as info:
             p.pack(recipe())
         assert workspace["out"].exists()
         assert p.mixed_gguf.exists()
+        assert p.pre_encode_dir.is_dir()
+        assert str(p.pre_encode_dir) in str(info.value)
+        assert str(p.mixed_gguf) in str(info.value)
 
     def test_encoder_failure_removes_the_stage_temporaries(
         self, workspace: dict[str, Path]
@@ -301,14 +299,39 @@ class TestPreEncodingPack:
         assert not p.mixed_gguf.exists()
         assert not workspace["quantize_argv"].exists()
 
-    def test_quantizer_failure_names_the_kept_mixed_file(
+    def test_quantizer_failure_names_both_kept_temporaries(
         self, workspace: dict[str, Path]
     ) -> None:
         workspace["quantize"].write_text(
             f"#!{sys.executable}\nimport sys; sys.exit(3)\n"
         )
         p = packer(workspace)
-        with pytest.raises(PackError, match="temporary mixed GGUF is kept") as info:
+        with pytest.raises(PackError, match="are kept for inspection") as info:
             p.pack(recipe())
         assert "quantize failed with exit code 3" in str(info.value)
+        assert str(p.mixed_gguf) in str(info.value)
+        assert str(p.pre_encode_dir) in str(info.value)
         assert p.mixed_gguf.exists()
+        assert p.pre_encode_dir.is_dir()
+
+    def test_type_fallback_names_both_kept_temporaries(
+        self, workspace: dict[str, Path]
+    ) -> None:
+        warning = (
+            "warning: blk.0.ffn_up_exps.weight - ncols 64 not divisible by 256 "
+            "(required for type q4_K), falling back to q5_0"
+        )
+        workspace["quantize"].write_text(
+            QUANTIZE_STUB.format(
+                python=sys.executable, argv_log=str(workspace["quantize_argv"])
+            )
+            + f"print({warning!r})\n"
+        )
+        p = packer(workspace)
+        with pytest.raises(TypeFallbackError, match="are kept for inspection") as info:
+            p.pack(recipe())
+        assert str(p.mixed_gguf) in str(info.value)
+        assert str(p.pre_encode_dir) in str(info.value)
+        assert p.mixed_gguf.exists()
+        assert p.pre_encode_dir.is_dir()
+        assert info.value.rewritten[0][0] == "blk.0.ffn_up_exps.weight"

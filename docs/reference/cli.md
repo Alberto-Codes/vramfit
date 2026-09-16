@@ -852,11 +852,10 @@ rows do not divide into 64-element blocks. It also refuses a pack
 without `--imatrix`, because the recipe priced an assisted fit. A
 tensor the matrix does not cover, and one the recipe excludes, pack
 stock. The `model_packed` event records the tensors under
-`pre_encoded`, the encoder revision under `q2_0_encoder`, and the
-stage's cost under `pre_encode_cost`: the encoder's peak resident
-set, the temporary file's size, and the payloads' size. A stage
-failure removes both temporaries and names them. A quantizer
-failure keeps the mixed GGUF for inspection.
+`pre_encoded` and the encoder revision under `q2_0_encoder`. A stage
+failure removes the temporary mixed GGUF and the payload directory,
+and names them. A failure after the stage keeps both for inspection
+and names them.
 
 `--mmproj` ships the supplied mmproj beside `--out` as the
 projector sidecar
@@ -883,8 +882,8 @@ run log: pack_started, gguf_converted (with `reused`), model_packed
 (real bytes, base type, embedding and output tensor types, override
 count, imatrix, uncovered tensors, excluded tensors, zero-count
 experts, floored layers, declared file type, pre-encoded tensors,
-the Q2_0 encoder revision, and the pre-encode cost — the last three
-null or empty on the stock path), size_checked (margin,
+and the Q2_0 encoder revision — the last two empty and null on the
+stock path), size_checked (margin,
 `fits`, `predicted_total_bytes`, `predicted_delta_bytes`,
 `predicted_delta_fraction`, and `predicted_within_tolerance` — all
 four null when the prediction is absent), reconstruction_checked

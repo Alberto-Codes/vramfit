@@ -13,9 +13,9 @@ as amended 2026-09-04), and
 the reconstruction-check verdict on protected packs — the stripped
 reference recipe and the collapsed-tensor judgment (ADR-0022), and
 the pre-encoding stage's own record: the tensors vramfit's assisted
-``Q2_0`` encoder fitted, the encoder revision, and the measured cost
-(`PreEncodeCost`, ADR-0032 decision 3). Type tables and subprocess
-details live in [vramfit.adapters.outbound.gguf][].
+``Q2_0`` encoder fitted and the encoder revision (ADR-0032 decision
+3). Type tables and subprocess details live in
+[vramfit.adapters.outbound.gguf][].
 
 Examples:
     Re-check a packed file against its recipe's budget:
@@ -83,43 +83,6 @@ class TypeOverride:
 
 
 @dataclass(frozen=True, slots=True)
-class PreEncodeCost:
-    """What the pre-encoding stage measured about itself (ADR-0032).
-
-    ADR-0032's open questions leave the preprocessor's full-file cost
-    unmeasured, so every pack that pre-encodes records its own.
-
-    Attributes:
-        peak_rss_bytes (int): The encoder program's peak resident
-            set.
-        mixed_gguf_bytes (int): The temporary mixed GGUF's size.
-        payload_bytes (int): The pre-encoded payloads' total size.
-
-    Examples:
-        The run log carries the three figures on ``model_packed``:
-
-        ```python
-        cost = PreEncodeCost(
-            peak_rss_bytes=2**30, mixed_gguf_bytes=2**36, payload_bytes=2**30
-        )
-        ```
-    """
-
-    peak_rss_bytes: int
-    mixed_gguf_bytes: int
-    payload_bytes: int
-
-    def __post_init__(self) -> None:
-        """Reject a negative measurement.
-
-        Raises:
-            ValueError: If any figure is negative.
-        """
-        if min(self.peak_rss_bytes, self.mixed_gguf_bytes, self.payload_bytes) < 0:
-            raise ValueError("a pre-encode cost must not be negative")
-
-
-@dataclass(frozen=True, slots=True)
 class PackResult:
     """The pack step's accounting record for one packed model.
 
@@ -182,8 +145,6 @@ class PackResult:
         q2_0_encoder (str | None): The encoder revision that produced
             the pre-encoded tensors, recorded with the result
             (ADR-0032 decision 3). None when nothing was pre-encoded.
-        pre_encode_cost (PreEncodeCost | None): What the stage
-            measured about itself. None when nothing was pre-encoded.
 
     Examples:
         Inspect the real size of a packed model:
@@ -206,7 +167,6 @@ class PackResult:
     file_type: str | None = None
     pre_encoded: tuple[str, ...] = ()
     q2_0_encoder: str | None = None
-    pre_encode_cost: PreEncodeCost | None = None
 
     def __post_init__(self) -> None:
         """Enforce the result invariants.
@@ -222,8 +182,8 @@ class PackResult:
                 stack or a negative expert index, a floored layer is
                 empty, two overrides share a pattern, a pre-encoded
                 tensor is empty or arrives without an ``imatrix_path``,
-                or ``pre_encoded``, ``q2_0_encoder``, and
-                ``pre_encode_cost`` are not all set or all unset.
+                or ``pre_encoded`` and ``q2_0_encoder`` are not both
+                set or both unset.
         """
         if self.packed_bytes <= 0:
             raise ValueError("packed_bytes must be positive")
@@ -260,7 +220,7 @@ def _check_pre_encoded(result: PackResult) -> None:
 
     Raises:
         ValueError: If a pre-encoded name is empty, the record names
-            pre-encoded tensors without an imatrix, or the three
+            pre-encoded tensors without an imatrix, or the two
             pre-encoding fields disagree on whether the stage ran.
     """
     if any(not name for name in result.pre_encoded):
@@ -268,12 +228,10 @@ def _check_pre_encoded(result: PackResult) -> None:
     ran = bool(result.pre_encoded)
     if ran and result.imatrix_path is None:
         raise ValueError("pre_encoded requires an imatrix_path")
-    if (result.q2_0_encoder is not None) != ran or (
-        result.pre_encode_cost is not None
-    ) != ran:
+    if (result.q2_0_encoder is not None) != ran:
         raise ValueError(
-            "pre_encoded, q2_0_encoder, and pre_encode_cost record one stage "
-            "together — set all three or none"
+            "pre_encoded and q2_0_encoder record one stage together — set "
+            "both or neither"
         )
     if result.q2_0_encoder is not None and not result.q2_0_encoder:
         raise ValueError("q2_0_encoder must not be empty")

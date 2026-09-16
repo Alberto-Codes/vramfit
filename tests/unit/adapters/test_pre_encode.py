@@ -193,7 +193,7 @@ out = opt("--out-dir")
 import os, hashlib
 os.makedirs(out, exist_ok=True)
 sizes = json.loads(os.environ["STUB_SIZES"])
-report = {"encoder": "stub-encoder", "peak_rss_bytes": 12345, "tensors": {}}
+report = {"encoder": "stub-encoder", "tensors": {}}
 for i, name in enumerate(names):
     path = os.path.join(out, f"{i}.q2_0")
     payload = bytes([i + 1]) * sizes[name]
@@ -245,7 +245,6 @@ class TestRunEncoder:
         ]
         assert argv[argv.index("--tensor") :] == ["--tensor", STACK, "--tensor", UP]
         assert report.encoder == "stub-encoder"
-        assert report.peak_rss_bytes == 12345
         assert [t.name for t in report.tensors] == [STACK, UP]
         assert report.tensors[0].size == q2_0_payload_bytes(1024)
         assert report.tensors[0].payload.read_bytes() == b"\x01" * 288

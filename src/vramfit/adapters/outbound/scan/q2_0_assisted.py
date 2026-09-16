@@ -70,9 +70,6 @@ from vramfit.adapters.outbound.scan.q0_ref import QK2_0
 # output changes for the same input.
 Q2_0_ENCODER_REVISION: Final[str] = "vramfit-q2_0-assisted-1"
 
-# One block stores an fp16 scale and 64 two-bit codes.
-Q2_0_BLOCK_BYTES: Final[int] = 2 + QK2_0 // 4
-
 # The three signed scale seeds, as multiples of the block absmax.
 _SEEDS: Final[tuple[float, ...]] = (1.0, 0.5, -0.5)
 _LLOYD_ITERATIONS: Final[int] = 4

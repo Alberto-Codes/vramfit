@@ -14,7 +14,7 @@ from vramfit.adapters.inbound.cli import app
 from vramfit.adapters.outbound.recipe_json import save_recipe
 from vramfit.adapters.outbound.run_log_jsonl import read_run_log
 from vramfit.domain.model import Q0_IMX_SUCCESSOR_METHOD, Recipe
-from vramfit.domain.pack import PackResult, PreEncodeCost, TypeOverride
+from vramfit.domain.pack import PackResult, TypeOverride
 
 pytestmark = pytest.mark.unit
 
@@ -42,9 +42,6 @@ class _PreEncodingPacker:
             file_type="Q2_0",
             pre_encoded=("blk.0.ffn_down_exps.weight",),
             q2_0_encoder="vramfit-q2_0-assisted-1",
-            pre_encode_cost=PreEncodeCost(
-                peak_rss_bytes=2**29, mixed_gguf_bytes=47_424, payload_bytes=2_304
-            ),
         )
 
 
@@ -97,8 +94,7 @@ def test_pack_records_and_echoes_the_pre_encoding_stage(
     assert result.exit_code == 0, result.output
     assert (
         "pre-encoded 1 tensor with the assisted Q2_0 encoder "
-        "vramfit-q2_0-assisted-1: payloads 2304 B, temporary mixed GGUF 47424 B, "
-        "encoder peak RSS 536870912 B (ADR-0032)"
+        "vramfit-q2_0-assisted-1 (ADR-0032)"
     ) in result.output
     packed = next(
         line
@@ -107,8 +103,4 @@ def test_pack_records_and_echoes_the_pre_encoding_stage(
     )
     assert packed["pre_encoded"] == ["blk.0.ffn_down_exps.weight"]
     assert packed["q2_0_encoder"] == "vramfit-q2_0-assisted-1"
-    assert packed["pre_encode_cost"] == {
-        "peak_rss_bytes": 2**29,
-        "mixed_gguf_bytes": 47_424,
-        "payload_bytes": 2_304,
-    }
+    assert "pre_encode_cost" not in packed

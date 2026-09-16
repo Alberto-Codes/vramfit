@@ -163,23 +163,18 @@ def _report_imatrix_effects(result: PackResult) -> None:
 def _report_pre_encoding(result: PackResult) -> None:
     """Echo what the assisted ``Q2_0`` encoder pre-encoded (ADR-0032).
 
-    The line states counts and the measured cost, and the run log
-    names every tensor. The cost figures answer ADR-0032's open
-    question on the preprocessor's full-file cost, one pack at a
-    time.
+    The line states the count and the encoder revision, and the run
+    log names every tensor.
 
     Args:
         result: The pack step's accounting record.
     """
-    if not result.pre_encoded or result.pre_encode_cost is None:
+    if not result.pre_encoded:
         return
     count = len(result.pre_encoded)
-    cost = result.pre_encode_cost
     typer.echo(
         f"pre-encoded {count} tensor{'' if count == 1 else 's'} with the "
-        f"assisted Q2_0 encoder {result.q2_0_encoder}: payloads "
-        f"{cost.payload_bytes} B, temporary mixed GGUF {cost.mixed_gguf_bytes} B, "
-        f"encoder peak RSS {cost.peak_rss_bytes} B (ADR-0032)"
+        f"assisted Q2_0 encoder {result.q2_0_encoder} (ADR-0032)"
     )
 
 
@@ -190,18 +185,10 @@ def _pre_encode_fields(result: PackResult) -> dict[str, object]:
         result: The pack step's accounting record.
 
     Returns:
-        The tensors, the encoder revision, and the measured cost, or
-        their empty forms when the stage did not run.
+        The tensors and the encoder revision, or their empty forms
+        when the stage did not run.
     """
-    cost = result.pre_encode_cost
     return {
         "pre_encoded": list(result.pre_encoded),
         "q2_0_encoder": result.q2_0_encoder,
-        "pre_encode_cost": None
-        if cost is None
-        else {
-            "peak_rss_bytes": cost.peak_rss_bytes,
-            "mixed_gguf_bytes": cost.mixed_gguf_bytes,
-            "payload_bytes": cost.payload_bytes,
-        },
     }

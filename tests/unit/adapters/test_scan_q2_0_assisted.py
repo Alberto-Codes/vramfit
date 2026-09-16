@@ -20,9 +20,11 @@ import pytest
 torch = pytest.importorskip("torch", reason="scan extra not installed")
 np = pytest.importorskip("numpy", reason="scan extra not installed")
 
-from vramfit.adapters.outbound.gguf.q2_0_blocks import dequantize_q2_0
-from vramfit.adapters.outbound.scan.q2_0_assisted import (
+from vramfit.adapters.outbound.gguf.q2_0_blocks import (
     Q2_0_BLOCK_BYTES,
+    dequantize_q2_0,
+)
+from vramfit.adapters.outbound.scan.q2_0_assisted import (
     Q2_0_ENCODER_REVISION,
     q2_0_assisted_fit,
     q2_0_assisted_quantize_dequantize,

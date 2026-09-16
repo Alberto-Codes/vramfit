@@ -58,7 +58,10 @@ would floor one, runs the encoder as a separate program under
 ``python_bin``, writes the temporary mixed GGUF beside the output,
 hands that file to the quantizer with the same flags and never
 ``--allow-requantize``, and verifies the packed payload bytes after
-the zero exit ([vramfit.adapters.outbound.gguf.pre_encode][]).
+the zero exit ([vramfit.adapters.outbound.gguf.pre_encode][]). A
+failure inside that stage removes its temporaries. A failure after
+it keeps the temporary mixed GGUF and the payload directory, and
+names both.
 
 Examples:
     Pack a recipe with a local llama.cpp checkout:
@@ -117,7 +120,7 @@ from vramfit.adapters.outbound.gguf.types import (
 from vramfit.adapters.outbound.safetensors_sizes import SafetensorsSizes
 from vramfit.domain.errors import VramfitError
 from vramfit.domain.model import Q0_IMX_SUCCESSOR_METHOD, Recipe
-from vramfit.domain.pack import PackResult, PreEncodeCost, TypeOverride
+from vramfit.domain.pack import PackResult, TypeOverride
 from vramfit.domain.sizes import discovered_group_rows
 
 # The quantizer's zero-exit warning for a tensor the importance
@@ -321,7 +324,9 @@ class LlamaCppPacker:
             that starts the assisted ``Q2_0`` encoder program
             (ADR-0032). None runs `ENCODER_BOOTSTRAP` under
             ``python_bin``, which must import vramfit and torch.
-            Tests substitute a stub here.
+            Tests substitute a stub here. The stage writes the mixed
+            GGUF at `mixed_gguf` and the payloads under
+            `pre_encode_dir`, both beside ``out_path``.
 
     Examples:
         The composition root wires the paths:
@@ -375,7 +380,7 @@ class LlamaCppPacker:
         *,
         embedding_flag: bool,
         output_flag: bool,
-    ) -> tuple[EncoderReport, int] | None:
+    ) -> EncoderReport | None:
         """Run the pre-encoding stage when the recipe's method selects it.
 
         Args:
@@ -387,9 +392,8 @@ class LlamaCppPacker:
             output_flag: Whether the pack emits ``--output-tensor-type``.
 
         Returns:
-            The encoder's report and the mixed file's size, or None
-            when the recipe takes the stock path or no covered
-            ``q2_0`` tensor exists.
+            The encoder's report, or None when the recipe takes the
+            stock path or no covered ``q2_0`` tensor exists.
 
         Raises:
             PackError: If the recipe's method needs an imatrix the
@@ -435,7 +439,7 @@ class LlamaCppPacker:
             payloads = {
                 tensor.name: (tensor.payload, Q2_0_TYPE_ID) for tensor in report.tensors
             }
-            mixed_bytes = write_mixed_gguf(self.base_gguf, self.mixed_gguf, payloads)
+            write_mixed_gguf(self.base_gguf, self.mixed_gguf, payloads)
         except PackError as exc:
             # The stage's own failure ships no artifact, and its
             # temporaries are multi-gigabyte. A full disk is one way
@@ -446,7 +450,19 @@ class LlamaCppPacker:
                 f"payload directory {self.pre_encode_dir} and the mixed GGUF "
                 f"{self.mixed_gguf} (ADR-0032)"
             ) from exc
-        return report, mixed_bytes
+        return report
+
+    def _kept_temporaries(self) -> str:
+        """Name the stage temporaries a later failure keeps.
+
+        Returns:
+            The sentence naming the temporary mixed GGUF and the
+            payload directory, both kept for inspection.
+        """
+        return (
+            f"The temporary mixed GGUF {self.mixed_gguf} and the payload "
+            f"directory {self.pre_encode_dir} are kept for inspection (ADR-0032)"
+        )
 
     def _discard_pre_encode_files(self) -> None:
         """Remove the temporary mixed GGUF and the payload directory."""
@@ -455,6 +471,67 @@ class LlamaCppPacker:
             for child in self.pre_encode_dir.iterdir():
                 child.unlink()
             self.pre_encode_dir.rmdir()
+
+    def _quantize(
+        self,
+        command: list[str],
+        excluded: tuple[str, ...],
+        stage: EncoderReport | None,
+    ) -> tuple[tuple[str, ...], int]:
+        """Run the quantizer and vouch for the file it wrote.
+
+        Args:
+            command: The quantizer's argument vector.
+            excluded: The recipe's imatrix exclusions.
+            stage: The pre-encoding stage's report, or None when the
+                recipe took the stock path.
+
+        Returns:
+            The imatrix-miss tensor names and the packed file's size.
+
+        Raises:
+            PackError: If the quantizer fails, writes no usable file,
+                names a miss the reader could not decode, or dropped
+                a pre-encoded payload. After a pre-encoding stage the
+                message names the temporaries it keeps.
+            TypeFallbackError: If the zero-exit output carries the
+                type-fallback warning pair (ADR-0028).
+        """
+        try:
+            output = run_tool(command, stage="quantize")
+            # A type-fallback warning means the artifact ignored the
+            # recipe on a zero exit — halt, never record-and-continue
+            # (ADR-0028 decision 3).
+            rewritten = tuple(_TYPE_FALLBACK.findall(output))
+            if rewritten:
+                raise TypeFallbackError(rewritten, self.out_path)
+            # An excluded tensor's row is gone from the loaded matrix,
+            # so the quantizer reports it as a miss — an intentional
+            # one, recorded in imatrix_excluded instead (ADR-0023).
+            uncovered = (
+                tuple(
+                    name
+                    for name in _read_miss_names(output, self.out_path)
+                    if name not in excluded
+                )
+                if self.imatrix is not None
+                else ()
+            )
+            packed_bytes = sized_file(self.out_path, stage="quantize")
+            if stage is not None:
+                # Matching bytes prove the stock pass copied every
+                # pre-encoded tensor (ADR-0032 decision 1). The
+                # temporary files go only after that proof.
+                verify_pre_encoded(
+                    self.out_path,
+                    {tensor.name: tensor.sha256 for tensor in stage.tensors},
+                )
+        except PackError as exc:
+            if stage is None:
+                raise
+            exc.args = (f"{exc}\n{self._kept_temporaries()}",)
+            raise
+        return uncovered, packed_bytes
 
     def convert(self) -> int:
         """Materialize the f16 base GGUF, reusing any existing file.
@@ -531,10 +608,11 @@ class LlamaCppPacker:
         After the zero exit the packed payload bytes must match what
         the encoder wrote, and only then do the temporary files go.
         A failure inside the stage removes them at once, because no
-        artifact depends on them. A failure in the quantizer keeps
-        the mixed GGUF for inspection.
-        The result records the pre-encoded tensors, the encoder
-        revision, and the stage's measured cost.
+        artifact depends on them. A failure after it keeps both the
+        temporary mixed GGUF and the payload directory, and the
+        message names them.
+        The result records the pre-encoded tensors and the encoder
+        revision.
 
         Args:
             recipe: The recipe to apply.
@@ -627,53 +705,13 @@ class LlamaCppPacker:
         for override in overrides:
             command += ["--tensor-type", f"{override.pattern}={override.quant_type}"]
         command += [str(source), str(self.out_path), base, str(self.threads)]
-        try:
-            quantize_output = run_tool(command, stage="quantize")
-        except PackError as exc:
-            if stage is None:
-                raise
-            raise PackError(
-                f"{exc}\nThe temporary mixed GGUF is kept at {self.mixed_gguf} for "
-                "inspection (ADR-0032)"
-            ) from exc
-        # A type-fallback warning means the artifact ignored the
-        # recipe on a zero exit — halt, never record-and-continue
-        # (ADR-0028 decision 3).
-        rewritten = tuple(_TYPE_FALLBACK.findall(quantize_output))
-        if rewritten:
-            raise TypeFallbackError(rewritten, self.out_path)
-        # An excluded tensor's row is gone from the loaded matrix, so
-        # the quantizer reports it as a miss — an intentional one,
-        # recorded in imatrix_excluded instead (ADR-0023).
-        uncovered = (
-            tuple(
-                name
-                for name in _read_miss_names(quantize_output, self.out_path)
-                if name not in excluded
-            )
-            if self.imatrix is not None
-            else ()
-        )
-        packed_bytes = sized_file(self.out_path, stage="quantize")
+        uncovered, packed_bytes = self._quantize(command, excluded, stage)
         pre_encoded: tuple[str, ...] = ()
         encoder: str | None = None
-        cost: PreEncodeCost | None = None
         if stage is not None:
-            report, mixed_bytes = stage
-            # Matching bytes prove the stock pass copied every
-            # pre-encoded tensor (ADR-0032 decision 1). The temporary
-            # files go only after that proof.
-            verify_pre_encoded(
-                self.out_path, {tensor.name: tensor.sha256 for tensor in report.tensors}
-            )
             self._discard_pre_encode_files()
-            pre_encoded = tuple(tensor.name for tensor in report.tensors)
-            encoder = report.encoder
-            cost = PreEncodeCost(
-                peak_rss_bytes=report.peak_rss_bytes,
-                mixed_gguf_bytes=mixed_bytes,
-                payload_bytes=sum(tensor.size for tensor in report.tensors),
-            )
+            pre_encoded = tuple(tensor.name for tensor in stage.tensors)
+            encoder = stage.encoder
         # The quantizer stamped the base ftype, which names the floor
         # and not the file (#413). Relabel with the modal type by
         # bytes (ADR-0012 decision 3 as amended 2026-09-04).
@@ -691,5 +729,4 @@ class LlamaCppPacker:
             file_type=declared,
             pre_encoded=pre_encoded,
             q2_0_encoder=encoder,
-            pre_encode_cost=cost,
         )

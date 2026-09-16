@@ -239,10 +239,6 @@ class TestPackAndLoad:
 
         assert result.pre_encoded == (DOWN,)
         assert result.q2_0_encoder == Q2_0_ENCODER_REVISION
-        assert result.pre_encode_cost is not None
-        assert result.pre_encode_cost.payload_bytes == q2_0_payload_bytes(
-            N_EXPERT * N_FF * N_EMBD
-        )
         header = read_header(packer.out_path)
         by_type = {t.name: t.type_id for t in header.tensors}
         assert by_type[DOWN] == Q2_0_TYPE_ID

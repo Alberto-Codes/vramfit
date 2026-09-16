@@ -152,8 +152,6 @@ class EncoderReport:
     Attributes:
         encoder (str): The encoder revision that produced the
             payloads.
-        peak_rss_bytes (int): The encoder process's peak resident
-            set, as it measured itself.
         tensors (tuple[EncodedTensor, ...]): One entry per target,
             in target order.
 
@@ -166,7 +164,6 @@ class EncoderReport:
     """
 
     encoder: str
-    peak_rss_bytes: int
     tensors: tuple[EncodedTensor, ...]
 
 
@@ -298,7 +295,8 @@ def _read_report(path: Path, targets: Sequence[PreEncodeTarget]) -> EncoderRepor
         targets: The tensors the encoder was asked for.
 
     Returns:
-        The report.
+        The report: the encoder revision, and one payload path,
+        size, and digest per target, in target order.
 
     Raises:
         PackError: If the report is missing, malformed, or does not
@@ -321,7 +319,7 @@ def _read_report(path: Path, targets: Sequence[PreEncodeTarget]) -> EncoderRepor
             )
             for target in targets
         )
-        report = EncoderReport(str(raw["encoder"]), int(raw["peak_rss_bytes"]), tensors)
+        report = EncoderReport(str(raw["encoder"]), tensors)
     except (KeyError, TypeError, ValueError) as exc:
         raise PackError(
             f"pre-encode: the encoder report {path} is malformed: {exc}"
@@ -384,28 +382,6 @@ def run_encoder(
         argv += ["--tensor", target.name]
     run_tool(argv, stage="pre-encode")
     return _read_report(report_path, targets)
-
-
-def sha256_of(path: Path) -> str:
-    """Hash a file's bytes.
-
-    Args:
-        path: The file.
-
-    Returns:
-        The SHA-256 hex digest.
-
-    Raises:
-        PackError: If the file cannot be read.
-    """
-    digest = hashlib.sha256()
-    try:
-        with path.open("rb") as handle:
-            while chunk := handle.read(16 << 20):
-                digest.update(chunk)
-    except OSError as exc:
-        raise PackError(f"cannot hash {path}: {exc}") from exc
-    return digest.hexdigest()
 
 
 def verify_pre_encoded(packed: Path, expected: Mapping[str, str]) -> None:
