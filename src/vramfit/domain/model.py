@@ -5,9 +5,7 @@ The dataclasses enforce their own structural invariants in
 however it was constructed. The checks cover positive sizes, strictly
 descending precisions, unique group names, sensitivity keys matching
 the scan, imatrix provenance pairing with the assisted method tokens
-(including the provisional successor token ADR-0032 decision 3 adds
-for the assisted ``Q2_0`` encoder, whose serialized string issue #599
-owns),
+(including ``q0-imx2`` for the assisted ``Q2_0`` encoder),
 tensor sizes covering exactly the group's tensors, protection records
 pairing with their resolved pairs (ADR-0022), an ordered imatrix
 count summary (ADR-0026 decision 4), and a non-empty derived note
@@ -89,10 +87,8 @@ Q0_IMX_METHOD = "q0-imx"
 # The successor to `q0-imx` (ADR-0032 decision 3): the same port, with
 # nominal 2 fitting through vramfit's own assisted Q2_0 encoder, the
 # encoder the pack pre-encodes with. `q0-imx` keeps its stock-Q2_0
-# meaning. PROVISIONAL: issue #599 owns the serialized string, and
-# no map may carry this value before it closes. Only the string
-# changes when it lands, never the constant's name.
-Q0_IMX_SUCCESSOR_METHOD = "q0-imx-successor-provisional"
+# meaning. The token says the matrix now reaches nominal 2.
+Q0_IMX_SUCCESSOR_METHOD = "q0-imx2"
 # The tokens that claim assistance. Each pairs with the `imatrix`
 # field — a map or recipe cannot claim assistance without naming its
 # imatrix, or the reverse (ADR-0020).

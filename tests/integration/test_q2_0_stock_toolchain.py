@@ -252,7 +252,7 @@ class TestPackAndLoad:
         entries = load_imatrix(imatrix)
         weight = torch.from_numpy(tensors[DOWN].astype(np.float32))
         priced = perturb(
-            weight, 2, DOWN_GROUP, "q0-successor", 32, entries[DOWN].column_weights
+            weight, 2, DOWN_GROUP, "q0-imx2", 32, entries[DOWN].column_weights
         )
         decoded = dequantize_q2_0(_payload(packer.out_path, DOWN), weight.numel())
         assert np.array_equal(decoded, priced.reshape(-1).numpy())

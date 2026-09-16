@@ -189,13 +189,13 @@ class TestSuccessorMethodDispatch:
     def test_weighted_nominal_two_routes_to_the_encoder(self) -> None:
         weight = torch.randn(4, 128)
         qw = torch.rand(128)
-        priced = perturb(weight, 2, "p", "q0-successor", 32, qw)
+        priced = perturb(weight, 2, "p", "q0-imx2", 32, qw)
         assert torch.equal(priced, q2_0_assisted_quantize_dequantize(weight, qw))
 
     def test_weighted_nominal_two_differs_from_the_stock_q0_imx_route(self) -> None:
         weight = torch.randn(4, 128)
         qw = torch.rand(128)
-        successor = perturb(weight, 2, "p", "q0-successor", 32, qw)
+        successor = perturb(weight, 2, "p", "q0-imx2", 32, qw)
         stock = perturb(weight, 2, "p", "q0", 32, qw)
         assert not torch.equal(successor, stock)
 
@@ -204,13 +204,13 @@ class TestSuccessorMethodDispatch:
         weight = torch.randn(4, 128)
         qw = torch.rand(128)
         assert torch.equal(
-            perturb(weight, bits, "p", "q0-successor", 32, qw),
+            perturb(weight, bits, "p", "q0-imx2", 32, qw),
             perturb(weight, bits, "p", "q0", 32, qw),
         )
 
     def test_uncovered_nominal_two_keeps_the_reference_arithmetic(self) -> None:
         weight = torch.randn(4, 128)
         assert torch.equal(
-            perturb(weight, 2, "p", "q0-successor", 32, None),
+            perturb(weight, 2, "p", "q0-imx2", 32, None),
             perturb(weight, 2, "p", "q0", 32, None),
         )
