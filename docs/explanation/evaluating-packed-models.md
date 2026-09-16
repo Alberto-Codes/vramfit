@@ -2017,9 +2017,12 @@ holding 11 stacks at 2.25.
 > [ADR-0032](../adr/0032-assisted-q2-encoder-home.md) decision 5 reads
 > that asymmetry as a toolchain handicap, not a cost of the widths. It
 > amends ADR-0016's 2026-08-21 amendment, decision 2. The assisted-fit
-> sentence above and the sentence after it are both amended. The
-> 74.44 % and 91.53 % assisted shares stand. Decision 5 preserves them,
-> because they measure what stock llama.cpp packed.
+> cause above is amended. The width admits an assisted fit at 2.25 bits
+> on those rows, and the stock encoder declines to compute one. The
+> `quantize_q8_0` cause stands, because no 8-bit type consumes a matrix
+> and this record changes no stock behavior. The 74.44 % and 91.53 %
+> assisted shares stand. Decision 5 preserves them, because they
+> measure what stock llama.cpp packed.
 
 **The serve half passed its bar with 225 MiB to spare.** The bar
 (issue #164) is fit, not speed: the pack loads fully offloaded inside
