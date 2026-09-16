@@ -339,8 +339,8 @@ def scan(
         Path | None,
         typer.Option(
             help="GGUF imatrix for assisted pricing (ADR-0018, "
-            "ADR-0020). Requires --within-group kquant, q0, or q0-imx2. Use "
-            "the file the pack step will consume."
+            "ADR-0020). Requires --within-group kquant, q0, or q0-imx2. "
+            "q0-imx2 requires this file. Use the file the pack step will consume."
         ),
     ] = None,
     runlog: Annotated[
@@ -383,8 +383,9 @@ def scan(
     256-element super-block on rows of 2688 or 1856, and ``kquant``
     now refuses such a cell instead of pricing a frame the pack
     cannot apply.
-    ``--imatrix`` adds the pack's importance matrix to the kquant
-    or q0 fit (assisted pricing, ADR-0018, ADR-0020) — under q0
+    ``--imatrix`` adds the pack's importance matrix to the kquant,
+    q0, or q0-imx2 fit (assisted pricing, ADR-0018, ADR-0020).
+    q0-imx2 requires that file and assists nominal 2. Under q0,
     only nominal 4 fits with weights, because the C discards the
     matrix at 2 and 8 — the map then records the
     resolved imatrix path beside the method, and the run log

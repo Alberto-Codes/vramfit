@@ -451,8 +451,8 @@ vramfit scan MODEL
                          tiles. q0-imx2 also assists the nominal-2
                          fit. Each pairs only with precisions its
                          port covers  [default: rtn]
-  --imatrix PATH         GGUF imatrix for assisted K-quant pricing
-                         (ADR-0020). Requires --within-group kquant,
+  --imatrix PATH         GGUF imatrix for assisted pricing
+                         (ADR-0018, ADR-0020). Requires --within-group kquant,
                          q0, or q0-imx2. q0-imx2 requires this file.
                          Use the file the pack step will consume
                          [default: none]
