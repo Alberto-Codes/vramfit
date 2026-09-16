@@ -105,8 +105,119 @@ so the conclusion does not depend on interpreting a progress line.
   records that discovery. No inference or GPU measurement ran.
 - The fixture has a two-expert stack with logical shape `[256, 256, 2]`,
   one F16 attention tensor, and one F32 norm. It is not a runnable model.
-- This probe establishes passthrough on this build. Production integration
-  still needs real row widths, complete metadata preservation, and load tests.
+- This probe establishes passthrough on this build.
+  [The row-width section](#target-row-widths-2688-and-1856) below records
+  the real widths and a runtime load on the same build. Production
+  integration still needs complete metadata preservation.
+
+## Target row widths 2688 and 1856
+
+- **Recorded:** 2026-09-16
+
+The passthrough probe above ran on 256-wide and 64-wide rows. The 30B
+acceptance target carries rows of 2688 and 1856 instead (ADR-0026,
+ADR-0028). `tests/integration/test_q2_0_real_row_widths.py` runs the
+pack path at those two widths on the same build.
+
+The suite builds a two-expert llama fixture, assigns the down and gate
+stacks nominal 2, and calls `LlamaCppPacker.pack`. Nothing in the suite
+names `q2_0`: the ADR-0028 routing reads the measured row width and
+chooses the type.
+
+Two value-level checks run at each width. The scan meter fits the stack
+again and must decode the packed bytes to exactly its own values. That
+first check proves the meter and the pack agree, and no more: both run
+the one encoder, so they would agree on a degenerate fit too.
+
+The second check is the bound. It measures the imatrix-weighted squared
+error of the decoded values against the original weights, measures the
+same metric for the unassisted `q0` reference, and requires the
+assisted error to be strictly lower. An all-zero decode fails it.
+
+The whole claim is this. The packed bytes decode to something strictly
+closer to the original weights than the unassisted `q0` reference
+under the imatrix weighting, at 1856 and at 2688, which excludes a
+degenerate fit. The quantity lives in weight space, so
+[the glossary](../../../reference/glossary.md) rules it reconstruction
+error and not damage.
+[Issue #302](https://github.com/Alberto-Codes/vramfit/issues/302)
+measured a weight-space term and measured damage ordering apart on
+this target. Read the figures below as that comparison and as nothing
+about KLD.
+
+| Claim | Where the transcript shows it |
+| --- | --- |
+| The routing maps both nominal-2 stacks to `q2_0` | `applying manual override: q2_K -> q2_0` on the down and gate stacks |
+| The stock pass preserves both payloads | `[   8/  12]` and `[   9/  12]` report `type = q2_0` and copy the size |
+| A routed peer at 2688 still quantizes | `blk.0.ffn_up_exps.weight` converts to `q4_0` |
+| Stock ggml reads the blocks back | `llama-bench` returns `pp8` at exit 0 |
+| The assisted fit beats the unassisted reference | the suite passes, so the weighted squared error is strictly lower at both widths |
+
+The two pre-encoded stacks read `[  1856,   2688,      2,      1]` and
+`[  2688,   1856,      2,      1]`, which is 29 and 42 blocks per row.
+
+The bound's measured values, from the run the transcript records:
+
+| Stack | Row width | Assisted | Unassisted `q0` reference |
+| --- | ---: | ---: | ---: |
+| `blk.0.ffn_down_exps.weight` | 1856 | 1.825842e+03 | 7.246948e+03 |
+| `blk.0.ffn_gate_exps.weight` | 2688 | 1.829699e+03 | 7.262723e+03 |
+
+The assisted fit costs about a quarter of the reference's weighted
+squared error at both widths. These figures come from the fixture's
+random weights and describe no real checkpoint.
+
+- [real-row-widths-transcript.txt](real-row-widths-transcript.txt): the
+  suite's own output, the wrapper run that records the tool calls, and
+  the complete stdout and stderr of both stock tools.
+- [real-row-widths-toolchain-sha256.txt](real-row-widths-toolchain-sha256.txt):
+  the executables and the loaded libraries.
+
+`run_tool` discards a passing tool's output, so the transcript's third
+section comes from a second run of the same suite against a directory
+of two shell scripts. Each script records its argv and the tool's
+merged output, then runs the pinned binary and exits with its code.
+The transcript substitutes three path roots and changes nothing else.
+
+The suite pins the embedding at 8 bits. `token_embedding_type` maps
+that group through the ADR-0012 k-quant table and reads no row width.
+Nominal 4 emits `--token-embedding-type q4_k` and nominal 2 emits
+`q2_k`, and neither 256-block type divides a 2688-wide row.
+
+Neither case prints a `falling back to` line for `token_embd.weight`.
+`llama-quantize` aborts inside `[   2/  12] token_embd.weight` on
+`ggml.c:7933: GGML_ASSERT(start % type_traits[type].blck_size == 0) failed`
+and exits 134. `pack` raises `PackError`, and the landed files record
+the two forms its message takes: `quantize killed by signal SIGABRT`
+and `quantize failed with exit code 134`. The pass stops at tensor 2
+of 12, so it costs a small part of the quantize rather than the whole
+pass.
+[Issue #608](https://github.com/Alberto-Codes/vramfit/issues/608)
+carries that defect.
+
+An unassigned dense group fails by a different mechanism. Leaving the
+four 2688-wide attention tensors to the Q2_K floor makes the quantizer
+print four `not divisible by 256 (required for type q2_K) -> falling
+back to q4_0` warnings. That pass runs to the end and exits 0, and
+`pack` then raises `TypeFallbackError` naming the four rewrites
+(ADR-0028 decision 3). Only this mechanism costs the whole quantize
+pass. The record keeps the two apart.
+
+| File | What it records |
+| --- | --- |
+| [embed4-probe-out.txt](embed4-probe-out.txt) | the refusal `pack` raises at nominal 4 |
+| [embed2-probe-out.txt](embed2-probe-out.txt) | the refusal `pack` raises at nominal 2 |
+| [adr-note-refusals.txt](adr-note-refusals.txt) | the unassigned dense group beside the nominal-4 case |
+| [refusal-quantize-out.txt](refusal-quantize-out.txt) | the quantizer's own argv, warnings, tensor lines, assertions, and exit codes for all three |
+
+Each file comes from its own run on the same build, so the temporary
+paths differ between them. Each substitutes `<toolchain>` for the stock
+llama.cpp build directory and `<tmp>` for the probe's temporary
+directory, and changes nothing else.
+
+The fixture is 79.72 MiB and the run takes under ten seconds. It is not
+a damage measurement. The bound above compares two fits on one metric
+and states no absolute quality floor.
 
 ## Rebuy evidence
 

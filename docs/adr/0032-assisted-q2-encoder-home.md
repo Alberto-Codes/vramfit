@@ -239,6 +239,61 @@ The third cannot deliver the measured benefit or matching provenance.
 - Toolchain changes require the passthrough probe again. The implementation
   must test overrides, matrix exclusions, zero-count experts, and the target
   row widths of 2688 and 1856.
+- **Observed 2026-09-16: the target row widths are tested, and the
+  pack refuses a recipe that leaves a 2688-wide dense tensor to the
+  Q2_K floor.** `tests/integration/test_q2_0_real_row_widths.py`
+  drives `LlamaCppPacker.pack` on a two-expert fixture shaped at 2688
+  and 1856. The routing maps both nominal-2 stacks to `q2_0` from
+  their measured widths, the payloads survive the stock pass, the
+  scan meter decodes them to its own fit, the assisted fit beats the
+  unassisted `q0` reference on imatrix-weighted squared error at both
+  widths, and `llama-bench` runs a forward pass over the packed file.
+  That discharges the row-width half of the clause above.
+  [The transcript](evidence/0032/real-row-widths-transcript.txt) and
+  [the toolchain hashes](evidence/0032/real-row-widths-toolchain-sha256.txt)
+  record the run on build 10362 (`4801e3c56`).
+
+  A nominal-2 stack sets the `--pure` base ftype to Q2_K (ADR-0012),
+  and the 256 super-block does not divide 2688. The first run of this
+  fixture left the four 2688-wide attention tensors unassigned. Those
+  tensors took the `--pure` Q2_K floor, so the quantizer rewrote four
+  types. The pack halted on the type-fallback warning pair (ADR-0028
+  decision 3). That run assigned the embedding at 8 bits. The refusal
+  is correct. It means a target of this shape needs an assignment for
+  every dense group the file carries, not only for the routed stacks.
+
+  An assignment for every dense group is necessary and not
+  sufficient. `token_embedding_type` maps the embedding group
+  straight through the ADR-0012 k-quant table and never reads a row
+  width. Nominal 4 emits `--token-embedding-type q4_k` and nominal 2
+  emits `q2_k`, so a 256-block type reaches 2688-wide rows.
+
+  That case does not reach the fallback above. Every run the record
+  covers gives the embedding an explicit `--token-embedding-type`. The
+  flag overrides the `--pure` floor that the unassigned attention
+  tensors took. The quantizer prints no `falling back to` line for
+  `token_embd.weight`. It aborts inside
+  `[   2/  12] token_embd.weight` on
+  `ggml.c:7933: GGML_ASSERT(start % type_traits[type].blck_size == 0) failed`
+  and exits 134. `pack` raises `PackError` for the aborted tool, not
+  `TypeFallbackError`. The pass stops at tensor 2 of 12, so the
+  operator pays a small part of the quantize cost rather than the whole
+  pass. The suite pins the embedding at 8 for that reason.
+
+  Only the unassigned dense group above costs the whole pass. That
+  quantize runs to the end and exits 0, and `pack` refuses afterwards.
+
+  [embed4-probe-out.txt](evidence/0032/embed4-probe-out.txt) and
+  [embed2-probe-out.txt](evidence/0032/embed2-probe-out.txt) record what
+  `pack` raises.
+  [adr-note-refusals.txt](evidence/0032/adr-note-refusals.txt) runs the
+  unassigned dense group beside the nominal-4 case.
+  [refusal-quantize-out.txt](evidence/0032/refusal-quantize-out.txt)
+  records the quantizer's own argv, warnings, tensor lines, assertions,
+  and exit codes for all three.
+  [Issue #608](https://github.com/Alberto-Codes/vramfit/issues/608)
+  carries the mechanism and the candidate remedies. A reader planning
+  a 30B pack needs both halves of this constraint.
 - **A pre-encoded tensor loses ADR-0012 decision 3's record-and-continue
   floor.** Today a layer that no override reaches takes the `--pure`
   floor. The pack step records it in `PackResult.floored_layers`, prints

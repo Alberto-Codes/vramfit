@@ -271,6 +271,8 @@ include = [
     "tests/contract/test_imatrix_count_source_contract.py",
     "tests/contract/test_reconstruction_checker_contract.py",
     "tests/e2e/test_cli_subprocess.py",
+    "tests/integration/q2_0_fixture.py",
+    "tests/integration/test_q2_0_real_row_widths.py",
     "tests/integration/test_q2_0_stock_toolchain.py",
     "tests/integration/test_torch_scan_adapter.py",
     "tests/unit/adapters/test_exclusion_match_gguf.py",

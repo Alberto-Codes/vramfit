@@ -1,0 +1,23 @@
+=== attention groups unassigned, embedding 8 ===
+pack REFUSED: TypeFallbackError: the quantizer rewrote 4 tensor types the recipe assigned (ADR-0028): blk.0.attn_k.weight: q2_K -> q4_0, blk.0.attn_output.weight: q2_K -> q4_0, blk.0.attn_q.weight: q2_K -> q4_0, blk.0.attn_v.weight: q2_K -> q4_0. The packed file no longer carries the recipe and is kept at <tmp>/packed.gguf for inspection
+The temporary mixed GGUF <tmp>/packed.mixed.gguf and the payload directory <tmp>/packed.pre-encode are kept for inspection (ADR-0032)
+
+=== every dense group assigned, embedding 4 ===
+pack REFUSED: PackError: quantize killed by signal SIGABRT:
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/usr/lib64/libthread_db.so.1".
+0x00007f077c7f8312 in __syscall_cancel_arch () from /usr/lib64/libc.so.6
+#0  0x00007f077c7f8312 in __syscall_cancel_arch () from /usr/lib64/libc.so.6
+#1  0x00007f077c7ec52c in __internal_syscall_cancel () from /usr/lib64/libc.so.6
+#2  0x00007f077c7ec877 in __futex_abstimed_wait_cancelable64 () from /usr/lib64/libc.so.6
+#3  0x00007f077c7f1a3d in __pthread_clockjoin_ex () from /usr/lib64/libc.so.6
+#4  0x00007f077c9f542b in std::thread::join() () from /usr/lib64/libstdc++.so.6
+#5  0x00007f077bfbe828 in llama_model_quantize_impl(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, llama_model_quantize_params const*) () from <toolchain>/libllama.so.0
+#6  0x00007f077bfbfda4 in llama_model_quantize () from <toolchain>/libllama.so.0
+#7  0x00007f077cc801ee in llama_quantize(int, char**) () from <toolchain>/libllama-quantize-impl.so
+#8  0x00007f077c780681 in __libc_start_call_main () from /usr/lib64/libc.so.6
+#9  0x00007f077c780798 in __libc_start_main_impl () from /usr/lib64/libc.so.6
+#10 0x0000563488d55295 in _start ()
+[Inferior 1 (process 3708335) detached]
+The temporary mixed GGUF <tmp>/packed.mixed.gguf and the payload directory <tmp>/packed.pre-encode are kept for inspection (ADR-0032)
+

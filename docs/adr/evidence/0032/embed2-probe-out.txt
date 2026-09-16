@@ -1,0 +1,17 @@
+pack REFUSED: PackError: quantize failed with exit code 134:
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/usr/lib64/libthread_db.so.1".
+0x00007f0384309312 in __syscall_cancel_arch () from /usr/lib64/libc.so.6
+#0  0x00007f0384309312 in __syscall_cancel_arch () from /usr/lib64/libc.so.6
+#1  0x00007f03842fd52c in __internal_syscall_cancel () from /usr/lib64/libc.so.6
+#2  0x00007f03842fd877 in __futex_abstimed_wait_cancelable64 () from /usr/lib64/libc.so.6
+#3  0x00007f0384302a3d in __pthread_clockjoin_ex () from /usr/lib64/libc.so.6
+#4  0x00007f038450642b in std::thread::join() () from /usr/lib64/libstdc++.so.6
+#5  0x00007f03839be828 in llama_model_quantize_impl(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, llama_model_quantize_params const*) () from <toolchain>/libllama.so.0
+#6  0x00007f03839bfda4 in llama_model_quantize () from <toolchain>/libllama.so.0
+#7  0x00007f03847911ee in llama_quantize(int, char**) () from <toolchain>/libllama-quantize-impl.so
+#8  0x00007f0384291681 in __libc_start_call_main () from /usr/lib64/libc.so.6
+#9  0x00007f0384291798 in __libc_start_main_impl () from /usr/lib64/libc.so.6
+#10 0x000055b11170c295 in _start ()
+[Inferior 1 (process 3746793) detached]
+The temporary mixed GGUF <tmp>/packed.mixed.gguf and the payload directory <tmp>/packed.pre-encode are kept for inspection (ADR-0032)
