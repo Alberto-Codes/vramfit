@@ -13,6 +13,11 @@ tensor type from the measured row width. Nothing here names ``q2_0``.
 The stock runtime then loads the packed file and runs a forward pass,
 which is what reads the blocks back at 29 and 42 blocks per row.
 
+The meter and the encoder share one fit, so their agreement alone
+would hold on a degenerate result. `_weighted_error` bounds the fit
+instead: the assisted decode must cost less imatrix-weighted squared
+error than the unassisted ``q0`` reference at each width.
+
 The tools come from ``VRAMFIT_LLAMA_CPP_BIN``, a directory holding
 stock ``llama-quantize`` and ``llama-bench``. The suite skips with
 that reason when the variable is unset, when a tool is missing, or
@@ -135,6 +140,30 @@ def _recipe(imatrix: Path) -> Recipe:
     )
 
 
+def _weighted_error(
+    weight: torch.Tensor, fitted: torch.Tensor, column_weights: torch.Tensor
+) -> float:
+    """State one fit's imatrix-weighted squared error on a stack.
+
+    Each element weighs by its expert's imatrix column weight, the
+    per-expert mapping the encoder applies (ADR-0026). The metric is
+    the principled stand-in for what the campaign measures by KLD.
+
+    Args:
+        weight: The original stack, shape ``(experts, rows, row)``
+            or flat.
+        fitted: The round-tripped values, same element count.
+        column_weights: Imatrix weights, shape ``(experts, row)``.
+
+    Returns:
+        The summed weighted squared error.
+    """
+    experts, row = column_weights.shape
+    shaped = weight.reshape(experts, -1, row)
+    diff = shaped - fitted.reshape(experts, -1, row)
+    return float((column_weights[:, None, :] * diff * diff).sum())
+
+
 def _packer(
     tmp_path: Path, base: Path, imatrix: Path, quantize: Path
 ) -> LlamaCppPacker:
@@ -213,13 +242,25 @@ class TestRealRowWidths:
                 f"the scan meter and the pack disagree on {width}-wide {name}"
             )
             # Both sides of that equality run the one encoder, so it
-            # holds on a degenerate fit too. The unassisted reference
-            # separates the two: the assisted fit reads the imatrix
-            # and must land somewhere else at this width.
+            # holds on a degenerate fit too — all-zero blocks satisfy
+            # it. The bound below does not: the assisted fit must beat
+            # the unassisted reference on the metric the imatrix
+            # defines, which no degenerate fit does.
+            column_weights = entries[name].column_weights.to(torch.float32)
             reference = perturb(weight, 2, group, "q0", 32, None)
-            assert not np.array_equal(decoded, reference.reshape(-1).numpy()), (
-                f"the assisted fit matches the unassisted reference on "
-                f"{width}-wide {name}"
+            assisted_error = _weighted_error(
+                weight, torch.from_numpy(decoded), column_weights
+            )
+            reference_error = _weighted_error(weight, reference, column_weights)
+            print(
+                f"weighted squared error at {width}-wide {name}: "
+                f"assisted {assisted_error:.6e}, "
+                f"unassisted reference {reference_error:.6e}"
+            )
+            assert assisted_error < reference_error, (
+                f"the assisted fit does not beat the unassisted reference on "
+                f"{width}-wide {name}: {assisted_error:.6e} versus "
+                f"{reference_error:.6e}"
             )
 
         # The stock runtime reads the blocks back at 29 and 42 blocks

@@ -245,9 +245,10 @@ The third cannot deliver the measured benefit or matching provenance.
   drives `LlamaCppPacker.pack` on a two-expert fixture shaped at 2688
   and 1856. The routing maps both nominal-2 stacks to `q2_0` from
   their measured widths, the payloads survive the stock pass, the
-  scan meter decodes them to its own fit, and `llama-bench` runs a
-  forward pass over the packed file. That discharges the row-width
-  half of the clause above.
+  scan meter decodes them to its own fit, the assisted fit beats the
+  unassisted `q0` reference on imatrix-weighted squared error at both
+  widths, and `llama-bench` runs a forward pass over the packed file.
+  That discharges the row-width half of the clause above.
   [The transcript](evidence/0032/real-row-widths-transcript.txt) and
   [the toolchain hashes](evidence/0032/real-row-widths-toolchain-sha256.txt)
   record the run on build 10362 (`4801e3c56`).

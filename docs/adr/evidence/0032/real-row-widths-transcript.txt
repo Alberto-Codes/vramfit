@@ -11,15 +11,16 @@ directory. Every argument, exit code, tensor shape, and figure reads
 as the session produced it.
 
 Run 1 points VRAMFIT_LLAMA_CPP_BIN straight at the stock build. It
-records the suite's own result. `run_tool` swallows a passing tool's
-output, so run 2 repeats the same suite against <wrapper>, a directory
-of two shell scripts. Each script appends its argv and the tool's
-complete merged output to a log, then runs the pinned binary at
-<toolchain> and exits with its code. Section 3 is that log.
+adds -s, so the suite's own weighted-error lines reach the log.
+`run_tool` swallows a passing tool's output, so run 2 repeats the same
+suite against <wrapper>, a directory of two shell scripts. Each script
+appends its argv and the tool's complete merged output to a log, then
+runs the pinned binary at <toolchain> and exits with its code.
+Section 3 is that log.
 
 == 1. The suite, against the stock build directly ==
 
-$ VRAMFIT_LLAMA_CPP_BIN=<toolchain> uv run pytest tests/integration/test_q2_0_real_row_widths.py -m 'integration and slow' -p no:randomly -vv
+$ VRAMFIT_LLAMA_CPP_BIN=<toolchain> uv run pytest tests/integration/test_q2_0_real_row_widths.py -m 'integration and slow' -p no:randomly -vv -s
 ============================= test session starts ==============================
 platform linux -- Python 3.12.12, pytest-9.1.1, pluggy-1.6.0 -- <repo>/.venv/bin/python
 cachedir: .pytest_cache
@@ -29,9 +30,11 @@ configfile: pyproject.toml
 plugins: mock-3.15.1, cov-7.1.0, typeguard-4.6.0, anyio-4.14.2, hypothesis-6.161.8
 collecting ... collected 1 item
 
-tests/integration/test_q2_0_real_row_widths.py::TestRealRowWidths::test_pack_pre_encodes_both_target_widths_and_the_runtime_loads_the_file PASSED [100%]
+tests/integration/test_q2_0_real_row_widths.py::TestRealRowWidths::test_pack_pre_encodes_both_target_widths_and_the_runtime_loads_the_file weighted squared error at 1856-wide blk.0.ffn_down_exps.weight: assisted 1.825842e+03, unassisted reference 7.246948e+03
+weighted squared error at 2688-wide blk.0.ffn_gate_exps.weight: assisted 1.829699e+03, unassisted reference 7.262723e+03
+PASSED
 
-============================== 1 passed in 8.95s ===============================
+============================== 1 passed in 9.10s ===============================
 exit: 0
 
 == 2. The same suite, through the recording wrapper ==
@@ -48,7 +51,7 @@ collecting ... collected 1 item
 
 tests/integration/test_q2_0_real_row_widths.py::TestRealRowWidths::test_pack_pre_encodes_both_target_widths_and_the_runtime_loads_the_file PASSED [100%]
 
-============================== 1 passed in 9.11s ===============================
+============================== 1 passed in 9.28s ===============================
 exit: 0
 
 == 3. The two stock tool calls run 2 made, with their complete output ==
@@ -126,8 +129,8 @@ converting to q4_0 .. size =    13.78 MiB ->     3.88 MiB
 llama_model_quantize_impl: model size  =    79.72 MiB (11.35 BPW)
 llama_model_quantize_impl: quant size  =    26.35 MiB (3.75 BPW)
 
-llama_quantize: quantize time =   231.02 ms
-llama_quantize:    total time =   231.02 ms
+llama_quantize: quantize time =   232.67 ms
+llama_quantize:    total time =   232.67 ms
 exit: 0
 
 $ <toolchain>/llama-bench '-m' '<tmp>/test_pack_pre_encodes_both_tar0/packed.gguf' '-p' '8' '-n' '0' '-ngl' '0' '-r' '1'
@@ -139,7 +142,7 @@ load_backend: loaded Vulkan backend from <toolchain>/libggml-vulkan.so
 load_backend: loaded CPU backend from <toolchain>/libggml-cpu-zen4.so
 | model                          |       size |     params | backend    | ngl |            test |                  t/s |
 | ------------------------------ | ---------: | ---------: | ---------- | --: | --------------: | -------------------: |
-| llama ?B Q4_0                  |  26.35 MiB |    58.93 M | Vulkan     |   0 |             pp8 |       3970.57 ± 0.00 |
+| llama ?B Q4_0                  |  26.35 MiB |    58.93 M | Vulkan     |   0 |             pp8 |       5967.11 ± 0.00 |
 
 build: 4801e3c56 (10362)
 exit: 0

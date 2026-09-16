@@ -123,11 +123,17 @@ names `q2_0`: the ADR-0028 routing reads the measured row width and
 chooses the type.
 
 Two value-level checks run at each width. The scan meter fits the stack
-again and must decode the packed bytes to exactly its own values. The
-unassisted `q0` reference must then differ from those values. The
-second check is what separates a working fit from a degenerate one,
-because the meter and the encoder share their code and would agree on
-zero scales too.
+again and must decode the packed bytes to exactly its own values. That
+first check proves the meter and the pack agree, and no more: both run
+the one encoder, so they would agree on a degenerate fit too.
+
+The second check is the bound. It measures the imatrix-weighted squared
+error of the decoded values against the original weights, measures the
+same metric for the unassisted `q0` reference, and requires the
+assisted error to be strictly lower. An all-zero decode fails it. The
+bound states that the assisted fit beats the reference on this metric
+at this width. It fixes no absolute quality floor, and it is a
+stand-in for KLD rather than a measurement of it.
 
 | Claim | Where the transcript shows it |
 | --- | --- |
@@ -135,10 +141,21 @@ zero scales too.
 | The stock pass preserves both payloads | `[   8/  12]` and `[   9/  12]` report `type = q2_0` and copy the size |
 | A routed peer at 2688 still quantizes | `blk.0.ffn_up_exps.weight` converts to `q4_0` |
 | Stock ggml reads the blocks back | `llama-bench` returns `pp8` at exit 0 |
-| The fit is assisted, not degenerate | the suite passes, so the decoded bytes differ from the unassisted `q0` reference at both widths |
+| The assisted fit beats the unassisted reference | the suite passes, so the weighted squared error is strictly lower at both widths |
 
 The two pre-encoded stacks read `[  1856,   2688,      2,      1]` and
 `[  2688,   1856,      2,      1]`, which is 29 and 42 blocks per row.
+
+The bound's measured values, from the run the transcript records:
+
+| Stack | Row width | Assisted | Unassisted `q0` reference |
+| --- | ---: | ---: | ---: |
+| `blk.0.ffn_down_exps.weight` | 1856 | 1.825842e+03 | 7.246948e+03 |
+| `blk.0.ffn_gate_exps.weight` | 2688 | 1.829699e+03 | 7.262723e+03 |
+
+The assisted fit costs about a quarter of the reference's weighted
+squared error at both widths. These figures come from the fixture's
+random weights and describe no real checkpoint.
 
 - [real-row-widths-transcript.txt](real-row-widths-transcript.txt): the
   suite's own output, the wrapper run that records the tool calls, and
@@ -160,7 +177,8 @@ these widths.
 carries that defect.
 
 The fixture is 79.72 MiB and the run takes under ten seconds. It is not
-a damage measurement, and it proves no bound on fit quality.
+a damage measurement. The bound above compares two fits on one metric
+and states no absolute quality floor.
 
 ## Rebuy evidence
 
