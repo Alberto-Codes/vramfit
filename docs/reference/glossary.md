@@ -274,18 +274,25 @@ change.
     2026-08-21 amendment). Stock `Q2_0` has no assisted path, because
     `quantize_q2_0` ignores the matrix (ADR-0018, 2026-08-17
     amendment, token renamed by the 2026-08-18 amendment).
-    [ADR-0032](../adr/0032-assisted-q2-encoder-home.md) proposes a
+    Accepted [ADR-0032](../adr/0032-assisted-q2-encoder-home.md) selects a
     vramfit-owned assisted Q2_0 **encoder** under a successor token.
-    That ADR stays Proposed, so `q0-imx` keeps nominal 2 unassisted.
+    No implementation exists yet. Decision 3 keeps `q0-imx` nominal 2
+    unassisted.
     Not "imatrix mode" or "weighted scanning".
 
     The same pair names the pack side. A tensor packs **assisted** when
-    its type reads the matrix and the matrix covers its name, and
-    **unassisted** otherwise. An artifact's **assisted share** is the
-    fraction of its bytes that packed assisted
+    its type reads the matrix and the matrix covers its name.
+    A pre-encoded tensor also packs **assisted** when the matrix weighted
+    the encoder's candidate selection, even though its stock type ignores the matrix.
+    All other tensors pack **unassisted**.
+    An artifact's **assisted share** is the fraction of its bytes that packed assisted
     ([ADR-0016](../adr/0016-imatrix-in-the-pack-path.md), 2026-08-21
-    amendment). The scan sense and the pack sense can disagree on one
+    amendment, and [ADR-0032](../adr/0032-assisted-q2-encoder-home.md), decision 3).
+    The scan sense and the pack sense can disagree on one
     tensor, because the two sides apply different fits.
+    ADR-0032's
+    [open questions](../adr/0032-assisted-q2-encoder-home.md#open-questions)
+    gate what a share that counts pre-encoded bytes may publish.
 
 **Reconstruction error**
 :   The squared difference between a quantized tensor and its
@@ -933,27 +940,28 @@ change.
     reference round trips. The term governs new naming, and the shipped
     `q0_assisted_quantize_dequantize` and `q0_ref_quantize_dequantize`
     keep their names.
-    [ADR-0032](../adr/0032-assisted-q2-encoder-home.md) decision 2
-    proposes one shared Q2_0 encoder, which the scan meter and the pack
-    path both call. That ADR stays Proposed, so no encoder reaches the
-    pack path yet.
+    Accepted [ADR-0032](../adr/0032-assisted-q2-encoder-home.md) decision 2
+    selects one shared Q2_0 encoder for the scan meter and the pack path.
+    No implementation exists yet, so no encoder reaches the pack path.
+    [Issue #601](https://github.com/Alberto-Codes/vramfit/issues/601) tracks implementation.
 
 **Pre-encoding**
 :   Writing tensors that an **encoder** already fitted into a temporary
     mixed GGUF, before stock `llama-quantize` runs, so the stock pass
     copies those payloads and quantizes the rest.
-    [ADR-0032](../adr/0032-assisted-q2-encoder-home.md) decision 1
-    proposes it and stays Proposed, so no pack path pre-encodes today.
+    Accepted [ADR-0032](../adr/0032-assisted-q2-encoder-home.md) decision 1
+    selects it. No implementation exists yet, so no pack path pre-encodes today.
     The verb is **pre-encode**. Not "pre-quantize" or "patching the
     base".
 
 **Preprocessor**
 :   The CPU subprocess that pre-encodes.
-    [ADR-0032](../adr/0032-assisted-q2-encoder-home.md) decision 1
-    proposes it, and vramfit ships none yet. As proposed it reads the
-    **base GGUF**, replaces only the selected tensors, and writes the
-    temporary mixed GGUF. It never writes the base GGUF or a published
-    artifact, and the pack adapter stays a subprocess driver around it.
+    Accepted [ADR-0032](../adr/0032-assisted-q2-encoder-home.md) decision 1
+    selects it. No implementation exists yet, and vramfit ships none.
+    The decision requires it to read the **base GGUF**, replace only the
+    selected tensors, and write the temporary mixed GGUF.
+    It must never write the base GGUF or a published artifact.
+    The pack adapter must stay a subprocess driver around it.
     Not "rewriter" or "shim".
 
 **Type override**
