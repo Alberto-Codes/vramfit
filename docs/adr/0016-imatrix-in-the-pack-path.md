@@ -82,6 +82,12 @@ b10172):
    a GPU-scale forward pass with its own runtime flags, and the pack
    step must stay a CPU subprocess driver. The scan-emits-it design
    intent stays open below.
+
+   > **Amended by ADR-0032 (2026-09-15, issue #597):**
+   > [ADR-0032](0032-assisted-q2-encoder-home.md) decision 1 permits a
+   > vramfit-owned pre-encoding subprocess stage. The clause above
+   > stands, because decision 1 keeps the pack adapter a subprocess
+   > driver. The boundary widens, and nothing reverses.
 3. **The imatrix text is the scan's calibration set.** One text
    source feeds the whole measured pipeline: scan, validation pass,
    importance matrix. The baseline's matrix (bartowski) was computed
