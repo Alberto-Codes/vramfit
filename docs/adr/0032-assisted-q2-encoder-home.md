@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-09-14 (accepted 2026-09-15)
-- **Note (2026-09-15, issue #597):** acceptance discharged three
+- **Note (2026-09-15, issue #597):** Acceptance discharged three
   forward-looking clauses below. Decision 3 defers the glossary's
   pack-side assisted amendment to acceptance. That amendment landed.
   [The glossary](../reference/glossary.md) now rules a pre-encoded

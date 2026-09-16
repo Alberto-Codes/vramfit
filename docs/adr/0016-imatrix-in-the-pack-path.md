@@ -21,7 +21,7 @@
     asymmetry a cost of the width rather than a toolchain handicap.
     The 2026-09-05 rebuy measures an assisted fit at 2.25 bits on rows
     of 2688 and 1856. ADR-0032 decision 5 reads the cause the other
-    way. See the amendment note in the amendment below.
+    way. See the dated note below.
   - The original decision 2 rules that the pack step must stay a CPU
     subprocess driver. ADR-0032 decision 1 permits a vramfit-owned
     preprocessor subprocess that pre-encodes selected tensors before

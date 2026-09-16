@@ -282,7 +282,7 @@ change.
 
     The same pair names the pack side. A tensor packs **assisted** when
     its type reads the matrix and the matrix covers its name.
-    A pre-encoded tensor also packs assisted when the matrix weighted
+    A pre-encoded tensor also packs **assisted** when the matrix weighted
     the encoder's candidate selection, even though its stock type ignores the matrix.
     All other tensors pack **unassisted**.
     An artifact's **assisted share** is the fraction of its bytes that packed assisted
