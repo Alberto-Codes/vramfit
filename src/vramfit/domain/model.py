@@ -84,15 +84,15 @@ Q0_REF_METHOD = "q0-ref"
 # path. Nominal 2 and 8 keep the reference arithmetic — the C
 # discards the matrix there.
 Q0_IMX_METHOD = "q0-imx"
-# The successor to `q0-imx` (ADR-0032 decision 3): the same port, with
+# The assisted 2-bit token (ADR-0032 decision 3): the `q0` port, with
 # nominal 2 fitting through vramfit's own assisted Q2_0 encoder, the
 # encoder the pack pre-encodes with. `q0-imx` keeps its stock-Q2_0
 # meaning. The token says the matrix now reaches nominal 2.
-Q0_IMX_SUCCESSOR_METHOD = "q0-imx2"
+Q0_IMX2_METHOD = "q0-imx2"
 # The tokens that claim assistance. Each pairs with the `imatrix`
 # field — a map or recipe cannot claim assistance without naming its
 # imatrix, or the reverse (ADR-0020).
-ASSISTED_METHODS = (KQUANT_IMX_METHOD, Q0_IMX_METHOD, Q0_IMX_SUCCESSOR_METHOD)
+ASSISTED_METHODS = (KQUANT_IMX_METHOD, Q0_IMX_METHOD, Q0_IMX2_METHOD)
 # The shape of a recorded SHA-256, checked wherever a content
 # identity enters the domain. [vramfit.domain.evals][] fixes the same
 # two constants for the evaluated artifact's digest.

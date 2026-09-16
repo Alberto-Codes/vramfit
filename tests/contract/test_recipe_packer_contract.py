@@ -32,7 +32,7 @@ from vramfit.adapters.outbound.gguf import exclusion_match, override_match
 from vramfit.adapters.outbound.gguf.pack import LlamaCppPacker, TypeFallbackError
 from vramfit.adapters.outbound.gguf.types import PackError
 from vramfit.domain.model import (
-    Q0_IMX_SUCCESSOR_METHOD,
+    Q0_IMX2_METHOD,
     Assignment,
     PlanMeta,
     ProtectedTensor,
@@ -479,7 +479,7 @@ class TestRecipePackerContract:
         packer: RecipePacker = build(tmp_path)
         packer.convert()
         recipe = replace(
-            sample_pack_recipe(), within_group=Q0_IMX_SUCCESSOR_METHOD, imatrix="m.gguf"
+            sample_pack_recipe(), within_group=Q0_IMX2_METHOD, imatrix="m.gguf"
         )
         with pytest.raises(PackError, match="has no --imatrix"):
             packer.pack(recipe)

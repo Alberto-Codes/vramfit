@@ -70,7 +70,7 @@ WithinGroupMethod = Literal["rtn", "kquant", "q0", "q0-imx2"]
 METHODS: tuple[WithinGroupMethod, ...] = ("rtn", "kquant", "q0", "q0-imx2")
 # The methods that read the q0 imatrix reader family.
 _Q0_FAMILY: tuple[WithinGroupMethod, ...] = ("q0", "q0-imx2")
-# The nominal precision the successor method routes to the assisted
+# The nominal precision `q0-imx2` routes to the assisted
 # Q2_0 encoder (ADR-0032 decision 3).
 _ENCODER_BITS = 2
 

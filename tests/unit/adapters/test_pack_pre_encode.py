@@ -27,8 +27,8 @@ from vramfit.adapters.outbound.gguf.pack import LlamaCppPacker, TypeFallbackErro
 from vramfit.adapters.outbound.gguf.q2_0_blocks import Q2_0_TYPE_ID, q2_0_payload_bytes
 from vramfit.adapters.outbound.gguf.types import PackError
 from vramfit.domain.model import (
+    Q0_IMX2_METHOD,
     Q0_IMX_METHOD,
-    Q0_IMX_SUCCESSOR_METHOD,
     Assignment,
     PlanMeta,
     Recipe,
@@ -100,7 +100,7 @@ def write_imatrix(path: Path, names: tuple[str, ...]) -> None:
 
 
 def recipe(
-    method: str = Q0_IMX_SUCCESSOR_METHOD,
+    method: str = Q0_IMX2_METHOD,
     imatrix: str = "m.gguf",
 ) -> Recipe:
     return Recipe(

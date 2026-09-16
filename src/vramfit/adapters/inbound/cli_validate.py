@@ -67,8 +67,8 @@ from vramfit.domain.scan import (
     KQUANT_IMX_METHOD,
     KQUANT_METHOD,
     KQUANT_PRECISIONS,
+    Q0_IMX2_METHOD,
     Q0_IMX_METHOD,
-    Q0_IMX_SUCCESSOR_METHOD,
     Q0_REF_METHOD,
     Q0_REF_PRECISIONS,
     SCAN_METHOD,
@@ -85,7 +85,7 @@ _TOKEN_TO_METHOD: dict[str, Literal["rtn", "kquant", "q0", "q0-imx2"]] = {
     KQUANT_IMX_METHOD: "kquant",
     Q0_REF_METHOD: "q0",
     Q0_IMX_METHOD: "q0",
-    Q0_IMX_SUCCESSOR_METHOD: "q0-imx2",
+    Q0_IMX2_METHOD: "q0-imx2",
 }
 # Each method's ported precision coverage (ADR-0018). RTN covers
 # every precision, so it is absent.
@@ -121,10 +121,11 @@ def _resolve_within_group(
         under.
 
     Raises:
-        typer.BadParameter: If the method is unknown, ``kquant`` or
-            ``q0`` or ``q0-imx2`` meets assignments outside its port coverage
-            (ADR-0018), ``--imatrix`` arrives with the rtn method
-            or is not a file, the recipe records a token this
+        typer.BadParameter: If the method is unknown, ``kquant``,
+            ``q0``, or ``q0-imx2`` meets assignments outside its port
+            coverage (ADR-0018), ``--imatrix`` arrives with the rtn
+            method, ``q0-imx2`` lacks an imatrix, the file does not
+            exist, the recipe records a token this
             version does not know, or the resolved frame contradicts
             the recipe's recorded method (ADR-0019).
     """
@@ -163,9 +164,7 @@ def _resolve_within_group(
     elif method == "q0":
         token = Q0_REF_METHOD if imatrix is None else Q0_IMX_METHOD
     elif method == "q0-imx2":
-        if imatrix is None:
-            raise typer.BadParameter("--within-group q0-imx2 requires --imatrix")
-        token = Q0_IMX_SUCCESSOR_METHOD
+        token = Q0_IMX2_METHOD
     else:
         token = KQUANT_METHOD if imatrix is None else KQUANT_IMX_METHOD
     return method, token

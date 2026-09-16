@@ -67,10 +67,10 @@ from vramfit.domain.model import (
     KQUANT_METHOD as KQUANT_METHOD,  # noqa: PLC0414 - re-export: method tokens read from this module
 )
 from vramfit.domain.model import (
-    Q0_IMX_METHOD as Q0_IMX_METHOD,  # noqa: PLC0414 - re-export: method tokens read from this module
+    Q0_IMX2_METHOD as Q0_IMX2_METHOD,  # noqa: PLC0414 - re-export: method tokens read from this module
 )
 from vramfit.domain.model import (
-    Q0_IMX_SUCCESSOR_METHOD as Q0_IMX_SUCCESSOR_METHOD,  # noqa: PLC0414 - re-export: method tokens read from this module
+    Q0_IMX_METHOD as Q0_IMX_METHOD,  # noqa: PLC0414 - re-export: method tokens read from this module
 )
 from vramfit.domain.model import (
     Q0_REF_METHOD as Q0_REF_METHOD,  # noqa: PLC0414 - re-export: method tokens read from this module

@@ -37,8 +37,8 @@ from vramfit.domain.scan import (
     KQUANT_IMX_METHOD,
     KQUANT_METHOD,
     KQUANT_PRECISIONS,
+    Q0_IMX2_METHOD,
     Q0_IMX_METHOD,
-    Q0_IMX_SUCCESSOR_METHOD,
     Q0_REF_METHOD,
     Q0_REF_PRECISIONS,
     SCAN_METHOD,
@@ -55,12 +55,16 @@ def check_imatrix(imatrix: Path | None, method: str) -> None:
 
     Raises:
         typer.BadParameter: If the imatrix arrives with the ``rtn``
-            method (ADR-0018, ADR-0020), or the file does not
+            method (ADR-0018, ADR-0020), the ``q0-imx2`` method
+            arrives without one, or the file does not
             exist. ``kquant`` fits its covered tensors with the
             weights. ``q0`` fits nominal 4 through
-            ``quantize_row_q4_0_impl``; ``q0-imx2`` also fits nominal 2.
+            ``quantize_row_q4_0_impl``; ``q0-imx2`` also fits nominal 2,
+            so it cannot price without the matrix.
     """
     if imatrix is None:
+        if method == "q0-imx2":
+            raise typer.BadParameter("--within-group q0-imx2 requires --imatrix")
         return
     if method not in ("kquant", "q0", "q0-imx2"):
         raise typer.BadParameter(
@@ -154,8 +158,6 @@ def parse_within_group(
         raise typer.BadParameter(
             f'--within-group: expected "rtn", "kquant", "q0", or "q0-imx2", got "{text}"'
         )
-    if text == "q0-imx2" and imatrix is None:
-        raise typer.BadParameter("--within-group q0-imx2 requires --imatrix")
     check_imatrix(imatrix, text)
     covered = {
         "kquant": KQUANT_PRECISIONS,
@@ -175,5 +177,5 @@ def parse_within_group(
     if text == "q0":
         return text, Q0_REF_METHOD if imatrix is None else Q0_IMX_METHOD
     if text == "q0-imx2":
-        return text, Q0_IMX_SUCCESSOR_METHOD
+        return text, Q0_IMX2_METHOD
     return text, KQUANT_METHOD if imatrix is None else KQUANT_IMX_METHOD
