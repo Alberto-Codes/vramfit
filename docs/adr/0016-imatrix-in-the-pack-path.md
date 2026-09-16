@@ -14,13 +14,19 @@
   full-model builds below the falsifier arm's 15.76 GiB. The
   fallback analysis stands. See the correction note in the
   amendment below.
-- **Amended by ADR-0032 (issue #597):** the 2026-08-21 amendment's
-  decision 2 rules the assisted-share asymmetry a cost of the width
-  rather than a toolchain handicap. The 2026-09-05 rebuy measures an
-  assisted fit at 2.25 bits on rows of 2688 and 1856.
-  [ADR-0032](0032-assisted-q2-encoder-home.md) reads the cause the
-  other way and is Accepted. See the amendment note in the
-  amendment below.
+- **Amended by ADR-0032 (2026-09-15, issue #597):**
+  [ADR-0032](0032-assisted-q2-encoder-home.md) amends two clauses of
+  this record.
+  - The 2026-08-21 amendment's decision 2 rules the assisted-share
+    asymmetry a cost of the width rather than a toolchain handicap.
+    The 2026-09-05 rebuy measures an assisted fit at 2.25 bits on rows
+    of 2688 and 1856. ADR-0032 decision 5 reads the cause the other
+    way. See the amendment note in the amendment below.
+  - The original decision 2 rules that the pack step must stay a CPU
+    subprocess driver. ADR-0032 decision 1 permits a vramfit-owned
+    preprocessor subprocess that pre-encodes selected tensors before
+    `llama-quantize` runs. The pack adapter stays a subprocess driver
+    around that preprocessor.
 
 Acceptance evidence (the same night, PR #38): the matrix generated
 in 67 minutes (345 chunks, `--process-output`, 18.3 MB). Both
@@ -190,7 +196,7 @@ line numbers at `4801e3c56` and the types ADR-0028 does not name.
    earns 91.53 % assistance by spending 18,838,022,112 B, which the
    16 GiB card refuses.
 
-   > **Amended by ADR-0032 (issue #597):** the bold sentence above
+   > **Amended by ADR-0032 (2026-09-15, issue #597):** the bold sentence above
    > and the sentence after it are amended. `Q2_0` is 2.25
    > effective bits on rows of 2688 and 1856 (ADR-0028 decision 1).
    > The 2026-09-05 rebuy's `c2-assisted-q2_0` arm reached an assisted

@@ -1,14 +1,24 @@
 # ADR-0032: Pre-encode assisted Q2_0 tensors before stock whole-file quantization
 
 - **Status:** Accepted
-- **Date:** 2026-09-14
+- **Date:** 2026-09-14 (accepted 2026-09-15)
+- **Note (2026-09-15, issue #597):** acceptance discharged the two
+  forward-looking clauses below. Decision 3 defers the glossary's
+  pack-side assisted amendment to acceptance. That amendment landed.
+  [The glossary](../reference/glossary.md) now rules a pre-encoded
+  tensor assisted and cites decision 3. Decision 5 reads ADR-0016's
+  markers as contested and not superseded. Those markers now read
+  **Amended by ADR-0032**, in
+  [ADR-0016](0016-imatrix-in-the-pack-path.md)'s header and in the
+  [index](index.md) row. The decision bodies below keep their
+  original wording.
 - **Origin:** [Issue #597](https://github.com/Alberto-Codes/vramfit/issues/597),
   a `chart:discuss` child of [chart #158](https://github.com/Alberto-Codes/vramfit/issues/158).
 - **Authority:** Reimplementation was authorized on 2026-09-05, with
   approximately one pod-hour funded for a subsequent re-solve. This record
   was commissioned on 2026-09-14. These rulings prohibit vendoring the
   reference patch and prohibit waiting for upstream.
-- **Proposes amendments to:** two clauses. ADR-0016 carries two
+- **Amends:** two clauses. ADR-0016 carries two
   decision lists, so each reference below names its list.
   - [ADR-0016's original decision 2](0016-imatrix-in-the-pack-path.md#decision),
     the CPU-subprocess-driver clause.
@@ -257,11 +267,13 @@ The third cannot deliver the measured benefit or matching provenance.
   distinct token and states none, because the string is a vocabulary
   decision. [Issue #599](https://github.com/Alberto-Codes/vramfit/issues/599)
   owns it. The implementation cannot write a map before it closes.
-- The glossary's pack-side assisted rule needs its matching amendment.
+- ~~The glossary's pack-side assisted rule needs its matching amendment.
   Decision 3 rules a pre-encoded tensor assisted.
   [The glossary](../reference/glossary.md) still defines the pack sense
   by which binary reads the matrix. The two records disagree on this
-  tensor class until acceptance carries the amendment.
+  tensor class until acceptance carries the amendment.~~ Resolved
+  2026-09-15 by acceptance. The glossary's pack-side rule now reads a
+  pre-encoded tensor assisted and cites decision 3.
 - The preprocessor's full-file cost stays unmeasured. The probe wrote
   36,864 Q2_0 payload bytes on a synthetic fixture. Decision 1 reads the
   f16 base and writes the temporary mixed GGUF beside it, so the two
@@ -283,8 +295,10 @@ The third cannot deliver the measured benefit or matching provenance.
   `vramfit.adapters.outbound.scan.* -> torch`. The pack adapter imports
   neither torch nor anything under `scan` today. This record neither
   widens that carve-out nor rules a second torch-free fit, which
-  decision 2 forbids. The implementing task cannot choose either,
-  so the maintainer settles the boundary at acceptance.
+  decision 2 forbids. Acceptance on 2026-09-15 settled neither, so the
+  boundary stays open. The implementing task cannot choose it.
+  [Issue #601](https://github.com/Alberto-Codes/vramfit/issues/601)
+  needs the maintainer's ruling before an implementation picks a path.
 - Passthrough holds on b10362 (`4801e3c56`) and on no other build. The
   probe tested one quantizer. Decision 1 forbids `--allow-requantize`,
   so a build that drops the passthrough refuses the pack rather than

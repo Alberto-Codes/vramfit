@@ -290,9 +290,9 @@ change.
     amendment, and [ADR-0032](../adr/0032-assisted-q2-encoder-home.md), decision 3).
     The scan sense and the pack sense can disagree on one
     tensor, because the two sides apply different fits.
-    ADR-0032's assisted-share accounting and any nominal-2 cell price drawn
-    from it are not publishable until measurement separates search gain from imatrix gain
-    ([open question](../adr/0032-assisted-q2-encoder-home.md#open-questions)).
+    ADR-0032's
+    [open questions](../adr/0032-assisted-q2-encoder-home.md#open-questions)
+    gate what an assisted share under this rule may publish.
 
 **Reconstruction error**
 :   The squared difference between a quantized tensor and its
