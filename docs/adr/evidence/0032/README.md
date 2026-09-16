@@ -130,10 +130,18 @@ the one encoder, so they would agree on a degenerate fit too.
 The second check is the bound. It measures the imatrix-weighted squared
 error of the decoded values against the original weights, measures the
 same metric for the unassisted `q0` reference, and requires the
-assisted error to be strictly lower. An all-zero decode fails it. The
-bound states that the assisted fit beats the reference on this metric
-at this width. It fixes no absolute quality floor, and it is a
-stand-in for KLD rather than a measurement of it.
+assisted error to be strictly lower. An all-zero decode fails it.
+
+The whole claim is this. The packed bytes decode to something strictly
+closer to the original weights than the unassisted `q0` reference
+under the imatrix weighting, at 1856 and at 2688, which excludes a
+degenerate fit. The quantity lives in weight space, so
+[the glossary](../../../reference/glossary.md) rules it reconstruction
+error and not damage.
+[Issue #302](https://github.com/Alberto-Codes/vramfit/issues/302)
+measured a weight-space term and measured damage ordering apart on
+this target. Read the figures below as that comparison and as nothing
+about KLD.
 
 | Claim | Where the transcript shows it |
 | --- | --- |

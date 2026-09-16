@@ -146,8 +146,12 @@ def _weighted_error(
     """State one fit's imatrix-weighted squared error on a stack.
 
     Each element weighs by its expert's imatrix column weight, the
-    per-expert mapping the encoder applies (ADR-0026). The metric is
-    the principled stand-in for what the campaign measures by KLD.
+    per-expert mapping the encoder applies (ADR-0026). The quantity
+    lives in weight space, so the glossary rules it reconstruction
+    error and not damage. Issue #302 measured a weight-space term and
+    measured damage ordering apart on the 30B target. It serves one
+    purpose here: a fit that beats the unassisted reference is not
+    degenerate.
 
     Args:
         weight: The original stack, shape ``(experts, rows, row)``
