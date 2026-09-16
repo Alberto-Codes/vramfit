@@ -122,12 +122,20 @@ stacks nominal 2, and calls `LlamaCppPacker.pack`. Nothing in the suite
 names `q2_0`: the ADR-0028 routing reads the measured row width and
 chooses the type.
 
+Two value-level checks run at each width. The scan meter fits the stack
+again and must decode the packed bytes to exactly its own values. The
+unassisted `q0` reference must then differ from those values. The
+second check is what separates a working fit from a degenerate one,
+because the meter and the encoder share their code and would agree on
+zero scales too.
+
 | Claim | Where the transcript shows it |
 | --- | --- |
 | The routing maps both nominal-2 stacks to `q2_0` | `applying manual override: q2_K -> q2_0` on the down and gate stacks |
 | The stock pass preserves both payloads | `[   8/  12]` and `[   9/  12]` report `type = q2_0` and copy the size |
 | A routed peer at 2688 still quantizes | `blk.0.ffn_up_exps.weight` converts to `q4_0` |
 | Stock ggml reads the blocks back | `llama-bench` returns `pp8` at exit 0 |
+| The fit is assisted, not degenerate | the suite passes, so the decoded bytes differ from the unassisted `q0` reference at both widths |
 
 The two pre-encoded stacks read `[  1856,   2688,      2,      1]` and
 `[  2688,   1856,      2,      1]`, which is 29 and 42 blocks per row.
@@ -144,8 +152,15 @@ of two shell scripts. Each script records its argv and the tool's
 merged output, then runs the pinned binary and exits with its code.
 The transcript substitutes three path roots and changes nothing else.
 
+The suite pins the embedding at 8 bits. `token_embedding_type` maps
+that group through the ADR-0012 k-quant table and reads no row width,
+so nominal 4 or 2 halts the pack after the whole quantize pass at
+these widths.
+[Issue #608](https://github.com/Alberto-Codes/vramfit/issues/608)
+carries that defect.
+
 The fixture is 79.72 MiB and the run takes under ten seconds. It is not
-a damage measurement, and it proves nothing about fit quality.
+a damage measurement, and it proves no bound on fit quality.
 
 ## Rebuy evidence
 

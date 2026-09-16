@@ -31,7 +31,7 @@ collecting ... collected 1 item
 
 tests/integration/test_q2_0_real_row_widths.py::TestRealRowWidths::test_pack_pre_encodes_both_target_widths_and_the_runtime_loads_the_file PASSED [100%]
 
-============================== 1 passed in 9.38s ===============================
+============================== 1 passed in 8.95s ===============================
 exit: 0
 
 == 2. The same suite, through the recording wrapper ==
@@ -48,7 +48,7 @@ collecting ... collected 1 item
 
 tests/integration/test_q2_0_real_row_widths.py::TestRealRowWidths::test_pack_pre_encodes_both_target_widths_and_the_runtime_loads_the_file PASSED [100%]
 
-============================== 1 passed in 8.98s ===============================
+============================== 1 passed in 9.11s ===============================
 exit: 0
 
 == 3. The two stock tool calls run 2 made, with their complete output ==
@@ -126,8 +126,8 @@ converting to q4_0 .. size =    13.78 MiB ->     3.88 MiB
 llama_model_quantize_impl: model size  =    79.72 MiB (11.35 BPW)
 llama_model_quantize_impl: quant size  =    26.35 MiB (3.75 BPW)
 
-llama_quantize: quantize time =   234.05 ms
-llama_quantize:    total time =   234.05 ms
+llama_quantize: quantize time =   231.02 ms
+llama_quantize:    total time =   231.02 ms
 exit: 0
 
 $ <toolchain>/llama-bench '-m' '<tmp>/test_pack_pre_encodes_both_tar0/packed.gguf' '-p' '8' '-n' '0' '-ngl' '0' '-r' '1'
@@ -139,7 +139,7 @@ load_backend: loaded Vulkan backend from <toolchain>/libggml-vulkan.so
 load_backend: loaded CPU backend from <toolchain>/libggml-cpu-zen4.so
 | model                          |       size |     params | backend    | ngl |            test |                  t/s |
 | ------------------------------ | ---------: | ---------: | ---------- | --: | --------------: | -------------------: |
-| llama ?B Q4_0                  |  26.35 MiB |    58.93 M | Vulkan     |   0 |             pp8 |       3955.05 ± 0.00 |
+| llama ?B Q4_0                  |  26.35 MiB |    58.93 M | Vulkan     |   0 |             pp8 |       3970.57 ± 0.00 |
 
 build: 4801e3c56 (10362)
 exit: 0

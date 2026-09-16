@@ -259,6 +259,18 @@ The third cannot deliver the measured benefit or matching provenance.
   type-fallback warning pair (ADR-0028 decision 3). The refusal is
   correct. It means a target of this shape needs an assignment for
   every dense group the file carries, not only for the routed stacks.
+
+  An assignment for every dense group is necessary and not
+  sufficient. `token_embedding_type` maps the embedding group
+  straight through the ADR-0012 k-quant table and never reads a row
+  width, so `--token-embedding-type` carries a 256-block type on
+  2688-wide rows whenever the embedding takes nominal 4 or 2. The
+  quantizer rewrites that type, and the pack halts on the same
+  warning pair — after the whole quantize pass is paid for. The
+  suite pins the embedding at 8 for that reason.
+  [Issue #608](https://github.com/Alberto-Codes/vramfit/issues/608)
+  carries the mechanism and the candidate remedies. A reader planning
+  a 30B pack needs both halves of this constraint.
 - **A pre-encoded tensor loses ADR-0012 decision 3's record-and-continue
   floor.** Today a layer that no override reaches takes the `--pure`
   floor. The pack step records it in `PackResult.floored_layers`, prints

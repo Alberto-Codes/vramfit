@@ -90,7 +90,10 @@ ATTENTION_GROUPS = (
     "model.layers.0.self_attn.o_proj",
 )
 # The embedding takes `--token-embedding-type` from the ADR-0012
-# table, so it needs a precision whose block divides 2688.
+# k-quant table, which no row width reaches. 8 is the one precision
+# whose block divides 2688. Nominal 4 or 2 maps to a 256-block
+# k-quant that the quantizer rewrites at this width, which is
+# [issue #608](https://github.com/Alberto-Codes/vramfit/issues/608).
 EMBEDDING_GROUP = "model.embed_tokens"
 EMBEDDING_BITS = 8
 
@@ -208,6 +211,15 @@ class TestRealRowWidths:
             decoded = dequantize_q2_0(packed_bytes, weight.numel())
             assert np.array_equal(decoded, priced.reshape(-1).numpy()), (
                 f"the scan meter and the pack disagree on {width}-wide {name}"
+            )
+            # Both sides of that equality run the one encoder, so it
+            # holds on a degenerate fit too. The unassisted reference
+            # separates the two: the assisted fit reads the imatrix
+            # and must land somewhere else at this width.
+            reference = perturb(weight, 2, group, "q0", 32, None)
+            assert not np.array_equal(decoded, reference.reshape(-1).numpy()), (
+                f"the assisted fit matches the unassisted reference on "
+                f"{width}-wide {name}"
             )
 
         # The stock runtime reads the blocks back at 29 and 42 blocks
