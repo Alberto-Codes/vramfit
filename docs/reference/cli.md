@@ -604,8 +604,9 @@ vramfit validate RECIPE
                          method, or rtn without a record]
   --imatrix PATH         GGUF imatrix for assisted measurement
                          (ADR-0020). Required when the recipe was
-                         priced on an assisted map — use the map's
-                         imatrix file  [default: none]
+                         priced on an assisted map. --within-group
+                         q0-imx2 requires this file too — use the
+                         map's imatrix file  [default: none]
   --runlog PATH          Run-log path (JSONL)
                          [default: <recipe stem>.validation.runlog.jsonl]
 ```

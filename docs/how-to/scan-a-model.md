@@ -152,9 +152,9 @@ meaning. Select `--within-group q0-imx2` with `--imatrix` to price
 covered nominal-2 cells with vramfit's own assisted `Q2_0` encoder.
 `vramfit pack` uses that encoder for pre-encoding
 ([ADR-0032](../adr/0032-assisted-q2-encoder-home.md) decision 3).
-On a fused expert stack the meter reads one imatrix row per expert, as `llama-quantize` applies
-them. A parameter the imatrix does not cover prices unassisted, and
-the coverage echo reports the split.
+On a fused expert stack the meter reads one imatrix row per expert,
+as `llama-quantize` applies them. A parameter the imatrix does not
+cover prices unassisted, and the coverage echo reports the split.
 
 A `kquant` scan now refuses such a cell. The message names the
 parameter, the type, the block size, and the row length. Nominal 8
