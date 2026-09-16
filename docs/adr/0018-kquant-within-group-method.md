@@ -17,6 +17,9 @@
   becomes a method to build. #381 measured that assistance re-orders
   the nominal-4 column across the 46 expert stacks. Maintainer ruling
   2026-08-21. See "Amendment: `q0-imx` gets built" below.
+- **Amendment (2026-09-16, issue #599):** the assisted Q2_0 scan
+  method ADR-0032 created takes the token `q0-imx2`. Maintainer
+  ruling 2026-09-16. See "Amendment: the token `q0-imx2`" below.
 - **Note (2026-09-04, issue #331):** the `q0` method carries the
   straddling-row scope limit as a recorded limit, not a refusal.
   Maintainer ruling 2026-09-04. `q0_ref` pads a short tail and
@@ -466,3 +469,53 @@ set no price (#319's precedent above).
 - `Q5_0` stays unported. When its port lands, its assisted path
   arrives with it, because `quantize_q5_0` consumes the matrix
   (ADR-0016's #278 amendment table).
+
+## Amendment: the token `q0-imx2` (2026-09-16, issue #599)
+
+### Context
+
+[ADR-0032](0032-assisted-q2-encoder-home.md) decision 3 rules that the
+assisted `q0` method prices nominal 2 through vramfit's own `Q2_0`
+encoder. It requires a distinct `within_group` token for that
+successor and states none, because the string is a vocabulary
+decision. #599 carried the naming to the maintainer.
+
+This record owns the token list. `rtn-block32` arrived with ADR-0006
+and this record's decision 3 mechanized it. `kquant-ref` arrived with
+decision 3. `kquant-imx` arrived with ADR-0020 against this record's
+first open question. `q0-ref` and `q0-imx` arrived through the
+2026-08-17, 2026-08-18, and 2026-08-21 amendments above. Five tokens,
+five entries here. The maintainer ruled 2026-09-16 that the sixth
+lands here too, so a reader tracing token history reads one record.
+
+### Decision
+
+1. **The token is `q0-imx2`.** It names the assisted Q2_0 scan method
+   ADR-0032 decision 3 creates. Maintainer ruling 2026-09-16.
+2. **It differs from `q0-imx` at nominal 2.** `q0-imx` leaves nominal
+   2 unassisted, because stock `quantize_q2_0` discards the matrix
+   (the 2026-08-17 amendment's third consequence). `q0-imx2` applies
+   the matrix at 2 bits as well, through vramfit's own assisted
+   encoder. Nominal 4 fits as `q0-imx` fits it. Nominal 8 keeps the
+   reference arithmetic, because stock `Q8_0` discards the matrix.
+3. **The `2` states the width the matrix reaches.** It does not mark a
+   second version of `q0-imx`. The name describes the result and not
+   the pre-encoding stage, so it survives a mechanism change.
+4. **`q0-imx` keeps its stock-Q2_0 meaning.** The 2026-08-21
+   amendment's decision 1 stands unchanged. A map written under
+   `q0-imx` never relabels, and its nominal-2 cells never resume
+   under the new token.
+5. **The token reaches the code, the CLI, and the reference pages.**
+   The CLI accepts `--within-group q0-imx2`. The token enters map
+   fingerprints, scan checkpoints, recipes, and pack selection, and
+   it spells the same way in each.
+
+### Consequences
+
+- The sixth token sits beside its five predecessors. ADR-0032 keeps
+  its wording and reads this record for the string.
+- `scan.imatrix` pairs with `q0-imx2`, as this record's 2026-08-21
+  amendment decision 6 rules for `q0-imx`. The loader rejects a map
+  that claims assistance without naming its imatrix, or the reverse.
+- A map under `q0-imx2` compares with no map under another token.
+  ADR-0006's rule holds: a within-group method change is a new scan.
