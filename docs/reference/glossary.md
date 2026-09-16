@@ -292,7 +292,7 @@ change.
     tensor, because the two sides apply different fits.
     ADR-0032's
     [open questions](../adr/0032-assisted-q2-encoder-home.md#open-questions)
-    gate what an assisted share under this rule may publish.
+    gate what a share that counts pre-encoded bytes may publish.
 
 **Reconstruction error**
 :   The squared difference between a quantized tensor and its

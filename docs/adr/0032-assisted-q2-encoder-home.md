@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-09-14 (accepted 2026-09-15)
-- **Note (2026-09-15, issue #597):** acceptance discharged the two
+- **Note (2026-09-15, issue #597):** acceptance discharged three
   forward-looking clauses below. Decision 3 defers the glossary's
   pack-side assisted amendment to acceptance. That amendment landed.
   [The glossary](../reference/glossary.md) now rules a pre-encoded
@@ -10,8 +10,14 @@
   markers as contested and not superseded. Those markers now read
   **Amended by ADR-0032**, in
   [ADR-0016](0016-imatrix-in-the-pack-path.md)'s header and in the
-  [index](index.md) row. The decision bodies below keep their
-  original wording.
+  [index](index.md) row. The Consequences handoff reads that
+  [issue #601](https://github.com/Alberto-Codes/vramfit/issues/601)
+  waits for acceptance of this record. That wait ends here.
+  Acceptance alone is discharged. The open questions below stay live,
+  including the unsettled torch boundary and the unnamed successor
+  token. This change implements no encoder and starts no re-solve.
+  The decision and Consequences bodies below keep their original
+  wording.
 - **Origin:** [Issue #597](https://github.com/Alberto-Codes/vramfit/issues/597),
   a `chart:discuss` child of [chart #158](https://github.com/Alberto-Codes/vramfit/issues/158).
 - **Authority:** Reimplementation was authorized on 2026-09-05, with
