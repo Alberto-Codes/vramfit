@@ -246,8 +246,8 @@ below remain, the sub-4-bit pricing claims do not.
 - **`scan.imatrix`** — the path of the imatrix that assisted the
   scan, or null for an unassisted scan
   ([ADR-0020](../adr/0020-imatrix-assisted-pricing.md)). The field
-  pairs with the assisted tokens, `kquant-imx` and `q0-imx`: the
-  loader rejects a map that
+  pairs with the assisted tokens, `kquant-imx`, `q0-imx`, and
+  `q0-imx2`: the loader rejects a map that
   claims assistance without naming its imatrix, or the reverse. An
   assisted map is only comparable to a pack that consumed the same
   imatrix file. The loader accepts an absent field as null.
