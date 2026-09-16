@@ -1,6 +1,6 @@
 # ADR-0032: Pre-encode assisted Q2_0 tensors before stock whole-file quantization
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-09-14
 - **Origin:** [Issue #597](https://github.com/Alberto-Codes/vramfit/issues/597),
   a `chart:discuss` child of [chart #158](https://github.com/Alberto-Codes/vramfit/issues/158).
