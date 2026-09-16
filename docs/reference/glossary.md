@@ -284,7 +284,7 @@ change.
     its type reads the matrix and the matrix covers its name.
     A pre-encoded tensor also packs assisted when the matrix weighted
     the encoder's candidate selection, even though its stock type ignores the matrix.
-    All other tensors pack **unassisted**, including uncovered and excluded tensors.
+    All other tensors pack **unassisted**.
     An artifact's **assisted share** is the fraction of its bytes that packed assisted
     ([ADR-0016](../adr/0016-imatrix-in-the-pack-path.md), 2026-08-21
     amendment, and [ADR-0032](../adr/0032-assisted-q2-encoder-home.md), decision 3).
