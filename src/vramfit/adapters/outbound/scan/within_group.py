@@ -18,6 +18,13 @@ The methods:
   ``Q8_0``, which reach the rows no K-quant tiles. With imatrix
   weights, nominal 4 fits through the assisted ``Q4_0`` port
   (ADR-0018, 2026-08-21 amendment).
+- ``q0-successor`` — ``q0`` with nominal 2 fitting through
+  vramfit's own assisted ``Q2_0`` encoder wherever the parameter
+  carries column weights, the encoder the pack pre-encodes with
+  (ADR-0032 decision 3). Uncovered parameters keep the reference
+  arithmetic, because stock ``llama-quantize`` packs them. The name
+  is provisional: issue #599 names the serialized token, and the
+  scan command exposes the method once it lands.
 
 Examples:
     Perturb one tensor under the q0 method:
@@ -53,13 +60,21 @@ from vramfit.adapters.outbound.scan.kquant_assisted import (
 )
 from vramfit.adapters.outbound.scan.q0_assisted import q0_assisted_quantize_dequantize
 from vramfit.adapters.outbound.scan.q0_ref import q0_ref_quantize_dequantize
+from vramfit.adapters.outbound.scan.q2_0_assisted import (
+    q2_0_assisted_quantize_dequantize,
+)
 from vramfit.adapters.outbound.scan.quantize import rtn_quantize_dequantize
 
-WithinGroupMethod = Literal["rtn", "kquant", "q0"]
+WithinGroupMethod = Literal["rtn", "kquant", "q0", "q0-successor"]
 # The method names the meter and the CLI accept. An unknown value
 # must refuse rather than fall back — a silent RTN fallback would
 # record every damage under the wrong token.
-METHODS: tuple[WithinGroupMethod, ...] = ("rtn", "kquant", "q0")
+METHODS: tuple[WithinGroupMethod, ...] = ("rtn", "kquant", "q0", "q0-successor")
+# The methods that read the q0 imatrix reader family.
+_Q0_FAMILY: tuple[WithinGroupMethod, ...] = ("q0", "q0-successor")
+# The nominal precision the successor method routes to the assisted
+# Q2_0 encoder (ADR-0032 decision 3).
+_ENCODER_BITS = 2
 
 
 def resolve_method_weights(
@@ -72,7 +87,9 @@ def resolve_method_weights(
     One reader serves one method family (ADR-0018, 2026-08-21
     amendment, decision 2): the ``q0`` reader accepts fused expert
     stacks, and the ``kquant`` reader keeps its fused-stack refusal
-    and its super-block gate, unchanged.
+    and its super-block gate, unchanged. ``q0-successor`` reads
+    through the ``q0`` reader, because it applies the same imatrix,
+    expert-row mapping, and zero-count fallback (ADR-0032 decision 3).
 
     Args:
         method: The within-group method name.
@@ -90,7 +107,7 @@ def resolve_method_weights(
             matrix-count mismatch, two parameters claiming one row,
             or zero coverage.
     """
-    if method == "q0":
+    if method in _Q0_FAMILY:
         return resolve_q0_assisted_weights(by_gguf_name, shapes)
     return resolve_assisted_weights(
         by_gguf_name, {name: int(shape[-1]) for name, shape in shapes.items()}
@@ -105,7 +122,8 @@ def check_method_weights(
     """Gate imatrix weights through the method's reader family.
 
     The meter runs this at construction over any weight source —
-    resolved from a file or passed directly.
+    resolved from a file or passed directly. The q0 family shares
+    one gate.
 
     Args:
         method: The within-group method name.
@@ -117,7 +135,7 @@ def check_method_weights(
             a layout or length mismatch, rows the family's blocks
             cannot align, or a negative or non-finite weight.
     """
-    if method == "q0":
+    if method in _Q0_FAMILY:
         check_q0_imatrix_weights(weights, shapes)
     else:
         check_imatrix_weights(
@@ -145,20 +163,28 @@ def perturb(
             to price unassisted (ADR-0020). ``kquant`` reads a 1-D
             column vector. ``q0`` also reads a 2-D per-expert
             tensor on a fused expert stack (ADR-0018, 2026-08-21
-            amendment). ``rtn`` never reads them.
+            amendment). ``q0-successor`` reads the same layouts and
+            routes a weighted nominal-2 cell to the assisted
+            ``Q2_0`` encoder (ADR-0032). ``rtn`` never reads them.
 
     Returns:
         The dequantized tensor, same shape, dtype, and device.
 
     Raises:
         ValueError: If the method has no port for ``bits`` —
-            ``kquant`` covers 8, 4, 3, and 2, and ``q0`` covers 8,
-            4, and 2 — or the mapped type's block size does not
-            divide the tensor's row length. The message names the
+            ``kquant`` covers 8, 4, 3, and 2, and the q0 family
+            covers 8, 4, and 2 — or the mapped type's block size does
+            not divide the tensor's row length. The message names the
             parameter.
     """
     try:
-        if method == "q0":
+        if (
+            method == "q0-successor"
+            and column_weights is not None
+            and bits == _ENCODER_BITS
+        ):
+            return q2_0_assisted_quantize_dequantize(param, column_weights)
+        if method in _Q0_FAMILY:
             if column_weights is not None:
                 return q0_assisted_quantize_dequantize(param, bits, column_weights)
             return q0_ref_quantize_dequantize(param, bits)

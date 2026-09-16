@@ -101,7 +101,10 @@ below remain, the sub-4-bit pricing claims do not.
   not record their map's method.
 - **`imatrix`** — the imatrix path of the map that priced the recipe
   ([ADR-0020](../adr/0020-imatrix-assisted-pricing.md)), or null.
-  Pairs with the `kquant-imx` token, like the map's `scan.imatrix`.
+  Pairs with the assisted tokens, like the map's `scan.imatrix`.
+  A recipe whose token names the assisted `Q2_0` encoder's method
+  packs through the pre-encoding path, which needs this matrix
+  ([ADR-0032](../adr/0032-assisted-q2-encoder-home.md) decision 3).
   `vramfit validate` and `vramfit pack` warn when their
   `--imatrix` names a different file — a different file breaks the
   frame the map priced. The loader accepts an absent field as null.

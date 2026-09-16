@@ -147,7 +147,13 @@ on these rows, and 5 and 6 until ports exist.
 map then records the `q0-imx` token. Nominal 4 fits with imatrix
 weights through the ported `quantize_row_q4_0_impl`. Nominal 2 and
 8 keep the reference arithmetic, because `quantize_q2_0` and
-`quantize_q8_0` ignore the matrix. On a fused expert stack the
+`quantize_q8_0` ignore the matrix. `q0-imx` keeps that stock-`Q2_0`
+meaning. Its successor method prices covered nominal-2 cells with
+vramfit's own assisted `Q2_0` encoder, the one `vramfit pack`
+pre-encodes with ([ADR-0032](../adr/0032-assisted-q2-encoder-home.md)
+decision 3). The meter carries that method, and the scan command
+exposes it once [issue #599](https://github.com/Alberto-Codes/vramfit/issues/599)
+names its token. On a fused expert stack the
 meter reads one imatrix row per expert, as `llama-quantize` applies
 them. A parameter the imatrix does not cover prices unassisted, and
 the coverage echo reports the split.
