@@ -306,8 +306,9 @@ class LlamaCppPacker:
         out_path (Path): Packed model destination.
         convert_script (Path): ``convert_hf_to_gguf.py`` path.
         quantize_bin (Path): ``llama-quantize`` path.
-        python_bin (Path): Interpreter for the convert script. Must
-            import torch.
+        python_bin (Path): Interpreter for the convert script and the
+            assisted ``Q2_0`` encoder program (ADR-0032). Must import
+            vramfit and torch.
         threads (int): Quantizer thread count.
         imatrix (Path | None): Importance matrix file for the
             quantizer (ADR-0016). None packs without one.
@@ -319,8 +320,8 @@ class LlamaCppPacker:
         encoder_command (tuple[str, ...] | None): The argument vector
             that starts the assisted ``Q2_0`` encoder program
             (ADR-0032). None runs `ENCODER_BOOTSTRAP` under
-            ``python_bin``, which must import torch. Tests substitute
-            a stub here.
+            ``python_bin``, which must import vramfit and torch.
+            Tests substitute a stub here.
 
     Examples:
         The composition root wires the paths:
@@ -394,6 +395,9 @@ class LlamaCppPacker:
             PackError: If the recipe's method needs an imatrix the
                 pack lacks, the selection refuses (ADR-0032), the
                 encoder fails, or the mixed file cannot be written.
+                A failure after the encoder starts removes the
+                payload directory and the mixed GGUF, and the
+                message names both.
         """
         if recipe.within_group != Q0_IMX_SUCCESSOR_METHOD:
             return None
@@ -419,18 +423,30 @@ class LlamaCppPacker:
             "-c",
             ENCODER_BOOTSTRAP,
         )
-        report = run_encoder(
-            command,
-            base_gguf=self.base_gguf,
-            imatrix=self.imatrix,
-            targets=targets,
-            work_dir=self.pre_encode_dir,
-            threads=self.threads,
-        )
-        payloads = {
-            tensor.name: (tensor.payload, Q2_0_TYPE_ID) for tensor in report.tensors
-        }
-        return report, write_mixed_gguf(self.base_gguf, self.mixed_gguf, payloads)
+        try:
+            report = run_encoder(
+                command,
+                base_gguf=self.base_gguf,
+                imatrix=self.imatrix,
+                targets=targets,
+                work_dir=self.pre_encode_dir,
+                threads=self.threads,
+            )
+            payloads = {
+                tensor.name: (tensor.payload, Q2_0_TYPE_ID) for tensor in report.tensors
+            }
+            mixed_bytes = write_mixed_gguf(self.base_gguf, self.mixed_gguf, payloads)
+        except PackError as exc:
+            # The stage's own failure ships no artifact, and its
+            # temporaries are multi-gigabyte. A full disk is one way
+            # to reach here, so they go (ADR-0032).
+            self._discard_pre_encode_files()
+            raise PackError(
+                f"{exc}\nThe pre-encoding stage removed its temporary files: the "
+                f"payload directory {self.pre_encode_dir} and the mixed GGUF "
+                f"{self.mixed_gguf} (ADR-0032)"
+            ) from exc
+        return report, mixed_bytes
 
     def _discard_pre_encode_files(self) -> None:
         """Remove the temporary mixed GGUF and the payload directory."""
@@ -514,6 +530,9 @@ class LlamaCppPacker:
         under the same flags. ``--allow-requantize`` is never passed.
         After the zero exit the packed payload bytes must match what
         the encoder wrote, and only then do the temporary files go.
+        A failure inside the stage removes them at once, because no
+        artifact depends on them. A failure in the quantizer keeps
+        the mixed GGUF for inspection.
         The result records the pre-encoded tensors, the encoder
         revision, and the stage's measured cost.
 

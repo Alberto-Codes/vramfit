@@ -34,7 +34,10 @@ name a dedicated flag binds) stay float in the mixed file, and the
 stock pass fits them (ADR-0032 decision 3). The quantizer's skip
 rules are ``tensor_allows_quantization`` in ``llama-quant.cpp`` at
 b10362, and the four this module models are the ones a
-``blk\.<n>\.`` pattern can reach.
+``blk\.<n>\.`` pattern can reach. The selection drops these tensors
+before it refuses. The preprocessor never writes one as ``Q2_0``,
+so neither abort above can reach it, and refusing it would refuse a
+pack the stock path serves.
 
 **Verification reads the packed file's bytes.** After the quantizer
 exits 0, every pre-encoded tensor must hold the type id ``42`` and
@@ -61,7 +64,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -71,6 +73,7 @@ from vramfit.adapters.outbound.gguf.header import GgufHeader, TensorInfo, read_h
 from vramfit.adapters.outbound.gguf.override_match import (
     EMBEDDING_TARGETS,
     OUTPUT_TARGETS,
+    compiled_override,
 )
 from vramfit.adapters.outbound.gguf.q2_0_blocks import (
     Q2_0_TYPE_ID,
@@ -167,26 +170,6 @@ class EncoderReport:
     tensors: tuple[EncodedTensor, ...]
 
 
-def _compiled(override: TypeOverride) -> re.Pattern[str]:
-    """Compile one override the way ``llama-quantize`` compiles it.
-
-    Args:
-        override: The override to compile.
-
-    Returns:
-        The compiled, lower-cased pattern.
-
-    Raises:
-        PackError: If the pattern does not compile.
-    """
-    try:
-        return re.compile(override.pattern.lower())
-    except re.error as exc:
-        raise PackError(
-            f'override pattern "{override.pattern}" does not compile: {exc}'
-        ) from exc
-
-
 def quantizer_skips(
     info: TensorInfo, *, embedding_flag: bool, output_flag: bool
 ) -> bool:
@@ -251,11 +234,13 @@ def select_pre_encode_targets(
         reaches a covered tensor.
 
     Raises:
-        PackError: If a ``q2_0`` override matches a tensor whose
-            first matching override carries another type, or whose
-            rows do not divide into ``QK2_0`` blocks. Either would
-            abort the quantizer mid-pack on a tensor the
-            preprocessor already wrote, so the refusal comes first.
+        PackError: If a selected tensor's first matching override
+            carries another type, or its rows do not divide into
+            ``QK2_0`` blocks. Either would abort the quantizer
+            mid-pack on a tensor the preprocessor already wrote, so
+            the refusal comes first. An uncovered or excluded tensor
+            drops out before both checks, because the preprocessor
+            leaves it float.
 
     Examples:
         One covered stack at ``q2_0`` selects one target:
@@ -266,7 +251,7 @@ def select_pre_encode_targets(
         )
         ```
     """
-    patterns = [(_compiled(override), override) for override in overrides]
+    patterns = [(compiled_override(o), o) for o in overrides]
     q2_0_patterns = [
         pattern
         for pattern, override in patterns
@@ -279,6 +264,8 @@ def select_pre_encode_targets(
         if quantizer_skips(
             info, embedding_flag=embedding_flag, output_flag=output_flag
         ):
+            continue
+        if info.name not in covered or info.name in excluded:
             continue
         winner = next(
             override for pattern, override in patterns if pattern.search(info.name)
@@ -299,8 +286,6 @@ def select_pre_encode_targets(
                 "quantizer would fall back to another type, so the pack "
                 "refuses before the preprocessor writes (ADR-0028, ADR-0032)"
             )
-        if info.name not in covered or info.name in excluded:
-            continue
         targets.append(PreEncodeTarget(info.name, info.elements))
     return tuple(targets)
 

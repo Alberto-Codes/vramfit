@@ -242,8 +242,9 @@ def pack(
     python_bin: Annotated[
         Path | None,
         typer.Option(
-            help="Interpreter for the convert script — the pack extra "
-            "provisions its dependencies. Default: this one."
+            help="Interpreter for the convert script and the assisted Q2_0 "
+            "encoder. It must import vramfit and torch, which the pack "
+            "extra provisions. Default: this one."
         ),
     ] = None,
     threads: Annotated[

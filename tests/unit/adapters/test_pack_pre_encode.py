@@ -277,6 +277,30 @@ class TestPreEncodingPack:
         assert workspace["out"].exists()
         assert p.mixed_gguf.exists()
 
+    def test_encoder_failure_removes_the_stage_temporaries(
+        self, workspace: dict[str, Path]
+    ) -> None:
+        # The encoder writes payloads and then dies. Nothing depends
+        # on them, and they are multi-gigabyte on a real model.
+        workspace["encoder"].write_text(
+            "import os, sys\n"
+            "args = sys.argv[1:]\n"
+            'out = args[args.index("--out-dir") + 1]\n'
+            "os.makedirs(out, exist_ok=True)\n"
+            'open(os.path.join(out, "partial.q2_0"), "wb").write(b"\\0" * 64)\n'
+            "sys.exit(4)\n"
+        )
+        p = packer(workspace)
+        with pytest.raises(
+            PackError, match="pre-encode failed with exit code 4"
+        ) as info:
+            p.pack(recipe())
+        assert str(p.pre_encode_dir) in str(info.value)
+        assert str(p.mixed_gguf) in str(info.value)
+        assert not p.pre_encode_dir.exists()
+        assert not p.mixed_gguf.exists()
+        assert not workspace["quantize_argv"].exists()
+
     def test_quantizer_failure_names_the_kept_mixed_file(
         self, workspace: dict[str, Path]
     ) -> None:

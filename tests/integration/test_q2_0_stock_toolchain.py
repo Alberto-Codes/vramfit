@@ -292,7 +292,7 @@ class TestPackAndLoad:
         )
         assert run.returncode == 0, run.stdout + run.stderr
 
-    def test_a_shadowed_stack_would_be_refused_before_writing(
+    def test_a_pack_without_the_matrix_refuses_before_any_tool_runs(
         self, tmp_path: Path
     ) -> None:
         quantize = _tool("llama-quantize")

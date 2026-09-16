@@ -336,7 +336,7 @@ def base_tensor_names(base_gguf: Path) -> tuple[str, ...]:
     return names
 
 
-def _compiled(override: TypeOverride) -> re.Pattern[str]:
+def compiled_override(override: TypeOverride) -> re.Pattern[str]:
     r"""Compile one override the way ``llama-quantize`` compiles it.
 
     ``tools/quantize/quantize.cpp:332`` lower-cases a pattern before
@@ -356,6 +356,14 @@ def _compiled(override: TypeOverride) -> re.Pattern[str]:
             fixed GGUF class tables. So every pattern this backend
             builds is a literal today, and a failure here means a
             caller supplied its own pattern or that capture widened.
+
+    Examples:
+        The pattern searches a lower-cased name:
+
+        ```python
+        pattern = compiled_override(TypeOverride("FFN_DOWN", "q2_0"))
+        assert pattern.search("blk.0.ffn_down_exps.weight")
+        ```
     """
     try:
         return re.compile(override.pattern.lower())
@@ -383,7 +391,7 @@ def unmatched_patterns(
         The unmatched patterns, without repeats, in override order.
 
     Raises:
-        PackError: If a pattern does not compile. See `_compiled`.
+        PackError: If a pattern does not compile. See `compiled_override`.
 
     Examples:
         A layer the base GGUF does not carry reports its pattern:
@@ -398,7 +406,7 @@ def unmatched_patterns(
     for override in overrides:
         if override.pattern in unmatched:
             continue
-        pattern = _compiled(override)
+        pattern = compiled_override(override)
         if not any(pattern.search(name) for name in tensor_names):
             unmatched.append(override.pattern)
     return tuple(unmatched)
@@ -474,7 +482,7 @@ def floored_layers(
         reached, and empty for a file that numbers no layer.
 
     Raises:
-        PackError: If a pattern does not compile. See `_compiled`.
+        PackError: If a pattern does not compile. See `compiled_override`.
 
     Examples:
         A recipe scanned over fewer layers than the file carries:
@@ -485,7 +493,7 @@ def floored_layers(
         assert floored_layers(overrides, names) == ("blk.1.",)
         ```
     """
-    patterns = [_compiled(override) for override in overrides]
+    patterns = [compiled_override(override) for override in overrides]
     covered: set[int] = set()
     present: set[int] = set()
     for name in names:

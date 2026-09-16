@@ -108,12 +108,27 @@ class TestSelectPreEncodeTargets:
         assert "refuses before the preprocessor writes" in str(info.value)
         assert STACK in str(info.value)
 
-    def test_shadowing_refuses_even_when_the_tensor_is_uncovered(self) -> None:
+    def test_a_shadowed_uncovered_tensor_packs_stock_without_refusing(self) -> None:
+        # The preprocessor never writes it, so the quantizer never
+        # meets it as Q2_0 (ADR-0032 decision 3).
         protection = TypeOverride(r"blk\.0\.ffn_down_exps\.weight", "q8_0")
-        with pytest.raises(PackError, match="first matching pattern"):
+        assert (
             select_pre_encode_targets(
                 (protection, Q2_0_STACK), base_header(), covered=(), excluded=()
             )
+            == ()
+        )
+
+    def test_an_excluded_tensor_with_odd_rows_packs_stock_without_refusing(
+        self,
+    ) -> None:
+        odd = header(TensorInfo(STACK, (96, 4, 2), 1, 0))
+        assert (
+            select_pre_encode_targets(
+                (Q2_0_STACK,), odd, covered={STACK}, excluded=(STACK,)
+            )
+            == ()
+        )
 
     def test_rows_outside_the_block_refuse_before_writing(self) -> None:
         odd = header(TensorInfo(STACK, (96, 4, 2), 1, 0))
