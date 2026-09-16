@@ -281,12 +281,18 @@ change.
     Not "imatrix mode" or "weighted scanning".
 
     The same pair names the pack side. A tensor packs **assisted** when
-    its type reads the matrix and the matrix covers its name, and
-    **unassisted** otherwise. An artifact's **assisted share** is the
-    fraction of its bytes that packed assisted
+    its type reads the matrix and the matrix covers its name.
+    A pre-encoded tensor also packs assisted when the matrix weighted
+    the encoder's candidate selection, even though its stock type ignores the matrix.
+    All other tensors pack **unassisted**, including uncovered and excluded tensors.
+    An artifact's **assisted share** is the fraction of its bytes that packed assisted
     ([ADR-0016](../adr/0016-imatrix-in-the-pack-path.md), 2026-08-21
-    amendment). The scan sense and the pack sense can disagree on one
+    amendment, and [ADR-0032](../adr/0032-assisted-q2-encoder-home.md), decision 3).
+    The scan sense and the pack sense can disagree on one
     tensor, because the two sides apply different fits.
+    ADR-0032's assisted-share accounting and any nominal-2 cell price drawn
+    from it are not publishable until measurement separates search gain from imatrix gain
+    ([open question](../adr/0032-assisted-q2-encoder-home.md#open-questions)).
 
 **Reconstruction error**
 :   The squared difference between a quantized tensor and its
