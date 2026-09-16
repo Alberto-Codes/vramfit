@@ -255,10 +255,11 @@ The third cannot deliver the measured benefit or matching provenance.
 
   A nominal-2 stack sets the `--pure` base ftype to Q2_K (ADR-0012),
   and the 256 super-block does not divide 2688. The first run of this
-  fixture left the attention tensors and the embedding uncovered, so
-  the quantizer rewrote five types and the pack halted on the
-  type-fallback warning pair (ADR-0028 decision 3). The refusal is
-  correct. It means a target of this shape needs an assignment for
+  fixture left the four 2688-wide attention tensors unassigned. Those
+  tensors took the `--pure` Q2_K floor, so the quantizer rewrote four
+  types. The pack halted on the type-fallback warning pair (ADR-0028
+  decision 3). That run assigned the embedding at 8 bits. The refusal
+  is correct. It means a target of this shape needs an assignment for
   every dense group the file carries, not only for the routed stacks.
 
   An assignment for every dense group is necessary and not
@@ -267,8 +268,11 @@ The third cannot deliver the measured benefit or matching provenance.
   width. Nominal 4 emits `--token-embedding-type q4_k` and nominal 2
   emits `q2_k`, so a 256-block type reaches 2688-wide rows.
 
-  That case does not reach the fallback above. The quantizer prints no
-  `falling back to` line for `token_embd.weight`. It aborts inside
+  That case does not reach the fallback above. Every run the record
+  covers gives the embedding an explicit `--token-embedding-type`. The
+  flag overrides the `--pure` floor that the unassigned attention
+  tensors took. The quantizer prints no `falling back to` line for
+  `token_embd.weight`. It aborts inside
   `[   2/  12] token_embd.weight` on
   `ggml.c:7933: GGML_ASSERT(start % type_traits[type].blck_size == 0) failed`
   and exits 134. `pack` raises `PackError` for the aborted tool, not
