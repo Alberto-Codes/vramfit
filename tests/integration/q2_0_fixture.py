@@ -26,7 +26,6 @@ from vramfit.adapters.outbound.gguf.q2_0_blocks import (
     q2_0_payload_bytes,
 )
 
-TOOLS = os.environ.get("VRAMFIT_LLAMA_CPP_BIN")
 N_EXPERT = 2
 N_VOCAB = 32
 DOWN = "blk.0.ffn_down_exps.weight"
@@ -38,10 +37,17 @@ GATE_GROUP = "model.layers.0.mlp.experts.gate_proj"
 
 
 def tool(name: str) -> Path:
-    """Name one stock llama.cpp tool, or skip with the reason."""
-    if TOOLS is None:
+    """Name one stock llama.cpp tool, or skip with the reason.
+
+    The environment read happens here, at call time. A module-level
+    read binds the value at import, so a variable set or cleared
+    afterwards never reaches the skip decision, and the suite would
+    skip against a stale reading of its own documented condition.
+    """
+    tools = os.environ.get("VRAMFIT_LLAMA_CPP_BIN")
+    if tools is None:
         pytest.skip("VRAMFIT_LLAMA_CPP_BIN names no stock llama.cpp build directory")
-    path = Path(TOOLS) / name
+    path = Path(tools) / name
     if not path.is_file():
         pytest.skip(f"{path} is not a file")
     return path
