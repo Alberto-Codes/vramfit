@@ -10,17 +10,18 @@ type covering the most bytes in the packed file, written after the
 quantizer runs (#414). On that pack the value is ``Q4_0``, at
 74.3 % of the bytes.
 
-The read is a header parse this module owns. gguf-py's reader
+The read is the owned header parse in
+[vramfit.adapters.outbound.gguf.header][]. gguf-py's reader
 names every tensor type through its enum, and the PyPI release
 can lag llama.cpp's type table — 0.19.0 carries no ``Q2_0``, which
 every expert-stack pack at nominal 2 holds (ADR-0028). A reader
 that refuses the file it must relabel is no reader. The parse walks
 the metadata once, records where the ``general.file_type`` value
-sits, and measures each tensor's bytes from the data-section
-offsets. Measuring by offset needs no block-size table, so a type
-the parser cannot name still counts its bytes. Naming it is the
-one table this module keeps, and an unnamed type refuses rather
-than stamping a label the project cannot state.
+sits, and this module measures each tensor's bytes from the
+data-section offsets. Measuring by offset needs no block-size
+table, so a type the parser cannot name still counts its bytes.
+Naming it is the one table this module keeps, and an unnamed type
+refuses rather than stamping a label the project cannot state.
 
 The write changes four bytes in place. The value's width and
 position do not move, so the rest of the file is untouched.
@@ -46,35 +47,14 @@ from __future__ import annotations
 import struct
 from dataclasses import dataclass
 from pathlib import Path
-from typing import BinaryIO, Final
+from typing import Final
 
+from vramfit.adapters.outbound.gguf.header import (
+    FILE_TYPE_KEY as FILE_TYPE_KEY,  # noqa: PLC0414 - re-export: the relabel's key reads from this module
+)
+from vramfit.adapters.outbound.gguf.header import GgufHeader, read_header
 from vramfit.adapters.outbound.gguf.types import PackError
 from vramfit.domain.pack import modal_type
-
-FILE_TYPE_KEY: Final[str] = "general.file_type"
-ALIGNMENT_KEY: Final[str] = "general.alignment"
-
-_MAGIC: Final[bytes] = b"GGUF"
-_VERSIONS: Final[frozenset[int]] = frozenset({2, 3})
-_DEFAULT_ALIGNMENT: Final[int] = 32
-# GGUF metadata value types (ggml/include/gguf.h). Scalars carry
-# their struct format. String and array are the two variable widths.
-_SCALAR_FORMATS: Final[dict[int, str]] = {
-    0: "<B",
-    1: "<b",
-    2: "<H",
-    3: "<h",
-    4: "<I",
-    5: "<i",
-    6: "<f",
-    7: "<?",
-    10: "<Q",
-    11: "<q",
-    12: "<d",
-}
-_STRING_TYPE: Final[int] = 8
-_ARRAY_TYPE: Final[int] = 9
-_UINT32_TYPE: Final[int] = 4
 
 # Tensor type ids to names (ggml/include/ggml.h, `ggml_type`). The
 # rows this backend drives plus the plain block types beside them.
@@ -147,182 +127,42 @@ class PackedLayout:
     file_type: int
 
 
-class _Parser:
-    """A forward-only reader over the GGUF header.
-
-    Attributes:
-        handle (BinaryIO): The open file, positioned at the next
-            unread byte.
-        offset (int): Bytes consumed so far, so a metadata value's
-            absolute position is known when it is read.
-
-    Examples:
-        Read the magic and the version:
-
-        ```python
-        parser = _Parser(handle)
-        magic = parser.handle.read(4)
-        version = parser.read("<I")
-        ```
-    """
-
-    def __init__(self, handle: BinaryIO) -> None:
-        """Start at the file's first byte.
-
-        Args:
-            handle: The open file, at offset 0.
-        """
-        self.handle = handle
-        self.offset = 0
-
-    def read(self, fmt: str) -> int | float | bool:
-        """Read one packed scalar.
-
-        Args:
-            fmt: The struct format of the scalar.
-
-        Returns:
-            The unpacked value.
-
-        Raises:
-            PackError: If the file ends inside the value.
-        """
-        size = struct.calcsize(fmt)
-        data = self.handle.read(size)
-        if len(data) != size:
-            raise PackError(f"header ends at byte {self.offset + len(data)}")
-        self.offset += size
-        return struct.unpack(fmt, data)[0]
-
-    def read_string(self) -> str:
-        """Read one length-prefixed string.
-
-        Returns:
-            The decoded string. Undecodable bytes become U+FFFD.
-
-        Raises:
-            PackError: If the file ends inside the string.
-        """
-        length = int(self.read("<Q"))
-        data = self.handle.read(length)
-        if len(data) != length:
-            raise PackError(f"header ends at byte {self.offset + len(data)}")
-        self.offset += length
-        return data.decode("utf-8", errors="replace")
-
-    def skip_value(self, value_type: int) -> None:
-        """Consume one metadata value of the given type.
-
-        Args:
-            value_type: The GGUF value type id.
-
-        Raises:
-            PackError: If the type id is unknown, or the file ends
-                inside the value.
-        """
-        if value_type == _STRING_TYPE:
-            self.read_string()
-        elif value_type == _ARRAY_TYPE:
-            element_type = int(self.read("<I"))
-            count = int(self.read("<Q"))
-            for _ in range(count):
-                self.skip_value(element_type)
-        elif value_type in _SCALAR_FORMATS:
-            self.read(_SCALAR_FORMATS[value_type])
-        else:
-            raise PackError(f"unknown metadata value type {value_type}")
-
-
-def _parse(parser: _Parser, file_size: int) -> PackedLayout:
-    """Walk the header once and measure the data section by offsets.
+def _layout(header: GgufHeader, file_size: int) -> PackedLayout:
+    """Measure the data section by offsets.
 
     Args:
-        parser: A parser at the file's first byte.
+        header: The parsed header.
         file_size: The whole file's size in bytes.
 
     Returns:
         The layout the header describes.
 
     Raises:
-        PackError: If the file is not a little-endian GGUF v2 or v3,
-            ends early, declares no ``general.file_type`` or one that
-            is not a uint32, or holds a tensor type the table cannot
-            name.
+        PackError: If the file declares no ``general.file_type``, a
+            tensor's offset lies past the data section, or a tensor
+            type id has no name in the table.
     """
-    if parser.handle.read(4) != _MAGIC:
-        raise PackError("no GGUF magic")
-    parser.offset = 4
-    version = int(parser.read("<I"))
-    if version not in _VERSIONS:
-        raise PackError(f"GGUF version {version} is not a little-endian v2 or v3")
-    n_tensors = int(parser.read("<Q"))
-    n_kv = int(parser.read("<Q"))
-    alignment = _DEFAULT_ALIGNMENT
-    file_type_offset: int | None = None
-    file_type = 0
-    for _ in range(n_kv):
-        key = parser.read_string()
-        value_type = int(parser.read("<I"))
-        if key == FILE_TYPE_KEY:
-            if value_type != _UINT32_TYPE:
-                raise PackError(f"{FILE_TYPE_KEY} holds type {value_type}, not uint32")
-            file_type_offset = parser.offset
-            file_type = int(parser.read("<I"))
-        elif key == ALIGNMENT_KEY and value_type == _UINT32_TYPE:
-            alignment = int(parser.read("<I"))
-        else:
-            parser.skip_value(value_type)
-    if file_type_offset is None:
+    if header.file_type_offset is None:
         raise PackError(f"the file declares no {FILE_TYPE_KEY}")
-    infos: list[tuple[int, int]] = []
-    for _ in range(n_tensors):
-        parser.read_string()
-        n_dims = int(parser.read("<I"))
-        for _ in range(n_dims):
-            parser.read("<Q")
-        type_id = int(parser.read("<I"))
-        infos.append((int(parser.read("<Q")), type_id))
-    data_start = -(-parser.offset // alignment) * alignment
-    data_bytes = file_size - data_start
-    if data_bytes < 0:
-        raise PackError(f"the data section would start past the end, at {data_start}")
-    return PackedLayout(_bytes_by_type(infos, data_bytes), file_type_offset, file_type)
-
-
-def _bytes_by_type(infos: list[tuple[int, int]], data_bytes: int) -> dict[str, int]:
-    """Sum each type's bytes from consecutive data offsets.
-
-    Args:
-        infos: ``(data offset, type id)`` per tensor, in any order.
-        data_bytes: The data section's size, which bounds the last
-            tensor.
-
-    Returns:
-        Bytes per type name. A file holding no tensors returns an
-        empty table.
-
-    Raises:
-        PackError: If a tensor's offset lies past the data section,
-            or its type id has no name in the table.
-    """
     totals: dict[str, int] = {}
-    ordered = sorted(infos)
-    for index, (offset, type_id) in enumerate(ordered):
-        end = ordered[index + 1][0] if index + 1 < len(ordered) else data_bytes
-        if end < offset:
-            raise PackError(f"tensor data at offset {offset} runs past the file")
+    spans = header.spans(file_size)
+    for info in header.tensors:
         try:
-            name = TENSOR_TYPE_NAMES[type_id]
+            name = TENSOR_TYPE_NAMES[info.type_id]
         except KeyError:
             raise PackError(
-                f"tensor type id {type_id} has no name in the file-type table"
+                f"tensor type id {info.type_id} has no name in the file-type table"
             ) from None
-        totals[name] = totals.get(name, 0) + (end - offset)
-    return totals
+        start, end = spans[info.name]
+        totals[name] = totals.get(name, 0) + (end - start)
+    return PackedLayout(totals, header.file_type_offset, header.file_type)
 
 
 def read_layout(path: Path) -> PackedLayout:
     """Parse a packed GGUF's header and measure its tensor bytes.
+
+    The parse is `header.read_header`, and this measures the data
+    section it describes.
 
     Args:
         path: The packed GGUF.
@@ -345,9 +185,7 @@ def read_layout(path: Path) -> PackedLayout:
         ```
     """
     try:
-        with path.open("rb") as handle:
-            file_size = path.stat().st_size
-            return _parse(_Parser(handle), file_size)
+        return _layout(read_header(path), path.stat().st_size)
     except OSError as exc:
         raise PackError(f"cannot read the packed GGUF {path}: {exc}") from exc
     except PackError as exc:

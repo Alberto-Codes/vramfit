@@ -31,6 +31,11 @@ Examples:
     perturbed = q0_ref_quantize_dequantize(weight, bits=2)
     ```
 
+``QK2_0`` comes from
+[vramfit.adapters.outbound.gguf.q2_0_blocks][], which owns the
+stored ``Q2_0`` block layout for both the scan and the pack path
+(ADR-0032).
+
 See Also:
     - [vramfit.adapters.outbound.scan.kquant][]: The K-quant port
       (ADR-0018) and the shared `Q8_0` round trip.
@@ -41,6 +46,7 @@ from __future__ import annotations
 
 import torch
 
+from vramfit.adapters.outbound.gguf.q2_0_blocks import QK2_0
 from vramfit.adapters.outbound.scan.kquant import (
     _fp16,
     _q8_0_round_trip,
@@ -48,8 +54,8 @@ from vramfit.adapters.outbound.scan.kquant import (
     round_half_away,
 )
 
-# ggml-common.h: QK2_0 groups 64 elements, QK4_0 and QK8_0 group 32.
-QK2_0 = 64
+# ggml-common.h: QK4_0 and QK8_0 group 32. QK2_0 groups 64, and
+# `q2_0_blocks` owns it — the stored layout the encoder emits.
 QK4_0 = 32
 QK8_0 = 32
 

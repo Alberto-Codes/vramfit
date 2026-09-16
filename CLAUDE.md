@@ -67,7 +67,9 @@ artifacts, HF configs, the torch scan meter, the GGUF pack toolchain) →
 json/pathlib/os/io/typer/logging/structlog, enforced). The `vramfit_schema` envelope
 belongs to the JSON adapters, never to domain dataclasses. New external
 integrations (torch, llm-compressor, runtimes) are outbound adapters
-behind ports.
+behind ports. The assisted Q2_0 encoder lives in the scan package and
+runs as a separate program for the pack path (ADR-0032); the pack
+adapter launches it and never imports torch.
 
 **File size rule:** modules cap at **300 lines of actual code (soft) /
 320 (hard)** — code lines exclude comments and docstrings; the gate is

@@ -107,6 +107,33 @@ records the `(stack, expert)` pairs under
 halts the pack. The read needs gguf-py, which the gguf extra
 provisions without torch.
 
+## Pre-encoding assisted Q2_0 tensors
+
+Stock `llama-quantize` discards the matrix at `Q2_0`. A recipe priced
+with the assisted `Q2_0` encoder's method takes a second path
+([ADR-0032](../adr/0032-assisted-q2-encoder-home.md)): pack selects
+the `Q2_0` tensors the matrix covers, runs vramfit's encoder as a
+separate program under `--python-bin`, writes a temporary mixed GGUF
+beside `--out`, and hands that file to `llama-quantize` with the same
+flags. The quantizer copies the pre-encoded tensors and quantizes the
+rest. It never receives `--allow-requantize`. After the zero exit,
+pack reads the packed payload bytes back and refuses a mismatch.
+
+The stage refuses before it writes when an override would leave a
+pre-encoded tensor at another type, because the quantizer would then
+exit 1 mid-pack on `requantizing from type q2_0 is disabled`. It
+also refuses a pack without `--imatrix`, because the recipe priced
+an assisted fit. A tensor the matrix does not cover, or one the
+recipe excludes, packs stock as before.
+
+The `model_packed` event records the tensors under `pre_encoded`
+and the encoder revision under `q2_0_encoder`. The temporary file is
+roughly the base with the selected stacks at 2.25 bits, so `--out`
+needs that much free space during the pack. A failure inside the
+stage removes the temporary mixed GGUF and the payload directory. A
+failure after it keeps both and names them. The encoder needs the
+scan extra, which the pack extra includes.
+
 ## The smoke test
 
 A packed artifact can pass the solver, the validation pass, and the

@@ -254,8 +254,10 @@ extra-paths = ["scripts", ".claude/hooks"]
 # their suites import gguf-py the same way. The exclusion matcher
 # (ADR-0023, #309) reads through the count reader, and the file-type
 # stamper (ADR-0012 as amended, #414) parses the header itself, so
-# only their gguf-backed suites land here. Everything else still
-# type-checks strictly.
+# only their gguf-backed suites land here. The Q2_0 block decoder
+# (ADR-0032) imports numpy lazily, and the pre-encoding suites write
+# their fixtures with gguf-py. Everything else still type-checks
+# strictly.
 # `scripts/check_ty_overrides.py` gates this list. Every entry must
 # cover a file that imports an optional root, so a stale entry fails.
 [[tool.ty.overrides]]
@@ -263,15 +265,19 @@ include = [
     "src/vramfit/adapters/outbound/scan/**",
     "src/vramfit/adapters/outbound/gguf/imatrix_counts.py",
     "src/vramfit/adapters/outbound/gguf/override_match.py",
+    "src/vramfit/adapters/outbound/gguf/q2_0_blocks.py",
     "src/vramfit/adapters/outbound/gguf/reconstruction.py",
     "tests/conftest.py",
     "tests/contract/test_imatrix_count_source_contract.py",
     "tests/contract/test_reconstruction_checker_contract.py",
     "tests/e2e/test_cli_subprocess.py",
+    "tests/integration/test_q2_0_stock_toolchain.py",
     "tests/integration/test_torch_scan_adapter.py",
     "tests/unit/adapters/test_exclusion_match_gguf.py",
     "tests/unit/adapters/test_gguf_file_type.py",
+    "tests/unit/adapters/test_gguf_header_blocks.py",
     "tests/unit/adapters/test_override_match_gguf.py",
+    "tests/unit/adapters/test_pack_pre_encode.py",
     "tests/unit/adapters/test_predicted_vs_packed.py",
     "tests/unit/adapters/test_scan_offload.py",
 ]

@@ -26,6 +26,12 @@ knife-edge fitting ties may diverge from the C where vectorized
 float sums order differently — the assisted golden fixtures bound
 that drift.
 
+`run_assisted_rows` is the row driver both assisted ports share: it
+flattens a tensor to rows, pairs each row with its weight row, and
+fits bounded slices of whole rows. The assisted ``Q2_0`` encoder in
+[vramfit.adapters.outbound.scan.q2_0_assisted][] drives it too
+(ADR-0032), and `check_q0_weights` takes that encoder's block width.
+
 Examples:
     Simulate assisted Q4_0 damage on one weight matrix:
 
@@ -42,11 +48,17 @@ See Also:
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import torch
 
 from vramfit.adapters.outbound.scan.kquant import _CHUNK_ROWS, _fp16
 from vramfit.adapters.outbound.scan.kquant_assisted import _make_qx_quants
-from vramfit.adapters.outbound.scan.q0_ref import QK4_0, q0_ref_quantize_dequantize
+from vramfit.adapters.outbound.scan.q0_ref import (
+    GGUF_TYPE_NAMES,
+    QK4_0,
+    q0_ref_quantize_dequantize,
+)
 
 # The nominal precision whose C path consumes the matrix. Every
 # other covered width routes to the unassisted port, matching
@@ -54,21 +66,26 @@ from vramfit.adapters.outbound.scan.q0_ref import QK4_0, q0_ref_quantize_dequant
 _WEIGHTED_BITS = 4
 
 
-def check_q0_weights(weight: torch.Tensor, quant_weights: torch.Tensor) -> None:
-    """Refuse weights the assisted Q4_0 fit cannot consume.
+def check_q0_weights(
+    weight: torch.Tensor, quant_weights: torch.Tensor, block: int = QK4_0
+) -> None:
+    """Refuse weights an assisted q0 fit cannot consume.
 
     Args:
         weight: The tensor the weights would assist.
         quant_weights: Imatrix column weights — 1-D of the row
             length, or 2-D ``(experts, row)`` against a 3-D fused
             expert stack.
+        block: The block width the fit aligns to — ``QK4_0`` for the
+            assisted ``Q4_0`` port, ``QK2_0`` for the assisted
+            ``Q2_0`` encoder (ADR-0032).
 
     Raises:
         ValueError: If the shape fits neither layout, the row length
-            does not divide into ``QK4_0`` blocks (the C asserts the
-            multiple, and padding would misalign every column
-            weight), or a weight is negative or non-finite — garbage
-            weights would corrupt every damage downstream.
+            does not divide into ``block``-element blocks (the C
+            asserts the multiple, and padding would misalign every
+            column weight), or a weight is negative or non-finite —
+            garbage weights would corrupt every damage downstream.
     """
     row = int(weight.shape[-1])
     if quant_weights.dim() == 2 and (  # noqa: PLR2004 - the per-expert layout
@@ -84,9 +101,10 @@ def check_q0_weights(weight: torch.Tensor, quant_weights: torch.Tensor) -> None:
             f"quant_weights must be 1-D with {row} entries, or 2-D with "
             f"{row} columns, got shape {tuple(quant_weights.shape)}"
         )
-    if row % QK4_0:
+    if row % block:
         raise ValueError(
-            f"rows of {row} do not divide into {QK4_0}-element Q4_0 "
+            f"rows of {row} do not divide into {block}-element "
+            f"{GGUF_TYPE_NAMES[4] if block == QK4_0 else GGUF_TYPE_NAMES[2]} "
             "blocks — the assisted fit cannot align its column weights "
             "(ADR-0018)"
         )
@@ -94,16 +112,23 @@ def check_q0_weights(weight: torch.Tensor, quant_weights: torch.Tensor) -> None:
         raise ValueError("quant_weights must be finite and non-negative")
 
 
-def _assisted_rows(rows: torch.Tensor, qw: torch.Tensor) -> torch.Tensor:
+def _assisted_rows(rows: torch.Tensor, qw: torch.Tensor | None) -> torch.Tensor:
     """Round-trip whole rows through the weighted Q4_0 fit.
 
     Args:
         rows: Shape ``(n, row)``, float32.
-        qw: Column weights per row, same shape.
+        qw: Column weights per row, same shape. Never None here —
+            the assisted ``Q4_0`` port always fits with weights.
 
     Returns:
         Dequantized values, same shape.
+
+    Raises:
+        ValueError: If ``qw`` is None. `q0_assisted_quantize_dequantize`
+            checks the weights first, so this names a caller defect.
     """
+    if qw is None:
+        raise ValueError("the assisted Q4_0 fit needs column weights")
     n, row = rows.shape
     # The C computes sigma2 once per row, over the whole row.
     sigma2 = (rows * rows).sum(dim=1, keepdim=True) / row
@@ -126,9 +151,9 @@ def q0_assisted_quantize_dequantize(
     expert ``i``'s rows fit against weight row ``i``. Nominal 2 and
     8 route to the unassisted port — ``quantize_q2_0`` and
     ``quantize_q8_0`` discard the imatrix. The input is never
-    modified. The computation runs on the input's device first and
-    retries on the CPU when the float32 workspace does not fit the
-    card.
+    modified. `run_assisted_rows` runs the fit on the input's device
+    first and retries on the CPU when the float32 workspace does not
+    fit the card.
 
     Args:
         weight: The tensor to perturb. Any shape, any float dtype.
@@ -163,9 +188,46 @@ def q0_assisted_quantize_dequantize(
     check_q0_weights(weight, quant_weights)
     if bits != _WEIGHTED_BITS:
         return q0_ref_quantize_dequantize(weight, bits)
+    # The shared row driver slices whole rows and retries on the CPU.
+    return run_assisted_rows(weight, quant_weights, _assisted_rows, QK4_0)
+
+
+def run_assisted_rows(
+    weight: torch.Tensor,
+    quant_weights: torch.Tensor | None,
+    fit_rows: Callable[[torch.Tensor, torch.Tensor | None], torch.Tensor],
+    block: int,
+) -> torch.Tensor:
+    """Drive a whole-row fit over a tensor in bounded slices.
+
+    The shared row driver of the assisted ports. It flattens the
+    tensor to rows of ``weight.shape[-1]``, pairs each row with its
+    column weights, and hands bounded slices of whole rows to
+    ``fit_rows``. Every slice holds whole rows, so a boundary never
+    splits a row's ``sigma2``. One shared weight row broadcasts
+    instead of gathering a slice-sized copy. The computation runs on
+    the input's device first and retries on the CPU when the float32
+    workspace does not fit the card.
+
+    Args:
+        weight: The tensor to perturb. Any shape, any float dtype.
+        quant_weights: Column weights — 1-D of the row length, 2-D
+            ``(experts, row)`` against a 3-D stack, or None when the
+            fit takes no weights.
+        fit_rows: Round-trips ``(rows, weights)`` shaped ``(n, row)``
+            to dequantized values of the same shape. It receives
+            None weights when ``quant_weights`` is None.
+        block: The fit's block width, which sizes the slices.
+
+    Returns:
+        The dequantized tensor, same shape, dtype, and device as the
+        input.
+    """
     row = int(weight.shape[-1])
 
-    def prepare(device: torch.device | str) -> tuple[torch.Tensor, torch.Tensor]:
+    def prepare(
+        device: torch.device | str,
+    ) -> tuple[torch.Tensor, torch.Tensor | None]:
         """Build float32 rows and the per-matrix weights on ``device``.
 
         Args:
@@ -173,30 +235,28 @@ def q0_assisted_quantize_dequantize(
 
         Returns:
             ``(rows, qw)`` shaped ``(n, row)`` and
-            ``(matrices, row)``.
+            ``(matrices, row)``, or None weights.
         """
         rows = weight.detach().to(device=device, dtype=torch.float32).reshape(-1, row)
+        if quant_weights is None:
+            return rows, None
         qw = quant_weights.detach().to(device=device, dtype=torch.float32)
         return rows, qw.reshape(1, row) if qw.dim() == 1 else qw
 
-    def run(rows: torch.Tensor, qw: torch.Tensor) -> torch.Tensor:
+    def run(rows: torch.Tensor, qw: torch.Tensor | None) -> torch.Tensor:
         """Fit bounded slices of whole rows against their weights.
-
-        Every slice holds whole rows, so a boundary never splits a
-        row's ``sigma2``. One shared weight row broadcasts instead
-        of gathering a slice-sized copy.
 
         Args:
             rows: Shape ``(n, row)``, float32.
             qw: Shape ``(matrices, row)`` — each matrix covers
-                ``n / matrices`` consecutive rows.
+                ``n / matrices`` consecutive rows — or None.
 
         Returns:
             Dequantized values, shape of ``rows``.
         """
-        per_matrix = rows.shape[0] // qw.shape[0]
+        per_matrix = rows.shape[0] // qw.shape[0] if qw is not None else 1
 
-        def weight_rows(start: int, stop: int) -> torch.Tensor:
+        def weight_rows(start: int, stop: int) -> torch.Tensor | None:
             """Select the weight row for each row in ``[start, stop)``.
 
             Args:
@@ -206,20 +266,20 @@ def q0_assisted_quantize_dequantize(
             Returns:
                 Weights that broadcast against the slice — the one
                 shared row stays ``(1, row)`` rather than gathering
-                a slice-sized copy.
+                a slice-sized copy — or None without weights.
             """
-            if qw.shape[0] == 1:
+            if qw is None or qw.shape[0] == 1:
                 return qw
             idx = torch.arange(start, stop, device=rows.device) // per_matrix
             return qw[idx]
 
-        chunk = max(1, (_CHUNK_ROWS * QK4_0) // row)
+        chunk = max(1, (_CHUNK_ROWS * block) // row)
         if rows.shape[0] <= chunk:
-            return _assisted_rows(rows, weight_rows(0, rows.shape[0]))
+            return fit_rows(rows, weight_rows(0, rows.shape[0]))
         out = torch.empty_like(rows)
         for start in range(0, rows.shape[0], chunk):
             stop = min(start + chunk, rows.shape[0])
-            out[start:stop] = _assisted_rows(rows[start:stop], weight_rows(start, stop))
+            out[start:stop] = fit_rows(rows[start:stop], weight_rows(start, stop))
         return out
 
     try:

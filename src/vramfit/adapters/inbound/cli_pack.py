@@ -9,6 +9,8 @@ decision (#515), loads the recipe, wires the
 `RecipePacker` port to the llama.cpp adapter, and drives the two
 stages — convert, then quantize (imatrix-assisted when ``--imatrix``
 is given, ADR-0016, with the recipe's imatrix exclusions applied,
+and pre-encoded through vramfit's assisted ``Q2_0`` encoder when the
+recipe's method selects it, ADR-0032,
 ADR-0023) — emitting one run-log event per stage. Between the
 stages an ``--imatrix`` pack reads the matrix's counts and reports
 every zero-count expert (ADR-0026 decision 5) — the imatrix
@@ -67,8 +69,10 @@ from vramfit.adapters.inbound.cli_pack_check import (
     _resolve_row_widths,
 )
 from vramfit.adapters.inbound.cli_pack_imatrix import (
+    _pre_encode_fields,
     _read_zero_count_experts,
     _report_imatrix_effects,
+    _report_pre_encoding,
     _warn_imatrix_provenance,
 )
 from vramfit.adapters.inbound.cli_pack_sidecar import (
@@ -199,15 +203,17 @@ def _report_floored_layers(result: PackResult) -> None:
 def _report_pack_effects(result: PackResult) -> None:
     """Echo everything the packed file carries that the recipe does not.
 
-    Both reports name a gap the quantizer leaves unreported on a zero
-    exit. The floored layers come first, because they explain a size
-    the imatrix lines do not.
+    The first two reports name a gap the quantizer leaves unreported
+    on a zero exit. The floored layers come first, because they
+    explain a size the imatrix lines do not. The pre-encoding line
+    follows, naming what vramfit's own encoder fitted.
 
     Args:
         result: The pack step's accounting record.
     """
     _report_floored_layers(result)
     _report_imatrix_effects(result)
+    _report_pre_encoding(result)
 
 
 def pack(
@@ -236,13 +242,18 @@ def pack(
     python_bin: Annotated[
         Path | None,
         typer.Option(
-            help="Interpreter for the convert script — the pack extra "
-            "provisions its dependencies. Default: this one."
+            help="Interpreter for the convert script and the assisted Q2_0 "
+            "encoder. It must import vramfit and torch, which the pack "
+            "extra provisions. Default: this one."
         ),
     ] = None,
     threads: Annotated[
         int,
-        typer.Option(min=1, help="Thread count for the quantizer and the smoke test."),
+        typer.Option(
+            min=1,
+            help="Thread count for the quantizer, the assisted Q2_0 encoder, "
+            "and the smoke test.",
+        ),
     ] = 8,
     imatrix: Annotated[
         Path | None,
@@ -295,17 +306,18 @@ def pack(
     bytes, and the ``model_packed`` event records it under
     ``file_type`` (ADR-0012 decision 3 as amended 2026-09-04). The
     ``--python-bin`` interpreter
-    runs the convert script — the ``pack`` extra provisions its
-    dependencies. ``--imatrix`` hands the quantizer an importance
-    matrix (ADR-0016). The command then reads that matrix's
-    ``.counts`` tensors against the base GGUF and reports every
-    expert the matrix counts zero times — the quantizer fits such
-    an expert unassisted and prints no warning (ADR-0026 decision
-    5). A matrix the reader cannot vouch for halts before the
-    quantizer runs, and the report lands in the result only beside
-    its matrix path. The read needs gguf-py, which the gguf extra
-    provisions without torch (#310). A recipe priced on an assisted
-    map records its imatrix — the command warns when ``--imatrix``
+    runs the convert script and the assisted ``Q2_0`` encoder — the
+    ``pack`` extra provisions their dependencies. ``--threads`` sizes
+    the quantizer, that encoder, and the smoke test. ``--imatrix``
+    hands the quantizer an importance matrix (ADR-0016). The command
+    then reads that matrix's ``.counts`` tensors against the base GGUF
+    and reports every expert the matrix counts zero times — the
+    quantizer fits such an expert unassisted and prints no warning
+    (ADR-0026 decision 5). A matrix the reader cannot vouch for halts
+    before the quantizer runs, and the report lands in the result
+    only beside its matrix path. The read needs gguf-py, which the
+    gguf extra provisions without torch (#310). A recipe priced on an
+    assisted map records its imatrix — the command warns when ``--imatrix``
     is absent or names a different file, because the pack would not
     match the map's frame (ADR-0020). A recipe with imatrix exclusions
     packs the marked tensors on the unweighted fit, and the command
@@ -326,7 +338,11 @@ def pack(
     names each one (#307). Such a layer carries no assignment, so it
     adds bytes the recipe never priced and the size re-check below
     grows more likely to refuse. #320 carries whether the case should
-    refuse outright. The
+    refuse outright. A recipe priced with the assisted ``Q2_0``
+    encoder's method pre-encodes its covered ``Q2_0`` tensors through
+    vramfit's own encoder before the quantizer runs, and the
+    ``model_packed`` event records the tensors and the encoder
+    revision (ADR-0032). The
     command re-checks the packed file's real
     bytes against the recipe's weight budget — nominal-bit
     predictions undershoot GGUF's effective bits. A protected
@@ -482,6 +498,7 @@ def pack(
             ],
             "floored_layers": list(result.floored_layers),
             "file_type": result.file_type,
+            **_pre_encode_fields(result),
         },
     )
     _report_pack_effects(result)

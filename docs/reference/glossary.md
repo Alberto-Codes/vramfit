@@ -276,8 +276,10 @@ change.
     amendment, token renamed by the 2026-08-18 amendment).
     Accepted [ADR-0032](../adr/0032-assisted-q2-encoder-home.md) selects a
     vramfit-owned assisted Q2_0 **encoder** under a successor token.
-    No implementation exists yet. Decision 3 keeps `q0-imx` nominal 2
-    unassisted.
+    vramfit ships that encoder. The code carries the successor token
+    as a provisional string until
+    [issue #599](https://github.com/Alberto-Codes/vramfit/issues/599)
+    names it. Decision 3 keeps `q0-imx` nominal 2 unassisted.
     Not "imatrix mode" or "weighted scanning".
 
     The same pair names the pack side. A tensor packs **assisted** when
@@ -942,22 +944,28 @@ change.
     keep their names.
     Accepted [ADR-0032](../adr/0032-assisted-q2-encoder-home.md) decision 2
     selects one shared Q2_0 encoder for the scan meter and the pack path.
-    No implementation exists yet, so no encoder reaches the pack path.
-    [Issue #601](https://github.com/Alberto-Codes/vramfit/issues/601) tracks implementation.
+    `q2_0_assisted_fit` in the scan adapter package is that encoder. The
+    meter calls it in process, and the pack path runs it as a separate
+    program under the interpreter that carries torch
+    ([issue #601](https://github.com/Alberto-Codes/vramfit/issues/601)).
 
 **Pre-encoding**
 :   Writing tensors that an **encoder** already fitted into a temporary
     mixed GGUF, before stock `llama-quantize` runs, so the stock pass
     copies those payloads and quantizes the rest.
     Accepted [ADR-0032](../adr/0032-assisted-q2-encoder-home.md) decision 1
-    selects it. No implementation exists yet, so no pack path pre-encodes today.
+    selects it. `vramfit pack` pre-encodes when the recipe's
+    `within_group` token names the encoder's method, and the
+    `model_packed` event lists the tensors under `pre_encoded`.
     The verb is **pre-encode**. Not "pre-quantize" or "patching the
     base".
 
 **Preprocessor**
 :   The CPU subprocess that pre-encodes.
     Accepted [ADR-0032](../adr/0032-assisted-q2-encoder-home.md) decision 1
-    selects it. No implementation exists yet, and vramfit ships none.
+    selects it. vramfit ships it as the encoder program the pack
+    adapter launches, plus the pack-side selection, mixed-GGUF
+    rewrite, and payload verification in the torch-free gguf package.
     The decision requires it to read the **base GGUF**, replace only the
     selected tensors, and write the temporary mixed GGUF.
     It must never write the base GGUF or a published artifact.

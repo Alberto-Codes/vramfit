@@ -4,7 +4,10 @@ The dataclasses enforce their own structural invariants in
 ``__post_init__``, so an instance that exists is safe for the solver,
 however it was constructed. The checks cover positive sizes, strictly
 descending precisions, unique group names, sensitivity keys matching
-the scan, imatrix provenance pairing with the assisted method token,
+the scan, imatrix provenance pairing with the assisted method tokens
+(including the provisional successor token ADR-0032 decision 3 adds
+for the assisted ``Q2_0`` encoder, whose serialized string issue #599
+owns),
 tensor sizes covering exactly the group's tensors, protection records
 pairing with their resolved pairs (ADR-0022), an ordered imatrix
 count summary (ADR-0026 decision 4), and a non-empty derived note
@@ -83,10 +86,17 @@ Q0_REF_METHOD = "q0-ref"
 # path. Nominal 2 and 8 keep the reference arithmetic — the C
 # discards the matrix there.
 Q0_IMX_METHOD = "q0-imx"
+# The successor to `q0-imx` (ADR-0032 decision 3): the same port, with
+# nominal 2 fitting through vramfit's own assisted Q2_0 encoder, the
+# encoder the pack pre-encodes with. `q0-imx` keeps its stock-Q2_0
+# meaning. PROVISIONAL: issue #599 owns the serialized string, and
+# no map may carry this value before it closes. Only the string
+# changes when it lands, never the constant's name.
+Q0_IMX_SUCCESSOR_METHOD = "q0-imx-successor-provisional"
 # The tokens that claim assistance. Each pairs with the `imatrix`
 # field — a map or recipe cannot claim assistance without naming its
 # imatrix, or the reverse (ADR-0020).
-ASSISTED_METHODS = (KQUANT_IMX_METHOD, Q0_IMX_METHOD)
+ASSISTED_METHODS = (KQUANT_IMX_METHOD, Q0_IMX_METHOD, Q0_IMX_SUCCESSOR_METHOD)
 # The shape of a recorded SHA-256, checked wherever a content
 # identity enters the domain. [vramfit.domain.evals][] fixes the same
 # two constants for the evaluated artifact's digest.

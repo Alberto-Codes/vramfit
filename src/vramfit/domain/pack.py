@@ -11,8 +11,10 @@ zero-count judgment on the imatrix counts the pack reads
 that names a mixed-precision file (`modal_type`, ADR-0012 decision 3
 as amended 2026-09-04), and
 the reconstruction-check verdict on protected packs — the stripped
-reference recipe and the collapsed-tensor judgment (ADR-0022). Type
-tables and subprocess details live in
+reference recipe and the collapsed-tensor judgment (ADR-0022), and
+the pre-encoding stage's own record: the tensors vramfit's assisted
+``Q2_0`` encoder fitted and the encoder revision (ADR-0032 decision
+3). Type tables and subprocess details live in
 [vramfit.adapters.outbound.gguf][].
 
 Examples:
@@ -135,6 +137,14 @@ class PackResult:
             file, which the packed size otherwise carries with no
             signal. The tokens are the runtime's own layer names, so
             the backend owns the vocabulary.
+        pre_encoded (tuple[str, ...]): Tensors the preprocessor
+            encoded with vramfit's assisted ``Q2_0`` encoder before
+            the quantizer ran, in file order (ADR-0032 decision 1).
+            Each packs assisted (decision 3). Empty when the recipe
+            took the stock path.
+        q2_0_encoder (str | None): The encoder revision that produced
+            the pre-encoded tensors, recorded with the result
+            (ADR-0032 decision 3). None when nothing was pre-encoded.
 
     Examples:
         Inspect the real size of a packed model:
@@ -155,6 +165,8 @@ class PackResult:
     imatrix_zero_count_experts: tuple[tuple[str, int], ...] = ()
     floored_layers: tuple[str, ...] = ()
     file_type: str | None = None
+    pre_encoded: tuple[str, ...] = ()
+    q2_0_encoder: str | None = None
 
     def __post_init__(self) -> None:
         """Enforce the result invariants.
@@ -168,7 +180,10 @@ class PackResult:
                 ``imatrix_zero_count_experts`` is set without an
                 ``imatrix_path``, a zero-count pair names an empty
                 stack or a negative expert index, a floored layer is
-                empty, or two overrides share a pattern.
+                empty, two overrides share a pattern, a pre-encoded
+                tensor is empty or arrives without an ``imatrix_path``,
+                or ``pre_encoded`` and ``q2_0_encoder`` are not both
+                set or both unset.
         """
         if self.packed_bytes <= 0:
             raise ValueError("packed_bytes must be positive")
@@ -194,6 +209,32 @@ class PackResult:
         patterns = [override.pattern for override in self.overrides]
         if len(set(patterns)) != len(patterns):
             raise ValueError("override patterns must be unique")
+        _check_pre_encoded(self)
+
+
+def _check_pre_encoded(result: PackResult) -> None:
+    """Refuse a pre-encoding record that is half-stated.
+
+    Args:
+        result: The record under construction.
+
+    Raises:
+        ValueError: If a pre-encoded name is empty, the record names
+            pre-encoded tensors without an imatrix, or the two
+            pre-encoding fields disagree on whether the stage ran.
+    """
+    if any(not name for name in result.pre_encoded):
+        raise ValueError("a pre-encoded tensor name must not be empty")
+    ran = bool(result.pre_encoded)
+    if ran and result.imatrix_path is None:
+        raise ValueError("pre_encoded requires an imatrix_path")
+    if (result.q2_0_encoder is not None) != ran:
+        raise ValueError(
+            "pre_encoded and q2_0_encoder record one stage together — set "
+            "both or neither"
+        )
+    if result.q2_0_encoder is not None and not result.q2_0_encoder:
+        raise ValueError("q2_0_encoder must not be empty")
 
 
 def _check_zero_count_pairs(pairs: tuple[tuple[str, int], ...]) -> None:

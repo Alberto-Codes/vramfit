@@ -703,11 +703,13 @@ vramfit pack RECIPE
   --out PATH             Packed model path  [default: packed.gguf]
   --base-gguf PATH       f16 base GGUF, reused when present
                          [default: <model name>-f16.gguf beside --out]
-  --python-bin PATH      Interpreter for the convert script — install
+  --python-bin PATH      Interpreter for the convert script and the
+                         assisted Q2_0 encoder — install
                          vramfit[pack] to provision it
                          [default: current]
-  --threads INT          Thread count for the quantizer and the
-                         smoke test  [default: 8]
+  --threads INT          Thread count for the quantizer, the assisted
+                         Q2_0 encoder, and the smoke test
+                         [default: 8]
   --imatrix PATH         Importance matrix for the quantizer
                          (ADR-0016)  [default: none]
   --mmproj PATH          Vendor mmproj shipped beside --out as the
@@ -838,6 +840,24 @@ tensor would keep the fit the recipe asked to drop, and the record
 would state an exclusion that never applied. Packing such a recipe
 without `--imatrix` warns that the exclusions change nothing.
 
+A recipe priced with the assisted `Q2_0` encoder's method takes the
+pre-encoding stage ([ADR-0032](../adr/0032-assisted-q2-encoder-home.md)).
+The command selects the `Q2_0` tensors the matrix covers, runs the
+encoder as a separate program under `--python-bin`, and writes a
+temporary mixed GGUF beside `--out`. `llama-quantize` then reads
+that file under the same flags and never `--allow-requantize`.
+After the zero exit the command reads the packed payload bytes back
+and refuses a mismatch. The stage refuses before it writes when an
+override would leave a selected tensor at another type, or when its
+rows do not divide into 64-element blocks. It also refuses a pack
+without `--imatrix`, because the recipe priced an assisted fit. A
+tensor the matrix does not cover, and one the recipe excludes, pack
+stock. The `model_packed` event records the tensors under
+`pre_encoded` and the encoder revision under `q2_0_encoder`. A stage
+failure removes the temporary mixed GGUF and the payload directory,
+and names them. A failure after the stage keeps both for inspection
+and names them.
+
 `--mmproj` ships the supplied mmproj beside `--out` as the
 projector sidecar
 ([ADR-0030](../adr/0030-vision-budget-sidecar.md) decision 2, as
@@ -862,7 +882,9 @@ packed model is unproven. Every run appends the pack events to the
 run log: pack_started, gguf_converted (with `reused`), model_packed
 (real bytes, base type, embedding and output tensor types, override
 count, imatrix, uncovered tensors, excluded tensors, zero-count
-experts, floored layers, declared file type), size_checked (margin,
+experts, floored layers, declared file type, pre-encoded tensors,
+and the Q2_0 encoder revision — the last two empty and null on the
+stock path), size_checked (margin,
 `fits`, `predicted_total_bytes`, `predicted_delta_bytes`,
 `predicted_delta_fraction`, and `predicted_within_tolerance` — all
 four null when the prediction is absent), reconstruction_checked

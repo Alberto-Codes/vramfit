@@ -4,8 +4,10 @@ Split from [vramfit.adapters.inbound.cli_pack][] to keep that module
 under the size cap. This module owns what ``--imatrix`` adds to the
 pack flow: the provenance warnings against the recipe's record
 (ADR-0020, ADR-0023), the count read that finds a zero-count expert
-(ADR-0026 decision 5, the 2026-08-13 #198 amendment), and the
-console echoes of what the matrix did and did not reach (ADR-0016).
+(ADR-0026 decision 5, the 2026-08-13 #198 amendment), the
+console echoes of what the matrix did and did not reach (ADR-0016),
+and the report of what the assisted ``Q2_0`` encoder pre-encoded
+with that matrix (ADR-0032).
 
 Examples:
     The pack command drives the count read between its stages:
@@ -156,3 +158,37 @@ def _report_imatrix_effects(result: PackResult) -> None:
             "log names each pair (ADR-0026)",
             err=True,
         )
+
+
+def _report_pre_encoding(result: PackResult) -> None:
+    """Echo what the assisted ``Q2_0`` encoder pre-encoded (ADR-0032).
+
+    The line states the count and the encoder revision, and the run
+    log names every tensor.
+
+    Args:
+        result: The pack step's accounting record.
+    """
+    if not result.pre_encoded:
+        return
+    count = len(result.pre_encoded)
+    typer.echo(
+        f"pre-encoded {count} tensor{'' if count == 1 else 's'} with the "
+        f"assisted Q2_0 encoder {result.q2_0_encoder} (ADR-0032)"
+    )
+
+
+def _pre_encode_fields(result: PackResult) -> dict[str, object]:
+    """Build the ``model_packed`` event's pre-encoding fields (ADR-0032).
+
+    Args:
+        result: The pack step's accounting record.
+
+    Returns:
+        The tensors and the encoder revision, or their empty forms
+        when the stage did not run.
+    """
+    return {
+        "pre_encoded": list(result.pre_encoded),
+        "q2_0_encoder": result.q2_0_encoder,
+    }

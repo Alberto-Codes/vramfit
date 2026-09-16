@@ -145,6 +145,10 @@ logic + hypothesis properties), `contract` (verified fakes — required
 for every new port), `integration` (real resources, resource-gated),
 `e2e` (console script), plus `gpu`/`slow` axes.
 
+The stock-toolchain pack suite reads `VRAMFIT_LLAMA_CPP_BIN`, a
+directory holding built `llama-quantize` and `llama-bench`. The suite
+skips when the variable is unset or a tool is missing.
+
 GPU-dependent tests must carry the `gpu` marker and skip cleanly when CUDA is
 absent -- CI runners have no GPU, so anything unmarked must pass on CPU.
 

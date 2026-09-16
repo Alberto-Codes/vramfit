@@ -31,7 +31,13 @@ from tests.fakes import (
 from vramfit.adapters.outbound.gguf import exclusion_match, override_match
 from vramfit.adapters.outbound.gguf.pack import LlamaCppPacker, TypeFallbackError
 from vramfit.adapters.outbound.gguf.types import PackError
-from vramfit.domain.model import Assignment, PlanMeta, ProtectedTensor, Recipe
+from vramfit.domain.model import (
+    Q0_IMX_SUCCESSOR_METHOD,
+    Assignment,
+    PlanMeta,
+    ProtectedTensor,
+    Recipe,
+)
 from vramfit.domain.pack import TypeOverride
 from vramfit.ports.outbound import RecipePacker
 
@@ -463,6 +469,20 @@ class TestRecipePackerContract:
         # base ftype names the floor, not the file.
         assert result.file_type == "Q4_0"
         assert result.file_type != result.base_type
+
+    def test_pack_of_an_encoder_priced_recipe_without_imatrix_refuses(
+        self, build, tmp_path
+    ) -> None:
+        # ADR-0032 decision 3: a recipe priced with the assisted Q2_0
+        # encoder's method packs through the pre-encoding path, which
+        # needs the matrix that weighted the fit. Both packers refuse.
+        packer: RecipePacker = build(tmp_path)
+        packer.convert()
+        recipe = replace(
+            sample_pack_recipe(), within_group=Q0_IMX_SUCCESSOR_METHOD, imatrix="m.gguf"
+        )
+        with pytest.raises(PackError, match="has no --imatrix"):
+            packer.pack(recipe)
 
     def test_pack_carries_the_shared_type_mapping(self, build, tmp_path) -> None:
         packer: RecipePacker = build(tmp_path)
