@@ -6,7 +6,9 @@ status: stable
 
 > **Status: stable** — implemented in
 > `vramfit.adapters.outbound.sensitivity_map_json`, whose loader enforces
-> everything described here. `vramfit scan` produces these files, and
+> everything described here. That module owns the envelope and the
+> groups, and `vramfit.adapters.outbound.sensitivity_map_scan_json`
+> owns the `scan` object. `vramfit scan` produces these files, and
 > real maps (Qwen2.5-3B, the 49B target) drove the full loop.
 
 The sensitivity map is the output of `vramfit scan` and the input to
@@ -287,17 +289,15 @@ below remain, the sub-4-bit pricing claims do not.
   the F16 passthrough and takes neither type table (#409). It also
   refuses the field on a document below version 5. No producer at
   those versions wrote it, so such a width is unmeasured.
-  `vramfit plan` folds these under a
-  `--checkpoint` read, which wins where both state a width, because
-  `pack` quantizes that checkpoint. A disagreement draws one
-  warning. It counts the contested groups, names the first, and
-  states both of that group's numbers. Where neither source states a
-  width, the plan refuses rather than taking the k-quant table by
-  omission. New scans record it. Older maps carry no width, so they
-  still need `--checkpoint` under llama.cpp at `stack` or `tensor`
-  granularity. Issue #558's second half stays open: no record states
-  whether such a map must refuse, keep this fallback, or take a
-  re-scan.
+  `vramfit plan` folds these under a `--checkpoint` read, which wins
+  where both state a width, because `pack` quantizes that
+  checkpoint. The [CLI reference](cli.md) carries that fold, its
+  disagreement warning, and the refusal a width neither source
+  states earns. New scans record the field. Older maps carry no
+  width, so they still need `--checkpoint` under llama.cpp at
+  `stack` or `tensor` granularity. Issue #558's second half stays
+  open: no record states whether such a map must refuse, keep this
+  fallback, or take a re-scan.
 - **`imatrix_counts`** — the group's pooled imatrix count
   distribution: `{"min": ..., "median": ..., "max": ...}`
   ([ADR-0026](../adr/0026-moe-expert-pricing.md) decision 4, scoped

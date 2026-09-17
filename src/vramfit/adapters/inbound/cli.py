@@ -414,9 +414,9 @@ def plan(
     map defines the model, and the command says so. A schema-5 map
     states its own row widths, so it solves with no checkpoint
     (issue #558), and the checkpoint's width wins where both state
-    one. A map naming a
-    layer-class or routed-expert-stack group it records no width for
-    then refuses, because no name supplies that width. That refusal reaches only a runtime
+    one. A map naming a layer-class or routed-expert-stack group it
+    records no width for then refuses, because no name supplies that
+    width. That refusal reaches only a runtime
     carrying both type tables the width routes between, which is
     ``llama.cpp`` today. A ``vllm`` plan prices at nominal bits, so
     the same map solves with no ``--checkpoint``. A ``layer`` map

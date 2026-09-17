@@ -151,9 +151,11 @@ def map_from_dict(data: object) -> SensitivityMap:
             keys not matching ``scan.precisions``, an empty or
             non-string ``derived`` note, a calibration digest whose
             provenance mark is missing or does not name its referent,
-            a ``row_width`` that is not positive or that the
+            a calibration content field the document's version
+            refuses, a ``row_width`` that is not positive or that the
             document's version or the group's shape refuses, and so
-            on). A field the
+            on). This function passes the declared version to both
+            readers, which gate their own fields on it. A field the
             reader does not know reports and loads instead (#261).
 
     Examples:
@@ -180,9 +182,7 @@ def map_from_dict(data: object) -> SensitivityMap:
     groups: list[LayerGroup] = []
     seen: set[str] = set()
     for i, raw in enumerate(groups_raw):
-        group = _parse_layer_group(
-            raw, f"$.groups[{i}]", expected, schema_version
-        )
+        group = _parse_layer_group(raw, f"$.groups[{i}]", expected, schema_version)
         _require(
             group.name not in seen,
             f"$.groups[{i}].name",

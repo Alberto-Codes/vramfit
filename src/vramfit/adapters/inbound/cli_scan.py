@@ -23,8 +23,9 @@ count, read through
 so re-issued bytes behind an unchanged path refuse the old
 checkpoint. The map marks that digest ``measured``, because the scan
 hashed those bytes as it read them (issue #558's schema 5), and
-nothing else can be written there honestly. The refinement pass reads its evaluation corpus through
-that same helper. The meter build reads the identity first, so an
+nothing else can be written there honestly. The refinement pass
+reads its evaluation corpus through that same helper. The meter
+build reads the identity first, so an
 unreadable or empty file halts through the run log before the model
 load.
 ``--groups`` restricts a run to named groups, so a caller that wants
