@@ -8,8 +8,8 @@ report what the two inputs cover. It stays out of
 
 A schema-5 map states each group's measured row width (issue #558),
 so the checkpoint is no longer the only source of it. This module
-reports a group the two price differently, and the solver keeps this
-read's width because `pack` quantizes this checkpoint.
+reports a group the two state differently, and the checkpoint's
+width takes precedence because `pack` quantizes this checkpoint.
 
 `plan` runs without ``--checkpoint``, and then the map defines the
 model as it did before ADR-0029. That reading is silent no longer:
@@ -122,11 +122,11 @@ def discovered_groups(
     two reads could disagree about one checkpoint.
 
     The map states its own widths since schema 5 (issue #558). The
-    solver folds the two and keeps this read's, because `pack`
-    quantizes this checkpoint. A group the two price differently
-    draws a warning here rather than a silent narrowing — one of the
-    two describes another checkpoint, and neither number is provably
-    the wrong one.
+    fold keeps this read's width, because `pack` quantizes this
+    checkpoint. A group the two state differently draws a warning
+    here rather than a silent narrowing — one of the two describes
+    another checkpoint, and neither number is provably the wrong
+    one.
 
     The overlap warning names and counts the tensors priced twice,
     with singular or plural wording for each affected group.
@@ -200,12 +200,19 @@ def discovered_groups(
     for group, from_map, from_checkpoint in row_width_conflicts(
         map_row_widths(map_), rows
     ):
+        # State the precedence rule, never its price. Precedence
+        # holds under every runtime. Its cost does not: a runtime
+        # with no effective-bits table prices every group at nominal
+        # bits, and neither width moves a byte there. This change
+        # exists to stop an artifact asserting what nobody
+        # established, and output that states a false cause is the
+        # same defect in other clothes.
         typer.echo(
             f'warning: {map_path}: group "{group}" records a row width of '
             f"{from_map} elements, and this checkpoint states "
-            f"{from_checkpoint}. The plan prices the checkpoint's width, "
-            f"because `pack` quantizes this checkpoint — is this the "
-            f"checkpoint the scan measured? (issue #558)",
+            f"{from_checkpoint}. The checkpoint's width takes precedence "
+            f"over the map's — is this the checkpoint the scan measured? "
+            f"(issue #558)",
             err=True,
         )
     covered = [g.name for g in map_.groups]

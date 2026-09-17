@@ -539,8 +539,7 @@ def resolved_row_widths(
     """Fold the map's recorded widths under a size source's measured ones.
 
     The size source reads the checkpoint `pack` will quantize, so its
-    width is what the plan must predict against and it wins every
-    contested group. The map fills the groups no source states, which
+    width wins every contested group. The map fills the groups no source states, which
     is the whole map-only case (issue #558). `row_width_conflicts`
     reports a contested group the two disagree about — this function
     resolves rather than reports, so a caller chooses its own channel.

@@ -843,7 +843,13 @@ class TestAMapPlansOnItsOwnWidths:
 class TestTheMapAndTheCheckpointDisagree:
     """One of the two describes another checkpoint (#558)."""
 
-    def plan_against(self, tmp_path, map_width: int, checkpoint_width: int):
+    def plan_against(
+        self,
+        tmp_path,
+        map_width: int,
+        checkpoint_width: int,
+        runtime: str | None = None,
+    ):
         raw = map_with_widths({QWEN_UP: map_width})
         map_path = tmp_path / "map.json"
         map_path.write_text(json.dumps(raw))
@@ -851,19 +857,19 @@ class TestTheMapAndTheCheckpointDisagree:
             tmp_path / "ckpt",
             {"model.layers.0.mlp.experts.up_proj.weight": [4, checkpoint_width]},
         )
-        return runner.invoke(
-            app,
-            [
-                "plan",
-                str(map_path),
-                "--vram",
-                "24GiB",
-                "--checkpoint",
-                str(model_dir),
-                "--out",
-                str(tmp_path / "recipe.json"),
-            ],
-        )
+        argv = [
+            "plan",
+            str(map_path),
+            "--vram",
+            "24GiB",
+            "--checkpoint",
+            str(model_dir),
+            "--out",
+            str(tmp_path / "recipe.json"),
+        ]
+        if runtime is not None:
+            argv += ["--runtime", runtime]
+        return runner.invoke(app, argv)
 
     def test_a_contested_width_draws_a_warning_naming_both(self, tmp_path) -> None:
         result = self.plan_against(tmp_path, map_width=2048, checkpoint_width=2688)
@@ -880,6 +886,22 @@ class TestTheMapAndTheCheckpointDisagree:
 
         assert result.exit_code == 0
         assert "records a row width" not in result.stderr
+
+    def test_the_warning_states_precedence_and_not_a_price(self, tmp_path) -> None:
+        # vLLM has no effective-bits table, so the solver prices every
+        # group at nominal bits and neither width moves a byte. The
+        # warning must still print and still ask its question, without
+        # claiming the plan priced the checkpoint's width.
+        result = self.plan_against(
+            tmp_path, map_width=2048, checkpoint_width=2688, runtime=VLLM
+        )
+
+        assert result.exit_code == 0
+        assert "records a row width of 2048" in result.stderr
+        assert "states 2688" in result.stderr
+        assert "takes precedence" in result.stderr
+        assert "is this the checkpoint the scan measured?" in result.stderr
+        assert "prices the checkpoint's width" not in result.stderr
 
 
 @pytest.mark.unit
