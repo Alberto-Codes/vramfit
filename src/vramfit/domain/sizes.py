@@ -513,7 +513,11 @@ def map_row_widths(sensitivity_map: SensitivityMap) -> dict[str, int]:
     Returns:
         Elements per row per group name, under whichever naming root
         the map carries. Groups the map records no width for are
-        absent — that is NOT RECORDED, never a width to guess.
+        absent — that is NOT RECORDED, never a width to guess. A
+        group the super-block decision does not reach is absent too,
+        exactly as `discovered_group_rows` drops one: such a group
+        holds classes of several widths, so a width on it describes
+        nothing the solve may price against.
 
     Examples:
         ```python
@@ -525,7 +529,7 @@ def map_row_widths(sensitivity_map: SensitivityMap) -> dict[str, int]:
     return {
         group.name: group.row_width
         for group in sensitivity_map.groups
-        if group.row_width is not None
+        if group.row_width is not None and routes_by_row_width(group.name)
     }
 
 

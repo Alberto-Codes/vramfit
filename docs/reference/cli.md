@@ -248,8 +248,11 @@ carrying both type tables the width routes between — `llama.cpp`
 today — `plan` refuses a layer-class or routed-expert-stack
 group neither source states a width for. Such a width would take the
 k-quant table by omission, which misprices the group silently. So a
-published schema-5 stack map plans on its own, and an older map of
-the same groups still needs `--checkpoint`. A
+published schema-5 stack map plans on its own. An older map of the
+same groups records no width, so it still needs `--checkpoint`
+today. Issue #558's second half stays open: no record states
+whether such a map must refuse, keep this fallback, or take a
+re-scan. A
 runtime with no table prices every group at nominal bits, where the
 width moves no byte, so `--runtime vllm` plans either map without
 `--checkpoint`. A whole-layer group holds classes of several widths,

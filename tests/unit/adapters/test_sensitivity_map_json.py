@@ -841,8 +841,12 @@ class TestCalibrationProvenanceMark:
 class TestGroupRowWidth:
     """Schema 5's per-group measured row width (issue #558)."""
 
-    def map_with_width(self, width) -> dict:
-        raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
+    # A layer-class group, which is what the 256 super-block decision
+    # reaches and therefore the only shape that carries a width.
+    ROUTED = "model.layers.0.mixer.in_proj"
+
+    def map_with_width(self, width, name: str = ROUTED) -> dict:
+        raw = make_map([(name, 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
         raw["groups"][0]["row_width"] = width
         return raw
 
@@ -879,3 +883,17 @@ class TestGroupRowWidth:
     def test_a_non_integer_width_is_refused(self) -> None:
         with pytest.raises(ArtifactError, match=r"\$.groups\[0\].row_width"):
             map_from_dict(self.map_with_width("2688"))
+
+    @pytest.mark.parametrize(
+        "name",
+        ["model.layers.0", "model.layers.0.mixer.conv1d", "model.embed_tokens"],
+        ids=["whole-layer", "unquantizable-class", "no-layer-index"],
+    )
+    def test_a_width_on_an_unreached_group_is_refused(self, name: str) -> None:
+        # A back-filled `group_by: layer` map carrying a row_width on
+        # a whole-layer group would otherwise price that layer through
+        # the ADR-0028 expert-stack table, while `pack` gates on
+        # `consults_row_width` and uses the k-quant table — a silent
+        # misprice with no refusal.
+        with pytest.raises(ArtifactError, match="k-quant table"):
+            map_from_dict(self.map_with_width(2688, name))

@@ -86,6 +86,7 @@ from vramfit.domain.model import (
     LayerGroup,
     SensitivityMap,
 )
+from vramfit.domain.runtime import routes_by_row_width, unquantizable_class
 
 # The sensitivity-map schema version. Versions advance per artifact
 # (ADR-0013), so this constant moves on its own.
@@ -428,18 +429,19 @@ def _parse_layer_group(
             f"values sum to {sum(tensor_bytes.values())} but bytes_fp16 "
             f"is {bytes_fp16} (ADR-0022)",
         )
+    name = _get_str(obj, "name", path)
     return LayerGroup(
-        name=_get_str(obj, "name", path),
+        name=name,
         tensors=tuple(tensors),
         bytes_fp16=bytes_fp16,
         sensitivity=sensitivity,
         tensor_bytes=tensor_bytes,
         imatrix_counts=_parse_imatrix_counts(obj, path),
-        row_width=_parse_row_width(obj, path),
+        row_width=_parse_row_width(obj, path, name),
     )
 
 
-def _parse_row_width(obj: dict[str, Any], path: str) -> int | None:
+def _parse_row_width(obj: dict[str, Any], path: str, name: str) -> int | None:
     """Validate one group's optional measured row width (issue #558).
 
     Optional and additive: the writer omits the field when the map
@@ -448,19 +450,35 @@ def _parse_row_width(obj: dict[str, Any], path: str) -> int | None:
     A non-positive width tiles no block, so it would route the 256
     super-block decision off a number no tensor has.
 
+    The decision reaches a layer-class or routed-expert-stack group
+    only. Every other group holds classes of several row widths and
+    takes the ADR-0012 k-quant table, so no single width describes
+    it. A width on such a group asserts what no group can carry, so
+    the reader refuses it rather than ignoring it.
+
     Args:
         obj: The group's JSON object.
         path: JSON path of this group.
+        name: The group's name, which decides whether the 256
+            super-block decision reaches it.
 
     Returns:
         The measured width, or None when the field is absent.
 
     Raises:
-        ArtifactError: If a present field is not a positive integer.
+        ArtifactError: If a present field is not a positive integer,
+            or the group is one the super-block decision does not
+            reach.
     """
     if "row_width" not in obj:
         return None
     field_path = f"{path}.row_width"
+    _require(
+        routes_by_row_width(name) and unquantizable_class(name) is None,
+        field_path,
+        f'group "{name}" takes the ADR-0012 k-quant table, and no '
+        f"single width describes it (issue #515, issue #558)",
+    )
     width = _as_int(obj["row_width"], field_path)
     _require(width > 0, field_path, "must be positive")
     return width

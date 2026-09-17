@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import struct
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -30,14 +31,14 @@ from vramfit.adapters.outbound.gguf.types import (
 )
 from vramfit.adapters.outbound.recipe_json import load_recipe, save_recipe
 from vramfit.adapters.outbound.sensitivity_map_json import map_from_dict
-from vramfit.domain.model import Assignment, PlanMeta, Recipe
+from vramfit.domain.model import Assignment, PlanMeta, Recipe, SensitivityMap
 from vramfit.domain.runtime import (
     EFFECTIVE_BITS,
     EXPERT_STACK_EFFECTIVE_BITS,
     LLAMA_CPP,
     VLLM,
 )
-from vramfit.domain.sizes import SizeSourceError
+from vramfit.domain.sizes import SizeSourceError, map_row_widths
 from vramfit.domain.solver import group_bytes, solve
 
 pytestmark = pytest.mark.unit
@@ -846,3 +847,44 @@ class TestTheMapAndTheCheckpointDisagree:
 
         assert result.exit_code == 0
         assert "records a row width" not in result.output
+
+
+@pytest.mark.unit
+class TestTheDomainGatesAnUnreachedWidth:
+    """A width reaches routing only for a group routing reaches.
+
+    The JSON reader refuses a width on a group the 256 super-block
+    decision does not reach, so this covers the map a caller builds
+    in memory. Without the domain gate, a `group_by: layer` map
+    carrying a row width on a whole-layer group prices that layer
+    through the ADR-0028 expert-stack table, while `pack` gates on
+    `consults_row_width` and uses the k-quant table — a silent
+    misprice with no refusal.
+    """
+
+    LAYER = "model.layers.0"
+
+    def layer_map_with_width(self) -> SensitivityMap:
+        map_ = map_from_dict(
+            make_map([(self.LAYER, 160_000, CURVE)], precisions=PRECISIONS)
+        )
+        group = replace(map_.groups[0], row_width=NEMOTRON_ROWS)
+        return replace(map_, groups=(group,))
+
+    def test_a_width_on_a_whole_layer_group_is_dropped(self) -> None:
+        assert map_row_widths(self.layer_map_with_width()) == {}
+
+    def test_a_whole_layer_group_prices_through_the_k_quant_table(self) -> None:
+        recipe = solve(
+            self.layer_map_with_width(),
+            weight_budget_bytes=10**9,
+            vram_budget_bytes=10**9 + 1000,
+            kv_headroom_bytes=1000,
+            runtime=LLAMA_CPP,
+            pins={self.LAYER: 4},
+            format_overhead=0.0,
+        )
+
+        assert recipe.assignments[0].bytes == group_bytes(
+            160_000, EFFECTIVE_BITS[LLAMA_CPP][4], 0.0
+        )

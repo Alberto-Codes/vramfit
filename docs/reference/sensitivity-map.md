@@ -260,14 +260,18 @@ below remain, the sub-4-bit pricing claims do not.
   layer-class or routed-expert-stack group. A whole-layer group holds
   classes of several widths, takes the ADR-0012 k-quant table, and
   records none. The loader requires a positive integer and accepts an
-  absent field as no width. `vramfit plan` folds these under a
+  absent field as no width. It refuses the field on a group the
+  decision does not reach, because no single width describes such a
+  group. `vramfit plan` folds these under a
   `--checkpoint` read, which wins where both state a width, because
   `pack` quantizes that checkpoint. A disagreement draws a warning
   naming the group and both numbers. Where neither source states a
   width, the plan refuses rather than taking the k-quant table by
-  omission. New scans record it. Older maps carry no width and still
-  need `--checkpoint` under llama.cpp at `stack` or `tensor`
-  granularity.
+  omission. New scans record it. Older maps carry no width, so they
+  still need `--checkpoint` under llama.cpp at `stack` or `tensor`
+  granularity. Issue #558's second half stays open: no record states
+  whether such a map must refuse, keep this fallback, or take a
+  re-scan.
 - **`imatrix_counts`** — the group's pooled imatrix count
   distribution: `{"min": ..., "median": ..., "max": ...}`
   ([ADR-0026](../adr/0026-moe-expert-pricing.md) decision 4, scoped

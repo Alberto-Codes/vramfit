@@ -216,9 +216,10 @@ Facts verified upstream on 2026-08-14 (#189):
   `tensor` granularity on its own. The plan folds the map's widths
   under a `--checkpoint` read and keeps the checkpoint's where both
   state one, because `pack` quantizes that checkpoint. A map below
-  schema 5 records no width and still needs `--checkpoint`, so the
-  capability returns for new scans and for any map re-scanned or
-  back-filled, not retroactively for the published ones.
+  schema 5 records no width, so it still needs `--checkpoint`. That
+  is the behavior today, not a ruling. Issue #558's second half
+  stays open: no record states whether such a map must refuse, keep
+  the checkpoint fallback, or take a re-scan.
 - `TensorSize` gains a `rows` field (2026-09-05, #515). ADR-0029
   decision 5 named `dtype` and `bytes` only, so the shapes the
   shard headers carry reached no caller. The safetensors adapter
