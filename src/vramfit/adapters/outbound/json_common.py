@@ -596,24 +596,31 @@ def _check_schema_version(
     path: str,
     expected: int,
     also_reads: tuple[int, ...] = (),
-) -> None:
+) -> int:
     """Validate the artifact's ``vramfit_schema`` envelope field.
 
     Args:
         obj: Top-level artifact object.
         path: JSON path of the artifact root.
         expected: The schema version this artifact's adapter writes.
-            Versions advance per artifact (ADR-0013) — the recipe
-            writes 6 while the sensitivity map writes 4. Every
-            caller passes its own constant, so no artifact silently
-            validates against another's version.
+            Versions advance per artifact (ADR-0013), so each adapter
+            owns its own constant and passes it here. No version
+            number is named in this docstring: this helper is shared,
+            and a number recorded here goes stale at the next bump of
+            whichever artifact it named. Each adapter's own module
+            documents the versions it writes and reads.
         also_reads: Older versions this adapter still reads. Pass a
             version here only when its documents are already valid
-            under ``expected`` — the sensitivity map reads 2 and 3,
-            because version 3 only widened an enum (#161) and
-            version 4 only added two optional fields. Default empty,
+            under ``expected``, which holds when a bump only widened
+            what a document may say — a new enum value, or a field
+            that is optional. Default empty,
             so an adapter reads one version until it states
             otherwise.
+
+    Returns:
+        The version the document declares. A reader whose rule
+        depends on the declared version takes it from here, so the
+        envelope is read and validated once.
 
     Raises:
         ArtifactError: If the version is missing or unsupported — the
@@ -631,6 +638,7 @@ def _check_schema_version(
         f"{path}.vramfit_schema",
         f"unsupported schema version {version} — this vramfit reads version {names}",
     )
+    return version
 
 
 def _load_json(path: Path, root: str) -> dict[str, Any]:

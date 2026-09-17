@@ -6,6 +6,11 @@ build the safetensors source, aggregate its tensors into groups, and
 report what the two inputs cover. It stays out of
 [vramfit.adapters.inbound.cli][] so that module keeps its size.
 
+A schema-5 map states each group's measured row width (issue #558),
+so the checkpoint is no longer the only source of it. This module
+reports a group the two state differently, and the checkpoint's
+width takes precedence because `pack` quantizes this checkpoint.
+
 `plan` runs without ``--checkpoint``, and then the map defines the
 model as it did before ADR-0029. That reading is silent no longer:
 the command reports which groups it prices either way, on the same
@@ -68,6 +73,8 @@ from vramfit.domain.sizes import (
     discovered_group_bytes,
     discovered_group_rows,
     held_class_overlaps,
+    map_row_widths,
+    row_width_conflicts,
     uncovered_groups,
 )
 from vramfit.ports.outbound import TensorSizeSource
@@ -84,7 +91,8 @@ class CheckpointGroups:
         rows (Mapping[str, int] | None): Elements per row per group
             the 256 super-block decision reaches (issue #515), or
             None when the caller passed no ``--checkpoint``. The
-            solver's refusal tells the two causes apart from it.
+            solver's refusal tells the two causes apart from it, and
+            folds the map's own widths under these (issue #558).
         splits (Mapping[str, Mapping[str, int]]): Merged group name to
             the checkpoint projections it holds and their reference
             bytes (#576). `vramfit.domain.projections` names these in
@@ -113,6 +121,13 @@ def discovered_groups(
     the 256 super-block decision from the row widths (issue #515), so
     two reads could disagree about one checkpoint.
 
+    The map states its own widths since schema 5 (issue #558). The
+    fold keeps this read's width, because `pack` quantizes this
+    checkpoint. A group the two state differently draws a warning
+    here rather than a silent narrowing — one of the two describes
+    another checkpoint, and neither number is provably the wrong
+    one.
+
     The overlap warning names and counts the tensors priced twice,
     with singular or plural wording for each affected group.
 
@@ -127,7 +142,8 @@ def discovered_groups(
     Returns:
         The group bytes, the row widths, and the merged projections
         the reconciliation folded (#576). The bytes and widths are
-        None when no checkpoint was given.
+        None when no checkpoint was given, and the solver then reads
+        the map's own widths alone (issue #558).
 
     The reconciliation runs inside the same read, so a checkpoint
     that cannot fold one merged projection refuses with the source's
@@ -181,6 +197,36 @@ def discovered_groups(
             f"names the checkpoint's projections (#576)"
         )
 
+    contested = row_width_conflicts(map_row_widths(map_), rows)
+    if contested:
+        # One line, in the count-and-first-offender shape the other
+        # coverage warnings here use. A stack map against a
+        # same-family checkpoint of another size contests every
+        # routed group, and a line each would bury the warnings that
+        # follow.
+        #
+        # State the precedence rule, never its price. Precedence
+        # holds under every runtime. Its cost does not: a runtime
+        # with no effective-bits table prices every group at nominal
+        # bits, and neither width moves a byte there. This change
+        # exists to stop an artifact asserting what nobody
+        # established, and output that states a false cause is the
+        # same defect in other clothes.
+        group, from_map, from_checkpoint = contested[0]
+        subject = (
+            f'group "{group}"'
+            if len(contested) == 1
+            else f'{len(contested)} groups, the first being "{group}"'
+        )
+        typer.echo(
+            f"warning: {map_path}: the map and this checkpoint state "
+            f"different row widths for {subject}: the map records "
+            f"{from_map} elements and this checkpoint states "
+            f"{from_checkpoint}. The checkpoint's width takes precedence "
+            f"over the map's — is this the checkpoint the scan measured? "
+            f"(issue #558)",
+            err=True,
+        )
     covered = [g.name for g in map_.groups]
     held = uncovered_groups(groups, covered)
     typer.echo(

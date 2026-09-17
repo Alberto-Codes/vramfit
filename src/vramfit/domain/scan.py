@@ -255,6 +255,10 @@ class GroupSpec:
             decision 4), or None for an unassisted meter or a group
             the 2026-08-13 #201 amendment leaves without one. Rides
             into the map's groups unchanged.
+        row_width (int | None): Elements per row of the group's
+            tensors (issue #558), or None when the group takes no
+            single width. Rides into the map's groups, so a published
+            map routes the 256 super-block decision on its own.
 
     Examples:
         A one-tensor group:
@@ -271,6 +275,7 @@ class GroupSpec:
     bytes_fp16: int
     tensor_bytes: Mapping[str, int] = field(hash=False, default_factory=dict)
     imatrix_counts: ImatrixCountSummary | None = None
+    row_width: int | None = None
 
     def __post_init__(self) -> None:
         """Enforce the spec invariants and freeze the size record.
@@ -280,8 +285,11 @@ class GroupSpec:
                 positive, ``tensors`` is empty, or a non-empty
                 ``tensor_bytes`` does not cover exactly the group's
                 tensors with positive sizes summing to ``bytes_fp16``
-                (ADR-0022).
+                (ADR-0022), or ``row_width`` is not positive (issue
+                #558).
         """
+        if self.row_width is not None and self.row_width <= 0:
+            raise ValueError("row_width must be positive")
         if not self.name:
             raise ValueError("name must not be empty")
         if self.bytes_fp16 <= 0:
@@ -378,6 +386,12 @@ def scan_fingerprint(model_id: str, meta: ScanMeta) -> str:
     cannot detect weights or imatrix content changing under an
     unchanged path. A scan that records no calibration digest folds
     two empty fields, so it identifies its calibration by path alone.
+
+    The calibration provenance mark and revision stay out. They say
+    who hashed the bytes and where they came from, not which bytes
+    the scan measured, which the digest already fixes. Folding them
+    in would refuse every checkpoint written before the mark existed
+    without a measurement having changed (issue #558's schema bump).
 
     Args:
         model_id: The scanned model's identifier.
@@ -599,7 +613,9 @@ def assemble_map(
     Each spec's per-tensor sizes ride into its map group unchanged
     (ADR-0022) — a meter that reports them makes the map
     protection-ready. A spec's imatrix count summary rides through
-    the same way (ADR-0026 decision 4).
+    the same way (ADR-0026 decision 4), and so does its measured row
+    width, which makes the map plan under llama.cpp on its own
+    (issue #558).
 
     Args:
         model_id: The scanned model's identifier.
@@ -658,6 +674,7 @@ def assemble_map(
                 sensitivity=curves[spec.name],
                 tensor_bytes=spec.tensor_bytes,
                 imatrix_counts=spec.imatrix_counts,
+                row_width=spec.row_width,
             )
             for spec in spec_list
         ),

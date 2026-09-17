@@ -8,13 +8,42 @@ import pytest
 from tests.unit.conftest import make_map
 from vramfit.adapters.outbound.json_common import ArtifactError
 from vramfit.adapters.outbound.sensitivity_map_json import (
+    MAP_SCHEMA_VERSION,
     load_sensitivity_map,
     map_from_dict,
     map_to_dict,
     save_sensitivity_map,
 )
+from vramfit.adapters.outbound.sensitivity_map_scan_json import (
+    DIGEST_RECORDED_FROM,
+    MARK_REQUIRED_FROM,
+)
 
 DIGEST = "74f2665d6e6925fc2c17dec644bec9e87df478a0f1836822125e8acbb3777806"
+
+
+def map_with_calibration_content(
+    schema: int = DIGEST_RECORDED_FROM, **scan: object
+) -> dict:
+    """Build a map that records the calibration file's content identity.
+
+    The digest and its byte count arrived with schema 4 (#586), and
+    the mark and its revision with schema 5 (#589), so the reader
+    refuses each of the four below the version that raised it. The
+    default is the first producer that could write a digest, whose
+    absent mark reads as `measured`.
+
+    Args:
+        schema: The version the document declares.
+        scan: Fields to set on the ``scan`` object.
+
+    Returns:
+        A raw map dict a producer at that version could emit.
+    """
+    raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
+    raw["vramfit_schema"] = schema
+    raw["scan"].update(scan)
+    return raw
 
 
 @pytest.mark.unit
@@ -168,9 +197,9 @@ class TestSensitivityMap:
 
     def test_wrong_schema_version_rejected(self) -> None:
         raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
-        raw["vramfit_schema"] = 5
+        raw["vramfit_schema"] = 6
 
-        with pytest.raises(ArtifactError, match="unsupported schema version 5"):
+        with pytest.raises(ArtifactError, match="unsupported schema version 6"):
             map_from_dict(raw)
 
     def test_schema_version_two_map_still_reads(self) -> None:
@@ -188,10 +217,20 @@ class TestSensitivityMap:
 
         assert map_from_dict(raw).scan.group_by == "layer"
 
-    def test_writer_emits_schema_version_four(self) -> None:
+    def test_schema_version_four_map_reads(self) -> None:
+        # Version 5 only added the calibration digest's provenance
+        # mark with its revision referent, and each group's measured
+        # row width (issue #558). Neither is required, so every
+        # version-4 map is already a valid version-5 document.
+        raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
+        raw["vramfit_schema"] = 4
+
+        assert map_from_dict(raw).scan.group_by == "layer"
+
+    def test_writer_emits_schema_version_five(self) -> None:
         raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
 
-        assert map_to_dict(map_from_dict(raw))["vramfit_schema"] == 4
+        assert map_to_dict(map_from_dict(raw))["vramfit_schema"] == 5
 
     def test_absent_calibration_content_reads_as_not_recorded(self) -> None:
         # A map written before the fields existed records no content
@@ -213,9 +252,9 @@ class TestSensitivityMap:
         assert written["scan"]["calibration_bytes"] is None
 
     def test_calibration_content_round_trips(self) -> None:
-        raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
-        raw["scan"]["calibration_sha256"] = DIGEST
-        raw["scan"]["calibration_bytes"] = 772386
+        raw = map_with_calibration_content(
+            calibration_sha256=DIGEST, calibration_bytes=772386
+        )
 
         map_ = map_from_dict(raw)
         again = map_from_dict(map_to_dict(map_))
@@ -230,17 +269,17 @@ class TestSensitivityMap:
         ids=["digest-only", "bytes-only"],
     )
     def test_half_a_calibration_identity_rejected(self, digest, size) -> None:
-        raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
-        raw["scan"]["calibration_sha256"] = digest
-        raw["scan"]["calibration_bytes"] = size
+        raw = map_with_calibration_content(
+            calibration_sha256=digest, calibration_bytes=size
+        )
 
         with pytest.raises(ArtifactError, match="pair"):
             map_from_dict(raw)
 
     def test_malformed_calibration_digest_rejected(self) -> None:
-        raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
-        raw["scan"]["calibration_sha256"] = "not-a-digest"
-        raw["scan"]["calibration_bytes"] = 772386
+        raw = map_with_calibration_content(
+            calibration_sha256="not-a-digest", calibration_bytes=772386
+        )
 
         with pytest.raises(ArtifactError, match="calibration_sha256") as excinfo:
             map_from_dict(raw)
@@ -248,17 +287,17 @@ class TestSensitivityMap:
         assert excinfo.value.json_path == "$.scan"
 
     def test_nonpositive_calibration_bytes_rejected(self) -> None:
-        raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
-        raw["scan"]["calibration_sha256"] = DIGEST
-        raw["scan"]["calibration_bytes"] = 0
+        raw = map_with_calibration_content(
+            calibration_sha256=DIGEST, calibration_bytes=0
+        )
 
         with pytest.raises(ArtifactError, match="calibration_bytes"):
             map_from_dict(raw)
 
     def test_mistyped_calibration_bytes_rejected(self) -> None:
-        raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
-        raw["scan"]["calibration_sha256"] = DIGEST
-        raw["scan"]["calibration_bytes"] = "772386"
+        raw = map_with_calibration_content(
+            calibration_sha256=DIGEST, calibration_bytes="772386"
+        )
 
         with pytest.raises(ArtifactError, match="calibration_bytes") as excinfo:
             map_from_dict(raw)
@@ -728,3 +767,249 @@ class TestDerived:
 
         with pytest.raises(ArtifactError, match="derived"):
             map_from_dict(raw)
+
+
+@pytest.mark.unit
+class TestCalibrationProvenanceMark:
+    """Schema 5's mark: who established the calibration digest.
+
+    The mechanism is the evals sidecar's (#589). These tests hold the
+    map's spelling of it, and the one reader rule a published map
+    needs: a digest written before the mark existed still loads.
+    """
+
+    def marked_map(self, schema: int = MARK_REQUIRED_FROM, **scan) -> dict:
+        return map_with_calibration_content(
+            schema,
+            calibration_sha256=DIGEST,
+            calibration_bytes=772386,
+            **scan,
+        )
+
+    def test_a_measured_mark_round_trips(self) -> None:
+        map_ = map_from_dict(self.marked_map(calibration_provenance="measured"))
+
+        assert map_.scan.calibration_provenance == "measured"
+        assert map_from_dict(map_to_dict(map_)) == map_
+
+    def test_a_re_derived_mark_round_trips_with_its_revision(self) -> None:
+        raw = self.marked_map(
+            calibration_provenance="re_derived", calibration_revision="b08601e"
+        )
+
+        map_ = map_from_dict(raw)
+
+        assert map_.scan.calibration_revision == "b08601e"
+        assert map_from_dict(map_to_dict(map_)) == map_
+
+    def test_a_re_derived_mark_without_its_revision_is_refused(self) -> None:
+        # The back-fill this schema exists for cannot write an
+        # uncheckable claim, in JSON any more than in memory.
+        raw = self.marked_map(calibration_provenance="re_derived")
+
+        with pytest.raises(ArtifactError, match="requires calibration_revision"):
+            map_from_dict(raw)
+
+    def test_an_unknown_mark_is_refused(self) -> None:
+        raw = self.marked_map(calibration_provenance="back_filled")
+
+        with pytest.raises(ArtifactError, match="must be one of"):
+            map_from_dict(raw)
+
+    def test_an_empty_mark_is_refused(self) -> None:
+        raw = self.marked_map(calibration_provenance="")
+
+        with pytest.raises(ArtifactError, match=r"\$.scan.calibration_provenance"):
+            map_from_dict(raw)
+
+    def test_an_absent_mark_at_schema_4_reads_as_measured(self) -> None:
+        # Schema 4 is the one version that records a digest and no
+        # mark, and `vramfit scan` is the only producer that could
+        # have written it, hashing the calibration file as it read it.
+        raw = self.marked_map(schema=DIGEST_RECORDED_FROM)
+        assert "calibration_provenance" not in raw["scan"]
+
+        assert map_from_dict(raw).scan.calibration_provenance == "measured"
+
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            ("calibration_sha256", DIGEST),
+            ("calibration_bytes", 772386),
+            ("calibration_provenance", "measured"),
+            ("calibration_revision", "b08601e"),
+        ],
+    )
+    @pytest.mark.parametrize("version", [2, 3])
+    def test_a_calibration_content_field_below_schema_4_is_refused(
+        self, field: str, value: object, version: int
+    ) -> None:
+        # The published maps declare schema 2, which is where the
+        # back-fill this schema was raised for lands. No producer at
+        # that version wrote any of these four, so a present field
+        # there carries a value no scan measured. Accepting the
+        # digest read its absent mark as `measured`, which asserts
+        # that the scan behind the damage numbers hashed those bytes.
+        raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
+        raw["vramfit_schema"] = version
+        raw["scan"][field] = value
+
+        with pytest.raises(ArtifactError, match="unmeasured") as caught:
+            map_from_dict(raw)
+
+        assert caught.value.json_path == f"$.scan.{field}"
+
+    def test_an_absent_mark_at_schema_5_is_refused(self) -> None:
+        # The schema-5 producer could have recorded a mark, so an
+        # absent one is a missing claim, not a default.
+        raw = self.marked_map()
+        raw["vramfit_schema"] = 5
+
+        with pytest.raises(ArtifactError, match="no reader can check"):
+            map_from_dict(raw)
+
+    def test_a_schema_5_back_fill_cannot_pass_a_fresh_digest_off_as_measured(
+        self,
+    ) -> None:
+        # The concrete sequence this gate exists for: a back-fill
+        # writes a schema-5 map with a digest hashed today and omits
+        # the mark. Reading that as `measured` would assert that the
+        # scan which produced the damage numbers hashed those bytes.
+        raw = self.marked_map()
+        raw["vramfit_schema"] = 5
+
+        with pytest.raises(ArtifactError) as caught:
+            map_from_dict(raw)
+
+        assert caught.value.json_path == "$.scan.calibration_provenance"
+
+    @pytest.mark.parametrize("mark", ["recovered", "re_derived"])
+    def test_a_schema_5_back_fill_states_its_own_mark(self, mark: str) -> None:
+        raw = self.marked_map(
+            calibration_provenance=mark, calibration_revision="b08601e"
+        )
+        raw["vramfit_schema"] = 5
+
+        assert map_from_dict(raw).scan.calibration_provenance == mark
+
+    def test_an_explicit_null_mark_beside_a_digest_is_refused(self) -> None:
+        # The schema-5 writer never pairs the two that way, so this
+        # is a hand-edit. It is rejected, never normalized.
+        raw = self.marked_map(calibration_provenance=None)
+
+        with pytest.raises(ArtifactError, match="must pair"):
+            map_from_dict(raw)
+
+    def test_no_digest_carries_no_mark_and_writes_null(self) -> None:
+        raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
+
+        written = map_to_dict(map_from_dict(raw))
+
+        assert written["scan"]["calibration_provenance"] is None
+        assert written["scan"]["calibration_revision"] is None
+
+    def test_a_mark_with_no_digest_is_refused(self) -> None:
+        raw = map_with_calibration_content(
+            MARK_REQUIRED_FROM, calibration_provenance="measured"
+        )
+
+        with pytest.raises(ArtifactError, match="must pair"):
+            map_from_dict(raw)
+
+    def test_the_reader_never_hashes_to_supply_a_mark(self, tmp_path) -> None:
+        # The loader has no file to hash and must not acquire one.
+        raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
+        raw["scan"]["calibration"] = str(tmp_path / "gone.txt")
+
+        map_ = map_from_dict(raw)
+
+        assert map_.scan.calibration_sha256 is None
+        assert map_.scan.calibration_provenance is None
+
+
+@pytest.mark.unit
+class TestGroupRowWidth:
+    """Schema 5's per-group measured row width (issue #558)."""
+
+    # A layer-class group, which is what the 256 super-block decision
+    # reaches and therefore the only shape that carries a width.
+    ROUTED = "model.layers.0.mixer.in_proj"
+
+    def map_with_width(
+        self, width, name: str = ROUTED, schema: int = MAP_SCHEMA_VERSION
+    ) -> dict:
+        raw = make_map([(name, 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
+        raw["vramfit_schema"] = schema
+        raw["groups"][0]["row_width"] = width
+        return raw
+
+    def test_a_measured_width_round_trips(self) -> None:
+        map_ = map_from_dict(self.map_with_width(2688))
+
+        assert map_.groups[0].row_width == 2688
+        assert map_from_dict(map_to_dict(map_)) == map_
+
+    @pytest.mark.parametrize("schema", [2, 3, 4])
+    def test_a_width_below_schema_5_is_refused(self, schema: int) -> None:
+        # No producer at those versions wrote the field, so a width
+        # there was hand-added and no scan measured it. The published
+        # maps ship schema 2, and a width added to each routed group
+        # would route the ADR-0028 expert-stack table with no
+        # checkpoint to disagree.
+        with pytest.raises(ArtifactError, match="unmeasured") as caught:
+            map_from_dict(self.map_with_width(2688, schema=schema))
+
+        assert caught.value.json_path == "$.groups[0].row_width"
+
+    def test_an_absent_width_reads_as_none(self) -> None:
+        raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
+        assert "row_width" not in raw["groups"][0]
+
+        assert map_from_dict(raw).groups[0].row_width is None
+
+    def test_an_absent_width_is_not_written(self) -> None:
+        # A save never invents a width, and never writes null for one
+        # — an absent field means the map states none.
+        raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
+
+        written = map_to_dict(map_from_dict(raw))
+
+        assert "row_width" not in written["groups"][0]
+
+    @pytest.mark.parametrize("width", [0, -1], ids=["zero", "negative"])
+    def test_a_non_positive_width_is_refused(self, width: int) -> None:
+        with pytest.raises(ArtifactError, match="must be positive"):
+            map_from_dict(self.map_with_width(width))
+
+    def test_an_explicit_null_width_is_refused(self) -> None:
+        with pytest.raises(ArtifactError, match=r"\$.groups\[0\].row_width"):
+            map_from_dict(self.map_with_width(None))
+
+    def test_a_non_integer_width_is_refused(self) -> None:
+        with pytest.raises(ArtifactError, match=r"\$.groups\[0\].row_width"):
+            map_from_dict(self.map_with_width("2688"))
+
+    @pytest.mark.parametrize(
+        ("name", "reason"),
+        [
+            ("model.layers.0", "k-quant table"),
+            ("model.layers.0.mixer.conv1d", "F16 passthrough"),
+            ("model.embed_tokens", "k-quant table"),
+        ],
+        ids=["whole-layer", "unquantizable-class", "no-layer-index"],
+    )
+    def test_a_width_on_an_unreached_group_states_its_own_reason(
+        self, name: str, reason: str
+    ) -> None:
+        # A back-filled `group_by: layer` map carrying a row_width on
+        # a whole-layer group would otherwise price that layer through
+        # the ADR-0028 expert-stack table, while `pack` gates on
+        # `consults_row_width` and uses the k-quant table — a silent
+        # misprice with no refusal. An unquantizable class takes
+        # NEITHER type table — it holds at the F16 passthrough at the
+        # convert dtype (#409) — so the k-quant reason would send the
+        # operator hunting a routing problem that does not exist.
+        with pytest.raises(ArtifactError, match=reason) as caught:
+            map_from_dict(self.map_with_width(2688, name))
+
+        assert caught.value.json_path == "$.groups[0].row_width"

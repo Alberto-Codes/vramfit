@@ -3,11 +3,13 @@
 Owns (de)serialization and validation of the map schema, including the
 ``vramfit_schema`` envelope (`MAP_SCHEMA_VERSION` and
 `MAP_SCHEMA_ALSO_READS` — schema versions advance per artifact,
-ADR-0013). The adapter writes version 4 and
-also reads versions 2 and 3, because each later version only added
-to the one before it: version 3 widened ``group_by`` with the
-``stack`` value (#161), and version 4 added the calibration file's
-content identity. One file class serves both directions:
+ADR-0013). The adapter writes version 5 and
+also reads versions 2, 3, and 4, because each later version only
+added to the one before it: version 3 widened ``group_by`` with the
+``stack`` value (#161), version 4 added the calibration file's
+content identity, and version 5 added that digest's provenance mark
+with its revision referent, plus each group's measured row width
+(issue #558). One file class serves both directions:
 ``vramfit scan`` writes through the sink face, ``vramfit plan`` reads
 through the source face. Validation is strict: artifacts are rejected,
 never normalized — ``scan.precisions`` must arrive strictly descending,
@@ -23,7 +25,13 @@ additive the same way: absent means the group records no summary.
 ``scan.calibration_sha256`` and ``scan.calibration_bytes`` are
 additive too, and they pair: absent or null means the scan recorded
 no content identity, which stays NOT RECORDED. The loader never
-hashes a file to fill them, and a save never invents them.
+hashes a file to fill them, and a save never invents them. It
+refuses either below schema 4, where no producer wrote one.
+[vramfit.adapters.outbound.sensitivity_map_scan_json][] owns that
+section, including the digest's provenance mark. A group's
+``row_width`` is additive as well: absent means the map records no
+width, and the plan then reads the checkpoint's or refuses (issue
+#558). A save never invents one.
 The top-level ``derived`` note (#136) is additive too: absent means
 the map is a scan artifact. A present ``imatrix`` must pair with
 an assisted method token, ``kquant-imx`` or ``q0-imx`` — the
@@ -52,16 +60,14 @@ See Also:
 
 from __future__ import annotations
 
-import itertools
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Final, Literal, cast
+from typing import Any, Final
 
 from vramfit.adapters.outbound.json_common import (
     ArtifactError,
     _as_float,
     _as_int,
-    _as_str,
     _check_schema_version,
     _get_dict,
     _get_int,
@@ -72,24 +78,38 @@ from vramfit.adapters.outbound.json_common import (
     _save_json,
     _warn_unknown_fields,
 )
+from vramfit.adapters.outbound.sensitivity_map_scan_json import (
+    scan_from_dict,
+    scan_to_dict,
+)
 from vramfit.domain.model import (
     ImatrixCountSummary,
     LayerGroup,
-    ScanMeta,
     SensitivityMap,
 )
-from vramfit.domain.scan import ASSISTED_METHODS, SCAN_METHOD
+from vramfit.domain.runtime import routes_by_row_width, unquantizable_class
 
 # The sensitivity-map schema version. Versions advance per artifact
 # (ADR-0013), so this constant moves on its own.
-MAP_SCHEMA_VERSION: Final[int] = 4
+MAP_SCHEMA_VERSION: Final[int] = 5
 # Older versions this adapter still reads. Each bump only added:
-# version 3 widened ``group_by`` with the ``stack`` value (#161), and
-# version 4 added the paired calibration digest and byte count. So
-# every older map is already a valid version-4 document, and it
-# records no content identity. The writer emits 4, which tells a
-# reader the producer could have recorded one.
-MAP_SCHEMA_ALSO_READS: Final[tuple[int, ...]] = (2, 3)
+# version 3 widened ``group_by`` with the ``stack`` value (#161),
+# version 4 added the paired calibration digest and byte count, and
+# version 5 added that digest's provenance mark with its revision
+# referent, plus each group's measured row width (issue #558). So
+# every older map is already a valid version-5 document. A version-2
+# or version-3 map records no content identity, a version-4 map may
+# record a digest whose absent mark reads as ``measured``, and none
+# of the three records a row width. The writer emits 5, which tells
+# a reader the producer could have recorded both. Each reader gates
+# its own field on the declared version, so a hand-edit cannot add
+# one under an envelope whose producer never wrote it.
+MAP_SCHEMA_ALSO_READS: Final[tuple[int, ...]] = (2, 3, 4)
+
+# The first map schema whose producer records a group's measured row
+# width. Below it the field did not exist, so a present width is a
+# value no scan measured and the reader refuses it (issue #558).
+WIDTH_RECORDED_FROM: Final[int] = 5
 
 # Every key the reader carries, per object the schema fixes (#261).
 # A key outside these sets warns and loads (ADR-0013, the 2026-08-16
@@ -100,20 +120,6 @@ MAP_SCHEMA_ALSO_READS: Final[tuple[int, ...]] = (2, 3)
 MAP_ROOT_FIELDS: Final[frozenset[str]] = frozenset(
     {"vramfit_schema", "model_id", "scan", "groups", "derived"}
 )
-SCAN_FIELDS: Final[frozenset[str]] = frozenset(
-    {
-        "metric",
-        "calibration",
-        "calibration_tokens",
-        "calibration_sha256",
-        "calibration_bytes",
-        "precisions",
-        "group_by",
-        "started_at",
-        "within_group",
-        "imatrix",
-    }
-)
 GROUP_FIELDS: Final[frozenset[str]] = frozenset(
     {
         "name",
@@ -122,6 +128,7 @@ GROUP_FIELDS: Final[frozenset[str]] = frozenset(
         "sensitivity",
         "tensor_bytes",
         "imatrix_counts",
+        "row_width",
     }
 )
 
@@ -142,18 +149,24 @@ def map_from_dict(data: object) -> SensitivityMap:
             any field is missing, mistyped, or violates a schema rule
             (duplicate group names, unknown ``group_by``, sensitivity
             keys not matching ``scan.precisions``, an empty or
-            non-string ``derived`` note, and so on). A field the
+            non-string ``derived`` note, a calibration digest whose
+            provenance mark is missing or does not name its referent,
+            a calibration content field the document's version
+            refuses, a ``row_width`` that is not positive or that the
+            document's version or the group's shape refuses, and so
+            on). This function passes the declared version to both
+            readers, which gate their own fields on it. A field the
             reader does not know reports and loads instead (#261).
 
     Examples:
         Reject an unsupported schema version:
 
         ```python
-        map_from_dict({"vramfit_schema": 4})  # raises ArtifactError
+        map_from_dict({"vramfit_schema": 6})  # raises ArtifactError
         ```
     """
     root = _get_dict(data, "$")
-    _check_schema_version(
+    schema_version = _check_schema_version(
         root,
         "$",
         expected=MAP_SCHEMA_VERSION,
@@ -162,14 +175,14 @@ def map_from_dict(data: object) -> SensitivityMap:
     _warn_unknown_fields(root, "$", MAP_ROOT_FIELDS)
     model_id = _get_str(root, "model_id", "$")
     _require("scan" in root, "$", 'missing required field "scan"')
-    scan = _parse_scan_meta(_get_dict(root["scan"], "$.scan"))
+    scan = scan_from_dict(_get_dict(root["scan"], "$.scan"), schema_version)
     groups_raw = _get_list(root, "groups", "$")
     _require(len(groups_raw) > 0, "$.groups", "must not be empty")
     expected = set(scan.precisions)
     groups: list[LayerGroup] = []
     seen: set[str] = set()
     for i, raw in enumerate(groups_raw):
-        group = _parse_layer_group(raw, f"$.groups[{i}]", expected)
+        group = _parse_layer_group(raw, f"$.groups[{i}]", expected, schema_version)
         _require(
             group.name not in seen,
             f"$.groups[{i}].name",
@@ -206,23 +219,14 @@ def map_to_dict(map_: SensitivityMap) -> dict[str, Any]:
         (ADR-0022). A group's imatrix count summary is written only
         when the group records one (ADR-0026 decision 4). The
         ``derived`` note is written only when the map carries one —
-        a save never drops it and never invents it (#136).
+        a save never drops it and never invents it (#136). A group's
+        measured row width is written only when the map records one
+        (issue #558).
     """
     return {
         "vramfit_schema": MAP_SCHEMA_VERSION,
         "model_id": map_.model_id,
-        "scan": {
-            "metric": map_.scan.metric,
-            "calibration": map_.scan.calibration,
-            "calibration_tokens": map_.scan.calibration_tokens,
-            "calibration_sha256": map_.scan.calibration_sha256,
-            "calibration_bytes": map_.scan.calibration_bytes,
-            "precisions": list(map_.scan.precisions),
-            "group_by": map_.scan.group_by,
-            "started_at": map_.scan.started_at,
-            "within_group": map_.scan.within_group,
-            "imatrix": map_.scan.imatrix,
-        },
+        "scan": scan_to_dict(map_.scan),
         "groups": [
             {
                 "name": g.name,
@@ -239,6 +243,12 @@ def map_to_dict(map_: SensitivityMap) -> dict[str, Any]:
                     if g.tensor_bytes
                     else {}
                 ),
+                # Written only when the scan measured one width for
+                # the group (issue #558). A whole-layer group holds
+                # classes of several widths and records none, so an
+                # absent field means the map states no width, never
+                # that the group has none.
+                **({"row_width": g.row_width} if g.row_width is not None else {}),
                 # Written only when the group's expert stacks all
                 # resolved (ADR-0026 decision 4, the #201 amendment)
                 # — additive, so the schema holds at 3.
@@ -328,121 +338,6 @@ class JsonSensitivityMapFile:
         save_sensitivity_map(map_, self.path)
 
 
-def _parse_scan_meta(obj: dict[str, Any]) -> ScanMeta:
-    """Validate the ``scan`` section of a sensitivity map.
-
-    Args:
-        obj: The ``scan`` JSON object.
-
-    Returns:
-        The validated scan provenance.
-
-    Raises:
-        ArtifactError: If a field is missing or invalid, precisions are
-            empty, duplicated, not integers, or not strictly descending,
-            ``group_by`` is not ``layer``, ``tensor``, or ``stack``,
-            a present
-            ``within_group`` is not a non-empty string (absent
-            defaults to ``rtn-block32``, ADR-0018), or ``imatrix``
-            does not pair with an assisted method token,
-            ``kquant-imx`` or ``q0-imx`` — assisted
-            damages without their imatrix provenance are not
-            comparable to anything (ADR-0020, absent defaults to
-            None), or the calibration content identity is malformed
-            — the digest must hold 64 lowercase hex digits, the byte
-            count must be positive, and the two must pair (absent or
-            null on both means NOT RECORDED). A mistyped field
-            reports at its own JSON path. The digest shape, the
-            positive byte count, and the pairing are domain
-            invariants, so they report at the section's path. A
-            field the section does not carry reports and loads
-            (#261).
-    """
-    path = "$.scan"
-    _warn_unknown_fields(obj, path, SCAN_FIELDS)
-    tokens = _get_int(obj, "calibration_tokens", path)
-    _require(tokens > 0, f"{path}.calibration_tokens", "must be positive")
-    raw_precisions = _get_list(obj, "precisions", path)
-    _require(len(raw_precisions) > 0, f"{path}.precisions", "must not be empty")
-    precisions = [
-        _as_int(p, f"{path}.precisions[{i}]") for i, p in enumerate(raw_precisions)
-    ]
-    _require(
-        len(set(precisions)) == len(precisions),
-        f"{path}.precisions",
-        "must not contain duplicates",
-    )
-    _require(
-        all(p > 0 for p in precisions), f"{path}.precisions", "must all be positive"
-    )
-    _require(
-        all(a > b for a, b in itertools.pairwise(precisions)),
-        f"{path}.precisions",
-        "must be strictly descending",
-    )
-    group_by = _get_str(obj, "group_by", path)
-    _require(
-        group_by in ("layer", "tensor", "stack"),
-        f"{path}.group_by",
-        'must be "layer", "tensor", or "stack"',
-    )
-    # Optional and additive (ADR-0018): maps written before the field
-    # existed are rtn-block32 scans by definition. A present field
-    # validates through _get_str, which rejects empty strings.
-    within_group = (
-        _get_str(obj, "within_group", path) if "within_group" in obj else SCAN_METHOD
-    )
-    # Optional and additive (ADR-0020): maps written before the field
-    # existed were unassisted by definition. The pairing rules mirror
-    # ScanMeta's own invariant, re-stated here for JSON-path errors.
-    imatrix = _get_str(obj, "imatrix", path) if obj.get("imatrix") is not None else None
-    # Optional, additive, and paired (ScanMeta enforces the pairing):
-    # absent or null means the scan recorded no content identity,
-    # which stays NOT RECORDED. The loader never hashes a file to
-    # fill a gap — a digest taken today proves nothing about the
-    # bytes an earlier run measured.
-    raw_digest = obj.get("calibration_sha256")
-    raw_bytes = obj.get("calibration_bytes")
-    digest_path = f"{path}.calibration_sha256"
-    bytes_path = f"{path}.calibration_bytes"
-    digest = None if raw_digest is None else _as_str(raw_digest, digest_path)
-    n_bytes = None if raw_bytes is None else _as_int(raw_bytes, bytes_path)
-    _require(
-        not (within_group in ASSISTED_METHODS and imatrix is None),
-        f"{path}.imatrix",
-        f'within_group "{within_group}" requires the imatrix field (ADR-0020)',
-    )
-    _require(
-        not (imatrix is not None and within_group not in ASSISTED_METHODS),
-        f"{path}.imatrix",
-        "imatrix provenance requires an assisted within_group "
-        f'({", ".join(ASSISTED_METHODS)}), got "{within_group}" (ADR-0020)',
-    )
-    metric = _get_str(obj, "metric", path)
-    calibration = _get_str(obj, "calibration", path)
-    started_at = _get_str(obj, "started_at", path)
-    # The calibration content rules live in the domain, so the reader
-    # states them once. A `ValueError` translates here, as the
-    # imatrix count summary's does (#260). Only the constructor sits
-    # inside the try, or a field's own `ArtifactError` would come back
-    # out relabelled at this block's path.
-    try:
-        return ScanMeta(
-            metric=metric,
-            calibration=calibration,
-            calibration_tokens=tokens,
-            precisions=tuple(precisions),
-            group_by=cast('Literal["layer", "tensor", "stack"]', group_by),
-            started_at=started_at,
-            within_group=within_group,
-            imatrix=imatrix,
-            calibration_sha256=digest,
-            calibration_bytes=n_bytes,
-        )
-    except ValueError as exc:
-        raise ArtifactError(path, str(exc)) from exc
-
-
 def _parse_sensitivity(obj: dict[str, Any], path: str) -> dict[int, float]:
     """Validate one group's sensitivity mapping.
 
@@ -479,7 +374,7 @@ def _parse_sensitivity(obj: dict[str, Any], path: str) -> dict[int, float]:
 
 
 def _parse_layer_group(
-    raw: Any, path: str, expected_precisions: set[int]
+    raw: Any, path: str, expected_precisions: set[int], schema_version: int
 ) -> LayerGroup:
     """Validate one entry of a sensitivity map's ``groups`` list.
 
@@ -488,6 +383,9 @@ def _parse_layer_group(
         path: JSON path of this group.
         expected_precisions: The scan's candidate precisions; the group's
             sensitivity keys must equal this set.
+        schema_version: The version the document declares, which
+            `map_from_dict` already validated. `_parse_row_width`
+            reads it.
 
     Returns:
         The validated group.
@@ -500,8 +398,12 @@ def _parse_layer_group(
             summing to ``bytes_fp16`` (ADR-0022 — absent means
             unknown, and an explicit null is rejected: the writer
             never emits one), or a present ``imatrix_counts`` fails
-            `_parse_imatrix_counts` (ADR-0026 decision 4). A field
-            the group does not carry reports and loads (#261).
+            `_parse_imatrix_counts` (ADR-0026 decision 4), or a
+            present ``row_width`` is not a positive integer, names a
+            group the 256 super-block decision does not reach, or
+            appears below `WIDTH_RECORDED_FROM` (issue #558 — absent
+            means the map records no width). A field the group does
+            not carry reports and loads (#261).
     """
     obj = _get_dict(raw, path)
     _warn_unknown_fields(obj, path, GROUP_FIELDS)
@@ -545,14 +447,89 @@ def _parse_layer_group(
             f"values sum to {sum(tensor_bytes.values())} but bytes_fp16 "
             f"is {bytes_fp16} (ADR-0022)",
         )
+    name = _get_str(obj, "name", path)
     return LayerGroup(
-        name=_get_str(obj, "name", path),
+        name=name,
         tensors=tuple(tensors),
         bytes_fp16=bytes_fp16,
         sensitivity=sensitivity,
         tensor_bytes=tensor_bytes,
         imatrix_counts=_parse_imatrix_counts(obj, path),
+        row_width=_parse_row_width(obj, path, name, schema_version),
     )
+
+
+def _parse_row_width(
+    obj: dict[str, Any], path: str, name: str, schema_version: int
+) -> int | None:
+    """Validate one group's optional measured row width (issue #558).
+
+    Optional and additive: the writer omits the field when the map
+    records no width, so an absent field means absent, and an
+    explicit null is a hand-edit, rejected rather than normalized.
+    A non-positive width tiles no block, so it would route the 256
+    super-block decision off a number no tensor has.
+
+    A document below `WIDTH_RECORDED_FROM` refuses the field
+    outright. No producer at those versions wrote it, so its value
+    reached the document by hand and no scan measured it. The
+    published schema-2 maps are the case: a width hand-added to each
+    routed group there would route the ADR-0028 expert-stack table
+    with no checkpoint to disagree, so nothing else in the plan
+    could catch it.
+
+    The decision reaches a layer-class or routed-expert-stack group
+    only, and two other shapes each refuse a width for their own
+    reason. A whole-layer group holds classes of several row widths
+    and takes the ADR-0012 k-quant table, so no single width
+    describes it. A group of a class the quantizer refuses takes
+    neither type table — it holds at the F16 passthrough at the
+    convert dtype (#409) — so no width ever routes it. Either way
+    the field asserts what the group cannot carry, so the reader
+    refuses it rather than ignoring it.
+
+    Args:
+        obj: The group's JSON object.
+        path: JSON path of this group.
+        name: The group's name, which decides whether the 256
+            super-block decision reaches it.
+        schema_version: The version the document declares.
+
+    Returns:
+        The measured width, or None when the field is absent.
+
+    Raises:
+        ArtifactError: If a present field is not a positive integer,
+            the document declares a version below
+            `WIDTH_RECORDED_FROM`, or the group is one the
+            super-block decision does not reach. The message states
+            the reason that document or group earns.
+    """
+    if "row_width" not in obj:
+        return None
+    field_path = f"{path}.row_width"
+    _require(
+        schema_version >= WIDTH_RECORDED_FROM,
+        field_path,
+        f"no schema-{schema_version} scan recorded a group row width, "
+        f"so this value is unmeasured (issue #558)",
+    )
+    _require(
+        unquantizable_class(name) is None,
+        field_path,
+        f'group "{name}" holds at the F16 passthrough and takes '
+        f"neither type table, so no width routes it (#409, issue #558)",
+    )
+    _require(
+        routes_by_row_width(name),
+        field_path,
+        f'group "{name}" is no layer-class or routed-expert-stack '
+        f"group. It takes the ADR-0012 k-quant table, which no row "
+        f"width routes (issue #515, issue #558)",
+    )
+    width = _as_int(obj["row_width"], field_path)
+    _require(width > 0, field_path, "must be positive")
+    return width
 
 
 def _parse_imatrix_counts(obj: dict[str, Any], path: str) -> ImatrixCountSummary | None:

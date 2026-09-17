@@ -8,7 +8,10 @@ the scan, imatrix provenance pairing with the assisted method tokens
 (including ``q0-imx2`` for the assisted ``Q2_0`` encoder),
 tensor sizes covering exactly the group's tensors, protection records
 pairing with their resolved pairs (ADR-0022), an ordered imatrix
-count summary (ADR-0026 decision 4), and a non-empty derived note
+count summary (ADR-0026 decision 4), a calibration digest whose
+provenance mark names its referent (#589's mechanism, extended to
+the map), a positive measured row width (issue #558), and a
+non-empty derived note
 (#136). The
 within-group method tokens live here — `SCAN_METHOD` beside the
 `ScanMeta` field it is the default for (ADR-0018), the kquant
@@ -61,6 +64,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Literal
+
+from vramfit.domain.provenance import check_mark_pairs_with_digest, check_referent
 
 # The v1 within-group method token (ADR-0006): round-to-nearest,
 # 32-element scale blocks. Defined beside `ScanMeta`, whose default
@@ -122,6 +127,20 @@ class ScanMeta:
         calibration_bytes (int | None): Size of the calibration file
             in bytes, or None when the scan did not record it. Pairs
             with `calibration_sha256`: both, or neither.
+        calibration_provenance (str | None): The provenance mark for
+            that digest — one of the three values
+            [vramfit.domain.provenance][] fixes, or None when the
+            map records no content identity. Pairs with
+            `calibration_sha256` in both directions: a digest says
+            which bytes, and the mark says who hashed them and when.
+            ``vramfit scan`` writes ``measured``. A back-fill writes
+            ``recovered`` when the run's own file survived, which
+            `calibration` names, or ``re_derived`` when it is gone
+            and these are `calibration_revision`'s bytes.
+        calibration_revision (str | None): The pinned revision the
+            calibration text came from, or None when unrecorded. The
+            referent a ``re_derived`` mark names, without which that
+            mark asserts a revision no reader can check.
         precisions (tuple[int, ...]): Candidate bit-widths, strictly
             descending.
         group_by (str): Grouping granularity — ``layer``, ``tensor``,
@@ -153,6 +172,7 @@ class ScanMeta:
                 "74f2665d6e6925fc2c17dec644bec9e87df478a0f1836822125e8acbb3777806"
             ),
             calibration_bytes=772386,
+            calibration_provenance="measured",
             precisions=(8, 4),
             group_by="layer",
             started_at="2026-07-27T00:00:00Z",
@@ -170,6 +190,8 @@ class ScanMeta:
     imatrix: str | None = None
     calibration_sha256: str | None = None
     calibration_bytes: int | None = None
+    calibration_provenance: str | None = None
+    calibration_revision: str | None = None
 
     def __post_init__(self) -> None:
         """Enforce the scan invariants the solver relies on.
@@ -184,7 +206,12 @@ class ScanMeta:
                 to anything (ADR-0020), ``calibration_sha256`` is not
                 64 lowercase hex digits, ``calibration_bytes`` is not
                 positive, or the two do not pair — half a content
-                identity records nothing a reader can check.
+                identity records nothing a reader can check, the
+                digest and its provenance mark do not pair, the mark
+                is not a value [vramfit.domain.provenance][] fixes,
+                or a mark that
+                asserts outside the digest does not name its referent
+                (``re_derived`` without ``calibration_revision``).
         """
         if self.calibration_tokens <= 0:
             raise ValueError("calibration_tokens must be positive")
@@ -212,11 +239,20 @@ class ScanMeta:
         self._check_calibration_content()
 
     def _check_calibration_content(self) -> None:
-        """Enforce the calibration file's content identity.
+        """Enforce the calibration file's content identity and its mark.
+
+        [vramfit.domain.provenance][] owns the mark's two rules, so
+        the map and the evals sidecar refuse an uncheckable claim the
+        same way. The ``recovered`` referent is `calibration`, which
+        every map already carries, so that mark always names its
+        file. ``re_derived`` names `calibration_revision`, which a
+        map records only where it has one.
 
         Raises:
             ValueError: If the digest is malformed, the byte count is
-                not positive, or the two do not pair.
+                not positive, the two do not pair, the digest and its
+                mark do not pair, or a mark does not name its
+                referent.
         """
         digest, size = self.calibration_sha256, self.calibration_bytes
         if (digest is None) != (size is None):
@@ -230,6 +266,21 @@ class ScanMeta:
             raise ValueError("calibration_sha256 must be 64 lowercase hex digits")
         if size is not None and size <= 0:
             raise ValueError("calibration_bytes must be positive")
+        if self.calibration_revision is not None and not self.calibration_revision:
+            raise ValueError("calibration_revision must not be empty — use None")
+        check_mark_pairs_with_digest(
+            digest,
+            self.calibration_provenance,
+            digest_field="calibration_sha256",
+            mark_field="calibration_provenance",
+        )
+        check_referent(
+            self.calibration_provenance,
+            file=self.calibration,
+            revision=self.calibration_revision,
+            file_field="calibration",
+            revision_field="calibration_revision",
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -316,6 +367,14 @@ class LayerGroup:
             resolved its full count vector, and a group without an
             expert stack never carries it (the 2026-08-13 #201
             amendment).
+        row_width (int | None): Elements per row of the group's
+            tensors, as the scan measured them (issue #558), or None
+            when the map records none. The 256 super-block decision
+            reads this width (ADR-0028, issue #515), so a map that
+            carries it plans under llama.cpp without the checkpoint.
+            A whole-layer group holds classes of several widths and
+            records none, which is why the field is per group and
+            optional.
 
     Examples:
         A group whose damage doubles from 4-bit to 2-bit:
@@ -338,6 +397,7 @@ class LayerGroup:
     sensitivity: Mapping[int, float] = field(hash=False)
     tensor_bytes: Mapping[str, int] = field(hash=False, default_factory=dict)
     imatrix_counts: ImatrixCountSummary | None = None
+    row_width: int | None = None
 
     def __post_init__(self) -> None:
         """Enforce group invariants and freeze the mappings.
@@ -352,10 +412,15 @@ class LayerGroup:
                 group's tensors with positive sizes summing to
                 ``bytes_fp16`` — a partial or inconsistent size
                 record would misprice protections silently
-                (ADR-0022).
+                (ADR-0022) — or ``row_width`` is not positive. A
+                zero or negative width tiles no block, so it would
+                route the super-block decision off a number no
+                tensor has (issue #558).
         """
         if self.bytes_fp16 <= 0:
             raise ValueError("bytes_fp16 must be positive")
+        if self.row_width is not None and self.row_width <= 0:
+            raise ValueError("row_width must be positive")
         object.__setattr__(
             self, "sensitivity", MappingProxyType(dict(self.sensitivity))
         )

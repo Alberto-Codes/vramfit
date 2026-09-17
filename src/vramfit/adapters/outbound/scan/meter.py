@@ -21,7 +21,10 @@ method never touches the measurement loop.
 
 Only floating-point tensors with 2+ dimensions join layer groups —
 norms and biases stay at reference precision and are not scanned.
-Tied names that alias one storage collapse to one group.
+Tied names that alias one storage collapse to one group. Each group
+the 256 super-block decision reaches also reports the row width the
+meter measured, so the map plans without the checkpoint (issue
+#558).
 ``group_by`` decides the rest. ``layer`` collapses each decoder layer
 into one group. ``tensor`` keeps every weight apart. ``stack`` also
 keeps every weight apart, except a layer's routed experts. Those fuse
@@ -86,6 +89,7 @@ from vramfit.adapters.outbound.scan.calibration import load_calibration
 from vramfit.adapters.outbound.scan.discovery import (
     discover_groups,
     group_count_summaries,
+    group_specs,
     max_memory_map,
 )
 from vramfit.adapters.outbound.scan.imatrix import (
@@ -345,27 +349,26 @@ class TorchDamageMeter:
     def groups(self) -> tuple[GroupSpec, ...]:
         """Discover the model's layer groups.
 
+        Each group the 256 super-block decision reaches also carries
+        the row width the scan measured, so a published map plans
+        under llama.cpp on its own (issue #558). A whole-layer group
+        holds several widths and records none.
+
         Returns:
             All groups in module order, sized at 2 bytes per parameter
             (the bf16 reference), with per-tensor sizes for the
-            protection pricing (ADR-0022) and, on a file-resolved
+            protection pricing (ADR-0022), each routed group's
+            measured row width, and, on a file-resolved
             assisted meter, each group's pooled expert-stack count
             summary (ADR-0026 decision 4). A meter built from
             in-memory weights records no summary — the counts live
             in the file.
+
+        Raises:
+            SizeSourceError: If two members of one group state
+                different row widths (issue #515).
         """
-        return tuple(
-            GroupSpec(
-                name=name,
-                tensors=tuple(tensors),
-                bytes_fp16=sum(t.numel() * 2 for t in map(self._param, tensors)),
-                # Per-tensor sizes ride into the map so protections
-                # can price against them (ADR-0022).
-                tensor_bytes={t: self._param(t).numel() * 2 for t in tensors},
-                imatrix_counts=self._imatrix_count_summaries.get(name),
-            )
-            for name, tensors in self._groups.items()
-        )
+        return group_specs(self._groups, self._param, self._imatrix_count_summaries)
 
     def calibration_tokens(self) -> int:
         """Count the calibration tokens each measurement runs over.

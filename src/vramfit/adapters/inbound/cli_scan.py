@@ -21,8 +21,11 @@ content: the map and the fingerprint carry its SHA-256 and byte
 count, read through
 [vramfit.adapters.outbound.calibration_digest][]'s `content_identity`,
 so re-issued bytes behind an unchanged path refuse the old
-checkpoint. The refinement pass reads its evaluation corpus through
-that same helper. The meter build reads the identity first, so an
+checkpoint. The map marks that digest ``measured``, because the scan
+hashed those bytes as it read them (issue #558's schema 5), and
+nothing else can be written there honestly. The refinement pass
+reads its evaluation corpus through that same helper. The meter
+build reads the identity first, so an
 unreadable or empty file halts through the run log before the model
 load.
 ``--groups`` restricts a run to named groups, so a caller that wants
@@ -73,6 +76,7 @@ from vramfit.adapters.outbound.scan_checkpoint_json import JsonScanCheckpointFil
 from vramfit.adapters.outbound.sensitivity_map_json import JsonSensitivityMapFile
 from vramfit.domain.errors import VramfitError
 from vramfit.domain.model import ScanMeta
+from vramfit.domain.provenance import MEASURED
 from vramfit.domain.scan import (
     assemble_map,
     scan_fingerprint,
@@ -361,7 +365,12 @@ def scan(
     before that change do not resume — pass ``--no-resume``. The
     digest pins the corpus, not the chunking: the tokenizer stays
     unpinned. A digest match does not promise the same
-    ``calibration_tokens`` count.
+    ``calibration_tokens`` count. The map marks the digest
+    ``measured``, because this run hashed those bytes as it read
+    them (issue #558's schema 5).
+    The map also records each group's measured row width, so a
+    published map routes the 256 super-block decision without the
+    checkpoint beside it.
     ``--gpu-memory`` caps the shards that ``auto`` sharding places on
     GPU 0 (parsed with the project size grammar, validated up front),
     keeping workspace free for activations and logits. Every run
@@ -507,6 +516,11 @@ def scan(
         calibration_tokens=meter.calibration_tokens(),
         calibration_sha256=calibration_sha256,
         calibration_bytes=calibration_bytes,
+        # The scan hashed these bytes as it read them, so the mark is
+        # `measured` and nothing else can honestly be written here
+        # (#589's mechanism, issue #558's schema 5). A back-fill on a
+        # map this run did not write chooses its own mark.
+        calibration_provenance=MEASURED,
         precisions=parsed_precisions,
         group_by=group_by,
         started_at=datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),

@@ -193,13 +193,15 @@ Facts verified upstream on 2026-08-14 (#189):
   size source for every layer-class and routed-expert-stack group
   it prices under a runtime carrying this table (noted 2026-09-05,
   #515). `plan` without ``--checkpoint`` refuses such a map and
-  names the flag. A group of a class the quantizer refuses is
-  exempt: it holds at the convert dtype and takes neither table
-  (#409), so `mixer.gate` and `mixer.conv1d` need no width. A map
-  of whole-layer groups alone is unaffected, because a layer group
-  holds several row widths and never took this table. A runtime
-  with no effective-bits table is unaffected too, because it prices
-  at nominal bits.
+  names the flag. The 2026-09-17 restore below narrows that
+  refusal to a group no source states a width for, whatever the
+  map's schema version (#558). A group of a class the
+  quantizer refuses is exempt: it holds at the convert dtype and
+  takes neither table (#409), so `mixer.gate` and `mixer.conv1d`
+  need no width. A map of whole-layer groups alone is unaffected,
+  because a layer group holds several row widths and never took
+  this table. A runtime with no effective-bits table is unaffected
+  too, because it prices at nominal bits.
 - A published sensitivity map alone no longer plans under
   `llama.cpp` at `stack` or `tensor` granularity (noted 2026-09-05,
   #515). The map carries every damage measurement and no row width,
@@ -210,6 +212,16 @@ Facts verified upstream on 2026-08-14 (#189):
   the product." Its phase 3 Space re-solves recipes live against
   published maps, and a Space holds no checkpoint. Issue #558 asks
   whether the map itself should carry the width.
+  **Restored 2026-09-17 (#558): the map carries the width.**
+  Sensitivity-map schema 5 records each routed group's measured row
+  width, so a schema-5 map plans under `llama.cpp` at `stack` or
+  `tensor` granularity on its own. The plan folds the map's widths
+  under a `--checkpoint` read and keeps the checkpoint's where both
+  state one, because `pack` quantizes that checkpoint. A map below
+  schema 5 records no width, so it still needs `--checkpoint`. That
+  is the behavior today, not a ruling. Issue #558's second half
+  stays open: no record states whether such a map must refuse, keep
+  the checkpoint fallback, or take a re-scan.
 - `TensorSize` gains a `rows` field (2026-09-05, #515). ADR-0029
   decision 5 named `dtype` and `bytes` only, so the shapes the
   shard headers carry reached no caller. The safetensors adapter

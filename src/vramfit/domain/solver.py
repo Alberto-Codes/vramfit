@@ -33,6 +33,11 @@ On expert-stack groups, a downgrade to the cheapest in-budget width
 also passes the spread placement rule with its projection tie-break
 ([vramfit.domain.placement][], the 2026-08-21 ADR-0007 amendment) —
 the rule narrows the candidates and the selection key stays unchanged.
+The 256 super-block decision reads a group's measured row width
+(ADR-0028, issue #515). Two sources state it: the map itself since
+schema 5 (issue #558), and a size source the caller read. The solve
+folds the two, keeps the size source's where both state one, and
+refuses a routed group neither describes.
 Size predictions follow ADR-0014: a runtime with an effective-bits
 table prices each precision at its real per-weight cost, and the
 overhead fraction shrinks to a residual for what the table cannot
@@ -131,8 +136,10 @@ from vramfit.domain.runtime import (
 from vramfit.domain.sizes import (
     REFERENCE_BITS,
     held_assignments,
+    map_row_widths,
     measured_width,
     refuse_unmeasured_rows,
+    resolved_row_widths,
 )
 from vramfit.domain.solver_errors import (
     InfeasibleBudgetError as InfeasibleBudgetError,  # noqa: PLC0414 - re-export: the solver's errors read from this module
@@ -479,9 +486,12 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
             refuse the super-block, like a measured one.
         row_widths: Elements per row per group, from
             `vramfit.domain.sizes.discovered_group_rows`. The
-            super-block decision reads this width (issue #515). Every
-            layer-class and routed-expert-stack group the map or the
-            checkpoint names must appear, or the solve refuses.
+            super-block decision reads this width (issue #515). The
+            map's own widths fill every group this mapping omits
+            (issue #558), and this mapping wins where both state one.
+            Every layer-class and routed-expert-stack group the map
+            or the checkpoint names must have a width in one of the
+            two, or the solve refuses.
         merged_splits: The merged projections the plan folded, from
             `vramfit.domain.projections.reconcile_merged_projections`
             (#576). A pin may name a folded projection's checkpoint
@@ -501,10 +511,12 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
         ValueError: If ``format_overhead`` is negative, NaN, or
             infinite.
         SizeSourceError: If a layer-class or routed-expert-stack
-            group has no measured row width, under a runtime that
+            group has no measured row width in the map or in
+            ``row_widths``, under a runtime that
             carries the two type tables the width routes between.
             The ADR-0028 routing reads that width, and no name
-            supplies it (issue #515). The message names the flag
+            supplies it (issue #515). The message names the flag and
+            the map's silence
             when ``row_widths`` is None, the missing group when a
             size source was read, and the root table's limit when
             no checkpoint could carry the group.
@@ -562,13 +574,19 @@ def solve(  # noqa: PLR0913 - the plan surface: budget triple + pins, protection
     floors = expand_protections(protections, sensitivity_map, runtime)
     excluded = expand_exclusions(imatrix_exclusions, floors, sensitivity_map)
 
+    # The map states its own widths since schema 5 (issue #558), so a
+    # published map routes the super-block decision with no checkpoint
+    # beside it. The size source reads the checkpoint `pack` will
+    # quantize, so it wins every group both name.
+    map_widths = map_row_widths(sensitivity_map)
     refuse_unmeasured_rows(
         row_widths,
         [group.name for group in sensitivity_map.groups]
         + sorted(discovered_bytes or {}),
         runtime,
+        map_widths=map_widths,
     )
-    widths = dict(row_widths or {})
+    widths = resolved_row_widths(map_widths, row_widths)
 
     price_for = group_size_predictor(runtime, format_overhead, widths)
 

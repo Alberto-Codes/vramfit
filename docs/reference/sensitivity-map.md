@@ -6,7 +6,9 @@ status: stable
 
 > **Status: stable** — implemented in
 > `vramfit.adapters.outbound.sensitivity_map_json`, whose loader enforces
-> everything described here. `vramfit scan` produces these files, and
+> everything described here. That module owns the envelope and the
+> groups, and `vramfit.adapters.outbound.sensitivity_map_scan_json`
+> owns the `scan` object. `vramfit scan` produces these files, and
 > real maps (Qwen2.5-3B, the 49B target) drove the full loop.
 
 The sensitivity map is the output of `vramfit scan` and the input to
@@ -14,7 +16,7 @@ The sensitivity map is the output of `vramfit scan` and the input to
 
 ```json
 {
-  "vramfit_schema": 4,
+  "vramfit_schema": 5,
   "model_id": "nvidia/Nemotron-Super-49B",
   "scan": {
     "metric": "kl_divergence",
@@ -22,6 +24,8 @@ The sensitivity map is the output of `vramfit scan` and the input to
     "calibration_tokens": 131072,
     "calibration_sha256": "74f2665d6e6925fc2c17dec644bec9e87df478a0f1836822125e8acbb3777806",
     "calibration_bytes": 772386,
+    "calibration_provenance": "measured",
+    "calibration_revision": null,
     "precisions": [8, 4, 3, 2],
     "group_by": "layer",
     "started_at": "2026-07-27T00:00:00Z",
@@ -62,14 +66,19 @@ The sensitivity map is the output of `vramfit scan` and the input to
 [ADR-0020](../adr/0020-imatrix-assisted-pricing.md): the fields
 below remain, the sub-4-bit pricing claims do not.
 
-- **`vramfit_schema`** — the writer emits 4 since `scan` gained the
-  calibration file's content identity. The reader accepts 2, 3, and
-  4, because each bump only added: version 3 widened `group_by` with
-  the `stack` value (#161), and version 4 added two optional fields.
-  Every older map is already a valid version-4 document that records
-  no content identity, and the
+- **`vramfit_schema`** — the writer emits 5 since `scan` gained the
+  calibration digest's provenance mark and each group's measured row
+  width. The reader accepts 2, 3, 4, and
+  5, because each bump only added: version 3 widened `group_by` with
+  the `stack` value (#161), version 4 added the calibration file's
+  content identity, and version 5 added `scan.calibration_provenance`
+  with its `scan.calibration_revision` referent, plus
+  `groups[].row_width` (issue #558).
+  Every older map is already a valid version-5 document. It records
+  no content identity, or a digest whose absent mark reads as
+  `measured`, and it records no row width. The
   [published maps dataset](https://huggingface.co/datasets/Alberto-Codes/Llama-3_3-Nemotron-Super-49B-v1_5-sensitivity-maps)
-  ships version 2, which records neither. Version 2 dates from the
+  ships version 2, which records none of them. Version 2 dates from the
   envelope key rename with
   the tool (#118). The reader accepts only the new key. A schema-1
   map migrates with a key rename plus a version bump, or a re-scan.
@@ -136,6 +145,59 @@ below remain, the sub-4-bit pricing claims do not.
     They pin the corpus, not the chunking. The tokenizer stays
     unpinned. A digest match does not promise the same
     `calibration_tokens` count.
+
+- **`scan.calibration_provenance`** and
+  **`scan.calibration_revision`** — the provenance mark for that
+  digest, and the referent a `re_derived` mark names. The mark says
+  who established the digest and when, in the vocabulary
+  [PR #589](https://github.com/Alberto-Codes/vramfit/pull/589) fixed
+  for the evals sidecar's corpus reference:
+
+    - `measured` — the process that produced the numbers hashed
+      those bytes as it read them. `vramfit scan` writes this.
+    - `recovered` — the run's own file survived and someone hashed it
+      afterwards. The referent is `scan.calibration`, which every map
+      already carries.
+    - `re_derived` — the run's own file is gone, and these are
+      `scan.calibration_revision`'s bytes. The loader refuses this
+      mark without that revision, so an uncheckable claim cannot be
+      written at all.
+
+    The mark pairs with `scan.calibration_sha256` in both
+    directions: a digest says which bytes, and the mark says who
+    hashed them. A digest with no mark records a claim no reader can
+    check, so the loader refuses one. The absent-mark allowance
+    covers one version. In a document at **schema 4**, an
+    **absent** mark beside a digest reads as `measured`. That map
+    records a digest, could not record a mark, and `vramfit scan` is
+    the only producer that could have written the digest. In a
+    document **below schema 4**, the loader refuses
+    `scan.calibration_sha256`, `scan.calibration_bytes`,
+    `scan.calibration_provenance`, and `scan.calibration_revision`
+    at that field's own path. No producer wrote any of the four
+    there, so a present field carries a value no scan measured. In a
+    document at **schema 5 or above**, an **absent** mark beside a
+    digest refuses. The producer could have recorded one, so its
+    absence is a missing claim, not a default. An **explicit null**
+    beside a digest is a hand-edit and refuses at every version that
+    carries the fields, because the schema-5 writer never writes
+    that pair.
+
+    The checkpoint fingerprint excludes both fields. They say who
+    hashed the bytes, not which bytes the scan read, so recording a
+    mark refuses no resume written before the field existed.
+
+    The other additive fields do not set a precedent here.
+    `within_group` and `imatrix` describe what the scan did, so a
+    default states a setting. This field describes who established a
+    value, and provenance is the one thing a reader must never
+    infer.
+
+    A `re_derived` digest says *these are the bytes the pinned
+    revision carries*. It does not say *these are the bytes that run
+    measured*. That is an assumption being recorded, not a
+    measurement being recovered. The mark exists so a back-fill
+    states which of the two it did.
 
     !!! warning "NOT RECORDED is the honest record"
 
@@ -209,6 +271,33 @@ below remain, the sub-4-bit pricing claims do not.
   backfill refuses one rather than writing a size this field rejects
   (maintainer ruling 2026-08-19 on #335). The operator learns at the
   backfill instead of at the next read.
+- **`groups[].row_width`** — elements per row of the group's
+  tensors, as the scan measured them
+  ([issue #558](https://github.com/Alberto-Codes/vramfit/issues/558)).
+  The 256 super-block decision routes a group by this width
+  ([ADR-0028](../adr/0028-expert-stack-type-table.md), issue #515),
+  so a map that records it plans under llama.cpp with no checkpoint
+  beside it — the capability ADR-0028's 2026-09-05 amendment recorded
+  as lost. The field covers the groups that decision reaches: a
+  layer-class or routed-expert-stack group. A whole-layer group holds
+  classes of several widths, takes the ADR-0012 k-quant table, and
+  records none. The loader requires a positive integer and accepts an
+  absent field as no width. It refuses the field on a group the
+  decision does not reach, and the refusal states the reason that
+  group earns. A whole-layer group takes the k-quant table, which no
+  width routes. A group of a class the quantizer refuses holds at
+  the F16 passthrough and takes neither type table (#409). It also
+  refuses the field on a document below version 5. No producer at
+  those versions wrote it, so such a width is unmeasured.
+  `vramfit plan` folds these under a `--checkpoint` read, which wins
+  where both state a width, because `pack` quantizes that
+  checkpoint. The [CLI reference](cli.md) carries that fold, its
+  disagreement warning, and the refusal a width neither source
+  states earns. New scans record the field. Older maps carry no
+  width, so they still need `--checkpoint` under llama.cpp at
+  `stack` or `tensor` granularity. Issue #558's second half stays
+  open: no record states whether such a map must refuse, keep this
+  fallback, or take a re-scan.
 - **`imatrix_counts`** — the group's pooled imatrix count
   distribution: `{"min": ..., "median": ..., "max": ...}`
   ([ADR-0026](../adr/0026-moe-expert-pricing.md) decision 4, scoped

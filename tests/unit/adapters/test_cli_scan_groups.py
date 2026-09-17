@@ -58,6 +58,7 @@ def live_fingerprint(tmp_path) -> str:
             calibration_tokens=64,
             calibration_sha256=digest,
             calibration_bytes=n_bytes,
+            calibration_provenance="measured",
             precisions=(8, 4),
             group_by="layer",
             started_at="2026-08-18T00:00:00Z",

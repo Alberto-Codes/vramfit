@@ -53,7 +53,7 @@ change.
     refuses a name the map does not resolve. Not "dataset entry".
 
 **Provenance mark**
-:   The label a corpus reference carries wherever it records a digest,
+:   The label a record carries wherever it records a digest,
     one of three values. `measured`: the process that produced the
     numbers hashed those bytes as it read them. `recovered`: the run's
     own file survived, and someone hashed it afterwards.
@@ -67,10 +67,19 @@ change.
     A `re_derived` digest says *these are the bytes the pinned
     revision carries*. It does not say *these are the bytes that run
     measured*. The reader refuses a digest that carries no mark.
-    Inside a corpus reference the field that carries the mark is
-    spelled `provenance`. The bare word keeps its general sense
-    elsewhere in this project, where it names the whole class of run
-    records.
+    Two artifacts carry the mark, and one vocabulary serves both. A
+    **corpus reference** spells the field `provenance`, with `file`
+    and `revision` as its referents. A **sensitivity map** spells it
+    `scan.calibration_provenance`, with `scan.calibration` as the
+    `recovered` referent — every map carries that path — and
+    `scan.calibration_revision` as the `re_derived` one. A map at
+    schema 4 carries a digest and no mark, and its reader reads that
+    absent mark as `measured`, because `vramfit scan` is the only
+    producer of that digest. A map below schema 4 carries no digest
+    at all, and its reader refuses every calibration content field
+    as unmeasured. The bare word keeps its general
+    sense elsewhere in this project, where it names the whole class
+    of run records.
 
 **Analysis artifact**
 :   The JSON record of a derivation across two or more evaluated
@@ -456,8 +465,9 @@ change.
 **Content identity**
 :   The pair that names a file by its bytes instead of its path: the
     SHA-256 hex digest and the byte count. `vramfit scan` records the
-    calibration file's content identity in the sensitivity map and
-    folds it into the **Fingerprint**. It pins the corpus, not the
+    calibration file's content identity in the sensitivity map, marks
+    it `measured` with a **provenance mark**, and
+    folds the pair into the **Fingerprint**. It pins the corpus, not the
     tokenizer. A digest match does not promise the same
     `calibration_tokens` count. An evals sidecar's **corpus
     reference** can carry one too, marked by its **provenance mark**.
@@ -928,6 +938,10 @@ change.
     width, and the **type mapping** routes the group by it. The
     checkpoint's safetensors headers state the width, and
     `TensorSize.rows` carries it (ADR-0029 decision 5, issue #515).
+    A **sensitivity map** records it too, per group, since schema 5
+    (issue #558), so a published map routes without the checkpoint.
+    Where both state a width the checkpoint's wins, because `pack`
+    quantizes that checkpoint.
     The scan adapter's block-straddle refusals still spell the same
     quantity "row length" (ADR-0018). The two spellings need one
     term.
