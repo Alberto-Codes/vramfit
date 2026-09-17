@@ -20,6 +20,16 @@
   The Consequences bullet on the end-to-end pack/load test binds the
   implementing task, not this record's status. The decision and
   Consequences bodies below keep their original wording.
+- **Note (2026-09-16, attribution correction):** Decision 3's label rule
+  stands. A pre-encoded tensor still counts as assisted because the
+  matrix weights the encoder's candidate selection. Its stated reason
+  credits the matrix with the gain, but the matrix contributes about
+  2.5 % on imatrix-weighted reconstruction error in weight space.
+  Do not publish the assisted-share accounting or any nominal-2 cell
+  price drawn from it as a matrix-delivered gain. The [resolved open
+  question](#open-questions) and
+  `data/vramfit-separate-search-from-matrix-gain/report.md` give the
+  measured split.
 - **Origin:** [Issue #597](https://github.com/Alberto-Codes/vramfit/issues/597),
   a `chart:discuss` child of [chart #158](https://github.com/Alberto-Codes/vramfit/issues/158).
 - **Authority:** Reimplementation was authorized on 2026-09-05, with
@@ -374,7 +384,7 @@ The third cannot deliver the measured benefit or matching provenance.
   changed the encoder and kept the shipped recipe's allocation, so no
   measurement on record says whether cheaper nominal-2 cells move the
   solver's choices. Decision 4 requires the new map before anyone answers.
-- No measurement separates the search gain from the matrix gain. The
+- ~~No measurement separates the search gain from the matrix gain. The
   `c2-assisted-q2_0` arm ran the patched encoder
   ([evidence](evidence/0032/README.md#rebuy-evidence)), and that patch
   also runs the Lloyd search unassisted at weight 1.0. The 0.204318 to
@@ -384,4 +394,18 @@ The third cannot deliver the measured benefit or matching provenance.
   [issue #601](https://github.com/Alberto-Codes/vramfit/issues/601)
   builds is where that measurement belongs. Until the separation exists,
   decision 3's assisted-share accounting and any nominal-2 cell price
-  drawn from it are not publishable numbers.
+  drawn from it are not publishable numbers.~~ Resolved 2026-09-16 by
+  `data/vramfit-separate-search-from-matrix-gain/report.md`. On twelve
+  real shipped-Q2_0 expert tensors from two stacks, Lloyd scale search
+  accounts for 93.5 % to 104 % of the encoder gain across three metrics.
+  The matrix accounts for 0 % to 6.5 %. Under imatrix-weighted
+  reconstruction error in weight space, search accounts for 97.5 % and
+  the matrix for 2.5 %. This is [reconstruction error](../reference/glossary.md#reconstruction-error),
+  not KLD or measured damage. [Issue #302](https://github.com/Alberto-Codes/vramfit/issues/302)
+  measured weight-space error and damage ordering apart on this target.
+  The report covers twelve tensors from two stacks, not eleven whole
+  stacks. It loaded no model and generated no tokens. It neither
+  reproduces either 0.204318 or 0.071428 and does not claim to. It measures vramfit's
+  reimplementation, not the reference patch. Decision 3's assisted
+  label stands, but its accounting and any nominal-2 cell price drawn
+  from it must not be published as a matrix-delivered gain.
