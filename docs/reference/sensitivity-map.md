@@ -278,11 +278,14 @@ below remain, the sub-4-bit pricing claims do not.
   decision does not reach, and the refusal states the reason that
   group earns. A whole-layer group takes the k-quant table, which no
   width routes. A group of a class the quantizer refuses holds at
-  the F16 passthrough and takes neither type table (#409).
+  the F16 passthrough and takes neither type table (#409). It also
+  refuses the field on a document below version 5. No producer at
+  those versions wrote it, so such a width is unmeasured.
   `vramfit plan` folds these under a
   `--checkpoint` read, which wins where both state a width, because
-  `pack` quantizes that checkpoint. A disagreement draws a warning
-  naming the group and both numbers. Where neither source states a
+  `pack` quantizes that checkpoint. A disagreement draws one
+  warning. It counts the contested groups, names the first, and
+  states both of that group's numbers. Where neither source states a
   width, the plan refuses rather than taking the k-quant table by
   omission. New scans record it. Older maps carry no width, so they
   still need `--checkpoint` under llama.cpp at `stack` or `tensor`

@@ -26,8 +26,8 @@ DIGEST = "a" * 64
 
 class TestTheVocabulary:
     def test_the_three_marks_are_the_whole_vocabulary(self) -> None:
-        # A fourth value would be a second vocabulary. The sidecar's
-        # CORPUS_PROVENANCE is this tuple, not a copy of it.
+        # A fourth value would be a second vocabulary. The sidecar
+        # reads this tuple, not a copy of it.
         assert PROVENANCE_MARKS == (MEASURED, RECOVERED, RE_DERIVED)
 
 

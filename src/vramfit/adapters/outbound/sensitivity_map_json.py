@@ -102,6 +102,11 @@ MAP_SCHEMA_VERSION: Final[int] = 5
 # which tells a reader the producer could have recorded both.
 MAP_SCHEMA_ALSO_READS: Final[tuple[int, ...]] = (2, 3, 4)
 
+# The first map schema whose producer records a group's measured row
+# width. Below it the field did not exist, so a present width is a
+# value no scan measured and the reader refuses it (issue #558).
+WIDTH_RECORDED_FROM: Final[int] = 5
+
 # Every key the reader carries, per object the schema fixes (#261).
 # A key outside these sets warns and loads (ADR-0013, the 2026-08-16
 # amendment). ``sensitivity`` and ``tensor_bytes`` are absent here on
@@ -142,7 +147,9 @@ def map_from_dict(data: object) -> SensitivityMap:
             keys not matching ``scan.precisions``, an empty or
             non-string ``derived`` note, a calibration digest whose
             provenance mark is missing or does not name its referent,
-            a non-positive ``row_width``, and so on). A field the
+            a ``row_width`` that is not positive or that the
+            document's version or the group's shape refuses, and so
+            on). A field the
             reader does not know reports and loads instead (#261).
 
     Examples:
@@ -169,7 +176,9 @@ def map_from_dict(data: object) -> SensitivityMap:
     groups: list[LayerGroup] = []
     seen: set[str] = set()
     for i, raw in enumerate(groups_raw):
-        group = _parse_layer_group(raw, f"$.groups[{i}]", expected)
+        group = _parse_layer_group(
+            raw, f"$.groups[{i}]", expected, schema_version
+        )
         _require(
             group.name not in seen,
             f"$.groups[{i}].name",
@@ -361,7 +370,7 @@ def _parse_sensitivity(obj: dict[str, Any], path: str) -> dict[int, float]:
 
 
 def _parse_layer_group(
-    raw: Any, path: str, expected_precisions: set[int]
+    raw: Any, path: str, expected_precisions: set[int], schema_version: int
 ) -> LayerGroup:
     """Validate one entry of a sensitivity map's ``groups`` list.
 
@@ -370,6 +379,9 @@ def _parse_layer_group(
         path: JSON path of this group.
         expected_precisions: The scan's candidate precisions; the group's
             sensitivity keys must equal this set.
+        schema_version: The version the document declares, which
+            `map_from_dict` already validated. `_parse_row_width`
+            reads it.
 
     Returns:
         The validated group.
@@ -383,9 +395,11 @@ def _parse_layer_group(
             unknown, and an explicit null is rejected: the writer
             never emits one), or a present ``imatrix_counts`` fails
             `_parse_imatrix_counts` (ADR-0026 decision 4), or a
-            present ``row_width`` is not a positive integer (issue
-            #558 — absent means the map records no width). A field
-            the group does not carry reports and loads (#261).
+            present ``row_width`` is not a positive integer, names a
+            group the 256 super-block decision does not reach, or
+            appears below `WIDTH_RECORDED_FROM` (issue #558 — absent
+            means the map records no width). A field the group does
+            not carry reports and loads (#261).
     """
     obj = _get_dict(raw, path)
     _warn_unknown_fields(obj, path, GROUP_FIELDS)
@@ -437,11 +451,13 @@ def _parse_layer_group(
         sensitivity=sensitivity,
         tensor_bytes=tensor_bytes,
         imatrix_counts=_parse_imatrix_counts(obj, path),
-        row_width=_parse_row_width(obj, path, name),
+        row_width=_parse_row_width(obj, path, name, schema_version),
     )
 
 
-def _parse_row_width(obj: dict[str, Any], path: str, name: str) -> int | None:
+def _parse_row_width(
+    obj: dict[str, Any], path: str, name: str, schema_version: int
+) -> int | None:
     """Validate one group's optional measured row width (issue #558).
 
     Optional and additive: the writer omits the field when the map
@@ -449,6 +465,14 @@ def _parse_row_width(obj: dict[str, Any], path: str, name: str) -> int | None:
     explicit null is a hand-edit, rejected rather than normalized.
     A non-positive width tiles no block, so it would route the 256
     super-block decision off a number no tensor has.
+
+    A document below `WIDTH_RECORDED_FROM` refuses the field
+    outright. No producer at those versions wrote it, so its value
+    reached the document by hand and no scan measured it. The
+    published schema-2 maps are the case: a width hand-added to each
+    routed group there would route the ADR-0028 expert-stack table
+    with no checkpoint to disagree, so nothing else in the plan
+    could catch it.
 
     The decision reaches a layer-class or routed-expert-stack group
     only, and two other shapes each refuse a width for their own
@@ -465,18 +489,27 @@ def _parse_row_width(obj: dict[str, Any], path: str, name: str) -> int | None:
         path: JSON path of this group.
         name: The group's name, which decides whether the 256
             super-block decision reaches it.
+        schema_version: The version the document declares.
 
     Returns:
         The measured width, or None when the field is absent.
 
     Raises:
         ArtifactError: If a present field is not a positive integer,
-            or the group is one the super-block decision does not
-            reach. The message states the reason that group earns.
+            the document declares a version below
+            `WIDTH_RECORDED_FROM`, or the group is one the
+            super-block decision does not reach. The message states
+            the reason that document or group earns.
     """
     if "row_width" not in obj:
         return None
     field_path = f"{path}.row_width"
+    _require(
+        schema_version >= WIDTH_RECORDED_FROM,
+        field_path,
+        f"no schema-{schema_version} scan recorded a group row width, "
+        f"so this value is unmeasured (issue #558)",
+    )
     _require(
         unquantizable_class(name) is None,
         field_path,

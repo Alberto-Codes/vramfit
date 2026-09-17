@@ -30,7 +30,10 @@ from vramfit.adapters.outbound.gguf.types import (
     tensor_overrides,
 )
 from vramfit.adapters.outbound.recipe_json import load_recipe, save_recipe
-from vramfit.adapters.outbound.sensitivity_map_json import map_from_dict
+from vramfit.adapters.outbound.sensitivity_map_json import (
+    MAP_SCHEMA_VERSION,
+    map_from_dict,
+)
 from vramfit.domain.model import Assignment, PlanMeta, Recipe, SensitivityMap
 from vramfit.domain.runtime import (
     EFFECTIVE_BITS,
@@ -690,11 +693,14 @@ def map_with_widths(
         group_by: The granularity the map recorded.
 
     Returns:
-        A raw map dict accepted by `map_from_dict`.
+        A raw map dict accepted by `map_from_dict`. It declares the
+        version whose producer records the field, because no earlier
+        producer emits this shape and the reader refuses it.
     """
     raw = make_map(
         [(name, bytes_fp16, CURVE) for name in groups], precisions=PRECISIONS
     )
+    raw["vramfit_schema"] = MAP_SCHEMA_VERSION
     raw["scan"]["group_by"] = group_by
     for entry in raw["groups"]:
         entry["row_width"] = groups[entry["name"]]
@@ -843,19 +849,18 @@ class TestAMapPlansOnItsOwnWidths:
 class TestTheMapAndTheCheckpointDisagree:
     """One of the two describes another checkpoint (#558)."""
 
-    def plan_against(
+    def plan_widths(
         self,
         tmp_path,
-        map_width: int,
-        checkpoint_width: int,
+        widths: dict[str, tuple[int, int]],
         runtime: str | None = None,
     ):
-        raw = map_with_widths({QWEN_UP: map_width})
+        raw = map_with_widths({name: pair[0] for name, pair in widths.items()})
         map_path = tmp_path / "map.json"
         map_path.write_text(json.dumps(raw))
         model_dir = write_checkpoint(
             tmp_path / "ckpt",
-            {"model.layers.0.mlp.experts.up_proj.weight": [4, checkpoint_width]},
+            {f"{name}.weight": [4, pair[1]] for name, pair in widths.items()},
         )
         argv = [
             "plan",
@@ -871,6 +876,24 @@ class TestTheMapAndTheCheckpointDisagree:
             argv += ["--runtime", runtime]
         return runner.invoke(app, argv)
 
+    def plan_against(
+        self,
+        tmp_path,
+        map_width: int,
+        checkpoint_width: int,
+        runtime: str | None = None,
+    ):
+        return self.plan_widths(
+            tmp_path, {QWEN_UP: (map_width, checkpoint_width)}, runtime
+        )
+
+    def contest_lines(self, result) -> list[str]:
+        return [
+            line
+            for line in result.stderr.splitlines()
+            if "different row widths" in line
+        ]
+
     def test_a_contested_width_draws_a_warning_naming_both(self, tmp_path) -> None:
         result = self.plan_against(tmp_path, map_width=2048, checkpoint_width=2688)
 
@@ -878,14 +901,31 @@ class TestTheMapAndTheCheckpointDisagree:
         # Pinned to stderr: the warning is emitted with `err=True`, and
         # `result.output` mixes both streams, so it would pass even if
         # the warning moved off the human channel.
-        assert "records a row width of 2048" in result.stderr
-        assert "states 2688" in result.stderr
+        assert f'for group "{QWEN_UP}"' in result.stderr
+        assert "the map records 2048 elements" in result.stderr
+        assert "this checkpoint states 2688" in result.stderr
 
     def test_agreeing_widths_draw_no_warning(self, tmp_path) -> None:
         result = self.plan_against(tmp_path, map_width=2688, checkpoint_width=2688)
 
         assert result.exit_code == 0
-        assert "records a row width" not in result.stderr
+        assert self.contest_lines(result) == []
+
+    def test_many_contested_groups_draw_one_line(self, tmp_path) -> None:
+        # A stack map against a same-family checkpoint of another size
+        # contests every routed group. A line each would bury the
+        # merged-projection, held-class, and missing-group warnings
+        # this module prints after it.
+        result = self.plan_widths(
+            tmp_path, {QWEN_UP: (2048, 2688), QWEN_DOWN: (768, 2688)}
+        )
+
+        assert result.exit_code == 0
+        lines = self.contest_lines(result)
+        assert len(lines) == 1
+        assert f'2 groups, the first being "{QWEN_DOWN}"' in lines[0]
+        assert "the map records 768 elements" in lines[0]
+        assert "this checkpoint states 2688" in lines[0]
 
     def test_the_warning_states_precedence_and_not_a_price(self, tmp_path) -> None:
         # vLLM has no effective-bits table, so the solver prices every
@@ -897,8 +937,8 @@ class TestTheMapAndTheCheckpointDisagree:
         )
 
         assert result.exit_code == 0
-        assert "records a row width of 2048" in result.stderr
-        assert "states 2688" in result.stderr
+        assert "the map records 2048 elements" in result.stderr
+        assert "this checkpoint states 2688" in result.stderr
         assert "takes precedence" in result.stderr
         assert "is this the checkpoint the scan measured?" in result.stderr
         assert "prices the checkpoint's width" not in result.stderr

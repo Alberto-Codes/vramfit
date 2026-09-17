@@ -44,7 +44,6 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 
 from vramfit.domain.provenance import (
-    PROVENANCE_MARKS,
     check_mark_pairs_with_digest,
     check_referent,
 )
@@ -52,12 +51,6 @@ from vramfit.domain.provenance import (
 _HEX_DIGITS = frozenset("0123456789abcdef")
 _SHA256_HEX_LEN = 64
 _PERCENT_MAX = 100
-
-# The three values `CorpusReference.provenance` accepts, under the
-# name the sidecar's schema and the glossary already use.
-# [vramfit.domain.provenance][] owns the vocabulary, so the map and
-# the sidecar mark a digest with one set of values (#589).
-CORPUS_PROVENANCE = PROVENANCE_MARKS
 
 # Every field of a corpus reference, in declaration order. An entry
 # that records none of them is not a reference.
@@ -161,7 +154,8 @@ class CorpusReference:
             identity. Pairs with `size_bytes`.
         size_bytes (int | None): Size of those bytes, or None when the
             entry records no content identity. Pairs with `sha256`.
-        provenance (str | None): One of `CORPUS_PROVENANCE`. Required
+        provenance (str | None): One of
+            [vramfit.domain.provenance.PROVENANCE_MARKS][]. Required
             wherever `sha256` is present, and refused where it is
             absent. `recovered` requires `file`, and `re_derived`
             requires `revision`.
@@ -219,7 +213,8 @@ class CorpusReference:
             ValueError: If the digest and the byte count do not pair,
                 the digest is malformed, the byte count is not
                 positive, the digest and its label do not pair, or
-                the label is not one of `CORPUS_PROVENANCE`.
+                the label is not one of
+                [vramfit.domain.provenance.PROVENANCE_MARKS][].
         """
         if (self.sha256 is None) != (self.size_bytes is None):
             raise ValueError(

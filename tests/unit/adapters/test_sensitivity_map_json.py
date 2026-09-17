@@ -8,6 +8,7 @@ import pytest
 from tests.unit.conftest import make_map
 from vramfit.adapters.outbound.json_common import ArtifactError
 from vramfit.adapters.outbound.sensitivity_map_json import (
+    MAP_SCHEMA_VERSION,
     load_sensitivity_map,
     map_from_dict,
     map_to_dict,
@@ -880,8 +881,11 @@ class TestGroupRowWidth:
     # reaches and therefore the only shape that carries a width.
     ROUTED = "model.layers.0.mixer.in_proj"
 
-    def map_with_width(self, width, name: str = ROUTED) -> dict:
+    def map_with_width(
+        self, width, name: str = ROUTED, schema: int = MAP_SCHEMA_VERSION
+    ) -> dict:
         raw = make_map([(name, 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
+        raw["vramfit_schema"] = schema
         raw["groups"][0]["row_width"] = width
         return raw
 
@@ -890,6 +894,18 @@ class TestGroupRowWidth:
 
         assert map_.groups[0].row_width == 2688
         assert map_from_dict(map_to_dict(map_)) == map_
+
+    @pytest.mark.parametrize("schema", [2, 3, 4])
+    def test_a_width_below_schema_5_is_refused(self, schema: int) -> None:
+        # No producer at those versions wrote the field, so a width
+        # there was hand-added and no scan measured it. The published
+        # maps ship schema 2, and a width added to each routed group
+        # would route the ADR-0028 expert-stack table with no
+        # checkpoint to disagree.
+        with pytest.raises(ArtifactError, match="unmeasured") as caught:
+            map_from_dict(self.map_with_width(2688, schema=schema))
+
+        assert caught.value.json_path == "$.groups[0].row_width"
 
     def test_an_absent_width_reads_as_none(self) -> None:
         raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])

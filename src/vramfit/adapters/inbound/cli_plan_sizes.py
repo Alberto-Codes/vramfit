@@ -197,9 +197,14 @@ def discovered_groups(
             f"names the checkpoint's projections (#576)"
         )
 
-    for group, from_map, from_checkpoint in row_width_conflicts(
-        map_row_widths(map_), rows
-    ):
+    contested = row_width_conflicts(map_row_widths(map_), rows)
+    if contested:
+        # One line, in the count-and-first-offender shape the other
+        # coverage warnings here use. A stack map against a
+        # same-family checkpoint of another size contests every
+        # routed group, and a line each would bury the warnings that
+        # follow.
+        #
         # State the precedence rule, never its price. Precedence
         # holds under every runtime. Its cost does not: a runtime
         # with no effective-bits table prices every group at nominal
@@ -207,9 +212,16 @@ def discovered_groups(
         # exists to stop an artifact asserting what nobody
         # established, and output that states a false cause is the
         # same defect in other clothes.
+        group, from_map, from_checkpoint = contested[0]
+        subject = (
+            f'group "{group}"'
+            if len(contested) == 1
+            else f'{len(contested)} groups, the first being "{group}"'
+        )
         typer.echo(
-            f'warning: {map_path}: group "{group}" records a row width of '
-            f"{from_map} elements, and this checkpoint states "
+            f"warning: {map_path}: the map and this checkpoint state "
+            f"different row widths for {subject}: the map records "
+            f"{from_map} elements and this checkpoint states "
             f"{from_checkpoint}. The checkpoint's width takes precedence "
             f"over the map's — is this the checkpoint the scan measured? "
             f"(issue #558)",
