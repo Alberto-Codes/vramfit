@@ -4,102 +4,135 @@ Status: draft — companion to `README.md` (issue #404).
 
 ADR-0025 binds the rule: a card number without a sidecar entry is a
 defect. This ledger maps every number on the card to its source
-record on the reference box and to its sidecar destination. The run
-root is `~/quantfit-runs/nemotron-30b-a3b/`, and every listed path
-is relative to that root. The upload staging area is
-`publication-upload/` under the run root.
+record and to its sidecar destination.
+
+**This revision's run root is not the reference box.** Every tier-1
+and tier-2 number on the card was measured on one rented H100 pod on
+2026-09-17, and the artifacts were uploaded from that same pod
+before it was deleted. The records live under
+`data/vramfit-30b-v2-publish/artifacts/` in the operator's run
+archive, and the paths below are relative to that directory.
+
+The serve rows were measured on **two** RTX 4090s against the file
+downloaded back from the Hub and hashed first: the CUDA row on a
+separately rented card, and the Vulkan row on the maintainer's own
+card under a one-time authorisation, because no rented pod available
+to this run could initialise a Vulkan driver. Nothing was resident on
+that card when the measurement began and nothing was evicted.
+
+That ordering is the point of the revision. The previous revision's
+card cited figures measured on a file that was not the uploaded bytes
+(issue #598). Measuring and uploading in one sequence removes that
+class of defect rather than patching the instance.
 
 ## Candidate numbers (sidecar-bound)
 
 | Card numbers | Source record | Sidecar destination |
 |---|---|---|
-| PPL 7.9177 (7.917699 ± 0.054005) | `falsifier-q0-imx/eval-logs/eval-falsifier-q0-imx.log` | candidate sidecar, tier 1 |
-| Mean KLD 0.204318, same top 83.13 % (83.127 ± 0.096) | same log | candidate sidecar, tier 2 |
-| Tier-3 five tasks with stderr | `eval/tier3/candidate/<task>.json` | candidate sidecar, tier 3 |
-| File size 15.76 GiB (16,922,476,480 B) | `publication-upload/pack-upload.log`, `stat`, tier-3 artifact block | candidate sidecar, artifact block |
-| SHA-256 `85ed06fa…c062` | `sha256sum` on the staged pack, `falsifier-q0-imx/falsifier-q0-imx.gguf.sha256`, #400 | candidate sidecar, artifact block |
-| Toolchain (lm-eval 0.4.12, llama-cpp-python 0.3.34, b10362 lane) | tier-3 JSON toolchain blocks | candidate sidecar, toolchain block |
+| PPL 7.0689 (7.068906 ± 0.047531) | `results.txt`, block `v2-puballoc-q0imx2`; `logs/eval-v2-puballoc-q0imx2.log` | candidate sidecar, tier 1 |
+| Mean KLD 0.071403, same top 89.418 % | same block and log | candidate sidecar, tier 2 |
+| PPL ratio 1.036624 | same block, `Mean PPL(Q)/PPL(base)` | card prose (derived, printed by the instrument) |
+| File size 16,922,476,480 B, 15.76 GiB | `logs/pack-v2.log`, `stat` on the packed file, `SHA256SUMS` | candidate sidecar, artifact block |
+| SHA-256 `187858b0…cd75` | `SHA256SUMS`, re-read from the Hub in `logs/upload-verify.txt` | candidate sidecar, artifact block |
+| Corpus digest `173c87a5…dd08`, 1,290,590 B | `sha256sum` on the staged corpus, pod and box agreeing | candidate sidecar, `corpora` |
+| Toolchain: llama.cpp b10362 `4801e3c56`, CUDA | `logs/versions.txt`, `logs/toolchain-sha256.txt` | candidate sidecar, toolchain block |
+
+Tier 3 has no row because **tier 3 did not run for this revision**.
+The card's Evaluation section states that, with the cost that kept it
+out. No tier-3 number is carried over from the previous revision.
 
 The f16 reference row (PPL 6.8192, 63,181,504,640 B, 16.007
-bits/param) traces to the same eval log's `Mean PPL(base)` line and
-the nineteenth data point. The reference is not a shipped artifact
-and carries no sidecar.
+bits/param) traces to the same eval logs' `Mean PPL(base)` line. The
+reference is not a shipped artifact and carries no sidecar.
 
 ## Comparator numbers (render-time join, the #65 ruling)
 
+Re-measured in this run's own sequence rather than joined from an
+older lane, so the card's three rows share one instrument and one set
+of reference logits.
+
 | Card numbers | Source record | Sidecar destination |
 |---|---|---|
-| PPL 9.0075 (9.007521 ± 0.063939) | `campaign-b10362/eval-logs/eval-arm3-published-IQ2_XXS.log` | baselines sidecar, tier 1 |
-| Mean KLD 0.370257, same top 76.09 % (76.086 ± 0.110) | same log | baselines sidecar, tier 2 |
-| Tier-3 comparator column | `eval/tier3/iq2xxs/<task>.json` | baselines sidecar, tier 3 |
-| 17.54 GiB (18,838,022,112 B), SHA-256 `3d16c415…f1bb` | local `stat` and `sha256sum` on #400, upstream LFS hash | baselines sidecar, artifact block |
+| PPL 9.0075, ratio 1.320914 | `results.txt`, block `ctl-iq2xxs` | baselines sidecar, tier 1 |
+| Mean KLD 0.370257, same top 76.086 % | same block | baselines sidecar, tier 2 |
+| 17.54 GiB (18,838,022,112 B), SHA-256 `3d16c415…f1bb` | `results.txt` block, `sha256sum` on the downloaded file | baselines sidecar, artifact block |
 
-## Recipe and serve numbers (not sidecar-bound — trace to shipped artifacts and records)
+The comparator's previously published tier-3 column is not reproduced
+on this card, because this card publishes no tier-3 table.
+
+## The superseded revision's row
+
+| Card numbers | Source record | Ships as |
+|---|---|---|
+| PPL 7.9174, ratio 1.161055, mean KLD 0.204322, same top 83.146 % | `results.txt`, block `ctl-v1-published`; the file was downloaded from this repository and hashed before evaluation | card prose, the "revision this replaces" row |
+
+This row is also the run's **control**. It re-measures the exact bytes
+this repository published previously, on the new instrument, and it
+reproduced the recorded 0.204322 to every printed digit. A
+measurement is not readable until its control reproduces the
+published frame, so this row is what licenses the other two.
+
+## Recipe and serve numbers (not sidecar-bound)
 
 | Card numbers | Source record | Ships as |
 |---|---|---|
 | Budget table: 17,179,869,184 / 240,518,169 / 16,939,351,015 B | `recipe.json` `plan` block, the #284 ruling (228.99 MiB) | recipe, in this repo |
-| Predicted pack size 16,946,865,009 B, 7.17 MiB over budget, 32.19 MiB over-reservation | issue #409 tables re-priced at 32 bits under the recipe's 0.002 overhead (2026-09-04); the published `recipe.json` still reads 16,929,873,667 B | card prose (re-uploaded 2026-09-05), pending the re-pack and the recipe re-upload |
-| 46 passthrough rows at F32: 98,501 B per `mixer.conv1d`, 1,379,009 B per `mixer.gate` | the same re-pricing; the published recipe reads 49,251 and 689,505 at F16 | card allocation table (re-uploaded 2026-09-05), pending the recipe re-upload |
-| Margin 16.09 MiB | `publication-upload/pack-upload.log` | pack log line, run log |
-| 210-group allocation table, 11/35/118/46 split, nine pins, 0.002 overhead, 11-step trace | recipe `assignments` and `plan` | recipe |
-| Serve numbers (16,383 MiB visible, 53/53, 15,774.00, 357.00, 96.00, 190.47, 97.41, 16,157.88 MiB) | `falsifier-q0-imx/` serve logs (#389) | card prose, nineteenth data point |
+| Margin 16.09 MiB under the weight budget | `logs/pack-v2.log`, run log `size_checked` event | pack log, run log |
+| No predicted size printed | the recipe's `plan` block is hand-derived and its `solver` field says so; the card states the bound rather than printing a stale prediction | card prose, fit16gib section |
+| 210-group allocation table, 11/35/118/46 split, nine pins, 0.002 overhead | recipe `assignments` | recipe |
+| Pre-encoder cost: whole pack stage 8 m 35 s, about 50 GB scratch | `logs/pack-v2.log`, the pack run log's `model_packed` event (`seconds` 515.183) | card prose, recipe section |
+| Encoder peak resident set 16.22 GB, NOT re-measured here | the separately instrumented pack under issue #607 | card prose, labelled on the card as not re-measured |
+| Serve rows: Vulkan and CUDA rows: 15,774.00 / 15,774.05 MiB model buffer, 16,002.99 / 16,002 MiB device buffers, Vulkan fits under a 16,380 MiB cap and CUDA does not | `serve-vulkan-local/` (Vulkan, prebuilt b10362 ubuntu-vulkan-x64, the captain's own RTX 4090 under his explicit one-time authorisation) and `serve-4090/` (CUDA, rented RTX 4090); both served the file downloaded back from the Hub after a digest check | card prose, fit16gib section |
 | `n_seq_max` 8 bound | #284 caveat 3 and ruling, chart #158 Notes | card prose |
-| Imatrix SHA-256 `fbd36e4f…aac5`, 55,314,688 B | `sha256sum` 2026-08-22, upstream LFS etag at the pinned revision | linked, never carried (see below) |
-| Five publishers' repositories checked, comparator smallest of them | chart #158 Notes: four on #265 (2026-08-15), a fifth on #276 (2026-08-16), ruled the bar on #393 | card prose, comparator section |
-| Eight other full-model GGUFs below 15.76 GiB, Hub query 2026-08-22 | issue #415 evidence table (correction, 2026-08-31) | card prose, comparator section and fit16gib section |
-| `general.file_type` Q4_0 at 74.3 % of bytes | issue #414 composition table, read from the published file at `0c72c8a` on 2026-08-22, ruled 2026-09-04 (ADR-0012 decision 3 amendment) | card prose, recipe section; the packed file's metadata after re-stamp |
-| Usage section: Ollama type table (41 on `main`, 39 in 0.18.0), 11 type-42 tensors, reasoning-format rendering, token-length figures (20 trivial prompts at 285 median and 1,207 maximum, one-prompt "why is the sky blue" reply at 2,631), GSM8K budget rows (923/463/140 tokens, 96.7/98.3/90.0 %, 2/0/0 truncated, 3.3×), GPQA Diamond (5,819 mean, 57 % over 8,000), KV pool (16,384 cells, 426 log lines at 4 concurrency, 19,209 → 19,340 MiB) | issue #410 body and comments, measured 2026-08-22 on llama.cpp b10573, RTX 4090, Open WebUI 0.11.0 | card prose, Usage section |
+| Imatrix SHA-256 `fbd36e4f…aac5`, 55,314,688 B | `sha256sum` on the staged matrix, matching the pinned revision's recorded value | linked, never carried (see below) |
+| Five publishers' repositories checked, comparator smallest of them | chart #158 Notes, ruled the bar on #393 | card prose, comparator section |
+| Eight other full-model GGUFs below 15.76 GiB, Hub query 2026-08-22 | issue #415 evidence table | card prose |
+| `general.file_type` Q4_0 at 74.3 % of bytes | issue #414 composition table, ruled 2026-09-04 (ADR-0012 decision 3 amendment); `logs/pack-v2.log` `file_type` field | card prose, recipe section |
+| Usage section reasoning and slot figures | issue #410 body and comments, measured 2026-08-22 on b10573 against the PREVIOUS revision's bytes | card prose, Usage section, labelled as such on the card |
 
 ## The upload set (model repo)
 
-Every file stages in `publication-upload/` and uploads under the
-name below. `README.md` uploads byte-verbatim from
-`publication/nemotron-30b-a3b-fit16gib/README.md` — the published
-card and the source must match.
+Every file staged in `upload/` on the pod and uploaded under the name
+below, in one `hf upload` of that directory. `README.md` uploads
+byte-verbatim from
+`publication/nemotron-30b-a3b-fit16gib/README.md` through
+`scripts/publish_card.py`, which reads the published copy back and
+compares — the published card and this source must match.
 
 | File | SHA-256 | Bytes |
 |---|---|---|
-| `NVIDIA-Nemotron-3.5-Lightning-30B-A3B-fit16gib.gguf` | `85ed06fac2f879ee83f83264f3b7cad9bde4947983976205ea8c2c5d6291c062` | 16,922,476,480 |
-| `recipe.json` | `634b788ceb0def60bd837e9be28bd82452b569696a47044317c927d1cdb174b3` | 31,433 |
-| `NVIDIA-Nemotron-3.5-Lightning-30B-A3B-fit16gib.runlog.jsonl` | `f3115a4df06cfeb3e005d445b1c7df17397a37d6419ac4c122dd402dbed4b7e4` | 1,971 |
-| `NVIDIA-Nemotron-3.5-Lightning-30B-A3B-fit16gib.gguf.evals.json` | `bbaf8e76888f0e521896b91de1f39c359e8bc6f376d8186c4ca1f02179efdaf5` | 2,365 |
-| `baselines/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-IQ2_XXS.gguf.evals.json` | `f928e8d0ef05bfe6ea8298e06b2a48f812acfcd6c03efb432f2c18f137245912` | 2,366 |
-| `LICENSE` | `d7c8a9e5d1896d0a9588319cc7b1433e64645ad6d9e55632c30b78d8c038c23b` | 2,693 |
-| `README.md` | `6ae875df712f1f4a35be2cdc6cab5d2b40ecdd5dfa4cbc72d30d07452eafb3b7` | 35,974 |
+| `NVIDIA-Nemotron-3.5-Lightning-30B-A3B-fit16gib.gguf` | `187858b04dccae82a8c6fbf8bc5f0a62cfedb21d2f5aef3b4589456b09b6cd75` | 16,922,476,480 |
+| `recipe.json` | `7fa0d6b028a1ef3642fd4e478a922af9fb4460d47f7bb21bdc8a00ec3c464a1c` | 28,039 |
+| `NVIDIA-Nemotron-3.5-Lightning-30B-A3B-fit16gib.runlog.jsonl` | `17d6d6c61a4d6b32a9fbd982675a98fc6114c87b2845a14d0ae14d6038623faa` | 2,444 |
+| `NVIDIA-Nemotron-3.5-Lightning-30B-A3B-fit16gib.gguf.evals.json` | `537799b59a7b1c6f4b7d02bbc37cca9eed8f13374354a5f60c0789fa7b778478` | 1,146 |
+| `baselines/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-IQ2_XXS.gguf.evals.json` | `8bbb31ba73b0149c20b0f5154e5107b5ded5ebd9c2cdd43d23170ee5a5195072` | 1,144 |
+| `README.md` | `747a22b56fdf4bc854f427c135b65955e7974ecd4e6cae0c2a788efb19eef9a9` | 40,927 |
 
-The card uploaded verbatim at ship. On 2026-09-04 the source changed:
-#527 corrected the `file_type` sentence, #530 added the Usage
-section, #533 corrected the pricing figures, and #538 moved the
-reproduce block to `pip install "vramfit[pack]"`.
-`scripts/publish_card.py` re-uploaded the source at commit `a1419a3`
-on 2026-09-05 and byte-matched it. The row above records that copy.
+`LICENSE` is unchanged from the previous revision and was not
+re-uploaded.
 
-The staged pack came from `vramfit pack` on `recipe.json` with the
-#300 box toolchain on 2026-08-22, and its bytes equal the evaluated
-file. `recipe.json` is `falsifier-q0-imx/plan-falsifier-oh002.recipe.json`
-byte-for-byte. Its `plan` block records the measuring pod's imatrix
-path — the pack passed the box path and logged the recorded
-ADR-0020 warning, and the bytes reproduced.
+**The published digests were read back from the Hub**, not assumed
+from the upload call: `logs/upload-verify.txt` records the repository
+revision and every file's LFS SHA-256 as the Hub reports it, and the
+packed file's digest there equals the digest hashed on the pod before
+the upload.
 
 **The importance matrix is linked, never carried** — maintainer
 ruling 2026-08-22
-([#404 comment](https://github.com/Alberto-Codes/vramfit/issues/404#issuecomment-5382725059)),
-superseding the imatrix item of the step-1 artifact-set
-confirmation. No license grants rehosting a matrix built on
-another's calibration text. The card links
+([#404 comment](https://github.com/Alberto-Codes/vramfit/issues/404#issuecomment-5382725059)).
+No license grants rehosting a matrix built on another's calibration
+text. The card links
 `NVIDIA-Nemotron-3.5-Lightning-30B-A3B-imatrix.gguf` at pinned
 revision `f0eec2267ae843d9eb21ea3926ab0046da0a8628` of
 `bartowski/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF`. SHA-256
 `fbd36e4fa9be8324062a041ba5cb6247e9f68594168596257a85deb86438aac5`,
-55,314,688 B. The pinned URL's LFS etag matches, checked
-2026-08-22.
+55,314,688 B, re-verified on the pod in this run.
 
 ## The dataset repo
 
 `Alberto-Codes/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-sensitivity-maps`
-carries five files plus its card. The card's own hashes table is
-the ledger:
+carries the published maps plus its card. The card's own hashes table
+is the ledger:
 [`publication/nemotron-30b-a3b-sensitivity-maps/README.md`](../nemotron-30b-a3b-sensitivity-maps/README.md).
-Sources under the run root: `q0-imx-rescan/`, `q0-rescan/`, and
-`calibration.txt`.
+The `q0-imx2` map this revision's allocation was checked against is
+not yet published there; issue #558's schema ruling gates that upload.
