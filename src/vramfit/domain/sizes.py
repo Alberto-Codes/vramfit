@@ -795,11 +795,14 @@ def refuse_unmeasured_rows(
     A map missing the width fails here rather than taking the
     k-quant table by omission, which is the silent misprice.
 
-    Three advices reach this refusal. A group rooted outside
+    Four advices reach this refusal. A group rooted outside
     `CHECKPOINT_ROOTS` cannot be measured at all, so the message
     states that limitation rather than naming a flag that would
     refuse again. A solve with no size source needs one, so the
-    message names the flag and says the map records no width either.
+    message names the flag; it blames the schema version only when
+    the map states no width at all, because a map that states widths
+    for other groups is not below schema 5 and a partial back-fill
+    would be sent after the wrong remedy.
     A solve that read a checkpoint already has the flag, and the
     named group is missing from that checkpoint instead.
 
@@ -858,11 +861,20 @@ def refuse_unmeasured_rows(
             f"{sorted(CHECKPOINT_ROOTS)} (ADR-0029 decision 7). Add the root "
             f"there, or plan this map for a runtime with no type table"
         )
-    elif row_widths is None:
+    elif row_widths is None and not measured:
         advice = (
-            "This map records no row width for it, which every map below "
+            "This map records no row width at all, which every map below "
             "schema 5 does. Plan with --checkpoint (ADR-0029 decision 1), "
             "or re-scan to record the width (issue #558)"
+        )
+    elif row_widths is None:
+        # A schema-5 map that states some widths and not this one. The
+        # branch above would blame the schema version, which is false
+        # here and misleads a partial back-fill or hand edit.
+        advice = (
+            "This map states a row width for other groups and none for "
+            "this one. Plan with --checkpoint (ADR-0029 decision 1), or "
+            "re-scan to record the missing width (issue #558)"
         )
     else:
         advice = (

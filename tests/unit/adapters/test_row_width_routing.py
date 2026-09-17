@@ -772,6 +772,36 @@ class TestAMapPlansOnItsOwnWidths:
                 format_overhead=0.0,
             )
 
+    def test_a_partly_recorded_map_is_not_blamed_on_its_schema(self) -> None:
+        # This map is schema 5 and states a width for its other group,
+        # so blaming "every map below schema 5" would be false and
+        # would send a partial back-fill after the wrong remedy.
+        raw = map_with_widths({QWEN_UP: 2048, QWEN_DOWN: 768})
+        del raw["groups"][1]["row_width"]
+
+        with pytest.raises(SizeSourceError) as caught:
+            solve(
+                map_from_dict(raw),
+                weight_budget_bytes=10**9,
+                vram_budget_bytes=10**9 + 1000,
+                kv_headroom_bytes=1000,
+                runtime=LLAMA_CPP,
+                format_overhead=0.0,
+            )
+
+        assert "states a row width for other groups" in str(caught.value)
+        assert "below schema 5" not in str(caught.value)
+
+    def test_a_map_recording_no_width_at_all_names_the_schema(self) -> None:
+        raw = make_map([(QWEN_UP, 160_000, CURVE)], precisions=PRECISIONS)
+        raw["scan"]["group_by"] = "stack"
+
+        with pytest.raises(SizeSourceError) as caught:
+            self.solve_map_only(raw)
+
+        assert "records no row width at all" in str(caught.value)
+        assert "below schema 5" in str(caught.value)
+
     def test_the_checkpoint_wins_where_both_state_a_width(self) -> None:
         # `pack` quantizes the checkpoint, so the plan must predict
         # against the width that file states. The map says 2048,
@@ -839,14 +869,17 @@ class TestTheMapAndTheCheckpointDisagree:
         result = self.plan_against(tmp_path, map_width=2048, checkpoint_width=2688)
 
         assert result.exit_code == 0
-        assert "records a row width of 2048" in result.output
-        assert "states 2688" in result.output
+        # Pinned to stderr: the warning is emitted with `err=True`, and
+        # `result.output` mixes both streams, so it would pass even if
+        # the warning moved off the human channel.
+        assert "records a row width of 2048" in result.stderr
+        assert "states 2688" in result.stderr
 
     def test_agreeing_widths_draw_no_warning(self, tmp_path) -> None:
         result = self.plan_against(tmp_path, map_width=2688, checkpoint_width=2688)
 
         assert result.exit_code == 0
-        assert "records a row width" not in result.output
+        assert "records a row width" not in result.stderr
 
 
 @pytest.mark.unit
