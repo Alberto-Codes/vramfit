@@ -11,12 +11,15 @@ what was necessarily true before it existed. ``within_group``
 (ADR-0018) defaults to ``rtn-block32``, because every map written
 before the field measured with that method. ``imatrix`` (ADR-0020)
 defaults to None, because every such map was unassisted.
-``calibration_provenance`` defaults to ``measured`` beside a digest,
-because ``vramfit scan`` is the only producer of that digest and it
-hashes the calibration file as it reads it. An absent field is that
-default. An explicit null beside a digest is a hand-edit: the
-schema-5 writer never pairs the two that way, so the reader refuses
-it rather than normalizing it.
+
+``calibration_provenance`` breaks that pattern on purpose. Below
+schema 5 an absent mark beside a digest reads as ``measured``: those
+documents predate the field, and ``vramfit scan`` is the only
+producer that could have written that digest. At schema 5 and above
+an absent mark beside a digest refuses, because the producer could
+have recorded one. An explicit null beside a digest refuses at every
+version — the writer never pairs the two that way, so the reader
+rejects the hand-edit rather than normalizing it.
 
 Examples:
     Round-trip one scan section:
@@ -27,7 +30,7 @@ Examples:
         scan_to_dict,
     )
 
-    assert scan_from_dict(scan_to_dict(meta)) == meta
+    assert scan_from_dict(scan_to_dict(meta), 5) == meta
     ```
 
 See Also:
@@ -76,6 +79,11 @@ SCAN_FIELDS: Final[frozenset[str]] = frozenset(
 )
 
 SCAN_PATH: Final[str] = "$.scan"
+
+# The first map schema whose producer could record the calibration
+# digest's provenance mark. From here up, an absent mark beside a
+# digest is a missing claim, never a default (issue #589's mechanism).
+MARK_REQUIRED_FROM: Final[int] = 5
 
 
 def scan_to_dict(meta: ScanMeta) -> dict[str, Any]:
@@ -147,33 +155,68 @@ def _parse_precisions(obj: dict[str, Any]) -> list[int]:
     return precisions
 
 
-def _parse_calibration_mark(obj: dict[str, Any], digest: str | None) -> str | None:
+def _parse_calibration_mark(
+    obj: dict[str, Any], digest: str | None, schema_version: int
+) -> str | None:
     """Read the calibration digest's provenance mark.
 
-    An absent field beside a digest reads as `MEASURED`: every map
-    written before schema 5 got that digest from ``vramfit scan``,
-    which hashes the calibration file as it reads it. An absent field
-    with no digest reads as None. An explicit null is never
-    normalized — `ScanMeta` then refuses it beside a digest, because
-    the schema-5 writer never writes that pair.
+    The default is version-gated. Below `MARK_REQUIRED_FROM`, an
+    absent field beside a digest reads as `MEASURED`: those documents
+    predate the field, and ``vramfit scan`` is the only producer that
+    could have written that digest, hashing the calibration file as
+    it read it. From `MARK_REQUIRED_FROM` up, an absent field beside
+    a digest refuses. The producer could have recorded a mark, so the
+    absence is a missing claim, not a default.
+
+    The ungated default reproduced the defect the mark exists to
+    prevent. The back-fill this schema was raised for writes a
+    schema-5 map with a digest hashed today. Omitting the mark read
+    back as `MEASURED` with no error, so the artifact asserted that
+    the process which produced its damage numbers hashed those bytes
+    as it read them. That is false. The referent rules cannot catch
+    it, because `MEASURED` is the one mark that needs no referent, so
+    the hole sat exactly where the mechanism had to hold.
+
+    The additive precedent of ``within_group`` and ``imatrix`` does
+    not transfer, however alike the three fields look. Those two
+    describe what the scan did, so a default states a setting. This
+    field describes who established a value, and provenance is the
+    one thing a reader must never infer.
+
+    An absent field with no digest reads as None at every version. An
+    explicit null is never normalized — `ScanMeta` then refuses it
+    beside a digest, because the writer never writes that pair.
 
     Args:
         obj: The ``scan`` JSON object.
         digest: The parsed calibration digest, or None.
+        schema_version: The version the document declares, which
+            `map_from_dict` already validated.
 
     Returns:
         The mark, or None.
 
     Raises:
         ArtifactError: If a present field is neither null nor a
-            non-empty string.
+            non-empty string, or the document declares
+            `MARK_REQUIRED_FROM` or above and carries a digest with
+            no mark.
     """
-    if "calibration_provenance" not in obj:
-        return MEASURED if digest is not None else None
-    raw = obj["calibration_provenance"]
-    if raw is None:
+    if "calibration_provenance" in obj:
+        raw = obj["calibration_provenance"]
+        if raw is None:
+            return None
+        return _as_str(raw, f"{SCAN_PATH}.calibration_provenance")
+    if digest is None:
         return None
-    return _as_str(raw, f"{SCAN_PATH}.calibration_provenance")
+    _require(
+        schema_version < MARK_REQUIRED_FROM,
+        f"{SCAN_PATH}.calibration_provenance",
+        f"schema {schema_version} records who established the "
+        f"calibration digest, so a digest with no mark states a claim "
+        f"no reader can check (#589)",
+    )
+    return MEASURED
 
 
 def _parse_imatrix(obj: dict[str, Any], within_group: str) -> str | None:
@@ -211,11 +254,15 @@ def _parse_imatrix(obj: dict[str, Any], within_group: str) -> str | None:
     return imatrix
 
 
-def scan_from_dict(obj: dict[str, Any]) -> ScanMeta:
+def scan_from_dict(obj: dict[str, Any], schema_version: int) -> ScanMeta:
     """Validate the ``scan`` section of a sensitivity map.
 
     Args:
         obj: The ``scan`` JSON object.
+        schema_version: The version the document declares.
+            `map_from_dict` validates the envelope and passes the
+            version here, so this reader never re-reads it. The
+            calibration mark's default is gated on it.
 
     Returns:
         The validated scan provenance.
@@ -243,7 +290,7 @@ def scan_from_dict(obj: dict[str, Any]) -> ScanMeta:
             scan_from_dict,
         )
 
-        meta = scan_from_dict(raw["scan"])
+        meta = scan_from_dict(raw["scan"], 5)
         ```
     """
     _warn_unknown_fields(obj, SCAN_PATH, SCAN_FIELDS)
@@ -282,7 +329,7 @@ def scan_from_dict(obj: dict[str, Any]) -> ScanMeta:
         if raw_bytes is None
         else _as_int(raw_bytes, f"{SCAN_PATH}.calibration_bytes")
     )
-    mark = _parse_calibration_mark(obj, digest)
+    mark = _parse_calibration_mark(obj, digest, schema_version)
     raw_revision = obj.get("calibration_revision")
     revision = (
         None

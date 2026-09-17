@@ -596,7 +596,7 @@ def _check_schema_version(
     path: str,
     expected: int,
     also_reads: tuple[int, ...] = (),
-) -> None:
+) -> int:
     """Validate the artifact's ``vramfit_schema`` envelope field.
 
     Args:
@@ -615,6 +615,11 @@ def _check_schema_version(
             so an adapter reads one version until it states
             otherwise.
 
+    Returns:
+        The version the document declares. A reader whose rule
+        depends on the declared version takes it from here, so the
+        envelope is read and validated once.
+
     Raises:
         ArtifactError: If the version is missing or unsupported — the
             message names every version this vramfit reads. A
@@ -631,6 +636,7 @@ def _check_schema_version(
         f"{path}.vramfit_schema",
         f"unsupported schema version {version} — this vramfit reads version {names}",
     )
+    return version
 
 
 def _load_json(path: Path, root: str) -> dict[str, Any]:

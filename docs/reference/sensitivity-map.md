@@ -164,12 +164,22 @@ below remain, the sub-4-bit pricing claims do not.
     The mark pairs with `scan.calibration_sha256` in both
     directions: a digest says which bytes, and the mark says who
     hashed them. A digest with no mark records a claim no reader can
-    check, so the loader refuses one. The field is additive, so an
-    **absent** mark beside a digest reads as `measured` — every map
-    written before schema 5 got its digest from `vramfit scan`,
-    which is the only producer of that field. An **explicit null**
-    beside a digest is a hand-edit and refuses, because the schema-5
+    check, so the loader refuses one. The absent-mark allowance is
+    scoped by version. In a document **below schema 5**, an
+    **absent** mark beside a digest reads as `measured` — that map
+    predates the field, and `vramfit scan` is the only producer that
+    could have written its digest. In a document at **schema 5 or
+    above**, an **absent** mark beside a digest refuses. The
+    producer could have recorded one, so its absence is a missing
+    claim, not a default. An **explicit null** beside a digest is a
+    hand-edit and refuses at every version, because the schema-5
     writer never writes that pair.
+
+    The other additive fields do not set a precedent here.
+    `within_group` and `imatrix` describe what the scan did, so a
+    default states a setting. This field describes who established a
+    value, and provenance is the one thing a reader must never
+    infer.
 
     A `re_derived` digest says *these are the bytes the pinned
     revision carries*. It does not say *these are the bytes that run

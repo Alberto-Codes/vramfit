@@ -153,7 +153,7 @@ def map_from_dict(data: object) -> SensitivityMap:
         ```
     """
     root = _get_dict(data, "$")
-    _check_schema_version(
+    schema_version = _check_schema_version(
         root,
         "$",
         expected=MAP_SCHEMA_VERSION,
@@ -162,7 +162,7 @@ def map_from_dict(data: object) -> SensitivityMap:
     _warn_unknown_fields(root, "$", MAP_ROOT_FIELDS)
     model_id = _get_str(root, "model_id", "$")
     _require("scan" in root, "$", 'missing required field "scan"')
-    scan = scan_from_dict(_get_dict(root["scan"], "$.scan"))
+    scan = scan_from_dict(_get_dict(root["scan"], "$.scan"), schema_version)
     groups_raw = _get_list(root, "groups", "$")
     _require(len(groups_raw) > 0, "$.groups", "must not be empty")
     expected = set(scan.precisions)
@@ -451,10 +451,14 @@ def _parse_row_width(obj: dict[str, Any], path: str, name: str) -> int | None:
     super-block decision off a number no tensor has.
 
     The decision reaches a layer-class or routed-expert-stack group
-    only. Every other group holds classes of several row widths and
-    takes the ADR-0012 k-quant table, so no single width describes
-    it. A width on such a group asserts what no group can carry, so
-    the reader refuses it rather than ignoring it.
+    only, and two other shapes each refuse a width for their own
+    reason. A whole-layer group holds classes of several row widths
+    and takes the ADR-0012 k-quant table, so no single width
+    describes it. A group of a class the quantizer refuses takes
+    neither type table — it holds at the F16 passthrough at the
+    convert dtype (#409) — so no width ever routes it. Either way
+    the field asserts what the group cannot carry, so the reader
+    refuses it rather than ignoring it.
 
     Args:
         obj: The group's JSON object.
@@ -468,16 +472,23 @@ def _parse_row_width(obj: dict[str, Any], path: str, name: str) -> int | None:
     Raises:
         ArtifactError: If a present field is not a positive integer,
             or the group is one the super-block decision does not
-            reach.
+            reach. The message states the reason that group earns.
     """
     if "row_width" not in obj:
         return None
     field_path = f"{path}.row_width"
     _require(
-        routes_by_row_width(name) and unquantizable_class(name) is None,
+        unquantizable_class(name) is None,
         field_path,
-        f'group "{name}" takes the ADR-0012 k-quant table, and no '
-        f"single width describes it (issue #515, issue #558)",
+        f'group "{name}" holds at the F16 passthrough and takes '
+        f"neither type table, so no width routes it (#409, issue #558)",
+    )
+    _require(
+        routes_by_row_width(name),
+        field_path,
+        f'group "{name}" is no layer-class or routed-expert-stack '
+        f"group. It takes the ADR-0012 k-quant table, which no row "
+        f"width routes (issue #515, issue #558)",
     )
     width = _as_int(obj["row_width"], field_path)
     _require(width > 0, field_path, "must be positive")

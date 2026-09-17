@@ -792,16 +792,51 @@ class TestCalibrationProvenanceMark:
         with pytest.raises(ArtifactError, match=r"\$.scan.calibration_provenance"):
             map_from_dict(raw)
 
-    def test_an_absent_mark_beside_a_digest_reads_as_measured(self) -> None:
-        # Every map written before schema 5 got its digest from
-        # `vramfit scan`, which hashes the calibration file as it
-        # reads it. Nothing else could have written the field, so
-        # this derives the mark rather than guessing it — the same
-        # rule `within_group` and `imatrix` already follow.
+    @pytest.mark.parametrize("version", [2, 3, 4])
+    def test_an_absent_mark_below_schema_5_reads_as_measured(
+        self, version: int
+    ) -> None:
+        # A map written before schema 5 predates the field, and
+        # `vramfit scan` is the only producer that could have written
+        # its digest, hashing the calibration file as it read it.
         raw = self.marked_map()
+        raw["vramfit_schema"] = version
         assert "calibration_provenance" not in raw["scan"]
 
         assert map_from_dict(raw).scan.calibration_provenance == "measured"
+
+    def test_an_absent_mark_at_schema_5_is_refused(self) -> None:
+        # The schema-5 producer could have recorded a mark, so an
+        # absent one is a missing claim, not a default.
+        raw = self.marked_map()
+        raw["vramfit_schema"] = 5
+
+        with pytest.raises(ArtifactError, match="no reader can check"):
+            map_from_dict(raw)
+
+    def test_a_schema_5_back_fill_cannot_pass_a_fresh_digest_off_as_measured(
+        self,
+    ) -> None:
+        # The concrete sequence this gate exists for: a back-fill
+        # writes a schema-5 map with a digest hashed today and omits
+        # the mark. Reading that as `measured` would assert that the
+        # scan which produced the damage numbers hashed those bytes.
+        raw = self.marked_map()
+        raw["vramfit_schema"] = 5
+
+        with pytest.raises(ArtifactError) as caught:
+            map_from_dict(raw)
+
+        assert caught.value.json_path == "$.scan.calibration_provenance"
+
+    @pytest.mark.parametrize("mark", ["recovered", "re_derived"])
+    def test_a_schema_5_back_fill_states_its_own_mark(self, mark: str) -> None:
+        raw = self.marked_map(
+            calibration_provenance=mark, calibration_revision="b08601e"
+        )
+        raw["vramfit_schema"] = 5
+
+        assert map_from_dict(raw).scan.calibration_provenance == mark
 
     def test_an_explicit_null_mark_beside_a_digest_is_refused(self) -> None:
         # The schema-5 writer never pairs the two that way, so this
@@ -885,15 +920,26 @@ class TestGroupRowWidth:
             map_from_dict(self.map_with_width("2688"))
 
     @pytest.mark.parametrize(
-        "name",
-        ["model.layers.0", "model.layers.0.mixer.conv1d", "model.embed_tokens"],
+        ("name", "reason"),
+        [
+            ("model.layers.0", "k-quant table"),
+            ("model.layers.0.mixer.conv1d", "F16 passthrough"),
+            ("model.embed_tokens", "k-quant table"),
+        ],
         ids=["whole-layer", "unquantizable-class", "no-layer-index"],
     )
-    def test_a_width_on_an_unreached_group_is_refused(self, name: str) -> None:
+    def test_a_width_on_an_unreached_group_states_its_own_reason(
+        self, name: str, reason: str
+    ) -> None:
         # A back-filled `group_by: layer` map carrying a row_width on
         # a whole-layer group would otherwise price that layer through
         # the ADR-0028 expert-stack table, while `pack` gates on
         # `consults_row_width` and uses the k-quant table — a silent
-        # misprice with no refusal.
-        with pytest.raises(ArtifactError, match="k-quant table"):
+        # misprice with no refusal. An unquantizable class takes
+        # NEITHER type table — it holds at the F16 passthrough at the
+        # convert dtype (#409) — so the k-quant reason would send the
+        # operator hunting a routing problem that does not exist.
+        with pytest.raises(ArtifactError, match=reason) as caught:
             map_from_dict(self.map_with_width(2688, name))
+
+        assert caught.value.json_path == "$.groups[0].row_width"
