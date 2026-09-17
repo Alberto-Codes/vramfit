@@ -334,9 +334,10 @@ def plan(
         Path | None,
         typer.Option(
             help="Checkpoint the map was scanned from. Its safetensors "
-            "headers price every group and state each group's row "
-            "width, so a map covering part of the model no longer "
-            "defines it (ADR-0029, #515)."
+            "headers price every group and state each group's row width, "
+            "so a map covering part of the model no longer defines it "
+            "(ADR-0029, #515). A schema-5 map states its own widths, so "
+            "it plans without this option (#558)."
         ),
     ] = None,
     kv_headroom: Annotated[
@@ -416,15 +417,14 @@ def plan(
     (issue #558), and the checkpoint's width wins where both state
     one. A map naming a layer-class or routed-expert-stack group it
     records no width for then refuses, because no name supplies that
-    width. That refusal reaches only a runtime
-    carrying both type tables the width routes between, which is
-    ``llama.cpp`` today. A ``vllm`` plan prices at nominal bits, so
-    the same map solves with no ``--checkpoint``. A ``layer`` map
-    scanned before the discovery skip (#204) folds a class the
-    quantizer refuses into its layer group, which the checkpoint
-    holds by its own name. The plan prices it twice and draws a
-    warning naming the map, the group, and the tensors (ADR-0029
-    open question 2, ruled 2026-09-04).
+    width. That refusal reaches only a runtime carrying both type
+    tables the width routes between, which is ``llama.cpp`` today. A
+    ``vllm`` plan prices at nominal bits, so the same map solves with
+    no ``--checkpoint``. A ``layer`` map scanned before the discovery
+    skip (#204) folds a class the quantizer refuses into its layer
+    group, which the checkpoint holds by its own name. The plan prices
+    it twice and draws a warning naming the map, the group, and the
+    tensors (ADR-0029 open question 2, ruled 2026-09-04).
 
     ``--pin`` reaches a folded projection under the name the recipe
     gives it. Two pins that leave one parameter's projections at two
