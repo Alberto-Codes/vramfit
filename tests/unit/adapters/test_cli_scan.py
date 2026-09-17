@@ -509,6 +509,22 @@ def test_scan_records_the_calibration_content_in_the_map(tmp_path, monkeypatch) 
     assert scan.calibration_bytes == n_bytes
 
 
+def test_scan_marks_the_calibration_digest_measured(tmp_path, monkeypatch) -> None:
+    # The run hashed those bytes as it read them, so `measured` is the
+    # only honest mark, and the map carries it rather than leaving a
+    # later reader to guess (issue #558's schema 5).
+    install_meter(
+        monkeypatch, MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES), tokens=64)
+    )
+
+    result, out = invoke_scan(tmp_path)
+
+    assert result.exit_code == 0, result.output
+    scan = load_sensitivity_map(out).scan
+    assert scan.calibration_provenance == "measured"
+    assert scan.calibration_revision is None
+
+
 def test_reissued_calibration_file_refuses_the_old_checkpoint(
     tmp_path, monkeypatch
 ) -> None:
@@ -572,6 +588,7 @@ def cli_fingerprint(tmp_path) -> str:
         calibration_tokens=64,
         calibration_sha256=digest,
         calibration_bytes=n_bytes,
+        calibration_provenance="measured",
         precisions=(8, 4),
         group_by="layer",
         started_at="unused",

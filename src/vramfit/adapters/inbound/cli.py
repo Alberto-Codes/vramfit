@@ -38,7 +38,8 @@ source independent of the map, so a partial map no longer defines
 the model (ADR-0029) — that wiring lives in
 [vramfit.adapters.inbound.cli_plan_sizes][]. That one read also
 states each group's row width, which routes the 256 super-block
-decision (#515), and it reconciles a merged projection the loaded
+decision (#515) and which a schema-5 map records for itself
+(issue #558), and it reconciles a merged projection the loaded
 model fused against the checkpoint that keeps its halves apart
 ([vramfit.domain.projections][], #576). The plan prices that
 projection as one group and names the checkpoint's projections in
@@ -410,9 +411,12 @@ def plan(
     and the recipe assigns it there. The same read states each
     group's row width, which routes the 256 super-block decision
     (ADR-0028, as amended 2026-09-05 by #515). Without the option the
-    map defines the model, and the command says so. A map naming a
-    layer-class or routed-expert-stack group then refuses, because no
-    name supplies its row width. That refusal reaches only a runtime
+    map defines the model, and the command says so. A schema-5 map
+    states its own row widths, so it solves with no checkpoint
+    (issue #558), and the checkpoint's width wins where both state
+    one. A map naming a
+    layer-class or routed-expert-stack group it records no width for
+    then refuses, because no name supplies that width. That refusal reaches only a runtime
     carrying both type tables the width routes between, which is
     ``llama.cpp`` today. A ``vllm`` plan prices at nominal bits, so
     the same map solves with no ``--checkpoint``. A ``layer`` map

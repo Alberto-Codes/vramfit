@@ -247,6 +247,44 @@ class TestTorchDamageMeter:
 
         assert embed.bytes_fp16 == 512 * 32 * 2
 
+    def test_a_layer_group_records_no_row_width(self, tiny_meter) -> None:
+        # A whole-layer group holds classes of several widths, takes
+        # the ADR-0012 k-quant table, and has no single width to
+        # record (issue #558).
+        layer = next(
+            spec for spec in tiny_meter.groups() if spec.name == "model.layers.0"
+        )
+
+        assert layer.row_width is None
+
+    def test_a_class_group_records_the_width_it_measured(
+        self, tiny_model_dir, tmp_path
+    ) -> None:
+        # The measurement the scan already made, now kept: a map that
+        # records it routes the 256 super-block decision with no
+        # checkpoint beside it (issue #558).
+        from vramfit.adapters.outbound.scan.meter import TorchDamageMeter
+
+        calibration = tmp_path / "calib-rows.txt"
+        calibration.write_text(CALIBRATION_TEXT)
+        by_tensor = TorchDamageMeter(
+            str(tiny_model_dir),
+            calibration,
+            max_tokens=64,
+            group_by="tensor",
+            device="cpu",
+        )
+
+        widths = {
+            spec.name: spec.row_width
+            for spec in by_tensor.groups()
+            if spec.row_width is not None
+        }
+
+        assert widths
+        assert all(width > 0 for width in widths.values())
+        assert widths["model.layers.0.self_attn.q_proj"] == 32
+
     def test_discovered_groups_match_the_pack_flag_literals(self, tiny_meter) -> None:
         # The GGUF backend keys its embedding and output flags on these
         # exact names (ADR-0012). If discovery ever renames them, the

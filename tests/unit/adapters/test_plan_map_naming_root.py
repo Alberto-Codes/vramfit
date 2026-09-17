@@ -22,6 +22,11 @@ from typer.testing import CliRunner
 from tests.unit.conftest import make_map
 from vramfit.adapters.inbound.cli import app
 from vramfit.adapters.outbound.recipe_json import load_recipe
+from vramfit.domain.sizes import (
+    measured_width,
+    resolved_row_widths,
+    row_width_conflicts,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -189,3 +194,37 @@ class TestModelRootedMap:
         )
         reserved = load_recipe(out).plan.predicted_total_bytes
         assert reserved < MODEL_BYTES
+
+
+@pytest.mark.unit
+class TestRowWidthAcrossNamingRoots:
+    """The checkpoint's width wins under either spelling (#558).
+
+    A `backbone.`-rooted map names a group the size source keys under
+    `model.` (ADR-0029 decision 7). A plain dict merge would keep the
+    map's own width there, inverting the rule that the checkpoint the
+    pack quantizes decides.
+    """
+
+    MAP_NAME = "backbone.layers.0.mixer.in_proj"
+    SOURCE_NAME = "model.layers.0.mixer.in_proj"
+
+    def test_the_source_width_wins_across_roots(self) -> None:
+        resolved = resolved_row_widths({self.MAP_NAME: 2048}, {self.SOURCE_NAME: 2688})
+
+        assert measured_width(resolved, self.MAP_NAME) == 2688
+
+    def test_a_cross_root_disagreement_is_reported(self) -> None:
+        assert row_width_conflicts({self.MAP_NAME: 2048}, {self.SOURCE_NAME: 2688}) == (
+            (self.MAP_NAME, 2048, 2688),
+        )
+
+    def test_the_map_fills_a_group_no_source_states(self) -> None:
+        resolved = resolved_row_widths({self.MAP_NAME: 2688}, {})
+
+        assert measured_width(resolved, self.MAP_NAME) == 2688
+
+    def test_agreeing_widths_across_roots_are_no_conflict(self) -> None:
+        assert (
+            row_width_conflicts({self.MAP_NAME: 2688}, {self.SOURCE_NAME: 2688}) == ()
+        )

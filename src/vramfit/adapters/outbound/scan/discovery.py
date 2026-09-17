@@ -2,7 +2,10 @@
 
 Split out of [vramfit.adapters.outbound.scan.meter][] to keep that
 module inside the size cap. Discovery walks the loaded model's
-parameters and filters them. The naming rule itself lives in
+parameters and filters them, then assembles the map-ready specs:
+`group_specs` carries each group's reference bytes, per-tensor
+sizes, count summary, and the row width `group_row_widths` measured
+(issue #558). The naming rule itself lives in
 [vramfit.domain.scan][] (`group_key`), and so does the class rule
 that skips a parameter no quantizer touches
 ([vramfit.domain.runtime][], `unquantizable_class`, #204), so the
@@ -23,19 +26,21 @@ See Also:
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping, Sequence
 from typing import Literal
 
 import torch
 
 from vramfit.adapters.outbound.scan.imatrix import expert_stack_count_vectors
 from vramfit.domain.model import ImatrixCountSummary
-from vramfit.domain.runtime import unquantizable_class
+from vramfit.domain.runtime import routes_by_row_width, unquantizable_class
 from vramfit.domain.scan import (
+    GroupSpec,
     group_key,
     matches_a_layer,
     summarize_imatrix_counts,
 )
+from vramfit.domain.sizes import fold_row_width
 
 
 def discover_groups(
@@ -126,3 +131,94 @@ def group_count_summaries(
         for group, members in groups.items()
         if (vectors := expert_stack_count_vectors(counts, members)) is not None
     }
+
+
+def group_row_widths(
+    groups: Mapping[str, Sequence[str]],
+    parameter: Callable[[str], torch.Tensor],
+) -> dict[str, int]:
+    """Measure the row width of every group the map should record.
+
+    The scan already reads each row width to refuse a cell whose
+    mapped type cannot tile the rows (ADR-0018). Issue #558 keeps
+    that number: a map that records it routes the 256 super-block
+    decision with no checkpoint beside it.
+
+    The gate mirrors `vramfit.domain.sizes.discovered_group_rows`, so
+    the map and a checkpoint read cover the same groups and their
+    widths compare directly. A whole-layer group holds classes of
+    several widths, so it records none and keeps the ADR-0012
+    k-quant table.
+
+    Args:
+        groups: Group name to its member parameter names, as
+            `discover_groups` built it.
+        parameter: Resolves a member's name to its loaded tensor.
+
+    Returns:
+        Elements per row per group name. Groups the decision does not
+        reach are absent.
+
+    Raises:
+        SizeSourceError: If two members of one group state different
+            row widths. One group packs under one type, so two widths
+            have no single answer.
+
+    Examples:
+        ```python
+        widths = group_row_widths(groups, model.get_parameter)
+        ```
+    """
+    rows: dict[str, int] = {}
+    for group, members in groups.items():
+        if not routes_by_row_width(group):
+            continue
+        for tensor in members:
+            fold_row_width(rows, group, tensor, int(parameter(tensor).shape[-1]))
+    return rows
+
+
+def group_specs(
+    groups: Mapping[str, Sequence[str]],
+    parameter: Callable[[str], torch.Tensor],
+    summaries: Mapping[str, ImatrixCountSummary],
+) -> tuple[GroupSpec, ...]:
+    """Assemble the meter's discovered groups into map-ready specs.
+
+    One pass carries everything the map records about a group that no
+    measurement supplies: its reference bytes, its per-tensor sizes
+    for the protection pricing (ADR-0022), its pooled expert-stack
+    count summary (ADR-0026 decision 4), and its measured row width
+    (issue #558).
+
+    Args:
+        groups: Group name to its member parameter names, as
+            `discover_groups` built it.
+        parameter: Resolves a member's name to its loaded tensor.
+        summaries: Pooled count summary per group, empty for an
+            unassisted meter.
+
+    Returns:
+        One spec per group, in module order.
+
+    Raises:
+        SizeSourceError: If two members of one group state different
+            row widths (issue #515).
+
+    Examples:
+        ```python
+        specs = group_specs(groups, model.get_parameter, {})
+        ```
+    """
+    rows = group_row_widths(groups, parameter)
+    return tuple(
+        GroupSpec(
+            name=name,
+            tensors=tuple(tensors),
+            bytes_fp16=sum(parameter(t).numel() * 2 for t in tensors),
+            tensor_bytes={t: parameter(t).numel() * 2 for t in tensors},
+            imatrix_counts=summaries.get(name),
+            row_width=rows.get(name),
+        )
+        for name, tensors in groups.items()
+    )

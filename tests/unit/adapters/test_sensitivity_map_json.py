@@ -168,9 +168,9 @@ class TestSensitivityMap:
 
     def test_wrong_schema_version_rejected(self) -> None:
         raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
-        raw["vramfit_schema"] = 5
+        raw["vramfit_schema"] = 6
 
-        with pytest.raises(ArtifactError, match="unsupported schema version 5"):
+        with pytest.raises(ArtifactError, match="unsupported schema version 6"):
             map_from_dict(raw)
 
     def test_schema_version_two_map_still_reads(self) -> None:
@@ -188,10 +188,20 @@ class TestSensitivityMap:
 
         assert map_from_dict(raw).scan.group_by == "layer"
 
-    def test_writer_emits_schema_version_four(self) -> None:
+    def test_schema_version_four_map_reads(self) -> None:
+        # Version 5 only added the calibration digest's provenance
+        # mark with its revision referent, and each group's measured
+        # row width (issue #558). Neither is required, so every
+        # version-4 map is already a valid version-5 document.
+        raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
+        raw["vramfit_schema"] = 4
+
+        assert map_from_dict(raw).scan.group_by == "layer"
+
+    def test_writer_emits_schema_version_five(self) -> None:
         raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
 
-        assert map_to_dict(map_from_dict(raw))["vramfit_schema"] == 4
+        assert map_to_dict(map_from_dict(raw))["vramfit_schema"] == 5
 
     def test_absent_calibration_content_reads_as_not_recorded(self) -> None:
         # A map written before the fields existed records no content
@@ -728,3 +738,144 @@ class TestDerived:
 
         with pytest.raises(ArtifactError, match="derived"):
             map_from_dict(raw)
+
+
+@pytest.mark.unit
+class TestCalibrationProvenanceMark:
+    """Schema 5's mark: who established the calibration digest.
+
+    The mechanism is the evals sidecar's (#589). These tests hold the
+    map's spelling of it, and the one reader rule a published map
+    needs: a digest written before the mark existed still loads.
+    """
+
+    def marked_map(self, **scan) -> dict:
+        raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
+        raw["scan"]["calibration_sha256"] = DIGEST
+        raw["scan"]["calibration_bytes"] = 772386
+        raw["scan"].update(scan)
+        return raw
+
+    def test_a_measured_mark_round_trips(self) -> None:
+        map_ = map_from_dict(self.marked_map(calibration_provenance="measured"))
+
+        assert map_.scan.calibration_provenance == "measured"
+        assert map_from_dict(map_to_dict(map_)) == map_
+
+    def test_a_re_derived_mark_round_trips_with_its_revision(self) -> None:
+        raw = self.marked_map(
+            calibration_provenance="re_derived", calibration_revision="b08601e"
+        )
+
+        map_ = map_from_dict(raw)
+
+        assert map_.scan.calibration_revision == "b08601e"
+        assert map_from_dict(map_to_dict(map_)) == map_
+
+    def test_a_re_derived_mark_without_its_revision_is_refused(self) -> None:
+        # The back-fill this schema exists for cannot write an
+        # uncheckable claim, in JSON any more than in memory.
+        raw = self.marked_map(calibration_provenance="re_derived")
+
+        with pytest.raises(ArtifactError, match="requires calibration_revision"):
+            map_from_dict(raw)
+
+    def test_an_unknown_mark_is_refused(self) -> None:
+        raw = self.marked_map(calibration_provenance="back_filled")
+
+        with pytest.raises(ArtifactError, match="must be one of"):
+            map_from_dict(raw)
+
+    def test_an_empty_mark_is_refused(self) -> None:
+        raw = self.marked_map(calibration_provenance="")
+
+        with pytest.raises(ArtifactError, match=r"\$.scan.calibration_provenance"):
+            map_from_dict(raw)
+
+    def test_an_absent_mark_beside_a_digest_reads_as_measured(self) -> None:
+        # Every map written before schema 5 got its digest from
+        # `vramfit scan`, which hashes the calibration file as it
+        # reads it. Nothing else could have written the field, so
+        # this derives the mark rather than guessing it — the same
+        # rule `within_group` and `imatrix` already follow.
+        raw = self.marked_map()
+        assert "calibration_provenance" not in raw["scan"]
+
+        assert map_from_dict(raw).scan.calibration_provenance == "measured"
+
+    def test_an_explicit_null_mark_beside_a_digest_is_refused(self) -> None:
+        # The schema-5 writer never pairs the two that way, so this
+        # is a hand-edit. It is rejected, never normalized.
+        raw = self.marked_map(calibration_provenance=None)
+
+        with pytest.raises(ArtifactError, match="must pair"):
+            map_from_dict(raw)
+
+    def test_no_digest_carries_no_mark_and_writes_null(self) -> None:
+        raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
+
+        written = map_to_dict(map_from_dict(raw))
+
+        assert written["scan"]["calibration_provenance"] is None
+        assert written["scan"]["calibration_revision"] is None
+
+    def test_a_mark_with_no_digest_is_refused(self) -> None:
+        raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
+        raw["scan"]["calibration_provenance"] = "measured"
+
+        with pytest.raises(ArtifactError, match="must pair"):
+            map_from_dict(raw)
+
+    def test_the_reader_never_hashes_to_supply_a_mark(self, tmp_path) -> None:
+        # The loader has no file to hash and must not acquire one.
+        raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
+        raw["scan"]["calibration"] = str(tmp_path / "gone.txt")
+
+        map_ = map_from_dict(raw)
+
+        assert map_.scan.calibration_sha256 is None
+        assert map_.scan.calibration_provenance is None
+
+
+@pytest.mark.unit
+class TestGroupRowWidth:
+    """Schema 5's per-group measured row width (issue #558)."""
+
+    def map_with_width(self, width) -> dict:
+        raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
+        raw["groups"][0]["row_width"] = width
+        return raw
+
+    def test_a_measured_width_round_trips(self) -> None:
+        map_ = map_from_dict(self.map_with_width(2688))
+
+        assert map_.groups[0].row_width == 2688
+        assert map_from_dict(map_to_dict(map_)) == map_
+
+    def test_an_absent_width_reads_as_none(self) -> None:
+        raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
+        assert "row_width" not in raw["groups"][0]
+
+        assert map_from_dict(raw).groups[0].row_width is None
+
+    def test_an_absent_width_is_not_written(self) -> None:
+        # A save never invents a width, and never writes null for one
+        # — an absent field means the map states none.
+        raw = make_map([("g0", 1000, {8: 0.0, 4: 0.1, 3: 0.2, 2: 0.3})])
+
+        written = map_to_dict(map_from_dict(raw))
+
+        assert "row_width" not in written["groups"][0]
+
+    @pytest.mark.parametrize("width", [0, -1], ids=["zero", "negative"])
+    def test_a_non_positive_width_is_refused(self, width: int) -> None:
+        with pytest.raises(ArtifactError, match="must be positive"):
+            map_from_dict(self.map_with_width(width))
+
+    def test_an_explicit_null_width_is_refused(self) -> None:
+        with pytest.raises(ArtifactError, match=r"\$.groups\[0\].row_width"):
+            map_from_dict(self.map_with_width(None))
+
+    def test_a_non_integer_width_is_refused(self) -> None:
+        with pytest.raises(ArtifactError, match=r"\$.groups\[0\].row_width"):
+            map_from_dict(self.map_with_width("2688"))

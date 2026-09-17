@@ -139,6 +139,33 @@ class TestLayerGroupTensorBytes:
 
 
 @pytest.mark.unit
+class TestLayerGroupRowWidth:
+    """The measured row width the map persists (issue #558)."""
+
+    def make_group(self, row_width: int | None) -> LayerGroup:
+        return LayerGroup(
+            name="model.layers.0.mixer.in_proj",
+            tensors=("w",),
+            bytes_fp16=1_000,
+            sensitivity={8: 0.0, 4: 0.1},
+            row_width=row_width,
+        )
+
+    def test_an_absent_width_means_the_map_records_none(self) -> None:
+        assert self.make_group(None).row_width is None
+
+    def test_a_measured_width_rides_into_the_group(self) -> None:
+        assert self.make_group(2688).row_width == 2688
+
+    @pytest.mark.parametrize("width", [0, -1], ids=["zero", "negative"])
+    def test_a_non_positive_width_is_rejected(self, width: int) -> None:
+        # No tensor has such a row, and no block tiles it, so the
+        # super-block decision would route off a number nothing has.
+        with pytest.raises(ValueError, match="row_width must be positive"):
+            self.make_group(width)
+
+
+@pytest.mark.unit
 class TestProtectedTensor:
     def test_valid_pair_constructs(self) -> None:
         pair = ProtectedTensor(tensor="model.layers.4.self_attn.v_proj.weight", bits=5)

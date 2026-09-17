@@ -43,6 +43,7 @@ def make_pinned_meta(**overrides) -> ScanMeta:
     pinned: dict[str, Any] = {
         "calibration_sha256": DIGEST,
         "calibration_bytes": 772386,
+        "calibration_provenance": "measured",
     }
     return make_meta(**(pinned | overrides))
 
@@ -286,13 +287,69 @@ class TestScanFingerprint:
         with pytest.raises(ValueError, match="calibration_bytes"):
             make_meta(calibration_sha256=DIGEST, calibration_bytes=size)
 
+    def test_a_re_derived_mark_without_a_revision_raises(self) -> None:
+        # The mark says these are the pinned revision's bytes. Without
+        # the revision no consumer can check that, so the map cannot
+        # represent the claim at all (#589's rule, issue #558).
+        with pytest.raises(ValueError, match="requires calibration_revision"):
+            make_meta(
+                calibration_sha256=DIGEST,
+                calibration_bytes=772386,
+                calibration_provenance="re_derived",
+            )
+
+    def test_a_re_derived_mark_with_its_revision_is_allowed(self) -> None:
+        meta = make_meta(
+            calibration_sha256=DIGEST,
+            calibration_bytes=772386,
+            calibration_provenance="re_derived",
+            calibration_revision="b08601e",
+        )
+
+        assert meta.calibration_revision == "b08601e"
+
+    def test_a_recovered_mark_names_the_calibration_path_it_already_carries(
+        self,
+    ) -> None:
+        # `calibration` is the run's own file, and every map carries
+        # it, so `recovered` always names its referent here.
+        meta = make_meta(
+            calibration_sha256=DIGEST,
+            calibration_bytes=772386,
+            calibration_provenance="recovered",
+        )
+
+        assert meta.calibration == "calib.txt"
+
+    def test_a_digest_without_its_mark_raises(self) -> None:
+        with pytest.raises(ValueError, match="calibration_provenance must pair"):
+            make_meta(calibration_sha256=DIGEST, calibration_bytes=772386)
+
+    def test_a_mark_without_a_digest_raises(self) -> None:
+        with pytest.raises(ValueError, match="calibration_provenance must pair"):
+            make_meta(calibration_provenance="measured")
+
+    def test_an_unknown_mark_raises(self) -> None:
+        with pytest.raises(ValueError, match="calibration_provenance must be one of"):
+            make_meta(
+                calibration_sha256=DIGEST,
+                calibration_bytes=772386,
+                calibration_provenance="back_filled",
+            )
+
+    def test_an_empty_revision_raises(self) -> None:
+        with pytest.raises(ValueError, match="calibration_revision"):
+            make_meta(calibration_revision="")
+
     def test_an_unrecorded_calibration_identity_is_allowed(self) -> None:
         # NOT RECORDED is the honest record when the scan's own
-        # calibration file did not survive. Nothing back-fills it.
+        # calibration file did not survive. Nothing back-fills it,
+        # and an absent digest carries no mark to explain.
         meta = make_meta()
 
         assert meta.calibration_sha256 is None
         assert meta.calibration_bytes is None
+        assert meta.calibration_provenance is None
 
     def test_empty_imatrix_raises(self) -> None:
         with pytest.raises(ValueError, match="imatrix"):

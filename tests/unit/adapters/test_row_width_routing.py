@@ -676,3 +676,173 @@ class TestPackPreflight:
 
         assert result.exit_code == 0, result.output
         assert seen["row_widths"] == {}
+
+
+def map_with_widths(
+    groups: dict[str, int], bytes_fp16: int = 160_000, group_by: str = "stack"
+) -> dict:
+    """Build a schema-5 map that records its own row widths (#558).
+
+    Args:
+        groups: Row width per group name.
+        bytes_fp16: Each group's size at reference precision.
+        group_by: The granularity the map recorded.
+
+    Returns:
+        A raw map dict accepted by `map_from_dict`.
+    """
+    raw = make_map(
+        [(name, bytes_fp16, CURVE) for name in groups], precisions=PRECISIONS
+    )
+    raw["scan"]["group_by"] = group_by
+    for entry in raw["groups"]:
+        entry["row_width"] = groups[entry["name"]]
+    return raw
+
+
+@pytest.mark.unit
+class TestAMapPlansOnItsOwnWidths:
+    """Issue #558: a published map routes without the checkpoint.
+
+    Before schema 5 the map discarded the width the scan measured,
+    so `vramfit plan MAP --vram 24GiB --runtime llama.cpp` refused a
+    stack map with no checkpoint beside it. A Space that holds the
+    map and no weights is the case that ended.
+    """
+
+    def solve_map_only(self, raw: dict, group: str = QWEN_UP) -> Recipe:
+        return solve(
+            map_from_dict(raw),
+            weight_budget_bytes=10**9,
+            vram_budget_bytes=10**9 + 1000,
+            kv_headroom_bytes=1000,
+            runtime=LLAMA_CPP,
+            pins={group: 4},
+            format_overhead=0.0,
+        )
+
+    def test_a_recorded_width_solves_with_no_checkpoint(self) -> None:
+        recipe = self.solve_map_only(map_with_widths({QWEN_UP: NEMOTRON_ROWS}))
+
+        assert recipe.assignments[0].bytes == group_bytes(
+            160_000, EXPERT_STACK_EFFECTIVE_BITS[LLAMA_CPP][4], 0.0
+        )
+
+    def test_the_recorded_width_routes_the_table_the_checkpoint_would(self) -> None:
+        # 2688 refuses the 256 super-block, so the map's own width
+        # must reach the ADR-0028 table, not the k-quant one.
+        from_map = self.solve_map_only(map_with_widths({QWEN_UP: NEMOTRON_ROWS}))
+        from_checkpoint = plan(QWEN_UP, NEMOTRON_ROWS, 4)
+
+        assert from_map.assignments[0].bytes == from_checkpoint.assignments[0].bytes
+
+    def test_a_width_that_divides_256_keeps_the_k_quant_table(self) -> None:
+        recipe = self.solve_map_only(map_with_widths({QWEN_UP: 2048}))
+
+        assert recipe.assignments[0].bytes == group_bytes(
+            160_000, EFFECTIVE_BITS[LLAMA_CPP][4], 0.0
+        )
+
+    def test_a_map_without_the_width_still_refuses_loudly(self) -> None:
+        # The silent misprice is taking the k-quant table by
+        # omission. A map below schema 5 records no width, so the
+        # solve refuses rather than routing off a number it lacks.
+        raw = make_map([(QWEN_UP, 160_000, CURVE)], precisions=PRECISIONS)
+        raw["scan"]["group_by"] = "stack"
+
+        with pytest.raises(SizeSourceError) as caught:
+            self.solve_map_only(raw)
+
+        assert "no measured row width" in str(caught.value)
+        assert "records no row width" in str(caught.value)
+        assert "--checkpoint" in str(caught.value)
+
+    def test_one_missing_width_refuses_even_beside_recorded_ones(self) -> None:
+        raw = map_with_widths({QWEN_UP: 2048, QWEN_DOWN: 768})
+        del raw["groups"][1]["row_width"]
+
+        with pytest.raises(SizeSourceError, match=QWEN_DOWN):
+            solve(
+                map_from_dict(raw),
+                weight_budget_bytes=10**9,
+                vram_budget_bytes=10**9 + 1000,
+                kv_headroom_bytes=1000,
+                runtime=LLAMA_CPP,
+                format_overhead=0.0,
+            )
+
+    def test_the_checkpoint_wins_where_both_state_a_width(self) -> None:
+        # `pack` quantizes the checkpoint, so the plan must predict
+        # against the width that file states. The map says 2048,
+        # which would take the k-quant table.
+        recipe = solve(
+            map_from_dict(map_with_widths({QWEN_UP: 2048})),
+            weight_budget_bytes=10**9,
+            vram_budget_bytes=10**9 + 1000,
+            kv_headroom_bytes=1000,
+            runtime=LLAMA_CPP,
+            pins={QWEN_UP: 4},
+            row_widths={QWEN_UP: NEMOTRON_ROWS},
+            format_overhead=0.0,
+        )
+
+        assert recipe.assignments[0].bytes == group_bytes(
+            160_000, EXPERT_STACK_EFFECTIVE_BITS[LLAMA_CPP][4], 0.0
+        )
+
+    def test_a_vllm_plan_needs_no_width_at_all(self) -> None:
+        # vLLM prices at nominal bits, so no table routes by width
+        # and the refusal would block a solve it cannot improve.
+        raw = make_map([(QWEN_UP, 160_000, CURVE)], precisions=PRECISIONS)
+        raw["scan"]["group_by"] = "stack"
+
+        recipe = solve(
+            map_from_dict(raw),
+            weight_budget_bytes=10**9,
+            vram_budget_bytes=10**9 + 1000,
+            kv_headroom_bytes=1000,
+            runtime=VLLM,
+            format_overhead=0.0,
+        )
+
+        assert recipe.assignments
+
+
+@pytest.mark.unit
+class TestTheMapAndTheCheckpointDisagree:
+    """One of the two describes another checkpoint (#558)."""
+
+    def plan_against(self, tmp_path, map_width: int, checkpoint_width: int):
+        raw = map_with_widths({QWEN_UP: map_width})
+        map_path = tmp_path / "map.json"
+        map_path.write_text(json.dumps(raw))
+        model_dir = write_checkpoint(
+            tmp_path / "ckpt",
+            {"model.layers.0.mlp.experts.up_proj.weight": [4, checkpoint_width]},
+        )
+        return runner.invoke(
+            app,
+            [
+                "plan",
+                str(map_path),
+                "--vram",
+                "24GiB",
+                "--checkpoint",
+                str(model_dir),
+                "--out",
+                str(tmp_path / "recipe.json"),
+            ],
+        )
+
+    def test_a_contested_width_draws_a_warning_naming_both(self, tmp_path) -> None:
+        result = self.plan_against(tmp_path, map_width=2048, checkpoint_width=2688)
+
+        assert result.exit_code == 0
+        assert "records a row width of 2048" in result.output
+        assert "states 2688" in result.output
+
+    def test_agreeing_widths_draw_no_warning(self, tmp_path) -> None:
+        result = self.plan_against(tmp_path, map_width=2688, checkpoint_width=2688)
+
+        assert result.exit_code == 0
+        assert "records a row width" not in result.output

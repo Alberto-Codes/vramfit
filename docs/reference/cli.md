@@ -199,7 +199,9 @@ vramfit plan SENSITIVITY_MAP
                          safetensors headers price every group and
                          state each group's row width, so a map
                          covering part of the model no longer
-                         defines it (ADR-0029, #515)
+                         defines it (ADR-0029, #515). A schema-5 map
+                         states its own widths, so it plans without
+                         this option (#558)
   --kv-headroom SIZE     Reserved for KV cache + runtime  [default: 4GiB]
   --pin TEXT             Pin groups to a precision, repeatable (glob=bits)
   --protect TEXT         Hold tensors at a precision floor inside
@@ -233,13 +235,23 @@ without a table row (3) keeps its dense entry on refused rows — pack
 refuses it, and the plan-time refusal stays an open question in
 ADR-0028.
 
-`plan` reads those widths from `--checkpoint`. Under a runtime
+Two sources state those widths. A map at `vramfit_schema` 5 records
+each group's measured width
+([issue #558](https://github.com/Alberto-Codes/vramfit/issues/558)),
+and `--checkpoint` measures them from the safetensors headers. The
+plan folds the two and keeps the checkpoint's where both state a
+width, because `pack` quantizes that checkpoint. A group the two
+price differently draws a warning naming both numbers.
+
+Under a runtime
 carrying both type tables the width routes between — `llama.cpp`
-today — it refuses a map of layer-class or routed-expert-stack
-groups planned without one. A width no source states would take the
-k-quant table by omission, which misprices the group silently. A
+today — `plan` refuses a layer-class or routed-expert-stack
+group neither source states a width for. Such a width would take the
+k-quant table by omission, which misprices the group silently. So a
+published schema-5 stack map plans on its own, and an older map of
+the same groups still needs `--checkpoint`. A
 runtime with no table prices every group at nominal bits, where the
-width moves no byte, so `--runtime vllm` plans such a map without
+width moves no byte, so `--runtime vllm` plans either map without
 `--checkpoint`. A whole-layer group holds classes of several widths,
 so it needs no measured width and keeps the k-quant table.
 

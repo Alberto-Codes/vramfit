@@ -32,9 +32,11 @@ tensors become one stack group (decision 6). Group naming stays
 size source. A tensor of an unquantizable class keys by its own name
 under every granularity (#204, #409): the meter skips it, so a layer
 group that absorbed its bytes would hide them behind a covered name.
-`discovered_group_rows` measures the same groups' row widths, and
-`refuse_unmeasured_rows` refuses a solve that would route a group no
-width describes. That refusal reaches only a runtime carrying the
+`discovered_group_rows` measures the same groups' row widths,
+`map_row_widths` reads the widths the map itself records since
+schema 5 (issue #558), `resolved_row_widths` folds the two with the
+size source winning, and `refuse_unmeasured_rows` refuses a solve
+that would route a group neither describes. That refusal reaches only a runtime carrying the
 two type tables the width routes between — a runtime without them
 prices at nominal bits, where the width moves no byte.
 
@@ -416,7 +418,9 @@ def discovered_group_rows(
     the ADR-0012 k-quant table.
 
     The grouping mirrors `discovered_group_bytes`, so the two read one
-    checkpoint into one set of group names.
+    checkpoint into one set of group names. `fold_row_width` holds the
+    one-width-per-group rule, which the scan meter folds through too,
+    so a map and a checkpoint refuse the contradiction alike.
 
     Args:
         sizes: Stored size per checkpoint tensor name, from a
@@ -454,15 +458,180 @@ def discovered_group_rows(
             group = group_key(name, group_by)
         if not routes_by_row_width(group):
             continue
-        seen = rows.setdefault(group, size.rows)
-        if seen != size.rows:
-            raise SizeSourceError(
-                f'group "{group}" holds rows of {seen} and {size.rows} '
-                f'elements, and tensor "{tensor}" carries the second. One '
-                f"group packs under one type, so one width must describe it "
-                f"(ADR-0028, issue #515)"
-            )
+        fold_row_width(rows, group, tensor, size.rows)
     return rows
+
+
+def fold_row_width(rows: dict[str, int], group: str, tensor: str, width: int) -> None:
+    """Fold one tensor's row width into its group's, or refuse.
+
+    One group packs under one type (ADR-0028, issue #515), so two
+    widths under one name have no single answer. The checkpoint
+    reader and the scan meter both fold through this function, so a
+    published map and a live checkpoint refuse the contradiction with
+    one message.
+
+    Args:
+        rows: Widths per group so far, mutated in place.
+        group: The group the tensor belongs to.
+        tensor: The tensor's name, named in the refusal.
+        width: The tensor's row width.
+
+    Raises:
+        SizeSourceError: If the group already holds a different width.
+
+    Examples:
+        ```python
+        from vramfit.domain.sizes import fold_row_width
+
+        rows: dict[str, int] = {}
+        fold_row_width(rows, "model.layers.0.mixer.in_proj", "w", 2688)
+        assert rows == {"model.layers.0.mixer.in_proj": 2688}
+        ```
+    """
+    seen = rows.setdefault(group, width)
+    if seen != width:
+        raise SizeSourceError(
+            f'group "{group}" holds rows of {seen} and {width} '
+            f'elements, and tensor "{tensor}" carries the second. One '
+            f"group packs under one type, so one width must describe it "
+            f"(ADR-0028, issue #515)"
+        )
+
+
+def map_row_widths(sensitivity_map: SensitivityMap) -> dict[str, int]:
+    """Read every row width the map itself records (issue #558).
+
+    The scan measures each group's width and, since map schema 5,
+    persists it. A map that carries these routes the 256 super-block
+    decision with no checkpoint beside it, which is the capability
+    ADR-0028's 2026-09-05 amendment recorded as lost.
+
+    Args:
+        sensitivity_map: The loaded map.
+
+    Returns:
+        Elements per row per group name, under whichever naming root
+        the map carries. Groups the map records no width for are
+        absent — that is NOT RECORDED, never a width to guess.
+
+    Examples:
+        ```python
+        from vramfit.domain.sizes import map_row_widths
+
+        widths = map_row_widths(map_)
+        ```
+    """
+    return {
+        group.name: group.row_width
+        for group in sensitivity_map.groups
+        if group.row_width is not None
+    }
+
+
+def resolved_row_widths(
+    map_widths: Mapping[str, int], row_widths: Mapping[str, int] | None
+) -> dict[str, int]:
+    """Fold the map's recorded widths under a size source's measured ones.
+
+    The size source reads the checkpoint `pack` will quantize, so its
+    width is what the plan must predict against and it wins every
+    contested group. The map fills the groups no source states, which
+    is the whole map-only case (issue #558). `row_width_conflicts`
+    reports a contested group the two disagree about — this function
+    resolves rather than reports, so a caller chooses its own channel.
+
+    A map spells its groups under the root the loaded model's module
+    tree names, and the size source keys under `MAP_ROOT` (ADR-0029
+    decision 7). So the two can name one group two ways. `_stated`
+    reads the source under either spelling, or a `backbone.`-rooted
+    map would keep its own width against a checkpoint that states
+    one — the opposite of this function's rule.
+
+    Args:
+        map_widths: Widths the map records, from `map_row_widths`.
+        row_widths: Widths a size source measured, or None when the
+            caller read no size source.
+
+    Returns:
+        One width per group either input names.
+
+    Examples:
+        ```python
+        from vramfit.domain.sizes import resolved_row_widths
+
+        assert resolved_row_widths({"g": 2688}, None) == {"g": 2688}
+        ```
+    """
+    measured = dict(row_widths or {})
+    unstated = {
+        group: width
+        for group, width in map_widths.items()
+        if _stated(measured, group) is None
+    }
+    return {**unstated, **measured}
+
+
+def _stated(row_widths: Mapping[str, int], group: str) -> int | None:
+    """Read a size source's width for a group, under either root.
+
+    `measured_width` refuses a layer-bearing name rooted outside
+    `CHECKPOINT_ROOTS`. That refusal belongs to the solve, not to a
+    fold or a warning scan, so this reads None instead.
+
+    Args:
+        row_widths: Widths a size source measured.
+        group: A group name, under either naming root.
+
+    Returns:
+        The stated width, or None when the source states none.
+
+    Examples:
+        ```python
+        from vramfit.domain.sizes import _stated
+
+        assert _stated({}, "model.layers.0.mixer.in_proj") is None
+        ```
+    """
+    try:
+        return measured_width(row_widths, group)
+    except SizeSourceError:
+        return None
+
+
+def row_width_conflicts(
+    map_widths: Mapping[str, int], row_widths: Mapping[str, int] | None
+) -> tuple[tuple[str, int, int], ...]:
+    """Name every group the map and the size source price differently.
+
+    A disagreement means one of the two describes another checkpoint.
+    Neither number is provably wrong here, so this reports rather
+    than refuses, and `resolved_row_widths` keeps the size source's.
+    The caller states the disagreement instead of narrowing silently.
+
+    Args:
+        map_widths: Widths the map records, from `map_row_widths`.
+        row_widths: Widths a size source measured, or None when the
+            caller read no size source.
+
+    Returns:
+        One ``(group, map width, source width)`` triple per contested
+        group, in name order.
+
+    Examples:
+        ```python
+        from vramfit.domain.sizes import row_width_conflicts
+
+        assert row_width_conflicts({"g": 2688}, {"g": 2048}) == (("g", 2688, 2048),)
+        ```
+    """
+    measured = row_widths or {}
+    conflicts = []
+    for group, width in sorted(map_widths.items()):
+        stated = _stated(measured, group)
+        if stated is not None and stated != width:
+            conflicts.append((group, width, stated))
+    return tuple(conflicts)
 
 
 def uncovered_groups(
@@ -601,6 +770,8 @@ def refuse_unmeasured_rows(
     row_widths: Mapping[str, int] | None,
     groups: Sequence[str],
     runtime: str | None,
+    *,
+    map_widths: Mapping[str, int] | None = None,
 ) -> None:
     """Refuse a solve that would route a group without measuring it.
 
@@ -614,13 +785,19 @@ def refuse_unmeasured_rows(
     into. It prices every group at nominal bits, so the width moves
     no byte and the refusal would block a solve it cannot improve.
 
+    Two sources can state a width: the map itself, since schema 5
+    (issue #558), and a size source the caller read. The solve prices
+    the fold of the two, so it refuses only where neither states one.
+    A map missing the width fails here rather than taking the
+    k-quant table by omission, which is the silent misprice.
+
     Three advices reach this refusal. A group rooted outside
     `CHECKPOINT_ROOTS` cannot be measured at all, so the message
     states that limitation rather than naming a flag that would
     refuse again. A solve with no size source needs one, so the
-    message names the flag. A solve that read a checkpoint already
-    has the flag, and the named group is missing from that
-    checkpoint instead.
+    message names the flag and says the map records no width either.
+    A solve that read a checkpoint already has the flag, and the
+    named group is missing from that checkpoint instead.
 
     A group of a class the quantizer refuses is exempt. It holds at
     the convert dtype and takes neither type table (#409).
@@ -635,14 +812,17 @@ def refuse_unmeasured_rows(
         runtime: Target runtime name, or None. The refusal applies
             only where the runtime carries the tables the width
             routes between.
+        map_widths: Widths the map itself records, from
+            `map_row_widths`. None or empty means the map records
+            none, which every map below schema 5 does.
 
     Raises:
         SizeSourceError: If a group the decision reaches has no
-            measured width.
+            measured width in either source.
     """
     if effective_bits(runtime) is None or expert_stack_effective_bits(runtime) is None:
         return
-    measured = row_widths or {}
+    measured = resolved_row_widths(map_widths or {}, row_widths)
     missing: set[str] = set()
     unrooted_names: set[str] = set()
     for name in groups:
@@ -675,16 +855,20 @@ def refuse_unmeasured_rows(
             f"there, or plan this map for a runtime with no type table"
         )
     elif row_widths is None:
-        advice = "Plan with --checkpoint (ADR-0029 decision 1)"
+        advice = (
+            "This map records no row width for it, which every map below "
+            "schema 5 does. Plan with --checkpoint (ADR-0029 decision 1), "
+            "or re-scan to record the width (issue #558)"
+        )
     else:
         advice = (
             "The checkpoint states no width for it. Name the checkpoint "
             "the scan measured"
         )
     raise SizeSourceError(
-        f"{subject}. The 256 super-block decision reads the row width "
-        f"the checkpoint states, and no class name supplies it (ADR-0028, "
-        f"issue #515). {advice}"
+        f"{subject}. The 256 super-block decision reads the row width the "
+        f"map or the checkpoint states, and no class name supplies it "
+        f"(ADR-0028, issue #515). {advice}"
     )
 
 

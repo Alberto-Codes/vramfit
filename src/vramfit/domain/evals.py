@@ -8,8 +8,10 @@ Each tier block is optional, and at least one must be present: the
 i-quant baselines carry tiers 1-2 only, the certified pair carries
 all three. Invariants live in ``__post_init__`` (finite numbers,
 non-negative standard errors, a well-formed SHA-256, a provenance
-mark that names its referent). Serialization belongs to the JSON
-adapter (ADR-0008), never here.
+mark that names its referent). [vramfit.domain.provenance][] owns
+that mark's vocabulary and its two rules, so the sensitivity map's
+calibration digest carries the same mark rather than a second one.
+Serialization belongs to the JSON adapter (ADR-0008), never here.
 
 `corpora` takes a corpus name to one `CorpusReference`. Tier 1 and
 tier 2 may name one key when they ran over one corpus, which states
@@ -41,13 +43,21 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
 
+from vramfit.domain.provenance import (
+    PROVENANCE_MARKS,
+    check_mark_pairs_with_digest,
+    check_referent,
+)
+
 _HEX_DIGITS = frozenset("0123456789abcdef")
 _SHA256_HEX_LEN = 64
 _PERCENT_MAX = 100
 
-# The three values `CorpusReference.provenance` accepts. Each answers
-# one question: who hashed these bytes, and when.
-CORPUS_PROVENANCE = ("measured", "recovered", "re_derived")
+# The three values `CorpusReference.provenance` accepts, under the
+# name the sidecar's schema and the glossary already use.
+# [vramfit.domain.provenance][] owns the vocabulary, so the map and
+# the sidecar mark a digest with one set of values (#589).
+CORPUS_PROVENANCE = PROVENANCE_MARKS
 
 # Every field of a corpus reference, in declaration order. An entry
 # that records none of them is not a reference.
@@ -201,6 +211,10 @@ class CorpusReference:
     def _check_content_identity(self) -> None:
         """Enforce the digest, its size, and its required label.
 
+        [vramfit.domain.provenance][] owns the digest-and-mark
+        pairing, so every artifact that records a content identity
+        refuses the same halves.
+
         Raises:
             ValueError: If the digest and the byte count do not pair,
                 the digest is malformed, the byte count is not
@@ -217,34 +231,24 @@ class CorpusReference:
             raise ValueError("sha256 must be 64 lowercase hex digits")
         if self.size_bytes is not None and self.size_bytes <= 0:
             raise ValueError("size_bytes must be positive")
-        if (self.sha256 is None) != (self.provenance is None):
-            raise ValueError(
-                "sha256 and provenance must pair — a digest says which "
-                "bytes, and provenance says who hashed them and when"
-            )
-        if self.provenance is not None and self.provenance not in CORPUS_PROVENANCE:
-            raise ValueError(
-                f"provenance must be one of {', '.join(CORPUS_PROVENANCE)}"
-            )
+        check_mark_pairs_with_digest(
+            self.sha256,
+            self.provenance,
+            digest_field="sha256",
+            mark_field="provenance",
+        )
 
     def _check_provenance_referent(self) -> None:
         """Enforce that a mark names the field its meaning depends on.
+
+        [vramfit.domain.provenance][] owns the rule, so the map's
+        calibration mark and this one refuse the same shape.
 
         Raises:
             ValueError: If `provenance` is ``recovered`` with no
                 ``file``, or ``re_derived`` with no ``revision``.
         """
-        if self.provenance == "recovered" and self.file is None:
-            raise ValueError(
-                'provenance "recovered" requires file — the mark says '
-                "the run's own file survived, so the record must name it"
-            )
-        if self.provenance == "re_derived" and self.revision is None:
-            raise ValueError(
-                'provenance "re_derived" requires revision — the mark '
-                "says these are the pinned revision's bytes, so the "
-                "record must name the revision"
-            )
+        check_referent(self.provenance, file=self.file, revision=self.revision)
 
 
 @dataclass(frozen=True, slots=True)

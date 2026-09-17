@@ -210,6 +210,15 @@ Facts verified upstream on 2026-08-14 (#189):
   the product." Its phase 3 Space re-solves recipes live against
   published maps, and a Space holds no checkpoint. Issue #558 asks
   whether the map itself should carry the width.
+  **Restored 2026-09-17 (#558): the map carries the width.**
+  Sensitivity-map schema 5 records each routed group's measured row
+  width, so a schema-5 map plans under `llama.cpp` at `stack` or
+  `tensor` granularity on its own. The plan folds the map's widths
+  under a `--checkpoint` read and keeps the checkpoint's where both
+  state one, because `pack` quantizes that checkpoint. A map below
+  schema 5 records no width and still needs `--checkpoint`, so the
+  capability returns for new scans and for any map re-scanned or
+  back-filled, not retroactively for the published ones.
 - `TensorSize` gains a `rows` field (2026-09-05, #515). ADR-0029
   decision 5 named `dtype` and `bytes` only, so the shapes the
   shard headers carry reached no caller. The safetensors adapter
