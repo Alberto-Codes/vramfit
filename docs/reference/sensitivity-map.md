@@ -164,16 +164,22 @@ below remain, the sub-4-bit pricing claims do not.
     The mark pairs with `scan.calibration_sha256` in both
     directions: a digest says which bytes, and the mark says who
     hashed them. A digest with no mark records a claim no reader can
-    check, so the loader refuses one. The absent-mark allowance is
-    scoped by version. In a document **below schema 5**, an
-    **absent** mark beside a digest reads as `measured` — that map
-    predates the field, and `vramfit scan` is the only producer that
-    could have written its digest. In a document at **schema 5 or
-    above**, an **absent** mark beside a digest refuses. The
-    producer could have recorded one, so its absence is a missing
-    claim, not a default. An **explicit null** beside a digest is a
-    hand-edit and refuses at every version, because the schema-5
-    writer never writes that pair.
+    check, so the loader refuses one. The absent-mark allowance
+    covers one version. In a document at **schema 4**, an
+    **absent** mark beside a digest reads as `measured`. That map
+    records a digest, could not record a mark, and `vramfit scan` is
+    the only producer that could have written the digest. In a
+    document **below schema 4**, the loader refuses
+    `scan.calibration_sha256`, `scan.calibration_bytes`,
+    `scan.calibration_provenance`, and `scan.calibration_revision`
+    at that field's own path. No producer wrote any of the four
+    there, so a present field carries a value no scan measured. In a
+    document at **schema 5 or above**, an **absent** mark beside a
+    digest refuses. The producer could have recorded one, so its
+    absence is a missing claim, not a default. An **explicit null**
+    beside a digest is a hand-edit and refuses at every version that
+    carries the fields, because the schema-5 writer never writes
+    that pair.
 
     The checkpoint fingerprint excludes both fields. They say who
     hashed the bytes, not which bytes the scan read, so recording a

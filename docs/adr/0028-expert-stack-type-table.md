@@ -194,7 +194,8 @@ Facts verified upstream on 2026-08-14 (#189):
   it prices under a runtime carrying this table (noted 2026-09-05,
   #515). `plan` without ``--checkpoint`` refuses such a map and
   names the flag. The 2026-09-17 restore below narrows that
-  refusal to a map below schema 5 (#558). A group of a class the
+  refusal to a group no source states a width for, whatever the
+  map's schema version (#558). A group of a class the
   quantizer refuses is exempt: it holds at the convert dtype and
   takes neither table (#409), so `mixer.gate` and `mixer.conv1d`
   need no width. A map of whole-layer groups alone is unaffected,

@@ -25,7 +25,8 @@ additive the same way: absent means the group records no summary.
 ``scan.calibration_sha256`` and ``scan.calibration_bytes`` are
 additive too, and they pair: absent or null means the scan recorded
 no content identity, which stays NOT RECORDED. The loader never
-hashes a file to fill them, and a save never invents them.
+hashes a file to fill them, and a save never invents them. It
+refuses either below schema 4, where no producer wrote one.
 [vramfit.adapters.outbound.sensitivity_map_scan_json][] owns that
 section, including the digest's provenance mark. A group's
 ``row_width`` is additive as well: absent means the map records no
@@ -96,10 +97,13 @@ MAP_SCHEMA_VERSION: Final[int] = 5
 # version 4 added the paired calibration digest and byte count, and
 # version 5 added that digest's provenance mark with its revision
 # referent, plus each group's measured row width (issue #558). So
-# every older map is already a valid version-5 document: it records
-# no content identity, or a digest whose absent mark reads as
-# ``measured``, and it records no row width. The writer emits 5,
-# which tells a reader the producer could have recorded both.
+# every older map is already a valid version-5 document. A version-2
+# or version-3 map records no content identity, a version-4 map may
+# record a digest whose absent mark reads as ``measured``, and none
+# of the three records a row width. The writer emits 5, which tells
+# a reader the producer could have recorded both. Each reader gates
+# its own field on the declared version, so a hand-edit cannot add
+# one under an envelope whose producer never wrote it.
 MAP_SCHEMA_ALSO_READS: Final[tuple[int, ...]] = (2, 3, 4)
 
 # The first map schema whose producer records a group's measured row

@@ -72,10 +72,12 @@ change.
     and `revision` as its referents. A **sensitivity map** spells it
     `scan.calibration_provenance`, with `scan.calibration` as the
     `recovered` referent — every map carries that path — and
-    `scan.calibration_revision` as the `re_derived` one. A map below
-    schema 5 carries no such field, and its reader reads an absent
-    mark beside a digest as `measured`, because `vramfit scan` is the
-    only producer of that digest. The bare word keeps its general
+    `scan.calibration_revision` as the `re_derived` one. A map at
+    schema 4 carries a digest and no mark, and its reader reads that
+    absent mark as `measured`, because `vramfit scan` is the only
+    producer of that digest. A map below schema 4 carries no digest
+    at all, and its reader refuses every calibration content field
+    as unmeasured. The bare word keeps its general
     sense elsewhere in this project, where it names the whole class
     of run records.
 

@@ -12,14 +12,18 @@ what was necessarily true before it existed. ``within_group``
 before the field measured with that method. ``imatrix`` (ADR-0020)
 defaults to None, because every such map was unassisted.
 
-``calibration_provenance`` breaks that pattern on purpose. Below
-schema 5 an absent mark beside a digest reads as ``measured``: those
-documents predate the field, and ``vramfit scan`` is the only
-producer that could have written that digest. At schema 5 and above
-an absent mark beside a digest refuses, because the producer could
-have recorded one. An explicit null beside a digest refuses at every
-version — the writer never pairs the two that way, so the reader
-rejects the hand-edit rather than normalizing it.
+``calibration_provenance`` breaks that pattern on purpose, and its
+allowance covers one version. At schema 4 an absent mark beside a
+digest reads as ``measured``. That document carries a digest, could
+not carry a mark, and ``vramfit scan`` is its only possible
+producer. Below schema 4 no producer wrote the digest either, so
+the reader refuses every calibration content field there rather
+than marking a value nobody measured. At schema 5 and above an
+absent mark beside a digest refuses, because the producer could
+have recorded one. An explicit null beside a digest refuses at
+every version that carries the fields. The writer never pairs the
+two that way, so the reader rejects the hand-edit rather than
+normalizing it.
 
 Examples:
     Round-trip one scan section:
@@ -84,6 +88,21 @@ SCAN_PATH: Final[str] = "$.scan"
 # digest's provenance mark. From here up, an absent mark beside a
 # digest is a missing claim, never a default (issue #589's mechanism).
 MARK_REQUIRED_FROM: Final[int] = 5
+
+# The first map schema whose producer could record the calibration
+# file's content identity at all (#586 raised the envelope to 4).
+# Below this, every field below carries a value no scan wrote.
+DIGEST_RECORDED_FROM: Final[int] = 4
+
+# Every field that describes the calibration digest. The version gate
+# refuses each at its own path, so a hand-edit learns which field it
+# added rather than which section holds it.
+CALIBRATION_CONTENT_FIELDS: Final[tuple[str, ...]] = (
+    "calibration_sha256",
+    "calibration_bytes",
+    "calibration_provenance",
+    "calibration_revision",
+)
 
 
 def scan_to_dict(meta: ScanMeta) -> dict[str, Any]:
@@ -155,27 +174,72 @@ def _parse_precisions(obj: dict[str, Any]) -> list[int]:
     return precisions
 
 
+def _check_content_version(obj: dict[str, Any], schema_version: int) -> None:
+    """Refuse a calibration content field no producer could write.
+
+    The digest and its byte count arrived with schema 4 (#586), and
+    the mark and its revision with schema 5 (#589). A document below
+    `DIGEST_RECORDED_FROM` carries none of the four, so a present
+    field there reached the document by hand and no scan measured
+    its value. The published maps declare schema 2, which is where
+    the back-fill this schema was raised for lands, so this is the
+    version that matters most.
+
+    Args:
+        obj: The ``scan`` JSON object.
+        schema_version: The version the document declares.
+
+    Raises:
+        ArtifactError: If the document declares a version below
+            `DIGEST_RECORDED_FROM` and carries any field of
+            `CALIBRATION_CONTENT_FIELDS`, at that field's own path.
+    """
+    if schema_version >= DIGEST_RECORDED_FROM:
+        return
+    for name in CALIBRATION_CONTENT_FIELDS:
+        _require(
+            name not in obj,
+            f"{SCAN_PATH}.{name}",
+            f"no schema-{schema_version} scan recorded the calibration "
+            f"file's content identity, so this value is unmeasured "
+            f"(#586, #589)",
+        )
+
+
 def _parse_calibration_mark(
     obj: dict[str, Any], digest: str | None, schema_version: int
 ) -> str | None:
     """Read the calibration digest's provenance mark.
 
-    The default is version-gated. Below `MARK_REQUIRED_FROM`, an
-    absent field beside a digest reads as `MEASURED`: those documents
-    predate the field, and ``vramfit scan`` is the only producer that
-    could have written that digest, hashing the calibration file as
-    it read it. From `MARK_REQUIRED_FROM` up, an absent field beside
-    a digest refuses. The producer could have recorded a mark, so the
-    absence is a missing claim, not a default.
+    The default covers one version, and both of its edges are a
+    fact about producers. `DIGEST_RECORDED_FROM` is the first schema
+    that records the digest, and `MARK_REQUIRED_FROM` is the first
+    that records the mark beside it. Schema 4 sits between the two.
+    Such a document carries a digest, could not carry a mark, and
+    ``vramfit scan`` is the only producer that could have written
+    that digest, hashing the calibration file as it read it. So an
+    absent mark there reads as `MEASURED`.
 
-    The ungated default reproduced the defect the mark exists to
-    prevent. The back-fill this schema was raised for writes a
-    schema-5 map with a digest hashed today. Omitting the mark read
-    back as `MEASURED` with no error, so the artifact asserted that
-    the process which produced its damage numbers hashed those bytes
-    as it read them. That is false. The referent rules cannot catch
-    it, because `MEASURED` is the one mark that needs no referent, so
-    the hole sat exactly where the mechanism had to hold.
+    The claim stops at both edges. Below `DIGEST_RECORDED_FROM` no
+    producer wrote a digest, so `_check_content_version` refuses the
+    field instead, and this default never sees one. From
+    `MARK_REQUIRED_FROM` up an absent mark beside a digest refuses.
+    The producer could have recorded a mark, so the absence is a
+    missing claim, not a default.
+
+    An ungated default reproduced the defect the mark exists to
+    prevent, twice. The back-fill this schema was raised for writes
+    a digest hashed today into a published map. Omitting the mark
+    read back as `MEASURED` with no error, so the artifact asserted
+    that the process which produced its damage numbers hashed those
+    bytes as it read them. That is false. Gating on
+    `MARK_REQUIRED_FROM` alone left the same forgery open where the
+    back-fill lands, because the published maps declare schema 2. A
+    justification that holds across part of its own range is the
+    defect, not the code beneath it. The referent rules cannot catch
+    either case, because `MEASURED` is the one mark that needs no
+    referent, so the hole sat exactly where the mechanism had to
+    hold.
 
     The additive precedent of ``within_group`` and ``imatrix`` does
     not transfer, however alike the three fields look. Those two
@@ -200,7 +264,8 @@ def _parse_calibration_mark(
         ArtifactError: If a present field is neither null nor a
             non-empty string, or the document declares
             `MARK_REQUIRED_FROM` or above and carries a digest with
-            no mark.
+            no mark. A document below `DIGEST_RECORDED_FROM` refuses
+            the field earlier, in `_check_content_version`.
     """
     if "calibration_provenance" in obj:
         raw = obj["calibration_provenance"]
@@ -261,8 +326,10 @@ def scan_from_dict(obj: dict[str, Any], schema_version: int) -> ScanMeta:
         obj: The ``scan`` JSON object.
         schema_version: The version the document declares.
             `map_from_dict` validates the envelope and passes the
-            version here, so this reader never re-reads it. The
-            calibration mark's default is gated on it.
+            version here, so this reader never re-reads it. Two
+            gates read it: which calibration content fields may
+            appear, and whether an absent mark beside a digest
+            defaults or refuses.
 
     Returns:
         The validated scan provenance.
@@ -277,9 +344,11 @@ def scan_from_dict(obj: dict[str, Any], schema_version: int) -> ScanMeta:
             (ADR-0020), the calibration content identity is malformed
             — the digest must hold 64 lowercase hex digits, the byte
             count must be positive, and the two must pair — the
-            digest and its provenance mark do not pair, or a mark
+            digest and its provenance mark do not pair, a mark
             asserting outside the digest does not name its referent
-            (``re_derived`` without ``calibration_revision``). A
+            (``re_derived`` without ``calibration_revision``), or the
+            document declares a version below `DIGEST_RECORDED_FROM`
+            and carries any calibration content field. A
             mistyped field reports at its own JSON path. The domain
             invariants report at the section's path. A field the
             section does not carry reports and loads (#261).
@@ -317,6 +386,7 @@ def scan_from_dict(obj: dict[str, Any], schema_version: int) -> ScanMeta:
     # which stays NOT RECORDED. The loader never hashes a file to
     # fill a gap — a digest taken today proves nothing about the
     # bytes an earlier run measured.
+    _check_content_version(obj, schema_version)
     raw_digest = obj.get("calibration_sha256")
     raw_bytes = obj.get("calibration_bytes")
     digest = (
