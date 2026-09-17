@@ -175,6 +175,10 @@ below remain, the sub-4-bit pricing claims do not.
     hand-edit and refuses at every version, because the schema-5
     writer never writes that pair.
 
+    The checkpoint fingerprint excludes both fields. They say who
+    hashed the bytes, not which bytes the scan read, so recording a
+    mark refuses no resume written before the field existed.
+
     The other additive fields do not set a precedent here.
     `within_group` and `imatrix` describe what the scan did, so a
     default states a setting. This field describes who established a
@@ -271,8 +275,11 @@ below remain, the sub-4-bit pricing claims do not.
   classes of several widths, takes the ADR-0012 k-quant table, and
   records none. The loader requires a positive integer and accepts an
   absent field as no width. It refuses the field on a group the
-  decision does not reach, because no single width describes such a
-  group. `vramfit plan` folds these under a
+  decision does not reach, and the refusal states the reason that
+  group earns. A whole-layer group takes the k-quant table, which no
+  width routes. A group of a class the quantizer refuses holds at
+  the F16 passthrough and takes neither type table (#409).
+  `vramfit plan` folds these under a
   `--checkpoint` read, which wins where both state a width, because
   `pack` quantizes that checkpoint. A disagreement draws a warning
   naming the group and both numbers. Where neither source states a

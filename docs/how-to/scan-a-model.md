@@ -214,10 +214,12 @@ in the same family.
     the scan skips that module's `conv1d` and `gate` classes (#204),
     so only a size source prices them
     ([ADR-0029](../adr/0029-plan-independent-size-source.md)
-    decision 3, amended 2026-09-04). A family with no such class
-    refuses too under `--runtime llama.cpp`: every group a `stack`
-    or `tensor` selection names routes by its measured row width,
-    and only a size source states that width (ADR-0028, issue #515).
+    decision 3, amended 2026-09-04). Every group a `stack` or
+    `tensor` selection names routes by its measured row width
+    (ADR-0028, issue #515). This scan records that width in the map
+    at schema 5, so a family with no such class plans under
+    `--runtime llama.cpp` with no size source (issue #558). A map
+    below schema 5 records no width and refuses there.
     A runtime with no effective-bits table prices at nominal bits
     and plans the map, so pass `--checkpoint` there as well. Were
     the plan to proceed, a map covering all 46 expert stacks would

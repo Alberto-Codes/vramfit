@@ -193,13 +193,14 @@ Facts verified upstream on 2026-08-14 (#189):
   size source for every layer-class and routed-expert-stack group
   it prices under a runtime carrying this table (noted 2026-09-05,
   #515). `plan` without ``--checkpoint`` refuses such a map and
-  names the flag. A group of a class the quantizer refuses is
-  exempt: it holds at the convert dtype and takes neither table
-  (#409), so `mixer.gate` and `mixer.conv1d` need no width. A map
-  of whole-layer groups alone is unaffected, because a layer group
-  holds several row widths and never took this table. A runtime
-  with no effective-bits table is unaffected too, because it prices
-  at nominal bits.
+  names the flag. The 2026-09-17 restore below narrows that
+  refusal to a map below schema 5 (#558). A group of a class the
+  quantizer refuses is exempt: it holds at the convert dtype and
+  takes neither table (#409), so `mixer.gate` and `mixer.conv1d`
+  need no width. A map of whole-layer groups alone is unaffected,
+  because a layer group holds several row widths and never took
+  this table. A runtime with no effective-bits table is unaffected
+  too, because it prices at nominal bits.
 - A published sensitivity map alone no longer plans under
   `llama.cpp` at `stack` or `tensor` granularity (noted 2026-09-05,
   #515). The map carries every damage measurement and no row width,
