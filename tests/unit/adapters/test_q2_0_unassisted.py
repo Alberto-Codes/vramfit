@@ -39,10 +39,13 @@ from vramfit.adapters.outbound.scan.within_group import perturb
 
 pytestmark = pytest.mark.unit
 
-# The 30B target's two routed-expert row widths (ADR-0026, ADR-0028).
-WIDE = "blk.0.ffn_down_exps.weight"
-NARROW = "blk.0.ffn_up_exps.weight"
-WIDTHS = {WIDE: 2688, NARROW: 1856}
+# The 30B target's two routed-expert row widths, against the stacks
+# that carry them (ADR-0026, ADR-0028): the up stack holds rows of
+# n_embd 2688, and the down stack rows of n_ff 1856, the same mapping
+# `tests.integration.q2_0_fixture` writes.
+UP = "blk.0.ffn_up_exps.weight"
+DOWN = "blk.0.ffn_down_exps.weight"
+WIDTHS = {UP: 2688, DOWN: 1856}
 ROWS = 2
 
 
