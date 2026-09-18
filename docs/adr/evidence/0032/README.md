@@ -248,8 +248,8 @@ re-solve on the q0-imx2 map, twelve stacks at 2 bits, measured mean
 KLD 0.077790 ± 0.000474 at 16,742,875,072 B. That figure lives in
 [q0imx2-2026-09-17-results.txt](q0imx2-2026-09-17-results.txt) and
 in the operator's run archive, `data/vramfit-q0imx2-30b-real-run/report.md`
-(2026-09-17, map SHA-256 `3a8bce20…b1e`, recipe SHA-256
-`34ea28d3…a78`). The run
+(2026-09-17, map SHA-256 `3a8bce20f18217285d83f22246abaace2a51ef1910f4702381e08c9c3b2b7b1e`, recipe SHA-256
+`34ea28d3ac051a68e97753162e246edcc10e749ed658a76edf82c59d17191a78`). The run
 below re-read the published bytes and re-packed the v1 recipe on its
 own pod as controls. That is how the cited figures and the measured
 ones share one instrument.
@@ -304,7 +304,7 @@ before either arm ran. `ctl-v1-repack` is byte-identical to the
 2026-09-17 pod's `ctl-repro` (same SHA-256). `mf-pub` packs the
 published v2 recipe (SHA-256 `7fa0d6b0…4a1c`) and lands at the
 published byte count. `mf-cand` packs the re-solved recipe
-(`34ea28d3…a78`) and lands at the candidate's byte count. The
+(`34ea28d3ac051a68e97753162e246edcc10e749ed658a76edf82c59d17191a78`) and lands at the candidate's byte count. The
 matrix-free packs differ from their assisted twins only in the
 eleven or twelve pre-encoded `ffn_down_exps` stacks, whose payload
 hashes the run logs and encoder reports carry.
