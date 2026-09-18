@@ -55,8 +55,8 @@ class TestPackResultPreEncoding:
                 pre_encode_assisted=True,
             )
 
-    def test_matrix_free_pre_encoding_holds_without_an_imatrix(self) -> None:
-        # The matrix-free encoder reads no matrix, so the record
+    def test_unassisted_pre_encoding_holds_without_an_imatrix(self) -> None:
+        # The unassisted encoder reads no matrix, so the record
         # names none (ADR-0018, 2026-09-17 amendment).
         r = result(imatrix_path=None, pre_encoded=("x",), q2_0_encoder="rev")
         assert r.pre_encoded == ("x",)

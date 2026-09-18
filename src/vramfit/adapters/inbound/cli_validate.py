@@ -15,7 +15,7 @@ warning — a different file contaminates the comparison (ADR-0020).
 Assisted tokens resolve this way: ``kquant-imx`` measures through
 ``kquant``, ``q0-imx`` through ``q0``, and ``q0-imx2`` through its
 assisted 2-bit method. Each uses the imatrix. ``q0-fit2`` measures
-through its own matrix-free 2-bit method and takes none.
+through its own unassisted 2-bit method and takes none.
 The pass loads the same ``transformers`` the scan did, so it reports
 a merged projection under the name the scan measured.
 `vramfit.domain.projections.merged_assignments` folds the recipe's

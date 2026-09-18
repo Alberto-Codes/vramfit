@@ -24,9 +24,9 @@ The methods:
   (ADR-0032 decision 3). Uncovered parameters keep the reference
   arithmetic, because stock ``llama-quantize`` packs them.
 - ``q0-fit2`` — ``q0`` with nominal 2 fitting through that same
-  ``Q2_0`` encoder at weight 1.0, for every parameter. It reads no
-  imatrix at any width, so the meter refuses weights under it
-  (ADR-0018, 2026-09-17 amendment).
+  ``Q2_0`` encoder unassisted, at weight 1.0, for every parameter.
+  It reads no imatrix at any width, so the meter refuses weights
+  under it (ADR-0018, 2026-09-17 amendment).
 
 Examples:
     Perturb one tensor under the q0 method:
@@ -84,7 +84,7 @@ _Q0_FAMILY: tuple[WithinGroupMethod, ...] = ("q0", "q0-imx2")
 # The methods whose non-encoder widths take the `q0` block
 # quantizers, assisted where the parameter carries weights.
 _Q0_PORTS: tuple[WithinGroupMethod, ...] = ("q0", "q0-imx2", "q0-fit2")
-# The matrix-free method: nominal 2 fits through vramfit's own
+# The unassisted method: nominal 2 fits through vramfit's own
 # Q2_0 encoder at weight 1.0, and every other width keeps the `q0`
 # reference arithmetic (ADR-0018, 2026-09-17 amendment).
 _FIT2_METHOD = "q0-fit2"

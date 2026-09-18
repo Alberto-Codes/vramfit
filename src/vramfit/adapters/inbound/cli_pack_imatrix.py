@@ -163,8 +163,8 @@ def _report_imatrix_effects(result: PackResult) -> None:
 def _report_pre_encoding(result: PackResult) -> None:
     """Echo what vramfit's ``Q2_0`` encoder pre-encoded (ADR-0032).
 
-    The line states the count, whether the matrix weighted the fit,
-    and the encoder revision. The run log names every tensor.
+    The line states the count, names the fit assisted or unassisted,
+    and states the encoder revision. The run log names every tensor.
 
     Args:
         result: The pack step's accounting record.
@@ -172,7 +172,7 @@ def _report_pre_encoding(result: PackResult) -> None:
     if not result.pre_encoded:
         return
     count = len(result.pre_encoded)
-    fit = "assisted" if result.pre_encode_assisted else "matrix-free"
+    fit = "assisted" if result.pre_encode_assisted else "unassisted"
     typer.echo(
         f"pre-encoded {count} tensor{'' if count == 1 else 's'} with the "
         f"{fit} Q2_0 encoder {result.q2_0_encoder} (ADR-0032)"

@@ -364,7 +364,7 @@ class TestPreEncodingPack:
 class TestMatrixFreePack:
     """The ``q0-fit2`` path packs nominal 2 with no importance matrix."""
 
-    def test_matrix_free_recipe_pre_encodes_with_no_matrix_anywhere(
+    def test_unassisted_recipe_pre_encodes_with_no_matrix_anywhere(
         self, workspace: dict[str, Path]
     ) -> None:
         p = packer(workspace, imatrix=False)
@@ -383,7 +383,7 @@ class TestMatrixFreePack:
         assert types[STACK] == Q2_0_TYPE_ID
         assert types[UP] == Q2_0_TYPE_ID
 
-    def test_matrix_free_selection_ignores_coverage_and_exclusions(
+    def test_unassisted_selection_ignores_coverage_and_exclusions(
         self, workspace: dict[str, Path]
     ) -> None:
         # The matrix reaches the quantizer's own pass for the widths
@@ -401,7 +401,7 @@ class TestMatrixFreePack:
         )
         assert result.pre_encoded == (STACK, UP)
 
-    def test_matrix_free_rows_outside_the_block_still_refuse(
+    def test_unassisted_rows_outside_the_block_still_refuse(
         self, workspace: dict[str, Path]
     ) -> None:
         # The block-alignment refusal protects the quantizer, not the

@@ -315,6 +315,12 @@ change.
     [open questions](../adr/0032-assisted-q2-encoder-home.md#open-questions)
     gate what a share that counts pre-encoded bytes may publish.
 
+**Matrix-free**
+:   See **unassisted** under **Assisted pricing**. Accepted
+    [ADR-0032](../adr/0032-assisted-q2-encoder-home.md) and its
+    evidence page use this word for the `q0-fit2` fit. It names no
+    second encoder.
+
 **Reconstruction error**
 :   The squared difference between a quantized tensor and its
     original, at `||q - w||² / ||w||²`, measured in weight space. It

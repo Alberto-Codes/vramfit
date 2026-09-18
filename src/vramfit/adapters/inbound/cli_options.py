@@ -182,7 +182,7 @@ def parse_within_group(
         token is the vocabulary run logs and maps share (ADR-0018).
         An imatrix turns the kquant or q0 token into its assisted
         one. ``q0-imx2`` directly names the assisted 2-bit path,
-        and ``q0-fit2`` the matrix-free one.
+        and ``q0-fit2`` the unassisted one.
 
     Raises:
         typer.BadParameter: If the method is unknown, ``kquant``,

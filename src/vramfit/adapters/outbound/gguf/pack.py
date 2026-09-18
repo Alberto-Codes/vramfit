@@ -54,7 +54,7 @@ as amended 2026-09-04, #413, #414). A recipe priced with one of the
 ``Q2_0`` encoder's methods takes the pre-encoding path
 (ADR-0032): the adapter selects the ``q2_0`` tensors the method
 reaches — the matrix's covered ones under ``q0-imx2``, and every
-candidate under matrix-free ``q0-fit2`` (ADR-0018, 2026-09-17
+candidate under unassisted ``q0-fit2`` (ADR-0018, 2026-09-17
 amendment) —
 refuses before anything is written when the quantizer's own matching
 would floor one, runs the encoder as a separate program under
@@ -616,7 +616,7 @@ class LlamaCppPacker:
         A recipe priced with one of vramfit's ``Q2_0`` encoder
         methods pre-encodes its ``q2_0`` tensors first (ADR-0032).
         ``q0-imx2`` pre-encodes the tensors the matrix covers, and
-        matrix-free ``q0-fit2`` every candidate, because its fit
+        unassisted ``q0-fit2`` every candidate, because its fit
         reads no matrix (ADR-0018, 2026-09-17 amendment). The
         stage refuses before it writes when the quantizer's own
         matching would leave such a tensor at another type, runs the

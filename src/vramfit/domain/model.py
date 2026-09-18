@@ -6,7 +6,7 @@ however it was constructed. The checks cover positive sizes, strictly
 descending precisions, unique group names, sensitivity keys matching
 the scan, imatrix provenance pairing with the assisted method tokens
 (including ``q0-imx2`` for the assisted ``Q2_0`` encoder, and
-excluding ``q0-fit2``, which runs that encoder matrix-free),
+excluding ``q0-fit2``, which runs that encoder unassisted),
 tensor sizes covering exactly the group's tensors, protection records
 pairing with their resolved pairs (ADR-0022), an ordered imatrix
 count summary (ADR-0026 decision 4), a calibration digest whose
@@ -95,7 +95,7 @@ Q0_IMX_METHOD = "q0-imx"
 # encoder the pack pre-encodes with. `q0-imx` keeps its stock-Q2_0
 # meaning. The token says the matrix now reaches nominal 2.
 Q0_IMX2_METHOD = "q0-imx2"
-# The matrix-free 2-bit token (ADR-0018, 2026-09-17 amendment): the
+# The unassisted 2-bit token (ADR-0018, 2026-09-17 amendment): the
 # `q0` port, with nominal 2 fitting through the same vramfit `Q2_0`
 # encoder at weight 1.0. It reads no importance matrix at any width,
 # so it never pairs with the `imatrix` field. `Q0_IMX2_METHOD` names

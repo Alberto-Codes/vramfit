@@ -288,7 +288,7 @@ def test_q0_imx2_scan_requires_imatrix(tmp_path, monkeypatch) -> None:
     assert "requires --imatrix" in result.output
 
 
-def test_q0_fit2_scan_records_the_matrix_free_token_without_an_imatrix(
+def test_q0_fit2_scan_records_the_unassisted_token_without_an_imatrix(
     tmp_path, monkeypatch
 ) -> None:
     damages = {(spec.name, bits): 0.1 for spec in SPECS for bits in (4, 2)}

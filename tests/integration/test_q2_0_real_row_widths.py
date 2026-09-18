@@ -296,7 +296,7 @@ class TestRealRowWidths:
         )
         assert run.returncode == 0, run.stdout + run.stderr
 
-    def test_matrix_free_pack_differs_and_decodes_to_the_weight_none_fit(
+    def test_unassisted_pack_differs_and_decodes_to_the_weight_none_fit(
         self, tmp_path: Path
     ) -> None:
         # The matrix still reaches the stock pass for the nominal-4
@@ -310,12 +310,12 @@ class TestRealRowWidths:
             rng,
             n_embd=N_EMBD,
             n_ff=N_FF,
-            name="vramfit q2_0 matrix-free fixture",
+            name="vramfit q2_0 unassisted fixture",
         )
         imatrix = tmp_path / "imatrix.gguf"
         write_imatrix(imatrix, rng, n_embd=N_EMBD, n_ff=N_FF, zero_count_expert=False)
         assisted = _packer(tmp_path, base, imatrix, quantize, "assisted.gguf")
-        free = _packer(tmp_path, base, imatrix, quantize, "matrix-free.gguf")
+        free = _packer(tmp_path, base, imatrix, quantize, "unassisted.gguf")
 
         assisted_result = assisted.pack(_recipe(imatrix))
         free_result = free.pack(_recipe(None))
@@ -332,11 +332,11 @@ class TestRealRowWidths:
         for name, group, width in ENCODED:
             free_bytes = payload(free.out_path, name)
             assert free_bytes != payload(assisted.out_path, name), (
-                f"the matrix-free and assisted packs agree on {width}-wide {name}"
+                f"the unassisted and assisted packs agree on {width}-wide {name}"
             )
             weight = torch.from_numpy(tensors[name].astype(np.float32))
             priced = perturb(weight, 2, group, "q0-fit2", 32, None)
             decoded = dequantize_q2_0(free_bytes, weight.numel())
             assert np.array_equal(decoded, priced.reshape(-1).numpy()), (
-                f"the matrix-free scan and pack disagree on {width}-wide {name}"
+                f"the unassisted scan and pack disagree on {width}-wide {name}"
             )

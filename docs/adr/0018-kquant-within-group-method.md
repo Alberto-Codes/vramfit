@@ -30,7 +30,7 @@
 - **Amendment (2026-09-16, issue #599):** the assisted Q2_0 scan
   method ADR-0032 created takes the token `q0-imx2`. Maintainer
   ruling 2026-09-16. See "Amendment: the token `q0-imx2`" below.
-- **Amendment (2026-09-17):** the matrix-free arm of that same Q2_0
+- **Amendment (2026-09-17):** the unassisted arm of that same Q2_0
   encoder takes the token `q0-fit2`. It ships as an option and
   changes no default. See "Amendment: the token `q0-fit2`" below.
 
@@ -527,11 +527,11 @@ lands here too, so a reader tracing token history reads one record.
 
 ### Context
 
-[ADR-0032](0032-assisted-q2-encoder-home.md) records a matrix-free
+[ADR-0032](0032-assisted-q2-encoder-home.md) records an unassisted
 control arm at model level. Two packs ran the shipped `Q2_0` fit at
 weight 1.0 on every nominal-2 block, with the matrix still supplied
 for the nominal-4 tensors. On the published allocation the
-matrix-free file measured mean KLD 0.075822 against the assisted
+unassisted file measured mean KLD 0.075822 against the assisted
 0.071403, at an identical byte count. On the re-solved twelve-stack
 recipe it measured 0.082204 against 0.077790. Both differences are
 0.0044, about 3.3 % of the 0.132919 win over stock `Q2_0`. Weight
@@ -540,7 +540,7 @@ space measured 2.5 % for the matrix's share.
 That arm ran outside the shipped code. `q0-imx2` refuses without an
 importance matrix in two places, and neither refusal is wrong: an
 assisted token must name its matrix, and matrix provenance must name
-an assisted token (ADR-0020). A matrix-free fit therefore needs a
+an assisted token (ADR-0020). An unassisted fit therefore needs a
 token of its own. This record owns the token list, and six tokens
 sit here already.
 

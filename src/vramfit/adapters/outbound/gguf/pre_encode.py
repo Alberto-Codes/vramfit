@@ -40,7 +40,7 @@ before it refuses. The preprocessor never writes one as ``Q2_0``,
 so neither abort above can reach it, and refusing it would refuse a
 pack the stock path serves.
 
-**A matrix-free method drops the first two.** Under ``q0-fit2``
+**An unassisted method drops the first two.** Under ``q0-fit2``
 the encoder reads no matrix at any width, so coverage and the
 recipe's imatrix exclusions decide nothing about the nominal-2 fit
 (ADR-0018, 2026-09-17 amendment). The selection then takes every
@@ -227,7 +227,7 @@ def select_pre_encode_targets(
         overrides: The overrides the pack drives, in priority order.
         header: The base GGUF's parsed header.
         covered: The imatrix's entry names. A candidate outside it
-            packs unassisted. None for a matrix-free method, which
+            packs unassisted. None for an unassisted method, which
             keeps every candidate and ignores ``excluded`` — neither
             names anything its fit reads.
         excluded: The recipe's imatrix exclusions. A candidate in it

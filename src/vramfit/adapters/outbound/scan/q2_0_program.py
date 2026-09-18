@@ -185,8 +185,8 @@ def _encode_tensor(
 def _parse(argv: Sequence[str] | None) -> argparse.Namespace:
     """Parse the program's arguments.
 
-    ``--imatrix`` is optional: without it the fit runs at weight
-    1.0, which is what the ``q0-fit2`` method prices.
+    ``--imatrix`` is optional: without it the fit runs unassisted at
+    weight 1.0, which is what the ``q0-fit2`` method prices.
 
     Args:
         argv: The arguments, or None for ``sys.argv``.
@@ -198,7 +198,7 @@ def _parse(argv: Sequence[str] | None) -> argparse.Namespace:
         prog="vramfit-q2-0-encoder",
         description=(
             "Pre-encode Q2_0 tensors from a base GGUF with the shared "
-            "fit (ADR-0032): assisted with --imatrix, matrix-free "
+            "fit (ADR-0032): assisted with --imatrix, unassisted "
             "without it."
         ),
     )

@@ -159,7 +159,7 @@ class TestRecipe:
             recipe_from_dict(raw)
 
     def test_q0_fit2_token_round_trips_without_an_imatrix(self) -> None:
-        # The matrix-free 2-bit method reads no matrix at any width,
+        # The unassisted 2-bit method reads no matrix at any width,
         # so it names none (ADR-0018, 2026-09-17 amendment).
         raw = make_recipe_dict()
         raw["within_group"] = "q0-fit2"

@@ -147,7 +147,7 @@ class PackResult:
         pre_encode_assisted (bool): Whether the importance matrix
             weighted that fit. True names the assisted fit, which
             packs the tensors assisted (ADR-0032 decision 3) and
-            requires `imatrix_path`. False names the matrix-free fit
+            requires `imatrix_path`. False names the unassisted fit
             at weight 1.0, which reads no matrix at any width
             (ADR-0018, 2026-09-17 amendment). The two encoders emit
             different bytes for one tensor, so the record states

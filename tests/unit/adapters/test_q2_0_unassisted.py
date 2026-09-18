@@ -1,13 +1,13 @@
-"""Checks of the matrix-free ``Q2_0`` encoder path at the target's row widths.
+"""Checks of the unassisted ``Q2_0`` encoder path at the target's row widths.
 
-ADR-0018's 2026-09-17 amendment gives the matrix-free fit its own
+ADR-0018's 2026-09-17 amendment gives the unassisted fit its own
 ``within_group`` token, ``q0-fit2``. The encoder program is the one
 the pack drives, so this module runs that program at the 30B
 target's own row widths of 2688 and 1856 (ADR-0026, ADR-0028), once
 with an importance matrix and once without.
 
 The two runs must differ, or the token would name a distinction the
-bytes do not carry. The matrix-free payload must also decode to the
+bytes do not carry. The unassisted payload must also decode to the
 shipped fit's weight-None output, or the scan would price cells the
 pack does not emit.
 
@@ -120,7 +120,7 @@ def workspace(tmp_path: Path) -> Workspace:
 
 
 class TestMatrixFreeEncoder:
-    def test_matrix_free_payloads_differ_from_the_assisted_ones(
+    def test_unassisted_payloads_differ_from_the_assisted_ones(
         self, workspace: Workspace
     ) -> None:
         assisted = run(workspace.base, workspace.root / "assisted", workspace.imatrix)
@@ -130,7 +130,7 @@ class TestMatrixFreeEncoder:
             assert len(free[name]) == len(assisted[name])
             assert free[name] != assisted[name], f"{name} at {columns} columns"
 
-    def test_matrix_free_payload_decodes_to_the_shipped_weight_none_fit(
+    def test_unassisted_payload_decodes_to_the_shipped_weight_none_fit(
         self, workspace: Workspace
     ) -> None:
         payloads = run(workspace.base, workspace.root / "free", None)
@@ -143,7 +143,7 @@ class TestMatrixFreeEncoder:
             expected = q2_0_assisted_quantize_dequantize(weight, None)
             assert torch.equal(decoded, expected), f"{name} at {columns} columns"
 
-    def test_the_matrix_free_method_prices_that_same_fit(
+    def test_the_unassisted_method_prices_that_same_fit(
         self, workspace: Workspace
     ) -> None:
         # The scan must price what the pack emits, so the method's
