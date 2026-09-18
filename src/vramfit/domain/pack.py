@@ -138,13 +138,20 @@ class PackResult:
             signal. The tokens are the runtime's own layer names, so
             the backend owns the vocabulary.
         pre_encoded (tuple[str, ...]): Tensors the preprocessor
-            encoded with vramfit's assisted ``Q2_0`` encoder before
+            encoded with vramfit's own ``Q2_0`` encoder before
             the quantizer ran, in file order (ADR-0032 decision 1).
-            Each packs assisted (decision 3). Empty when the recipe
-            took the stock path.
+            Empty when the recipe took the stock path.
         q2_0_encoder (str | None): The encoder revision that produced
             the pre-encoded tensors, recorded with the result
             (ADR-0032 decision 3). None when nothing was pre-encoded.
+        pre_encode_assisted (bool): Whether the importance matrix
+            weighted that fit. True names the assisted fit, which
+            packs the tensors assisted (ADR-0032 decision 3) and
+            requires `imatrix_path`. False names the unassisted fit
+            at weight 1.0, which reads no matrix at any width
+            (ADR-0018, 2026-09-17 amendment). The two encoders emit
+            different bytes for one tensor, so the record states
+            which one ran.
 
     Examples:
         Inspect the real size of a packed model:
@@ -167,6 +174,7 @@ class PackResult:
     file_type: str | None = None
     pre_encoded: tuple[str, ...] = ()
     q2_0_encoder: str | None = None
+    pre_encode_assisted: bool = False
 
     def __post_init__(self) -> None:
         """Enforce the result invariants.
@@ -219,15 +227,18 @@ def _check_pre_encoded(result: PackResult) -> None:
         result: The record under construction.
 
     Raises:
-        ValueError: If a pre-encoded name is empty, the record names
-            pre-encoded tensors without an imatrix, or the two
-            pre-encoding fields disagree on whether the stage ran.
+        ValueError: If a pre-encoded name is empty, the record claims
+            an assisted fit without an imatrix or without a stage that
+            ran, or the two pre-encoding fields disagree on whether
+            the stage ran.
     """
     if any(not name for name in result.pre_encoded):
         raise ValueError("a pre-encoded tensor name must not be empty")
     ran = bool(result.pre_encoded)
-    if ran and result.imatrix_path is None:
-        raise ValueError("pre_encoded requires an imatrix_path")
+    if result.pre_encode_assisted and not ran:
+        raise ValueError("pre_encode_assisted requires pre_encoded tensors")
+    if result.pre_encode_assisted and result.imatrix_path is None:
+        raise ValueError("pre_encode_assisted requires an imatrix_path")
     if (result.q2_0_encoder is not None) != ran:
         raise ValueError(
             "pre_encoded and q2_0_encoder record one stage together — set "

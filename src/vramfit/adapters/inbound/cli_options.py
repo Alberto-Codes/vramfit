@@ -4,7 +4,8 @@ The two commands build the same meter, so their overlapping options
 follow one rule each: the ``--gpu-memory`` cap parses with the
 project size grammar and requires ``--device auto``, and
 ``--imatrix`` pairs with the kquant, q0, or q0-imx2 within-group method
-(ADR-0018, ADR-0020) — RTN has no weighted C counterpart. The
+(ADR-0018, ADR-0020) — RTN has no weighted C counterpart, and
+q0-fit2 fits its nominal-2 cells at weight 1.0. The
 scan's ``--within-group`` parser lives here beside that pairing
 rule, which it calls.
 Both reject before any model load burns an hour. The
@@ -28,7 +29,7 @@ See Also:
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal
+from typing import Final, Literal
 
 import typer
 
@@ -37,6 +38,7 @@ from vramfit.domain.scan import (
     KQUANT_IMX_METHOD,
     KQUANT_METHOD,
     KQUANT_PRECISIONS,
+    Q0_FIT2_METHOD,
     Q0_IMX2_METHOD,
     Q0_IMX_METHOD,
     Q0_REF_METHOD,
@@ -44,6 +46,36 @@ from vramfit.domain.scan import (
     SCAN_METHOD,
 )
 from vramfit.ports.outbound import DamageMeter
+
+# The ``--within-group`` values the scan and the validation pass
+# accept, in the order their help lists them. The meter's own
+# ``METHODS`` tuple holds the same names, and this module cannot
+# import it: the scan adapter carries torch and the plan step must
+# import without it (ADR-0005).
+WithinGroupName = Literal["rtn", "kquant", "q0", "q0-imx2", "q0-fit2"]
+METHOD_NAMES: Final[tuple[WithinGroupName, ...]] = (
+    "rtn",
+    "kquant",
+    "q0",
+    "q0-imx2",
+    "q0-fit2",
+)
+
+
+def method_list() -> str:
+    """Spell the accepted method names for a refusal message.
+
+    Returns:
+        The quoted names, comma-separated, with ``or`` before the
+        last — ``"rtn", "kquant", ... or "q0-fit2"``.
+
+    Examples:
+        ```python
+        assert method_list().startswith('"rtn"')
+        ```
+    """
+    quoted = [f'"{name}"' for name in METHOD_NAMES]
+    return f"{', '.join(quoted[:-1])}, or {quoted[-1]}"
 
 
 def check_imatrix(imatrix: Path | None, method: str) -> None:
@@ -55,12 +87,15 @@ def check_imatrix(imatrix: Path | None, method: str) -> None:
 
     Raises:
         typer.BadParameter: If the imatrix arrives with the ``rtn``
-            method (ADR-0018, ADR-0020), the ``q0-imx2`` method
+            or ``q0-fit2`` method (ADR-0018, ADR-0020), the
+            ``q0-imx2`` method
             arrives without one, or the file does not
             exist. ``kquant`` fits its covered tensors with the
             weights. ``q0`` fits nominal 4 through
             ``quantize_row_q4_0_impl``; ``q0-imx2`` also fits nominal 2,
-            so it cannot price without the matrix.
+            so it cannot price without the matrix. ``q0-fit2`` fits
+            nominal 2 through the same encoder at weight 1.0, so a
+            matrix would price cells it never reads.
     """
     if imatrix is None:
         if method == "q0-imx2":
@@ -69,7 +104,8 @@ def check_imatrix(imatrix: Path | None, method: str) -> None:
     if method not in ("kquant", "q0", "q0-imx2"):
         raise typer.BadParameter(
             "--imatrix requires --within-group kquant, q0, or q0-imx2 "
-            "(ADR-0018, ADR-0020) — RTN has no weighted C counterpart"
+            "(ADR-0018, ADR-0020) — RTN has no weighted C counterpart, "
+            "and q0-fit2 fits its nominal-2 cells at weight 1.0"
         )
     if not imatrix.is_file():
         raise typer.BadParameter(f"--imatrix: {imatrix} is not a file")
@@ -133,7 +169,7 @@ def parse_gpu_memory(gpu_memory: str | None, device: str) -> int | None:
 
 def parse_within_group(
     text: str, precisions: tuple[int, ...], imatrix: Path | None
-) -> tuple[Literal["rtn", "kquant", "q0", "q0-imx2"], str]:
+) -> tuple[WithinGroupName, str]:
     """Validate the ``--within-group`` choice against the precisions.
 
     Args:
@@ -145,24 +181,28 @@ def parse_within_group(
         The validated method name and its fingerprint token — the
         token is the vocabulary run logs and maps share (ADR-0018).
         An imatrix turns the kquant or q0 token into its assisted
-        one. ``q0-imx2`` directly names the assisted 2-bit path.
+        one. ``q0-imx2`` directly names the assisted 2-bit path,
+        and ``q0-fit2`` the unassisted one.
 
     Raises:
         typer.BadParameter: If the method is unknown, ``kquant``,
-            ``q0``, or ``q0-imx2`` meets precisions outside its port
+            ``q0``, ``q0-imx2``, or ``q0-fit2`` meets precisions
+            outside its port
             coverage (ADR-0018), ``--imatrix`` arrives with the rtn
-            method, ``q0-imx2`` lacks an imatrix, or the file does not exist — each
+            or ``q0-fit2`` method,
+            ``q0-imx2`` lacks an imatrix, or the file does not exist — each
             rejected before the model load burns an hour.
     """
-    if text not in ("rtn", "kquant", "q0", "q0-imx2"):
+    if text not in METHOD_NAMES:
         raise typer.BadParameter(
-            f'--within-group: expected "rtn", "kquant", "q0", or "q0-imx2", got "{text}"'
+            f'--within-group: expected {method_list()}, got "{text}"'
         )
     check_imatrix(imatrix, text)
     covered = {
         "kquant": KQUANT_PRECISIONS,
         "q0": Q0_REF_PRECISIONS,
         "q0-imx2": Q0_REF_PRECISIONS,
+        "q0-fit2": Q0_REF_PRECISIONS,
     }.get(text)
     if covered is not None:
         uncovered = [p for p in precisions if p not in covered]
@@ -178,4 +218,6 @@ def parse_within_group(
         return text, Q0_REF_METHOD if imatrix is None else Q0_IMX_METHOD
     if text == "q0-imx2":
         return text, Q0_IMX2_METHOD
+    if text == "q0-fit2":
+        return text, Q0_FIT2_METHOD
     return text, KQUANT_METHOD if imatrix is None else KQUANT_IMX_METHOD

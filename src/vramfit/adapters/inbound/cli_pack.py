@@ -9,7 +9,7 @@ decision (#515), loads the recipe, wires the
 `RecipePacker` port to the llama.cpp adapter, and drives the two
 stages — convert, then quantize (imatrix-assisted when ``--imatrix``
 is given, ADR-0016, with the recipe's imatrix exclusions applied,
-and pre-encoded through vramfit's assisted ``Q2_0`` encoder when the
+and pre-encoded through vramfit's own ``Q2_0`` encoder when the
 recipe's method selects it, ADR-0032,
 ADR-0023) — emitting one run-log event per stage. Between the
 stages an ``--imatrix`` pack reads the matrix's counts and reports
@@ -242,7 +242,7 @@ def pack(
     python_bin: Annotated[
         Path | None,
         typer.Option(
-            help="Interpreter for the convert script and the assisted Q2_0 "
+            help="Interpreter for the convert script and vramfit's Q2_0 "
             "encoder. It must import vramfit and torch, which the pack "
             "extra provisions. Default: this one."
         ),
@@ -251,7 +251,7 @@ def pack(
         int,
         typer.Option(
             min=1,
-            help="Thread count for the quantizer, the assisted Q2_0 encoder, "
+            help="Thread count for the quantizer, vramfit's Q2_0 encoder, "
             "and the smoke test.",
         ),
     ] = 8,
@@ -306,7 +306,7 @@ def pack(
     bytes, and the ``model_packed`` event records it under
     ``file_type`` (ADR-0012 decision 3 as amended 2026-09-04). The
     ``--python-bin`` interpreter
-    runs the convert script and the assisted ``Q2_0`` encoder — the
+    runs the convert script and vramfit's ``Q2_0`` encoder — the
     ``pack`` extra provisions their dependencies. ``--threads`` sizes
     the quantizer, that encoder, and the smoke test. ``--imatrix``
     hands the quantizer an importance matrix (ADR-0016). The command
@@ -338,11 +338,13 @@ def pack(
     names each one (#307). Such a layer carries no assignment, so it
     adds bytes the recipe never priced and the size re-check below
     grows more likely to refuse. #320 carries whether the case should
-    refuse outright. A recipe priced with the assisted ``Q2_0``
-    encoder's method pre-encodes its covered ``Q2_0`` tensors through
-    vramfit's own encoder before the quantizer runs, and the
-    ``model_packed`` event records the tensors and the encoder
-    revision (ADR-0032). The
+    refuse outright. A recipe priced with one of vramfit's ``Q2_0``
+    encoder methods pre-encodes its ``Q2_0`` tensors through that
+    encoder before the quantizer runs. ``q0-imx2`` pre-encodes the
+    tensors the matrix covers, and ``q0-fit2`` every candidate. The
+    ``model_packed`` event records the tensors, the encoder
+    revision, and whether the matrix weighted the fit (ADR-0032,
+    ADR-0018's 2026-09-17 amendment). The
     command re-checks the packed file's real
     bytes against the recipe's weight budget — nominal-bit
     predictions undershoot GGUF's effective bits. A protected

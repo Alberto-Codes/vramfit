@@ -14,6 +14,7 @@ def result(
     imatrix_path: str | None = "m.gguf",
     pre_encoded: tuple[str, ...] = (),
     q2_0_encoder: str | None = None,
+    pre_encode_assisted: bool = False,
 ) -> PackResult:
     return PackResult(
         packed_bytes=100,
@@ -24,6 +25,7 @@ def result(
         imatrix_path=imatrix_path,
         pre_encoded=pre_encoded,
         q2_0_encoder=q2_0_encoder,
+        pre_encode_assisted=pre_encode_assisted,
     )
 
 
@@ -32,15 +34,37 @@ class TestPackResultPreEncoding:
         r = result()
         assert r.pre_encoded == ()
         assert r.q2_0_encoder is None
+        assert not r.pre_encode_assisted
 
     def test_full_record_holds(self) -> None:
-        r = result(pre_encoded=("blk.0.ffn_down_exps.weight",), q2_0_encoder="rev")
+        r = result(
+            pre_encoded=("blk.0.ffn_down_exps.weight",),
+            q2_0_encoder="rev",
+            pre_encode_assisted=True,
+        )
         assert r.pre_encoded == ("blk.0.ffn_down_exps.weight",)
         assert r.q2_0_encoder == "rev"
+        assert r.pre_encode_assisted
 
-    def test_pre_encoded_requires_an_imatrix(self) -> None:
+    def test_assisted_pre_encoding_requires_an_imatrix(self) -> None:
         with pytest.raises(ValueError, match="requires an imatrix_path"):
-            result(imatrix_path=None, pre_encoded=("x",), q2_0_encoder="rev")
+            result(
+                imatrix_path=None,
+                pre_encoded=("x",),
+                q2_0_encoder="rev",
+                pre_encode_assisted=True,
+            )
+
+    def test_unassisted_pre_encoding_holds_without_an_imatrix(self) -> None:
+        # The unassisted encoder reads no matrix, so the record
+        # names none (ADR-0018, 2026-09-17 amendment).
+        r = result(imatrix_path=None, pre_encoded=("x",), q2_0_encoder="rev")
+        assert r.pre_encoded == ("x",)
+        assert not r.pre_encode_assisted
+
+    def test_assisted_claim_without_a_stage_refuses(self) -> None:
+        with pytest.raises(ValueError, match="requires pre_encoded tensors"):
+            result(pre_encode_assisted=True)
 
     def test_empty_name_refuses(self) -> None:
         with pytest.raises(ValueError, match="must not be empty"):

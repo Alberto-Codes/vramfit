@@ -6,8 +6,8 @@ pack flow: the provenance warnings against the recipe's record
 (ADR-0020, ADR-0023), the count read that finds a zero-count expert
 (ADR-0026 decision 5, the 2026-08-13 #198 amendment), the
 console echoes of what the matrix did and did not reach (ADR-0016),
-and the report of what the assisted ``Q2_0`` encoder pre-encoded
-with that matrix (ADR-0032).
+and the report of what vramfit's ``Q2_0`` encoder pre-encoded,
+with that matrix or without it (ADR-0032).
 
 Examples:
     The pack command drives the count read between its stages:
@@ -161,10 +161,10 @@ def _report_imatrix_effects(result: PackResult) -> None:
 
 
 def _report_pre_encoding(result: PackResult) -> None:
-    """Echo what the assisted ``Q2_0`` encoder pre-encoded (ADR-0032).
+    """Echo what vramfit's ``Q2_0`` encoder pre-encoded (ADR-0032).
 
-    The line states the count and the encoder revision, and the run
-    log names every tensor.
+    The line states the count, names the fit assisted or unassisted,
+    and states the encoder revision. The run log names every tensor.
 
     Args:
         result: The pack step's accounting record.
@@ -172,9 +172,10 @@ def _report_pre_encoding(result: PackResult) -> None:
     if not result.pre_encoded:
         return
     count = len(result.pre_encoded)
+    fit = "assisted" if result.pre_encode_assisted else "unassisted"
     typer.echo(
         f"pre-encoded {count} tensor{'' if count == 1 else 's'} with the "
-        f"assisted Q2_0 encoder {result.q2_0_encoder} (ADR-0032)"
+        f"{fit} Q2_0 encoder {result.q2_0_encoder} (ADR-0032)"
     )
 
 
@@ -185,10 +186,12 @@ def _pre_encode_fields(result: PackResult) -> dict[str, object]:
         result: The pack step's accounting record.
 
     Returns:
-        The tensors and the encoder revision, or their empty forms
-        when the stage did not run.
+        The tensors, the encoder revision, and whether the matrix
+        weighted that fit, or their empty forms when the stage did
+        not run.
     """
     return {
         "pre_encoded": list(result.pre_encoded),
         "q2_0_encoder": result.q2_0_encoder,
+        "pre_encode_assisted": result.pre_encode_assisted,
     }

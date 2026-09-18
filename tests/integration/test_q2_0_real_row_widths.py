@@ -64,6 +64,7 @@ from vramfit.adapters.outbound.scan.imatrix import load_imatrix
 from vramfit.adapters.outbound.scan.q2_0_assisted import Q2_0_ENCODER_REVISION
 from vramfit.adapters.outbound.scan.within_group import perturb
 from vramfit.domain.model import (
+    Q0_FIT2_METHOD,
     Q0_IMX2_METHOD,
     Assignment,
     PlanMeta,
@@ -104,7 +105,7 @@ EMBEDDING_GROUP = "model.embed_tokens"
 EMBEDDING_BITS = 8
 
 
-def _recipe(imatrix: Path) -> Recipe:
+def _recipe(imatrix: Path | None) -> Recipe:
     return Recipe(
         model_id="fixture",
         plan=PlanMeta(
@@ -135,8 +136,8 @@ def _recipe(imatrix: Path) -> Recipe:
             ),
         ),
         runtime="llama.cpp",
-        within_group=Q0_IMX2_METHOD,
-        imatrix=str(imatrix),
+        within_group=Q0_IMX2_METHOD if imatrix is not None else Q0_FIT2_METHOD,
+        imatrix=None if imatrix is None else str(imatrix),
         protected_tensors=(),
     )
 
@@ -170,14 +171,18 @@ def _weighted_error(
 
 
 def _packer(
-    tmp_path: Path, base: Path, imatrix: Path, quantize: Path
+    tmp_path: Path,
+    base: Path,
+    imatrix: Path,
+    quantize: Path,
+    out_name: str = "packed.gguf",
 ) -> LlamaCppPacker:
     model_dir = tmp_path / "model"
     model_dir.mkdir(exist_ok=True)
     return LlamaCppPacker(
         model_dir=model_dir,
         base_gguf=base,
-        out_path=tmp_path / "packed.gguf",
+        out_path=tmp_path / out_name,
         convert_script=base,
         quantize_bin=quantize,
         python_bin=Path(sys.executable),
@@ -290,3 +295,48 @@ class TestRealRowWidths:
             check=False,
         )
         assert run.returncode == 0, run.stdout + run.stderr
+
+    def test_unassisted_pack_differs_and_decodes_to_the_weight_none_fit(
+        self, tmp_path: Path
+    ) -> None:
+        # The matrix still reaches the stock pass for the nominal-4
+        # peer. Only the nominal-2 encoder drops it (ADR-0018,
+        # 2026-09-17 amendment).
+        quantize = tool("llama-quantize")
+        rng = np.random.default_rng(1856)
+        base = tmp_path / "base-f16.gguf"
+        tensors = write_model(
+            base,
+            rng,
+            n_embd=N_EMBD,
+            n_ff=N_FF,
+            name="vramfit q2_0 unassisted fixture",
+        )
+        imatrix = tmp_path / "imatrix.gguf"
+        write_imatrix(imatrix, rng, n_embd=N_EMBD, n_ff=N_FF, zero_count_expert=False)
+        assisted = _packer(tmp_path, base, imatrix, quantize, "assisted.gguf")
+        free = _packer(tmp_path, base, imatrix, quantize, "unassisted.gguf")
+
+        assisted_result = assisted.pack(_recipe(imatrix))
+        free_result = free.pack(_recipe(None))
+
+        assert set(free_result.pre_encoded) == {DOWN, GATE}
+        assert free_result.q2_0_encoder == Q2_0_ENCODER_REVISION
+        assert not free_result.pre_encode_assisted
+        assert assisted_result.pre_encode_assisted
+        by_type = {t.name: t.type_id for t in read_header(free.out_path).tensors}
+        assert by_type[DOWN] == Q2_0_TYPE_ID
+        assert by_type[GATE] == Q2_0_TYPE_ID
+        assert by_type[UP] == GGMLQuantizationType.Q4_0
+
+        for name, group, width in ENCODED:
+            free_bytes = payload(free.out_path, name)
+            assert free_bytes != payload(assisted.out_path, name), (
+                f"the unassisted and assisted packs agree on {width}-wide {name}"
+            )
+            weight = torch.from_numpy(tensors[name].astype(np.float32))
+            priced = perturb(weight, 2, group, "q0-fit2", 32, None)
+            decoded = dequantize_q2_0(free_bytes, weight.numel())
+            assert np.array_equal(decoded, priced.reshape(-1).numpy()), (
+                f"the unassisted scan and pack disagree on {width}-wide {name}"
+            )

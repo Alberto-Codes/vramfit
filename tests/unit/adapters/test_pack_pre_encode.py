@@ -27,6 +27,7 @@ from vramfit.adapters.outbound.gguf.pack import LlamaCppPacker, TypeFallbackErro
 from vramfit.adapters.outbound.gguf.q2_0_blocks import Q2_0_TYPE_ID, q2_0_payload_bytes
 from vramfit.adapters.outbound.gguf.types import PackError
 from vramfit.domain.model import (
+    Q0_FIT2_METHOD,
     Q0_IMX2_METHOD,
     Q0_IMX_METHOD,
     Assignment,
@@ -101,7 +102,7 @@ def write_imatrix(path: Path, names: tuple[str, ...]) -> None:
 
 def recipe(
     method: str = Q0_IMX2_METHOD,
-    imatrix: str = "m.gguf",
+    imatrix: str | None = "m.gguf",
 ) -> Recipe:
     return Recipe(
         model_id="model",
@@ -207,6 +208,7 @@ class TestPreEncodingPack:
 
         assert result.pre_encoded == (STACK, UP)
         assert result.q2_0_encoder == "stub-encoder"
+        assert result.pre_encode_assisted
         assert result.file_type == "Q2_0"
         header = read_header(workspace["out"])
         assert {t.name: t.type_id for t in header.tensors}[STACK] == Q2_0_TYPE_ID
@@ -357,3 +359,58 @@ class TestPreEncodingPack:
         assert p.mixed_gguf.exists()
         assert p.pre_encode_dir.is_dir()
         assert info.value.rewritten[0][0] == "blk.0.ffn_up_exps.weight"
+
+
+class TestMatrixFreePack:
+    """The ``q0-fit2`` path packs nominal 2 with no importance matrix."""
+
+    def test_unassisted_recipe_pre_encodes_with_no_matrix_anywhere(
+        self, workspace: dict[str, Path]
+    ) -> None:
+        p = packer(workspace, imatrix=False)
+
+        result = p.pack(recipe(method=Q0_FIT2_METHOD, imatrix=None))
+
+        encoder_argv = json.loads(workspace["encoder_argv"].read_text())
+        assert "--imatrix" not in encoder_argv
+        quantize_argv = json.loads(workspace["quantize_argv"].read_text())
+        assert "--imatrix" not in quantize_argv
+        assert result.pre_encoded == (STACK, UP)
+        assert result.q2_0_encoder == "stub-encoder"
+        assert not result.pre_encode_assisted
+        header = read_header(workspace["out"])
+        types = {t.name: t.type_id for t in header.tensors}
+        assert types[STACK] == Q2_0_TYPE_ID
+        assert types[UP] == Q2_0_TYPE_ID
+
+    def test_unassisted_selection_ignores_coverage_and_exclusions(
+        self, workspace: dict[str, Path]
+    ) -> None:
+        # The matrix reaches the quantizer's own pass for the widths
+        # it still fits, and decides nothing about the nominal-2
+        # encoder, which reads no matrix at all.
+        write_imatrix(workspace["imatrix"], (STACK,))
+
+        result = packer(workspace).pack(recipe(method=Q0_FIT2_METHOD, imatrix=None))
+
+        encoder_argv = json.loads(workspace["encoder_argv"].read_text())
+        assert "--imatrix" not in encoder_argv
+        quantize_argv = json.loads(workspace["quantize_argv"].read_text())
+        assert quantize_argv[quantize_argv.index("--imatrix") + 1] == str(
+            workspace["imatrix"]
+        )
+        assert result.pre_encoded == (STACK, UP)
+
+    def test_unassisted_rows_outside_the_block_still_refuse(
+        self, workspace: dict[str, Path]
+    ) -> None:
+        # The block-alignment refusal protects the quantizer, not the
+        # matrix, so dropping the matrix keeps it.
+        write_base(workspace["base"], down_width=96)
+        p = packer(workspace, imatrix=False)
+
+        with pytest.raises(PackError, match="rows of 96"):
+            p.pack(recipe(method=Q0_FIT2_METHOD, imatrix=None))
+
+        assert not workspace["encoder_argv"].exists()
+        assert not workspace["quantize_argv"].exists()

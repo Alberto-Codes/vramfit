@@ -264,7 +264,10 @@ change.
     including 2-bit through vramfit's own `Q2_0` encoder. Nominal
     8 keeps the reference arithmetic because stock `Q8_0` discards
     the matrix. The `2` means the matrix reaches 2 bits. It does not
-    mean a second version of `q0-imx`. The `imx` signal tells a map reader that a
+    mean a second version of `q0-imx`. `q0-fit2` runs that same
+    2-bit encoder at weight 1.0 and reads no matrix at any width
+    ([ADR-0018](../adr/0018-kquant-within-group-method.md),
+    2026-09-17 amendment). The `imx` signal tells a map reader that a
     matrix was used, which matters when comparing maps. The name
     describes the result rather than the pre-encoding step, so it
     stays true if that mechanism changes. A method change is a new
@@ -291,13 +294,17 @@ change.
     amendment, token renamed by the 2026-08-18 amendment).
     Accepted [ADR-0032](../adr/0032-assisted-q2-encoder-home.md) selects
     vramfit's assisted Q2_0 **encoder** under `q0-imx2`. Decision 3
-    keeps `q0-imx` nominal 2 unassisted.
+    keeps `q0-imx` nominal 2 unassisted. `q0-fit2` runs that encoder
+    unassisted: the search is vramfit's, the weights are 1
+    (ADR-0018, 2026-09-17 amendment).
     Not "imatrix mode" or "weighted scanning".
 
     The same pair names the pack side. A tensor packs **assisted** when
     its type reads the matrix and the matrix covers its name.
     A pre-encoded tensor also packs **assisted** when the matrix weighted
     the encoder's candidate selection, even though its stock type ignores the matrix.
+    A tensor pre-encoded under `q0-fit2` packs **unassisted**, because
+    no matrix weighted that fit.
     All other tensors pack **unassisted**.
     An artifact's **assisted share** is the fraction of its bytes that packed assisted
     ([ADR-0016](../adr/0016-imatrix-in-the-pack-path.md), 2026-08-21
@@ -307,6 +314,12 @@ change.
     ADR-0032's
     [open questions](../adr/0032-assisted-q2-encoder-home.md#open-questions)
     gate what a share that counts pre-encoded bytes may publish.
+
+**Matrix-free**
+:   See **unassisted** under **Assisted pricing**. Accepted
+    [ADR-0032](../adr/0032-assisted-q2-encoder-home.md) and its
+    evidence page use this word for the `q0-fit2` fit. It names no
+    second encoder.
 
 **Reconstruction error**
 :   The squared difference between a quantized tensor and its
@@ -972,8 +985,10 @@ change.
     copies those payloads and quantizes the rest.
     Accepted [ADR-0032](../adr/0032-assisted-q2-encoder-home.md) decision 1
     selects it. `vramfit pack` pre-encodes when the recipe's
-    `within_group` token is `q0-imx2`, and the
-    `model_packed` event lists the tensors under `pre_encoded`.
+    `within_group` token is `q0-imx2` or `q0-fit2`, and the
+    `model_packed` event lists the tensors under `pre_encoded` and
+    states under `pre_encode_assisted` whether the matrix weighted
+    the fit.
     The verb is **pre-encode**. Not "pre-quantize" or "patching the
     base".
 

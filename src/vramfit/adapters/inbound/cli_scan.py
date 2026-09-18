@@ -117,7 +117,7 @@ def _build_meter(
     device: str,
     trust_remote_code: bool,
     gpu_memory: int | None,
-    within_group: Literal["rtn", "kquant", "q0", "q0-imx2"] = "rtn",
+    within_group: Literal["rtn", "kquant", "q0", "q0-imx2", "q0-fit2"] = "rtn",
     imatrix: Path | None = None,
 ) -> DamageMeter:
     """Build the torch-backed meter, importing torch only now.
@@ -138,7 +138,7 @@ def _build_meter(
         gpu_memory: Byte cap on GPU 0 model shards under ``auto``
             sharding.
         within_group: Within-group method (ADR-0018) — ``rtn``,
-            ``kquant``, ``q0``, or ``q0-imx2``.
+            ``kquant``, ``q0``, ``q0-imx2``, or ``q0-fit2``.
         imatrix: GGUF imatrix file for assisted pricing (ADR-0020),
             or None for an unassisted meter.
 
@@ -336,7 +336,8 @@ def scan(
             help="Within-group method: rtn, kquant for the "
             "K-quant-faithful port (ADR-0018, precisions 8/4/3/2), "
             "q0 for the block quantizers Q2_0/Q4_0/Q8_0 "
-            "(precisions 8/4/2), or q0-imx2 for assisted 2-bit."
+            "(precisions 8/4/2), q0-imx2 for assisted 2-bit, or "
+            "q0-fit2 for the same 2-bit encoder without a matrix."
         ),
     ] = "rtn",
     imatrix: Annotated[
@@ -344,7 +345,8 @@ def scan(
         typer.Option(
             help="GGUF imatrix for assisted pricing (ADR-0018, "
             "ADR-0020). Requires --within-group kquant, q0, or q0-imx2. "
-            "q0-imx2 requires this file. Use the file the pack step will consume."
+            "q0-imx2 requires this file, and q0-fit2 refuses it. "
+            "Use the file the pack step will consume."
         ),
     ] = None,
     runlog: Annotated[
@@ -380,13 +382,15 @@ def scan(
     the count. Groups offloaded to host RAM under the cap measure
     through accelerate's weights map (ADR-0015). The meter refuses
     weights offloaded beyond host RAM — see the how-to.
-    ``--within-group`` takes ``rtn``, ``kquant``, ``q0``, or ``q0-imx2``, and it
-    selects the quantization the meter applies
+    ``--within-group`` takes ``rtn``, ``kquant``, ``q0``,
+    ``q0-imx2``, or ``q0-fit2``, and it selects the quantization
+    the meter applies
     inside a perturbed group (ADR-0018): ``rtn`` is the v1 default,
     ``kquant`` prices cells with the ported K-quant reference
     quantizers, and ``q0`` prices them with the ported block
     quantizers ``Q2_0``, ``Q4_0``, and ``Q8_0``. ``q0-imx2`` adds the
-    assisted 2-bit fit. Each pairs only
+    assisted 2-bit fit, and ``q0-fit2`` runs that same 2-bit
+    encoder at weight 1.0 with no matrix at all. Each pairs only
     with precisions its port covers. ``q0`` reaches the rows no
     K-quant tiles — ``llama-quantize`` substitutes another type for a
     256-element super-block on rows of 2688 or 1856, and ``kquant``
@@ -394,14 +398,15 @@ def scan(
     cannot apply.
     ``--imatrix`` adds the pack's importance matrix to the kquant,
     q0, or q0-imx2 fit (assisted pricing, ADR-0018, ADR-0020).
-    q0-imx2 requires that file and assists nominal 2. Under q0,
+    q0-imx2 requires that file and assists nominal 2, and
+    q0-fit2 refuses it. Under q0,
     only nominal 4 fits with weights, because the C discards the
     matrix at 2 and 8 — the map then records the
     resolved imatrix path beside the method, and the run log
     records how many parameters the imatrix covers. The map, the
     fingerprint, and the run log all record the method as its token
     (``rtn-block32``, ``kquant-ref``, ``kquant-imx``, ``q0-ref``,
-    ``q0-imx``, or ``q0-imx2``).
+    ``q0-imx``, ``q0-imx2``, or ``q0-fit2``).
     ``--group-by`` sets the map key. ``stack`` keys on the unit a
     pack addresses (#161): it collapses a mixture-of-experts layer's
     routed experts into one group per projection, and keeps every

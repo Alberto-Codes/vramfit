@@ -4,12 +4,15 @@ The pack path stays torch-free, so the assisted ``Q2_0`` encoder
 runs as a separate program under the interpreter that carries torch,
 the way ``convert_hf_to_gguf.py`` already does. This module is that
 program. [vramfit.adapters.outbound.gguf.pre_encode][] launches it
-with the base GGUF, the importance matrix, the tensor names to
-encode, and a working directory. For each tensor it reads the
+with the base GGUF, the tensor names to
+encode, a working directory, and the importance matrix when the
+recipe's method names one. For each tensor it reads the
 floating-point rows from the base, resolves the imatrix rows the way
 ``llama-quant.cpp`` slices them per expert, runs the one shared fit
 in [vramfit.adapters.outbound.scan.q2_0_assisted][], and streams the
-stored blocks into a payload file. It then writes a JSON report the
+stored blocks into a payload file. Without ``--imatrix`` it runs
+that same fit at weight 1.0, which is what the ``q0-fit2`` method
+prices (ADR-0018, 2026-09-17 amendment). It then writes a JSON report the
 pack side reads back: the encoder revision, and one payload path,
 size, and SHA-256 per tensor.
 
@@ -135,14 +138,15 @@ def _weights_for(
 
 
 def _encode_tensor(
-    tensor: Any, weights: torch.Tensor, payload: Path
+    tensor: Any, weights: torch.Tensor | None, payload: Path
 ) -> tuple[int, str]:
     """Stream one tensor's blocks into its payload file.
 
     Args:
         tensor: The reader's tensor entry, whose ``data`` is a
             memory-mapped float array shaped experts first.
-        weights: Column weights, shape ``(matrices, row)``.
+        weights: Column weights, shape ``(matrices, row)``, or
+            None to fit every block at weight 1.0.
         payload: The file to write.
 
     Returns:
@@ -158,18 +162,20 @@ def _encode_tensor(
             f'"{tensor.name}" has rows of {row}, which do not divide into '
             f"{QK2_0}-element Q2_0 blocks"
         )
-    matrices = data.reshape(weights.shape[0], -1, row)
+    matrices = data.reshape(1 if weights is None else weights.shape[0], -1, row)
     digest = hashlib.sha256()
     written = 0
     with payload.open("wb") as handle:
         for index in range(matrices.shape[0]):
-            qw = weights[index : index + 1]
+            qw = None if weights is None else weights[index : index + 1]
             for start in range(0, matrices.shape[1], _CHUNK_ROWS):
                 chunk = np.ascontiguousarray(
                     matrices[index, start : start + _CHUNK_ROWS]
                 )
                 rows = torch.from_numpy(chunk.astype(np.float32, copy=False))
-                blocks = q2_0_encode_rows(rows, qw.expand(rows.shape[0], row))
+                blocks = q2_0_encode_rows(
+                    rows, None if qw is None else qw.expand(rows.shape[0], row)
+                )
                 handle.write(blocks)
                 digest.update(blocks)
                 written += len(blocks)
@@ -179,6 +185,9 @@ def _encode_tensor(
 def _parse(argv: Sequence[str] | None) -> argparse.Namespace:
     """Parse the program's arguments.
 
+    ``--imatrix`` is optional: without it the fit runs unassisted at
+    weight 1.0, which is what the ``q0-fit2`` method prices.
+
     Args:
         argv: The arguments, or None for ``sys.argv``.
 
@@ -187,10 +196,14 @@ def _parse(argv: Sequence[str] | None) -> argparse.Namespace:
     """
     parser = argparse.ArgumentParser(
         prog="vramfit-q2-0-encoder",
-        description="Pre-encode assisted Q2_0 tensors from a base GGUF (ADR-0032).",
+        description=(
+            "Pre-encode Q2_0 tensors from a base GGUF with the shared "
+            "fit (ADR-0032): assisted with --imatrix, unassisted "
+            "without it."
+        ),
     )
     parser.add_argument("--base-gguf", type=Path, required=True)
-    parser.add_argument("--imatrix", type=Path, required=True)
+    parser.add_argument("--imatrix", type=Path, default=None)
     parser.add_argument("--out-dir", type=Path, required=True)
     parser.add_argument("--report", type=Path, required=True)
     parser.add_argument("--threads", type=int, default=1)
@@ -211,24 +224,29 @@ def encode(args: argparse.Namespace) -> dict[str, Any]:
 
     Raises:
         EncodeError: If a tensor is missing, unreadable, uncovered
-            by the imatrix, or misshaped against its entry.
+            by an imatrix the run supplies, or misshaped against its
+            entry.
         ValueError: If the imatrix file is not one, per
             `load_imatrix`.
         OSError: If a file cannot be read or written.
     """
     torch.set_num_threads(max(1, int(args.threads)))
     reader = GGUFReader(str(args.base_gguf))
-    entries = load_imatrix(args.imatrix)
+    entries = None if args.imatrix is None else load_imatrix(args.imatrix)
     args.out_dir.mkdir(parents=True, exist_ok=True)
     tensors: dict[str, Any] = {}
     for index, name in enumerate(args.tensors):
         tensor = _find_tensor(reader, name, args.base_gguf)
-        entry = entries.get(name)
-        if entry is None:
-            raise EncodeError(
-                f'the imatrix {args.imatrix} carries no entry for "{name}"'
+        weights = None
+        if entries is not None:
+            entry = entries.get(name)
+            if entry is None:
+                raise EncodeError(
+                    f'the imatrix {args.imatrix} carries no entry for "{name}"'
+                )
+            weights = _weights_for(
+                entry, name, tuple(int(d) for d in tensor.data.shape)
             )
-        weights = _weights_for(entry, name, tuple(int(d) for d in tensor.data.shape))
         payload = args.out_dir / f"{index:04d}.q2_0"
         size, digest = _encode_tensor(tensor, weights, payload)
         tensors[name] = {

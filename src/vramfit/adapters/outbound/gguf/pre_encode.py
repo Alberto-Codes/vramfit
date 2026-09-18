@@ -1,8 +1,9 @@
 r"""The pre-encoding stage of the pack path (ADR-0032 decision 1).
 
-Selected ``Q2_0`` tensors take vramfit's own assisted encoder before
-stock ``llama-quantize`` runs. This module owns the pack side of
-that stage, and it imports no torch (ADR-0005, ADR-0008): it selects
+Selected ``Q2_0`` tensors take vramfit's own encoder, assisted or
+unassisted, before stock ``llama-quantize`` runs. This module owns
+the pack side of that stage, and it imports no torch (ADR-0005,
+ADR-0008): it selects
 the tensors, refuses the cases the quantizer would abort on before
 anything is written, drives the encoder as a separate program, and
 verifies the payloads the packed file carries. The encoder itself
@@ -27,7 +28,8 @@ refuses for the same reason: ``tensor_type_fallback`` would
 substitute a type, and the substituted type is a different resolved
 type.
 
-**Three cases pack unassisted, as before.** A tensor the matrix does
+**Three cases pack unassisted, as before.** Under a method that
+reads the matrix, a tensor the matrix does
 not cover, one the recipe's exclusions drop, and one the quantizer
 never quantizes (a norm, a router, a one-dimensional tensor, or a
 name a dedicated flag binds) stay float in the mixed file, and the
@@ -38,6 +40,13 @@ b10362, and the four this module models are the ones a
 before it refuses. The preprocessor never writes one as ``Q2_0``,
 so neither abort above can reach it, and refusing it would refuse a
 pack the stock path serves.
+
+**An unassisted method drops the first two.** Under ``q0-fit2``
+the encoder reads no matrix at any width, so coverage and the
+recipe's imatrix exclusions decide nothing about the nominal-2 fit
+(ADR-0018, 2026-09-17 amendment). The selection then takes every
+candidate the quantizer would quantize, which is what that method
+prices. The skip rule and both refusals are unchanged.
 
 **Verification reads the packed file's bytes.** After the quantizer
 exits 0, every pre-encoded tensor must hold the type id ``42`` and
@@ -208,7 +217,7 @@ def select_pre_encode_targets(
     overrides: Sequence[TypeOverride],
     header: GgufHeader,
     *,
-    covered: Collection[str],
+    covered: Collection[str] | None,
     excluded: Collection[str],
     embedding_flag: bool = False,
     output_flag: bool = False,
@@ -219,7 +228,9 @@ def select_pre_encode_targets(
         overrides: The overrides the pack drives, in priority order.
         header: The base GGUF's parsed header.
         covered: The imatrix's entry names. A candidate outside it
-            packs unassisted.
+            packs unassisted. None for an unassisted method, which
+            keeps every candidate and ignores ``excluded`` — neither
+            names anything its fit reads.
         excluded: The recipe's imatrix exclusions. A candidate in it
             packs unassisted.
         embedding_flag: Whether the pack emits
@@ -262,7 +273,7 @@ def select_pre_encode_targets(
             info, embedding_flag=embedding_flag, output_flag=output_flag
         ):
             continue
-        if info.name not in covered or info.name in excluded:
+        if covered is not None and (info.name not in covered or info.name in excluded):
             continue
         winner = next(
             override for pattern, override in patterns if pattern.search(info.name)
@@ -338,7 +349,7 @@ def run_encoder(
     command: Sequence[str],
     *,
     base_gguf: Path,
-    imatrix: Path,
+    imatrix: Path | None,
     targets: Sequence[PreEncodeTarget],
     work_dir: Path,
     threads: int,
@@ -349,7 +360,8 @@ def run_encoder(
         command: The program's argument vector prefix, normally the
             torch interpreter and `ENCODER_BOOTSTRAP`.
         base_gguf: The floating-point base the encoder reads.
-        imatrix: The importance matrix that weights the fit.
+        imatrix: The importance matrix that weights the fit, or
+            None to fit every block at weight 1.0.
         targets: The tensors to encode.
         work_dir: Where the payloads and the report land. Created
             when absent.
@@ -369,8 +381,7 @@ def run_encoder(
         *command,
         "--base-gguf",
         str(base_gguf),
-        "--imatrix",
-        str(imatrix),
+        *(() if imatrix is None else ("--imatrix", str(imatrix))),
         "--out-dir",
         str(work_dir),
         "--report",

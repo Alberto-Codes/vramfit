@@ -457,18 +457,22 @@ vramfit scan MODEL
   --trust-remote-code    Allow model repos with custom code (the
                          north-star target needs this)
   --resume / --no-resume Continue from the checkpoint file  [default: resume]
-  --within-group TEXT    Within-group method: rtn | kquant | q0 | q0-imx2
+  --within-group TEXT    Within-group method: rtn | kquant | q0 |
+                         q0-imx2 | q0-fit2
                          (ADR-0018). kquant prices cells with the
                          ported K-quant reference quantizers (8, 4,
                          3, 2). q0 prices them with the ported
                          block quantizers Q2_0, Q4_0, and Q8_0 (8,
                          4, 2), which reach the rows no K-quant
                          tiles. q0-imx2 also assists the nominal-2
-                         fit. Each pairs only with precisions its
-                         port covers  [default: rtn]
+                         fit, and q0-fit2 runs that same 2-bit
+                         encoder without a matrix. Each pairs only
+                         with precisions its port covers
+                         [default: rtn]
   --imatrix PATH         GGUF imatrix for assisted pricing
                          (ADR-0018, ADR-0020). Requires --within-group kquant,
-                         q0, or q0-imx2. q0-imx2 requires this file.
+                         q0, or q0-imx2. q0-imx2 requires this file,
+                         and q0-fit2 refuses it.
                          Use the file the pack step will consume
                          [default: none]
   --runlog PATH          Run-log path (JSONL)
@@ -614,13 +618,15 @@ vramfit validate RECIPE
   --trust-remote-code    Allow model repos with custom code
   --gpu-memory SIZE      Byte cap on GPU 0 model shards (e.g. 17GiB).
                          Requires --device auto  [default: none]
-  --within-group TEXT    Within-group method: rtn | kquant | q0 | q0-imx2
+  --within-group TEXT    Within-group method: rtn | kquant | q0 |
+                         q0-imx2 | q0-fit2
                          (ADR-0018)  [default: the recipe's recorded
                          method, or rtn without a record]
   --imatrix PATH         GGUF imatrix for assisted measurement
                          (ADR-0020). Required when the recipe was
                          priced on an assisted map. --within-group
-                         q0-imx2 requires this file too — use the
+                         q0-imx2 requires this file too, and
+                         q0-fit2 refuses it — use the
                          map's imatrix file  [default: none]
   --runlog PATH          Run-log path (JSONL)
                          [default: <recipe stem>.validation.runlog.jsonl]
@@ -721,11 +727,11 @@ vramfit pack RECIPE
   --out PATH             Packed model path  [default: packed.gguf]
   --base-gguf PATH       f16 base GGUF, reused when present
                          [default: <model name>-f16.gguf beside --out]
-  --python-bin PATH      Interpreter for the convert script and the
-                         assisted Q2_0 encoder — install
+  --python-bin PATH      Interpreter for the convert script and
+                         vramfit's Q2_0 encoder — install
                          vramfit[pack] to provision it
                          [default: current]
-  --threads INT          Thread count for the quantizer, the assisted
+  --threads INT          Thread count for the quantizer, vramfit's
                          Q2_0 encoder, and the smoke test
                          [default: 8]
   --imatrix PATH         Importance matrix for the quantizer
@@ -858,20 +864,28 @@ tensor would keep the fit the recipe asked to drop, and the record
 would state an exclusion that never applied. Packing such a recipe
 without `--imatrix` warns that the exclusions change nothing.
 
-A recipe recording `q0-imx2` takes the pre-encoding stage
-([ADR-0032](../adr/0032-assisted-q2-encoder-home.md)).
-The command selects the `Q2_0` tensors the matrix covers, runs the
+A recipe recording `q0-imx2` or `q0-fit2` takes the pre-encoding stage
+([ADR-0032](../adr/0032-assisted-q2-encoder-home.md),
+[ADR-0018](../adr/0018-kquant-within-group-method.md)'s 2026-09-17
+amendment).
+Under `q0-imx2` the command selects the `Q2_0` tensors the matrix
+covers, and under `q0-fit2` every candidate, because that fit reads
+no matrix. It then runs the
 encoder as a separate program under `--python-bin`, and writes a
 temporary mixed GGUF beside `--out`. `llama-quantize` then reads
 that file under the same flags and never `--allow-requantize`.
 After the zero exit the command reads the packed payload bytes back
 and refuses a mismatch. The stage refuses before it writes when an
 override would leave a selected tensor at another type, or when its
-rows do not divide into 64-element blocks. It also refuses a pack
-without `--imatrix`, because the recipe priced an assisted fit. A
-tensor the matrix does not cover, and one the recipe excludes, pack
-stock. The `model_packed` event records the tensors under
-`pre_encoded` and the encoder revision under `q2_0_encoder`. A stage
+rows do not divide into 64-element blocks. Under `q0-imx2` it also
+refuses a pack without `--imatrix`, because the recipe priced an
+assisted fit, and there a tensor the matrix does not cover, and one
+the recipe excludes, pack stock. Under `q0-fit2` the matrix still
+reaches the stock pass for the widths it fits, and decides nothing
+about the nominal-2 encoder. The `model_packed` event records the
+tensors under `pre_encoded`, the encoder revision under
+`q2_0_encoder`, and whether the matrix weighted that fit under
+`pre_encode_assisted`. A stage
 failure removes the temporary mixed GGUF and the payload directory,
 and names them. A failure after the stage keeps both for inspection
 and names them.
@@ -901,8 +915,8 @@ run log: pack_started, gguf_converted (with `reused`), model_packed
 (real bytes, base type, embedding and output tensor types, override
 count, imatrix, uncovered tensors, excluded tensors, zero-count
 experts, floored layers, declared file type, pre-encoded tensors,
-and the Q2_0 encoder revision — the last two empty and null on the
-stock path), size_checked (margin,
+the Q2_0 encoder revision, and `pre_encode_assisted` — the last
+three empty, null, and false on the stock path), size_checked (margin,
 `fits`, `predicted_total_bytes`, `predicted_delta_bytes`,
 `predicted_delta_fraction`, and `predicted_within_tolerance` — all
 four null when the prediction is absent), reconstruction_checked
