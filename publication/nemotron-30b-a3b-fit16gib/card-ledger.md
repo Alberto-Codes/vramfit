@@ -111,20 +111,13 @@ compares — the published card and this source must match.
 `LICENSE` is unchanged from the previous revision and was not
 re-uploaded.
 
-**The Hub's `README.md` is one revision behind this source.** The card
-uploaded and byte-verified at
-`747a22b5…f9a9` (40,927 B). This source then changed in review, to fix
-a paragraph that could be read as saying the capped CUDA run's
-allocations succeeded and an inline-code span broken across a newline.
-The row above records **this** source. Re-uploading the card restores
-the byte-for-byte match; until that runs, the published card differs
-from this file by those two wording fixes and by no number.
-
 **The published digests were read back from the Hub**, not assumed
 from the upload call: `logs/upload-verify.txt` records the repository
 revision and every file's LFS SHA-256 as the Hub reports it, and the
 packed file's digest there equals the digest hashed on the pod before
-the upload.
+the upload. The card's own row was checked the same way, by fetching
+the published `README.md` back and hashing it, so every digest in this
+table is one the Hub returned rather than one this file asserts.
 
 **The importance matrix is linked, never carried** — maintainer
 ruling 2026-08-22
