@@ -915,8 +915,8 @@ run log: pack_started, gguf_converted (with `reused`), model_packed
 (real bytes, base type, embedding and output tensor types, override
 count, imatrix, uncovered tensors, excluded tensors, zero-count
 experts, floored layers, declared file type, pre-encoded tensors,
-and the Q2_0 encoder revision — the last two empty and null on the
-stock path), size_checked (margin,
+the Q2_0 encoder revision, and `pre_encode_assisted` — the last
+three empty, null, and false on the stock path), size_checked (margin,
 `fits`, `predicted_total_bytes`, `predicted_delta_bytes`,
 `predicted_delta_fraction`, and `predicted_within_tolerance` — all
 four null when the prediction is absent), reconstruction_checked

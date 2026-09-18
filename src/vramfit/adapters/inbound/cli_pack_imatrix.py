@@ -6,8 +6,8 @@ pack flow: the provenance warnings against the recipe's record
 (ADR-0020, ADR-0023), the count read that finds a zero-count expert
 (ADR-0026 decision 5, the 2026-08-13 #198 amendment), the
 console echoes of what the matrix did and did not reach (ADR-0016),
-and the report of what the assisted ``Q2_0`` encoder pre-encoded
-with that matrix (ADR-0032).
+and the report of what vramfit's ``Q2_0`` encoder pre-encoded,
+with that matrix or without it (ADR-0032).
 
 Examples:
     The pack command drives the count read between its stages:

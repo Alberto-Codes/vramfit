@@ -1,8 +1,9 @@
 r"""The pre-encoding stage of the pack path (ADR-0032 decision 1).
 
-Selected ``Q2_0`` tensors take vramfit's own assisted encoder before
-stock ``llama-quantize`` runs. This module owns the pack side of
-that stage, and it imports no torch (ADR-0005, ADR-0008): it selects
+Selected ``Q2_0`` tensors take vramfit's own encoder, assisted or
+unassisted, before stock ``llama-quantize`` runs. This module owns
+the pack side of that stage, and it imports no torch (ADR-0005,
+ADR-0008): it selects
 the tensors, refuses the cases the quantizer would abort on before
 anything is written, drives the encoder as a separate program, and
 verifies the payloads the packed file carries. The encoder itself
