@@ -1,0 +1,92 @@
+"""Scratch encoder program for the MATRIX-FREE control arm. Not shipped.
+
+Same argument vector as ``vramfit.adapters.outbound.scan.q2_0_program``
+(the pack adapter builds it in ``run_encoder``), so it drops into
+``LlamaCppPacker(encoder_command=...)`` unchanged. It reuses the shipped
+fit ``q2_0_encode_rows`` with ``quant_weights=None``: the specification's
+weight-1.0 Lloyd search. ``--imatrix`` is accepted and IGNORED here, so
+the matrix never enters the Q2_0 loop. The stock ``llama-quantize`` pass
+that follows still receives ``--imatrix`` for the nominal-4 tensors.
+
+The report stamps the encoder revision with a ``+unweighted`` suffix so
+the packed file's run log names the arm.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import shutil
+import sys
+from pathlib import Path
+
+import numpy as np
+import torch
+from gguf import GGUFReader
+
+from vramfit.adapters.outbound.scan.q0_ref import QK2_0
+from vramfit.adapters.outbound.scan.q2_0_assisted import (
+    Q2_0_ENCODER_REVISION,
+    q2_0_encode_rows,
+)
+from vramfit.adapters.outbound.scan.q2_0_program import _CHUNK_ROWS, _find_tensor
+
+ARM_REVISION = f"{Q2_0_ENCODER_REVISION}+unweighted"
+
+
+def _encode_tensor(tensor, payload: Path) -> tuple[int, str]:
+    data = tensor.data
+    row = int(data.shape[-1])
+    if row % QK2_0:
+        raise RuntimeError(f'"{tensor.name}" rows of {row} do not divide into {QK2_0}')
+    matrices = data.reshape(-1, row)
+    digest = hashlib.sha256()
+    written = 0
+    with payload.open("wb") as handle:
+        for start in range(0, matrices.shape[0], _CHUNK_ROWS):
+            chunk = np.ascontiguousarray(matrices[start : start + _CHUNK_ROWS])
+            rows = torch.from_numpy(chunk.astype(np.float32, copy=False))
+            blocks = q2_0_encode_rows(rows, None)
+            handle.write(blocks)
+            digest.update(blocks)
+            written += len(blocks)
+    return written, digest.hexdigest()
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(prog="vramfit-q2-0-encoder-unweighted")
+    parser.add_argument("--base-gguf", type=Path, required=True)
+    parser.add_argument("--imatrix", type=Path, required=True)  # accepted, ignored
+    parser.add_argument("--out-dir", type=Path, required=True)
+    parser.add_argument("--report", type=Path, required=True)
+    parser.add_argument("--threads", type=int, default=1)
+    parser.add_argument("--tensor", action="append", default=[], dest="tensors")
+    args = parser.parse_args(argv)
+    torch.set_num_threads(max(1, int(args.threads)))
+    reader = GGUFReader(str(args.base_gguf))
+    args.out_dir.mkdir(parents=True, exist_ok=True)
+    tensors = {}
+    for index, name in enumerate(args.tensors):
+        tensor = _find_tensor(reader, name, args.base_gguf)
+        payload = args.out_dir / f"{index:04d}.q2_0"
+        size, digest = _encode_tensor(tensor, payload)
+        tensors[name] = {
+            "payload": str(payload),
+            "bytes": size,
+            "sha256": digest,
+            "elements": int(tensor.data.size),
+        }
+        print(f"encoded {name} unweighted: {size} B sha256 {digest}", flush=True)
+    report = {"encoder": ARM_REVISION, "tensors": tensors}
+    args.report.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    copy = os.environ.get("MF_REPORT_COPY")
+    if copy:
+        shutil.copyfile(args.report, copy)
+    print(f"{len(tensors)} tensors, encoder {ARM_REVISION}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

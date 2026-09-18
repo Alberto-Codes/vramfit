@@ -219,6 +219,190 @@ The fixture is 79.72 MiB and the run takes under ten seconds. It is not
 a damage measurement. The bound above compares two fits on one metric
 and states no absolute quality floor.
 
+## Matrix-free control arm at model level
+
+- **Recorded:** 2026-09-18
+
+ADR-0032 decision 3 labels a pre-encoded tensor assisted because the
+matrix weights the encoder's candidate selection. The resolved open
+question below it measured, in weight space, that the Lloyd scale
+search carries 97.5 % of the encoder gain and the matrix 2.5 %.
+[Issue #302](https://github.com/Alberto-Codes/vramfit/issues/302)
+measured a weight-space term and measured damage ordering apart on
+this target, so that split predicted nothing at model level. This
+section measures the matrix-free arm at model level. It packs the
+same recipes with the same encoder, runs the Lloyd search at weight
+1.0 on every nominal-2 block, and still supplies the matrix to the
+stock pass for the nominal-4 tensors. The question is whether the 55,314,688 B
+importance matrix can be dropped for nominal 2 entirely.
+
+### The assisted arm is cited, not re-measured
+
+No figure in this section for the assisted encoder comes from the
+run below. The published v2 file is that arm.
+[The card ledger](../../../../publication/nemotron-30b-a3b-fit16gib/card-ledger.md)
+records block `v2-puballoc-q0imx2` at mean KLD 0.071403, same top
+89.418 %, PPL 7.068906, 16,922,476,480 B, SHA-256 `187858b0…cd75`.
+Its control `ctl-v1-published` reads mean KLD 0.204322. The
+re-solve on the q0-imx2 map, twelve stacks at 2 bits, measured mean
+KLD 0.077790 ± 0.000474 at 16,742,875,072 B. That figure lives in
+the operator's run archive, `data/vramfit-q0imx2-30b-real-run/report.md`
+(2026-09-17, map SHA-256 `3a8bce20…b1e`, recipe SHA-256
+`34ea28d3…a78`). The run
+below re-read the published bytes and re-packed the v1 recipe on its
+own pod as controls. That is how the cited figures and the measured
+ones share one instrument.
+
+### Pre-registration, frozen before any number
+
+Written 2026-09-17 in the run record, before a pod existed. Let
+W = 0.204322 − 0.071403 = 0.132919, the assisted win at the published
+allocation.
+
+- The measurement is readable only if both controls reproduce to
+  every printed digit: the published v2 bytes at 0.071403 and a
+  re-pack of the published v1 recipe at 0.204318.
+- **Matrix-free viable** if `MF-pub` mean KLD ≤ 0.071403 + 0.25 W
+  = 0.10463, the pack completes with verified payloads, and same
+  top stays above the v1 control's 83.146 %.
+- **Not viable** if `MF-pub` mean KLD > 0.10463, the pack fails, or
+  same top falls to or below 83.146 %.
+- **Weight space and model level disagree** if the matrix's
+  model-level share of the win, (`MF-pub` − 0.071403) / W, exceeds
+  0.10.
+- **Indistinguishable** if |`MF-pub` − 0.071403| ≤ 3 × 0.000432.
+- The same rules apply to `MF-cand` against 0.077790 and the same W.
+
+### Result
+
+**Matrix-free is viable at nominal 2, and the matrix's model-level
+share of the win is 3.3 %.** Weight space said 2.5 %. The two frames
+agree in kind: the Lloyd scale search carries the win, and the
+matrix adds a small, measurable, consistent margin on top.
+
+Every row below was measured on one H100 pod on 2026-09-18, on one
+f16 base and one set of base logits, over the full 594-chunk
+`wiki.test.raw` at n_ctx 512. Every figure is copied from
+[matrix-free-results.txt](matrix-free-results.txt), which names the
+file, byte count, and SHA-256 each block was measured on.
+
+| Block | Encoder on nominal 2 | 2-bit stacks | Bytes | SHA-256 | PPL(Q) | Mean KLD | Same top |
+| --- | --- | ---: | ---: | --- | ---: | ---: | ---: |
+| `ctl-v1-repack` (control) | stock `llama-quantize` Q2_0 | 11 | 16,922,476,480 | `ae2d7a51…7427` | 7.917699 ± 0.054005 | 0.204318 ± 0.001160 | 83.127 ± 0.096 % |
+| `ctl-v2-published` (control) | assisted, the published bytes | 11 | 16,922,476,480 | `187858b0…cd75` | 7.068906 ± 0.047531 | 0.071403 ± 0.000432 | 89.418 ± 0.079 % |
+| `mf-pub` | search at weight 1.0, no matrix | 11 | 16,922,476,480 | `97ec6f08…284e` | 7.048210 ± 0.047191 | 0.075822 ± 0.000433 | 88.987 ± 0.080 % |
+| `mf-cand` | search at weight 1.0, no matrix | 12 | 16,742,875,072 | `e0b77ee8…d2fd` | 7.060986 ± 0.047158 | 0.082204 ± 0.000468 | 88.645 ± 0.082 % |
+
+The controls reproduced their prior readings to every printed digit
+before either arm ran. `ctl-v1-repack` is byte-identical to the
+2026-09-17 pod's `ctl-repro` (same SHA-256). `mf-pub` packs the
+published v2 recipe (SHA-256 `7fa0d6b0…4a1c`) and lands at the
+published byte count. `mf-cand` packs the re-solved recipe
+(`34ea28d3…a78`) and lands at the candidate's byte count. The
+matrix-free packs differ from their assisted twins only in the
+eleven or twelve pre-encoded `ffn_down_exps` stacks, whose payload
+hashes the run logs and encoder reports carry.
+
+Against the frozen rules, with W = 0.132919:
+
+| Rule | `mf-pub` against 0.071403 | `mf-cand` against 0.077790 |
+| --- | --- | --- |
+| Viable: mean KLD ≤ assisted + 0.25 W | 0.075822 ≤ 0.10463, **viable** | 0.082204 ≤ 0.11102, **viable** |
+| Pack completes with verified payloads | yes, 11 tensors | yes, 12 tensors |
+| Same top above 83.146 % | 88.987 %, yes | 88.645 %, yes |
+| Matrix share (mf − assisted) / W | 0.004419 / W = **3.32 %** | 0.004414 / W = **3.32 %** |
+| Disagree with weight space if share > 10 % | no, **agree in kind** | no, **agree in kind** |
+| Indistinguishable if delta ≤ 3 SE | no: 10.2 SE | no: 9.4 SE |
+| Share of the v1-to-assisted win retained | 96.7 % | 91.9 % |
+
+Two readings follow from the table, and the second is the one to
+carry.
+
+1. **The matrix is worth 0.0044 mean KLD on this target, ten standard
+   errors, on both allocations.** That is real and small. Dropping
+   the 55,314,688 B matrix for nominal 2 costs 3.3 % of the win the
+   encoder delivers over stock Q2_0. The search delivers the other
+   96.7 %. The weight-space split (search 97.5 %, matrix 2.5 %)
+   predicted `mf-pub` at about 0.0747. It measured 0.0758. The two
+   frames differ by 0.8 points of share, which is not the ordering
+   disagreement issue #302 warned about.
+2. **Perplexity and KLD order the matrix-free arm apart.** Both
+   matrix-free files read a lower PPL than their assisted twin
+   (7.048210 against 7.068906, and 7.060986 against 7.085022) while
+   reading a higher mean KLD. The PPL differences sit under one
+   standard error of PPL (± 0.047), so PPL cannot separate the two
+   encoders on this corpus. KLD separates them at ten. This is the
+   ADR-0027 reason KLD is the tier-2 instrument, observed again.
+
+What this does not establish: it measures vramfit's own encoder, not
+the reference patch's unassisted path. It ran one calibration
+matrix and one corpus. It packs the matrix-free arm through a scratch
+program that no `vramfit` command exposes, so no user can produce
+these bytes from the CLI today. Decision 3's rule that an uncovered
+Q2_0 tensor packs through stock `llama-quantize` is unchanged by
+this record. The serve test and the tier-3 slice did not run on
+either matrix-free file.
+
+### Instrument
+
+| Part | Value |
+| --- | --- |
+| Pod | RunPod secure H100 SXM, AP-IN-1, image `runpod/pytorch:1.0.2-cu1281-torch280-ubuntu2404`, 350 GB local container disk, 23-core CPU quota |
+| Runtime build | llama.cpp b10362 `4801e3c567d5131dd41b387df5f2d4b1370d92be`, `GGML_CUDA=ON`, GNU 13.3.0 |
+| Toolchain hashes | [matrix-free-toolchain-sha256.txt](matrix-free-toolchain-sha256.txt) |
+| vramfit | main `4deb330b2cd60579f899eeb080c0c34393448e62`, pack extra |
+| Checkpoint | `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16` at `ce38b6ab8b252b4b8ee7165b4605e93191cafd73` |
+| f16 base | `convert_hf_to_gguf.py --outtype f16 --no-mtp`, 63,181,504,640 B, 310 s |
+| Base logits | 39,709,379,972 B, 133 s |
+| Importance matrix | bartowski `f0eec2267ae843d9eb21ea3926ab0046da0a8628`, SHA-256 `fbd36e4f…aac5`, 55,314,688 B. Supplied to every pack for the nominal-4 tensors and withheld from the nominal-2 encoder in the two `mf-` arms |
+| Corpus | `wiki.test.raw`, SHA-256 `173c87a5…dd08`, 1,290,590 B |
+| Pack stage | `ctl-v1-repack` 129 s at 23 threads, `mf-pub` 549 s, `mf-cand` 567 s |
+| Evaluation | 81 to 86 s each |
+
+### The matrix-free program
+
+[matrix-free-encoder-program.py.txt](matrix-free-encoder-program.py.txt)
+is the encoder program the two `mf-` arms ran, archived as text. It
+takes the shipped program's exact argument vector, accepts and
+ignores `--imatrix`, and calls the shipped
+`q2_0_encode_rows(rows, None)`: the specification's weight-1.0
+Lloyd search, in `q2_0_assisted.py`, with no second implementation.
+It stamps its report `vramfit-q2_0-assisted-1+unweighted`, and each
+arm's run log carries that string in `q2_0_encoder`.
+[matrix-free-pack-driver.py.txt](matrix-free-pack-driver.py.txt)
+runs `vramfit pack` with the packer's `encoder_command` pointed at
+that program. The row-width routing, the override composition, the
+mixed GGUF, the payload verification, and the run log are the
+shipped pack path.
+
+Before the pod, the program ran on the row-width fixture with the
+stock b10362 quantizer: both stacks packed as `q2_0`, the unweighted
+payload decoded to exactly the shipped fit's weight-None output, and
+the assisted and unweighted payloads differed.
+
+### Files
+
+- [matrix-free-results.txt](matrix-free-results.txt): every
+  evaluation block, verbatim from the pod.
+- [matrix-free-toolchain-sha256.txt](matrix-free-toolchain-sha256.txt):
+  `llama-quantize` and `llama-perplexity` SHA-256, build version,
+  and the Python stack.
+- [matrix-free-encoder-program.py.txt](matrix-free-encoder-program.py.txt)
+  and [matrix-free-pack-driver.py.txt](matrix-free-pack-driver.py.txt):
+  the scratch programs, archived as text.
+- [matrix-free-pre-encode-reports.txt](matrix-free-pre-encode-reports.txt):
+  the per-tensor payload sizes and SHA-256 the encoder reported for
+  each arm.
+- [matrix-free-timeline.txt](matrix-free-timeline.txt): the driver's
+  stage timings.
+- Run logs, pack logs, and evaluation logs stay in the operator's run
+  archive under `data/vramfit-encoder-first-real-run/artifacts/`.
+
+The run was pre-registered, then measured. A first pod in another
+data center was stopped before any measurement because its volume
+was a network mount writing at about 42 MB/s. The run above is the
+second pod, on local disk.
+
 ## Rebuy evidence
 
 [rebuy-results.txt](rebuy-results.txt) copies `results.txt` from `nemotron-30b-a3b/rebuy-2026-09-05/` beneath the frozen run root

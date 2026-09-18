@@ -1,0 +1,23 @@
+=== [01:38:54] STAGE 0 host facts ===
+=== [01:38:55] STAGE 1 packages ===
+=== [01:39:03] STAGE 2 staged inputs ===
+=== [01:39:03] STAGE 3 background: llama.cpp CUDA build, vramfit, checkpoint, published v2 bytes ===
+=== [01:45:01] STAGE 4 gates ===
+=== [01:45:21] STAGE 5 convert f16 --no-mtp ===
+convert 310s
+=== [01:50:31] STAGE 6 base logits ===
+base_logits 133s
+=== [01:52:44] STAGE 7 control: published v2 bytes ===
+eval_ctl-v2-published 81s
+=== [01:54:20] STAGE 8 control: re-pack the published v1 recipe (stock Q2_0) ===
+pack_ctl_v1 129s
+eval_ctl-v1-repack 83s
+CONTROLS REPRODUCED
+=== [01:58:06] STAGE 9 arm MF-pub (recipe-v2-puballoc-q0imx2.json) matrix-free pack ===
+pack_mf_pub 549s
+eval_mf-pub 86s
+=== [02:08:57] STAGE 9 arm MF-cand (recipe-cand-q0imx2.json) matrix-free pack ===
+pack_mf_cand 567s
+eval_mf-cand 81s
+=== [02:19:59] STAGE 10 results ===
+=== [02:21:22] ALL STAGES COMPLETE ===

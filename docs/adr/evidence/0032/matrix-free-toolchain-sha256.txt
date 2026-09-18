@@ -1,0 +1,8 @@
+a9459ccd43cc2831bf97d880ee244d7ebe9423be0c09a422136fd0bbb0b54d58  /workspace/llama.cpp/build/bin/llama-quantize
+5a0bbda34c6daf030bd56dbde085fb8ae696afad3c6298e4c4a40a9d7858b84a  /workspace/llama.cpp/build/bin/llama-perplexity
+version: 10362 (4801e3c56)
+built with GNU 13.3.0 for Linux x86_64
+vramfit 4deb330b2cd60579f899eeb080c0c34393448e62
+torch 2.13.0+cu130 transformers 5.14.1
+NVIDIA H100 80GB HBM3, 81559 MiB, 580.126.09
+nproc 224 cgroup-quota 23 threads 23
