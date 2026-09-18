@@ -398,10 +398,20 @@ The third cannot deliver the measured benefit or matching provenance.
   probe tested one quantizer. Decision 1 forbids `--allow-requantize`,
   so a build that drops the passthrough refuses the pack rather than
   requantizing the payload silently. A toolchain change repeats the probe.
-- What the re-priced map does to the allocation stays unknown. The rebuy
+- ~~What the re-priced map does to the allocation stays unknown. The rebuy
   changed the encoder and kept the shipped recipe's allocation, so no
   measurement on record says whether cheaper nominal-2 cells move the
-  solver's choices. Decision 4 requires the new map before anyone answers.
+  solver's choices. Decision 4 requires the new map before anyone answers.~~
+  Resolved in part 2026-09-17 by the q0-imx2 re-solve. The cheaper
+  nominal-2 cells moved the solver from eleven to twelve 2-bit stacks at
+  16,742,875,072 B. That pack measured mean KLD 0.077790 ± 0.000474, block
+  `candidate` in
+  [q0imx2-2026-09-17-results.txt](evidence/0032/q0imx2-2026-09-17-results.txt).
+  The evidence page's
+  [matrix-free section](evidence/0032/README.md#matrix-free-control-arm-at-model-level)
+  places that reading beside the matrix-free arms. The q0-imx2 map and
+  the re-solved recipe artifacts are not in the repository. That part of
+  the question stays open until they land.
 - ~~No measurement separates the search gain from the matrix gain. The
   `c2-assisted-q2_0` arm ran the patched encoder
   ([evidence](evidence/0032/README.md#rebuy-evidence)), and that patch

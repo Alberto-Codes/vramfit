@@ -1,4 +1,4 @@
-# Copied from the 2026-09-17 q0-imx2 run's results.txt: the two measurement blocks named below. The Files section of README.md describes the run.
+# Copied from the 2026-09-17 q0-imx2 run's results.txt: the two measurement blocks named below. The section 'The assisted arm is cited, not re-measured' in README.md describes the run.
 
 --- ctl-repro ---
 file: <run>/ctl-repro.gguf
