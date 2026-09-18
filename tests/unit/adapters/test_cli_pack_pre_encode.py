@@ -42,6 +42,7 @@ class _PreEncodingPacker:
             file_type="Q2_0",
             pre_encoded=("blk.0.ffn_down_exps.weight",),
             q2_0_encoder="vramfit-q2_0-assisted-1",
+            pre_encode_assisted=recipe.imatrix is not None,
         )
 
 
@@ -103,4 +104,5 @@ def test_pack_records_and_echoes_the_pre_encoding_stage(
     )
     assert packed["pre_encoded"] == ["blk.0.ffn_down_exps.weight"]
     assert packed["q2_0_encoder"] == "vramfit-q2_0-assisted-1"
+    assert packed["pre_encode_assisted"] is True
     assert "pre_encode_cost" not in packed

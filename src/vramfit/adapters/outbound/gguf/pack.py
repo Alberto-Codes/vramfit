@@ -50,9 +50,12 @@ output lines. After a zero exit the adapter relabels the file: the
 quantizer stamps ``general.file_type`` with the base ftype, and the
 adapter rewrites it to the type covering the most bytes
 ([vramfit.adapters.outbound.gguf.file_type][], ADR-0012 decision 3
-as amended 2026-09-04, #413, #414). A recipe priced with the
-assisted ``Q2_0`` encoder's method takes the pre-encoding path
-(ADR-0032): the adapter selects the covered ``q2_0`` tensors,
+as amended 2026-09-04, #413, #414). A recipe priced with one of the
+``Q2_0`` encoder's methods takes the pre-encoding path
+(ADR-0032): the adapter selects the ``q2_0`` tensors the method
+reaches — the matrix's covered ones under ``q0-imx2``, and every
+candidate under matrix-free ``q0-fit2`` (ADR-0018, 2026-09-17
+amendment) —
 refuses before anything is written when the quantizer's own matching
 would floor one, runs the encoder as a separate program under
 ``python_bin``, writes the temporary mixed GGUF beside the output,
@@ -123,7 +126,7 @@ from vramfit.adapters.outbound.gguf.types import (
 )
 from vramfit.adapters.outbound.safetensors_sizes import SafetensorsSizes
 from vramfit.domain.errors import VramfitError
-from vramfit.domain.model import Q0_IMX2_METHOD, Recipe
+from vramfit.domain.model import Q0_FIT2_METHOD, Q0_IMX2_METHOD, Recipe
 from vramfit.domain.pack import PackResult, TypeOverride
 from vramfit.domain.sizes import discovered_group_rows
 
@@ -401,25 +404,30 @@ class LlamaCppPacker:
 
         Raises:
             PackError: If the recipe's method needs an imatrix the
-                pack lacks, the selection refuses (ADR-0032), the
+                pack lacks, the selection refuses (ADR-0032, ADR-0018's
+                2026-09-17 amendment), the
                 encoder fails, or the mixed file cannot be written.
                 A failure after the encoder starts removes the
                 payload directory and the mixed GGUF, and the
                 message names both.
         """
-        if recipe.within_group != Q0_IMX2_METHOD:
+        if recipe.within_group not in (Q0_IMX2_METHOD, Q0_FIT2_METHOD):
             return None
-        if self.imatrix is None:
-            raise PackError(
-                f'the recipe was priced with method "{recipe.within_group}", '
-                "whose Q2_0 cells the assisted encoder fitted, and the pack has "
-                "no --imatrix. Without the matrix every Q2_0 tensor would ship "
-                "stock, which the recipe did not price (ADR-0032 decision 3)"
-            )
+        assisted = recipe.within_group == Q0_IMX2_METHOD
+        covered: frozenset[str] | None = None
+        if assisted:
+            if self.imatrix is None:
+                raise PackError(
+                    f'the recipe was priced with method "{recipe.within_group}", '
+                    "whose Q2_0 cells the assisted encoder fitted, and the pack has "
+                    "no --imatrix. Without the matrix every Q2_0 tensor would ship "
+                    "stock, which the recipe did not price (ADR-0032 decision 3)"
+                )
+            covered = frozenset(imatrix_entry_names(self.imatrix))
         targets = select_pre_encode_targets(
             overrides,
             read_header(self.base_gguf),
-            covered=frozenset(imatrix_entry_names(self.imatrix)),
+            covered=covered,
             excluded=excluded,
             embedding_flag=embedding_flag,
             output_flag=output_flag,
@@ -435,7 +443,7 @@ class LlamaCppPacker:
             report = run_encoder(
                 command,
                 base_gguf=self.base_gguf,
-                imatrix=self.imatrix,
+                imatrix=self.imatrix if assisted else None,
                 targets=targets,
                 work_dir=self.pre_encode_dir,
                 threads=self.threads,
@@ -605,9 +613,12 @@ class LlamaCppPacker:
         composition root. The 256 super-block decision reads that
         width and never a class name (issue #515).
 
-        A recipe priced with the assisted ``Q2_0`` encoder's method
-        pre-encodes its covered ``q2_0`` tensors first (ADR-0032).
-        The stage refuses before it writes when the quantizer's own
+        A recipe priced with one of vramfit's ``Q2_0`` encoder
+        methods pre-encodes its ``q2_0`` tensors first (ADR-0032).
+        ``q0-imx2`` pre-encodes the tensors the matrix covers, and
+        matrix-free ``q0-fit2`` every candidate, because its fit
+        reads no matrix (ADR-0018, 2026-09-17 amendment). The
+        stage refuses before it writes when the quantizer's own
         matching would leave such a tensor at another type, runs the
         encoder as a separate program, writes the temporary mixed
         GGUF beside the output, and hands that file to the quantizer
@@ -618,8 +629,8 @@ class LlamaCppPacker:
         artifact depends on them. A failure after it keeps both the
         temporary mixed GGUF and the payload directory, and the
         message names them.
-        The result records the pre-encoded tensors and the encoder
-        revision.
+        The result records the pre-encoded tensors, the encoder
+        revision, and whether the matrix weighted that fit.
 
         Args:
             recipe: The recipe to apply.
@@ -736,4 +747,6 @@ class LlamaCppPacker:
             file_type=declared,
             pre_encoded=pre_encoded,
             q2_0_encoder=encoder,
+            pre_encode_assisted=recipe.within_group == Q0_IMX2_METHOD
+            and bool(pre_encoded),
         )

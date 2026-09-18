@@ -152,6 +152,13 @@ meaning. Select `--within-group q0-imx2` with `--imatrix` to price
 covered nominal-2 cells with vramfit's own assisted `Q2_0` encoder.
 `vramfit pack` uses that encoder for pre-encoding
 ([ADR-0032](../adr/0032-assisted-q2-encoder-home.md) decision 3).
+Select `--within-group q0-fit2`, with no `--imatrix`, to price
+every nominal-2 cell with that same encoder at weight 1.0
+(ADR-0018's 2026-09-17 amendment). The map then records the
+`q0-fit2` token and names no imatrix. On the 30B target the
+matrix is worth 0.0044 mean KLD at nominal 2, about 3.3 % of the
+encoder's win over stock `Q2_0`
+([ADR-0032](../adr/0032-assisted-q2-encoder-home.md)'s evidence).
 On a fused expert stack the meter reads one imatrix row per expert,
 as `llama-quantize` applies them. A parameter the imatrix does not
 cover prices unassisted, and the coverage echo reports the split.

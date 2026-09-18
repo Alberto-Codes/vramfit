@@ -105,6 +105,10 @@ below remain, the sub-4-bit pricing claims do not.
   A recipe recording `q0-imx2` packs through the pre-encoding path,
   which needs this matrix
   ([ADR-0032](../adr/0032-assisted-q2-encoder-home.md) decision 3).
+  A recipe recording `q0-fit2` packs through that same path with no
+  matrix and names none
+  ([ADR-0018](../adr/0018-kquant-within-group-method.md)'s
+  2026-09-17 amendment).
   `vramfit validate` and `vramfit pack` warn when their
   `--imatrix` names a different file — a different file breaks the
   frame the map priced. The loader accepts an absent field as null.

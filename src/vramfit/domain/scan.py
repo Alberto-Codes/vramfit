@@ -22,8 +22,9 @@ riding through from `GroupSpec`
 (`summarize_imatrix_counts`), the within-group method tokens and each
 method's precision coverage set (`rtn-block32`, `kquant-ref`,
 `kquant-imx`, `q0-ref` since the 2026-08-18 amendment,
-`q0-imx` since the 2026-08-21 amendment, and `q0-imx2` for the
-assisted Q2_0 path (ADR-0032 decision 3) —
+`q0-imx` since the 2026-08-21 amendment, `q0-imx2` for the
+assisted Q2_0 path (ADR-0032 decision 3), and `q0-fit2` for that
+encoder without a matrix (ADR-0018, 2026-09-17 amendment) —
 ADR-0006, ADR-0018, ADR-0020, with
 every token re-exported from [vramfit.domain.model][], where
 `ScanMeta` anchors them), and
@@ -65,6 +66,9 @@ from vramfit.domain.model import (
 )
 from vramfit.domain.model import (
     KQUANT_METHOD as KQUANT_METHOD,  # noqa: PLC0414 - re-export: method tokens read from this module
+)
+from vramfit.domain.model import (
+    Q0_FIT2_METHOD as Q0_FIT2_METHOD,  # noqa: PLC0414 - re-export: method tokens read from this module
 )
 from vramfit.domain.model import (
     Q0_IMX2_METHOD as Q0_IMX2_METHOD,  # noqa: PLC0414 - re-export: method tokens read from this module

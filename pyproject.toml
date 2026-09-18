@@ -281,6 +281,7 @@ include = [
     "tests/unit/adapters/test_override_match_gguf.py",
     "tests/unit/adapters/test_pack_pre_encode.py",
     "tests/unit/adapters/test_predicted_vs_packed.py",
+    "tests/unit/adapters/test_q2_0_matrix_free.py",
     "tests/unit/adapters/test_scan_offload.py",
 ]
 

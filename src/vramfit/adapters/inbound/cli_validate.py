@@ -14,7 +14,8 @@ method token, a contradicting flag is refused (ADR-0019), and an
 warning — a different file contaminates the comparison (ADR-0020).
 Assisted tokens resolve this way: ``kquant-imx`` measures through
 ``kquant``, ``q0-imx`` through ``q0``, and ``q0-imx2`` through its
-assisted 2-bit method. Each uses the imatrix.
+assisted 2-bit method. Each uses the imatrix. ``q0-fit2`` measures
+through its own matrix-free 2-bit method and takes none.
 The pass loads the same ``transformers`` the scan did, so it reports
 a merged projection under the name the scan measured.
 `vramfit.domain.projections.merged_assignments` folds the recipe's
@@ -45,13 +46,16 @@ from __future__ import annotations
 import time
 from collections.abc import Collection
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated
 
 import typer
 
 from vramfit.adapters.inbound.cli_options import (
+    METHOD_NAMES,
+    WithinGroupName,
     check_imatrix,
     echo_imatrix_coverage,
+    method_list,
     parse_gpu_memory,
 )
 from vramfit.adapters.inbound.cli_scan import _build_meter
@@ -67,6 +71,7 @@ from vramfit.domain.scan import (
     KQUANT_IMX_METHOD,
     KQUANT_METHOD,
     KQUANT_PRECISIONS,
+    Q0_FIT2_METHOD,
     Q0_IMX2_METHOD,
     Q0_IMX_METHOD,
     Q0_REF_METHOD,
@@ -79,13 +84,14 @@ from vramfit.ports.outbound import DamageMeter
 # Method token -> the meter method that measures it. An assisted
 # token measures through its method with the imatrix (ADR-0018,
 # ADR-0020).
-_TOKEN_TO_METHOD: dict[str, Literal["rtn", "kquant", "q0", "q0-imx2"]] = {
+_TOKEN_TO_METHOD: dict[str, WithinGroupName] = {
     SCAN_METHOD: "rtn",
     KQUANT_METHOD: "kquant",
     KQUANT_IMX_METHOD: "kquant",
     Q0_REF_METHOD: "q0",
     Q0_IMX_METHOD: "q0",
     Q0_IMX2_METHOD: "q0-imx2",
+    Q0_FIT2_METHOD: "q0-fit2",
 }
 # Each method's ported precision coverage (ADR-0018). RTN covers
 # every precision, so it is absent.
@@ -93,12 +99,13 @@ _METHOD_COVERAGE: dict[str, tuple[int, ...]] = {
     "kquant": KQUANT_PRECISIONS,
     "q0": Q0_REF_PRECISIONS,
     "q0-imx2": Q0_REF_PRECISIONS,
+    "q0-fit2": Q0_REF_PRECISIONS,
 }
 
 
 def _resolve_within_group(
     text: str | None, imatrix: Path | None, recipe: Recipe
-) -> tuple[Literal["rtn", "kquant", "q0", "q0-imx2"], str]:
+) -> tuple[WithinGroupName, str]:
     """Resolve the pass's method against the recipe's provenance.
 
     The pass only checks additivity when its frame matches the map
@@ -122,9 +129,11 @@ def _resolve_within_group(
 
     Raises:
         typer.BadParameter: If the method is unknown, ``kquant``,
-            ``q0``, or ``q0-imx2`` meets assignments outside its port
+            ``q0``, ``q0-imx2``, or ``q0-fit2`` meets assignments
+            outside its port
             coverage (ADR-0018), ``--imatrix`` arrives with the rtn
-            method, ``q0-imx2`` lacks an imatrix, the file does not
+            or ``q0-fit2`` method,
+            ``q0-imx2`` lacks an imatrix, the file does not
             exist, the recipe records a token this
             version does not know, or the resolved frame contradicts
             the recipe's recorded method (ADR-0019).
@@ -135,13 +144,14 @@ def _resolve_within_group(
             f'--within-group: the recipe records method "{recorded}", which '
             "this version does not know — upgrade vramfit"
         )
+    method: WithinGroupName
     if text is None:
         method = _TOKEN_TO_METHOD[recorded] if recorded is not None else "rtn"
-    elif text in ("rtn", "kquant", "q0", "q0-imx2"):
+    elif text in METHOD_NAMES:
         method = text
     else:
         raise typer.BadParameter(
-            f'--within-group: expected "rtn", "kquant", "q0", or "q0-imx2", got "{text}"'
+            f'--within-group: expected {method_list()}, got "{text}"'
         )
     # Record conflicts refuse first — their messages name the real
     # cause. A flag-level message here ("--imatrix requires kquant")
@@ -165,6 +175,8 @@ def _resolve_within_group(
         token = Q0_REF_METHOD if imatrix is None else Q0_IMX_METHOD
     elif method == "q0-imx2":
         token = Q0_IMX2_METHOD
+    elif method == "q0-fit2":
+        token = Q0_FIT2_METHOD
     else:
         token = KQUANT_METHOD if imatrix is None else KQUANT_IMX_METHOD
     return method, token

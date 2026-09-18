@@ -7,6 +7,7 @@ import pytest
 from tests.unit.conftest import make_recipe_dict
 from vramfit.adapters.outbound.json_common import ArtifactError
 from vramfit.adapters.outbound.recipe_json import (
+    RECIPE_SCHEMA_VERSION,
     load_recipe,
     recipe_from_dict,
     recipe_to_dict,
@@ -155,6 +156,31 @@ class TestRecipe:
         raw["imatrix"] = "/runs/model.imatrix.gguf"
 
         with pytest.raises(ArtifactError, match="q0-imx"):
+            recipe_from_dict(raw)
+
+    def test_q0_fit2_token_round_trips_without_an_imatrix(self) -> None:
+        # The matrix-free 2-bit method reads no matrix at any width,
+        # so it names none (ADR-0018, 2026-09-17 amendment).
+        raw = make_recipe_dict()
+        raw["within_group"] = "q0-fit2"
+
+        recipe = recipe_from_dict(raw)
+        again = recipe_from_dict(recipe_to_dict(recipe))
+
+        assert recipe.within_group == "q0-fit2"
+        assert recipe.imatrix is None
+        assert recipe_to_dict(recipe)["vramfit_schema"] == RECIPE_SCHEMA_VERSION
+        assert again == recipe
+
+    def test_imatrix_on_a_q0_fit2_recipe_rejected(self) -> None:
+        # Matrix provenance still requires an assisted token: a
+        # q0-fit2 recipe that names a matrix states a fit it did not
+        # run (ADR-0020).
+        raw = make_recipe_dict()
+        raw["within_group"] = "q0-fit2"
+        raw["imatrix"] = "/runs/model.imatrix.gguf"
+
+        with pytest.raises(ArtifactError, match="q0-imx2"):
             recipe_from_dict(raw)
 
     def test_empty_within_group_rejected(self) -> None:

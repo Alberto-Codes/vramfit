@@ -288,6 +288,43 @@ def test_q0_imx2_scan_requires_imatrix(tmp_path, monkeypatch) -> None:
     assert "requires --imatrix" in result.output
 
 
+def test_q0_fit2_scan_records_the_matrix_free_token_without_an_imatrix(
+    tmp_path, monkeypatch
+) -> None:
+    damages = {(spec.name, bits): 0.1 for spec in SPECS for bits in (4, 2)}
+    captured = install_meter(
+        monkeypatch, MemoryDamageMeter(specs=SPECS, damages=damages, tokens=64)
+    )
+
+    result, out = invoke_scan(
+        tmp_path, "--precisions", "4,2", "--within-group", "q0-fit2"
+    )
+
+    assert result.exit_code == 0, result.output
+    map_ = load_sensitivity_map(out)
+    assert map_.scan.within_group == "q0-fit2"
+    assert map_.scan.imatrix is None
+    assert captured["within_group"] == "q0-fit2"
+    assert captured["imatrix"] is None
+
+
+def test_q0_fit2_scan_with_an_imatrix_exits_with_usage_error(
+    tmp_path, monkeypatch
+) -> None:
+    install_meter(
+        monkeypatch, MemoryDamageMeter(specs=SPECS, damages=dict(DAMAGES), tokens=64)
+    )
+    imatrix = tmp_path / "im.gguf"
+    imatrix.write_bytes(b"GGUF")
+
+    result, _ = invoke_scan(
+        tmp_path, "--within-group", "q0-fit2", "--imatrix", str(imatrix)
+    )
+
+    assert result.exit_code == 2
+    assert "--imatrix requires --within-group kquant, q0, or q0-imx2" in result.output
+
+
 def test_kquant_scan_records_the_method_in_the_map(tmp_path, monkeypatch) -> None:
     damages = {(spec.name, bits): 0.1 for spec in SPECS for bits in (3, 2)}
     captured = install_meter(

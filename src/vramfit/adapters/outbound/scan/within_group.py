@@ -23,6 +23,10 @@ The methods:
   carries column weights, the encoder the pack pre-encodes with
   (ADR-0032 decision 3). Uncovered parameters keep the reference
   arithmetic, because stock ``llama-quantize`` packs them.
+- ``q0-fit2`` — ``q0`` with nominal 2 fitting through that same
+  ``Q2_0`` encoder at weight 1.0, for every parameter. It reads no
+  imatrix at any width, so the meter refuses weights under it
+  (ADR-0018, 2026-09-17 amendment).
 
 Examples:
     Perturb one tensor under the q0 method:
@@ -63,15 +67,28 @@ from vramfit.adapters.outbound.scan.q2_0_assisted import (
 )
 from vramfit.adapters.outbound.scan.quantize import rtn_quantize_dequantize
 
-WithinGroupMethod = Literal["rtn", "kquant", "q0", "q0-imx2"]
+WithinGroupMethod = Literal["rtn", "kquant", "q0", "q0-imx2", "q0-fit2"]
 # The method names the meter and the CLI accept. An unknown value
 # must refuse rather than fall back — a silent RTN fallback would
 # record every damage under the wrong token.
-METHODS: tuple[WithinGroupMethod, ...] = ("rtn", "kquant", "q0", "q0-imx2")
-# The methods that read the q0 imatrix reader family.
+METHODS: tuple[WithinGroupMethod, ...] = (
+    "rtn",
+    "kquant",
+    "q0",
+    "q0-imx2",
+    "q0-fit2",
+)
+# The methods that read the q0 imatrix reader family. `q0-fit2`
+# reads no matrix at any width, so no reader family serves it.
 _Q0_FAMILY: tuple[WithinGroupMethod, ...] = ("q0", "q0-imx2")
-# The nominal precision `q0-imx2` routes to the assisted
-# Q2_0 encoder (ADR-0032 decision 3).
+# The methods whose non-encoder widths take the `q0` block
+# quantizers, assisted where the parameter carries weights.
+_Q0_PORTS: tuple[WithinGroupMethod, ...] = ("q0", "q0-imx2", "q0-fit2")
+# The matrix-free method: nominal 2 fits through vramfit's own
+# Q2_0 encoder at weight 1.0, and every other width keeps the `q0`
+# reference arithmetic (ADR-0018, 2026-09-17 amendment).
+_FIT2_METHOD = "q0-fit2"
+# The nominal precision both encoder methods route to that encoder.
 _ENCODER_BITS = 2
 
 
@@ -141,6 +158,28 @@ def check_method_weights(
         )
 
 
+def _q0_round_trip(
+    param: torch.Tensor, bits: int, column_weights: torch.Tensor | None
+) -> torch.Tensor:
+    """Round-trip one tensor through the ``q0`` block quantizers.
+
+    Args:
+        param: The tensor to perturb.
+        bits: Candidate precision.
+        column_weights: Imatrix weights, or None to fit unassisted.
+
+    Returns:
+        The dequantized tensor, same shape, dtype, and device.
+
+    Raises:
+        ValueError: If the port does not cover ``bits``, or the
+            mapped type's block size does not divide the row length.
+    """
+    if column_weights is not None:
+        return q0_assisted_quantize_dequantize(param, bits, column_weights)
+    return q0_ref_quantize_dequantize(param, bits)
+
+
 def perturb(
     param: torch.Tensor,
     bits: int,
@@ -163,7 +202,8 @@ def perturb(
             tensor on a fused expert stack (ADR-0018, 2026-08-21
             amendment). ``q0-imx2`` reads the same layouts and
             routes a weighted nominal-2 cell to the assisted
-            ``Q2_0`` encoder (ADR-0032). ``rtn`` never reads them.
+            ``Q2_0`` encoder (ADR-0032). ``q0-fit2`` and ``rtn``
+            never read them.
 
     Returns:
         The dequantized tensor, same shape, dtype, and device.
@@ -176,12 +216,12 @@ def perturb(
             parameter.
     """
     try:
+        if method == _FIT2_METHOD and bits == _ENCODER_BITS:
+            return q2_0_assisted_quantize_dequantize(param, None)
         if method == "q0-imx2" and column_weights is not None and bits == _ENCODER_BITS:
             return q2_0_assisted_quantize_dequantize(param, column_weights)
-        if method in _Q0_FAMILY:
-            if column_weights is not None:
-                return q0_assisted_quantize_dequantize(param, bits, column_weights)
-            return q0_ref_quantize_dequantize(param, bits)
+        if method in _Q0_PORTS:
+            return _q0_round_trip(param, bits, column_weights)
         if method == "kquant":
             if column_weights is not None:
                 return kquant_assisted_quantize_dequantize(param, bits, column_weights)

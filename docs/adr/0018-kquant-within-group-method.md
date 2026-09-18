@@ -30,6 +30,9 @@
 - **Amendment (2026-09-16, issue #599):** the assisted Q2_0 scan
   method ADR-0032 created takes the token `q0-imx2`. Maintainer
   ruling 2026-09-16. See "Amendment: the token `q0-imx2`" below.
+- **Amendment (2026-09-17):** the matrix-free arm of that same Q2_0
+  encoder takes the token `q0-fit2`. It ships as an option and
+  changes no default. See "Amendment: the token `q0-fit2`" below.
 
 ## Context
 
@@ -519,3 +522,65 @@ lands here too, so a reader tracing token history reads one record.
   that claims assistance without naming its imatrix, or the reverse.
 - A map under `q0-imx2` compares with no map under another token.
   ADR-0006's rule holds: a within-group method change is a new scan.
+
+## Amendment: the token `q0-fit2` (2026-09-17)
+
+### Context
+
+[ADR-0032](0032-assisted-q2-encoder-home.md) records a matrix-free
+control arm at model level. Two packs ran the shipped `Q2_0` fit at
+weight 1.0 on every nominal-2 block, with the matrix still supplied
+for the nominal-4 tensors. On the published allocation the
+matrix-free file measured mean KLD 0.075822 against the assisted
+0.071403, at an identical byte count. On the re-solved twelve-stack
+recipe it measured 0.082204 against 0.077790. Both differences are
+0.0044, about 3.3 % of the 0.132919 win over stock `Q2_0`. Weight
+space measured 2.5 % for the matrix's share.
+
+That arm ran outside the shipped code. `q0-imx2` refuses without an
+importance matrix in two places, and neither refusal is wrong: an
+assisted token must name its matrix, and matrix provenance must name
+an assisted token (ADR-0020). A matrix-free fit therefore needs a
+token of its own. This record owns the token list, and six tokens
+sit here already.
+
+### Decision
+
+1. **The token is `q0-fit2`.** It names the `q0` method with nominal
+   2 fitting through vramfit's own `Q2_0` encoder at weight 1.0.
+2. **It differs from `q0-imx2` at nominal 2 only in the weights.**
+   Both run the one fit ADR-0032 decision 2 owns. `q0-imx2` weighs
+   each element by `qw[j] * sqrt(sigma2 + x[j]^2)`, and `q0-fit2`
+   weighs every element 1. The two emit different bytes for one
+   tensor.
+3. **`q0-fit2` reads no matrix at any width.** Nominal 4 and 8 keep
+   the `q0` reference arithmetic. The CLI refuses `--imatrix` with
+   it, and the recipe schema refuses the `imatrix` field beside it,
+   because a matrix names a fit the method did not run.
+4. **It is not an assisted token.** `ASSISTED_METHODS` keeps its
+   three members. The pack's own `--imatrix` is unaffected: the
+   stock pass still weights the nominal-4 tensors, and only the
+   nominal-2 encoder drops the matrix.
+5. **Coverage and imatrix exclusions decide nothing under it.** Both
+   name what the matrix reaches, and this fit reads none, so the
+   pre-encoding stage takes every candidate the quantizer would
+   quantize. The block-alignment and first-match refusals stand
+   unchanged, because they protect the quantizer and not the matrix.
+6. **The default does not change.** Whether nominal 2 should drop
+   the matrix dependency is a separate decision, which ADR-0032
+   states it does not make and this record does not make either. No
+   existing recipe, publication, or default path emits different
+   bytes.
+
+### Consequences
+
+- The seventh token sits beside its six predecessors. A reader
+  tracing token history still reads one record.
+- The pack record states which fit ran. `PackResult` carries
+  `pre_encode_assisted` beside the encoder revision, and an assisted
+  pre-encode still requires the matrix path it was weighted by.
+- A map under `q0-fit2` compares with no map under another token.
+  ADR-0006's rule holds: a within-group method change is a new scan.
+- The 55,314,688 B matrix dependency is now optional at nominal 2 in
+  the shipped code, at the 0.0044 mean-KLD cost ADR-0032 records.
+  Nothing here says which side of that trade a target should take.
