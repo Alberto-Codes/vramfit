@@ -196,7 +196,11 @@ def _parse(argv: Sequence[str] | None) -> argparse.Namespace:
     """
     parser = argparse.ArgumentParser(
         prog="vramfit-q2-0-encoder",
-        description="Pre-encode assisted Q2_0 tensors from a base GGUF (ADR-0032).",
+        description=(
+            "Pre-encode Q2_0 tensors from a base GGUF with the shared "
+            "fit (ADR-0032): assisted with --imatrix, matrix-free "
+            "without it."
+        ),
     )
     parser.add_argument("--base-gguf", type=Path, required=True)
     parser.add_argument("--imatrix", type=Path, default=None)

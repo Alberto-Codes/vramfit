@@ -237,7 +237,8 @@ class TorchDamageMeter:
                 imatrix input
                 arrives with a method outside ``kquant``, ``q0``, and ``q0-imx2``
                 (RTN has no weighted
-                C counterpart), ``imatrix_weights`` and
+                C counterpart, and ``q0-fit2`` prices the 2-bit fit
+                without a matrix by definition), ``imatrix_weights`` and
                 ``imatrix_path`` arrive together, the imatrix file
                 is malformed or covers no parameter, a weighted name
                 is unknown or its length does not match the
@@ -265,7 +266,8 @@ class TorchDamageMeter:
                 raise ValueError(
                     "imatrix weights require the kquant, q0, or q0-imx2 within-group "
                     "method (ADR-0018, ADR-0020) — RTN has no weighted C "
-                    "counterpart"
+                    "counterpart, and q0-fit2 prices the 2-bit fit without "
+                    "a matrix"
                 )
             if imatrix_weights is not None and not imatrix_weights:
                 raise ValueError(

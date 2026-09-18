@@ -338,8 +338,9 @@ def validate(
         typer.Option(
             help="Within-group method: rtn, kquant for the "
             "K-quant-faithful port, q0 for the block "
-            "quantizers Q2_0/Q4_0/Q8_0, or q0-imx2 for assisted "
-            "2-bit (ADR-0018). Default: the "
+            "quantizers Q2_0/Q4_0/Q8_0, q0-imx2 for assisted "
+            "2-bit, or q0-fit2 for the same 2-bit encoder without "
+            "a matrix (ADR-0018). Default: the "
             "method the recipe records, or rtn for recipes without "
             "the record."
         ),
@@ -347,9 +348,10 @@ def validate(
     imatrix: Annotated[
         Path | None,
         typer.Option(
-            help="GGUF imatrix for assisted K-quant measurement "
+            help="GGUF imatrix for assisted measurement "
             "(ADR-0020). Required when the recipe was priced on an "
-            "assisted map — use the map's imatrix file."
+            "assisted map. --within-group q0-imx2 requires this file "
+            "too, and q0-fit2 refuses it — use the map's imatrix file."
         ),
     ] = None,
     runlog: Annotated[
@@ -391,12 +393,14 @@ def validate(
     Raises:
         typer.BadParameter: If ``--group-by``, ``--within-group``, or
             ``--gpu-memory`` is malformed — ``--within-group`` takes
-            ``rtn``, ``kquant``, ``q0``, or ``q0-imx2`` — ``--gpu-memory`` is given
+            ``rtn``, ``kquant``, ``q0``, ``q0-imx2``, or ``q0-fit2`` —
+            ``--gpu-memory`` is given
             without ``--device auto``, ``--within-group kquant`` or
             ``q0`` meets recipe assignments the port does not
             cover,
-            ``--imatrix`` arrives without the kquant method or is
-            not a file, the resolved frame contradicts the recipe's
+            ``--imatrix`` arrives with the rtn or ``q0-fit2`` method
+            or is not a file, ``q0-imx2`` lacks an imatrix, the
+            resolved frame contradicts the recipe's
             recorded method (ADR-0019), or the ``--runlog``
             directory does not exist.
         typer.Exit: With code 1 when the recipe is invalid, the scan
