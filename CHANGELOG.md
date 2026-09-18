@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.6.0](https://github.com/Alberto-Codes/vramfit/compare/v0.5.0...v0.6.0) (2026-09-18)
+
+
+### Features
+
+* **adapters:** add map provenance and row width ([#611](https://github.com/Alberto-Codes/vramfit/issues/611)) ([99a4a03](https://github.com/Alberto-Codes/vramfit/commit/99a4a03db7a7840e43863e644932106093883d7f))
+* **adapters:** name the evaluation corpus by content in the evals sidecar ([#589](https://github.com/Alberto-Codes/vramfit/issues/589)) ([9c04a4e](https://github.com/Alberto-Codes/vramfit/commit/9c04a4e93f1cefe461e0600382421ac4b51227bb))
+* **cli:** add a refinement pass that packs and measures recipe neighbours ([#595](https://github.com/Alberto-Codes/vramfit/issues/595)) ([640328d](https://github.com/Alberto-Codes/vramfit/commit/640328da390533557ef6dc750a2a06f4ae351baa))
+* **domain:** price the KV key and value caches as a dtype pair ([#578](https://github.com/Alberto-Codes/vramfit/issues/578)) ([d29fa92](https://github.com/Alberto-Codes/vramfit/commit/d29fa928792acb24ddea2565dd7d07c9e06a87ba))
+* **pack:** add the unassisted q0-fit2 Q2_0 encoder path ([#615](https://github.com/Alberto-Codes/vramfit/issues/615)) ([7fa9607](https://github.com/Alberto-Codes/vramfit/commit/7fa960796e0c98dc5549edb781c2ad967068da47))
+* **pack:** pre-encode assisted Q2_0 tensors before stock quantization ([#604](https://github.com/Alberto-Codes/vramfit/issues/604)) ([9facc75](https://github.com/Alberto-Codes/vramfit/commit/9facc7582b4d81348bf076eed9c8949465b39bd5))
+* **scan:** name the assisted Q2_0 method q0-imx2 and expose it end to end ([#605](https://github.com/Alberto-Codes/vramfit/issues/605)) ([e073754](https://github.com/Alberto-Codes/vramfit/commit/e073754fa3e7811faa70d625b3bbe94920beccad))
+* **scan:** record the calibration corpus by content ([#586](https://github.com/Alberto-Codes/vramfit/issues/586)) ([ca44899](https://github.com/Alberto-Codes/vramfit/commit/ca44899ad83ac3a736c4208e896b36f654174f0a))
+
+
+### Bug Fixes
+
+* **adapters:** bank the refinement sidecar as the pass runs ([#600](https://github.com/Alberto-Codes/vramfit/issues/600)) ([c585da1](https://github.com/Alberto-Codes/vramfit/commit/c585da138131ea938b8681302d87c58c28c14cd0))
+* **cli:** pluralize the plan checkpoint overlap warning ([#568](https://github.com/Alberto-Codes/vramfit/issues/568)) ([29011a8](https://github.com/Alberto-Codes/vramfit/commit/29011a865ad6bbd602e07e5a52b20a0b07000c10))
+* **pack:** catch unmappable expert projections during preflight ([#567](https://github.com/Alberto-Codes/vramfit/issues/567)) ([37cbc32](https://github.com/Alberto-Codes/vramfit/commit/37cbc32c76b8ddcebdfa6b888d56eb5d8a301c38))
+* **plan:** reconcile merged expert projections between scan and checkpoint ([#579](https://github.com/Alberto-Codes/vramfit/issues/579)) ([8341e37](https://github.com/Alberto-Codes/vramfit/commit/8341e3718e21a460bc47643b244244382b93b768))
+* **scan:** read the calibration frame from the checkpoint's chat template ([#580](https://github.com/Alberto-Codes/vramfit/issues/580)) ([91ed55a](https://github.com/Alberto-Codes/vramfit/commit/91ed55a1ee73b15e48ee227d097d0cca3a6f2ae0))
+* **scan:** refuse shard index entries outside the model directory ([#573](https://github.com/Alberto-Codes/vramfit/issues/573)) ([04b3a42](https://github.com/Alberto-Codes/vramfit/commit/04b3a429865d603841d421d724c540344c66d6a2))
+
 ## [0.5.0](https://github.com/Alberto-Codes/vramfit/compare/v0.4.0...v0.5.0) (2026-09-05)
 
 
