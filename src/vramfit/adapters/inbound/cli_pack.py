@@ -242,7 +242,7 @@ def pack(
     python_bin: Annotated[
         Path | None,
         typer.Option(
-            help="Interpreter for the convert script and the assisted Q2_0 "
+            help="Interpreter for the convert script and vramfit's Q2_0 "
             "encoder. It must import vramfit and torch, which the pack "
             "extra provisions. Default: this one."
         ),
@@ -251,7 +251,7 @@ def pack(
         int,
         typer.Option(
             min=1,
-            help="Thread count for the quantizer, the assisted Q2_0 encoder, "
+            help="Thread count for the quantizer, vramfit's Q2_0 encoder, "
             "and the smoke test.",
         ),
     ] = 8,
@@ -306,7 +306,7 @@ def pack(
     bytes, and the ``model_packed`` event records it under
     ``file_type`` (ADR-0012 decision 3 as amended 2026-09-04). The
     ``--python-bin`` interpreter
-    runs the convert script and the assisted ``Q2_0`` encoder — the
+    runs the convert script and vramfit's ``Q2_0`` encoder — the
     ``pack`` extra provisions their dependencies. ``--threads`` sizes
     the quantizer, that encoder, and the smoke test. ``--imatrix``
     hands the quantizer an importance matrix (ADR-0016). The command

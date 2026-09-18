@@ -727,11 +727,11 @@ vramfit pack RECIPE
   --out PATH             Packed model path  [default: packed.gguf]
   --base-gguf PATH       f16 base GGUF, reused when present
                          [default: <model name>-f16.gguf beside --out]
-  --python-bin PATH      Interpreter for the convert script and the
-                         assisted Q2_0 encoder — install
+  --python-bin PATH      Interpreter for the convert script and
+                         vramfit's Q2_0 encoder — install
                          vramfit[pack] to provision it
                          [default: current]
-  --threads INT          Thread count for the quantizer, the assisted
+  --threads INT          Thread count for the quantizer, vramfit's
                          Q2_0 encoder, and the smoke test
                          [default: 8]
   --imatrix PATH         Importance matrix for the quantizer
