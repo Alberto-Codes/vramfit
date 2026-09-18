@@ -1,0 +1,28 @@
+"""Run `vramfit pack` with the matrix-free encoder program (scratch, not shipped).
+
+Patches the CLI's `_build_packer` seam so the packer's `encoder_command`
+points at q2_0_unweighted_program.py. Everything else - preflight, row
+widths, overrides, mixed GGUF, payload verification, run log - is the
+shipped pack path. Usage: mf_pack.py <program.py> -- <vramfit pack args...>
+"""
+from __future__ import annotations
+
+import dataclasses
+import sys
+
+from vramfit.adapters.inbound import cli_pack
+from vramfit.adapters.inbound.cli import app
+
+program = sys.argv[1]
+assert sys.argv[2] == "--"
+_orig = cli_pack._build_packer
+
+
+def _patched(*args, **kwargs):
+    packer = _orig(*args, **kwargs)
+    return dataclasses.replace(packer, encoder_command=(sys.executable, program))
+
+
+cli_pack._build_packer = _patched
+sys.argv = ["vramfit", "pack", *sys.argv[3:]]
+app()

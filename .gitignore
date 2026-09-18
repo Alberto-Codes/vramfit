@@ -37,3 +37,4 @@ coverage.xml
 # it also ignores the name in a subdirectory. A run log the project
 # ever wants tracked needs `git add -f` or a negation.
 *.runlog.jsonl
+.serena/

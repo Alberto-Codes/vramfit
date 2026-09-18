@@ -304,6 +304,24 @@ The third cannot deliver the measured benefit or matching provenance.
   [Issue #608](https://github.com/Alberto-Codes/vramfit/issues/608)
   carries the mechanism and the candidate remedies. A reader planning
   a 30B pack needs both halves of this constraint.
+- **Observed 2026-09-18: the matrix-free arm is viable at nominal 2,
+  and the matrix's model-level share of the encoder's win is 3.3 %.**
+  Two packs ran the shipped Q2_0 fit at weight 1.0 on every
+  nominal-2 block, with the matrix still supplied for the nominal-4
+  tensors. On the published allocation the matrix-free file measured
+  mean KLD 0.075822 ± 0.000433 against the published assisted file's
+  0.071403, at an identical byte count. On the re-solved twelve-stack recipe
+  it measured 0.082204 ± 0.000468 against 0.077790. Both differences
+  are 0.0044, about ten standard errors, and both are 3.3 % of the
+  0.132919 win over stock Q2_0. Weight space measured 2.5 %. The two
+  frames agree in kind on this target: the Lloyd scale search
+  carries the win. Decision 3's label rule stands, because the matrix
+  still weights the shipped fit. Whether nominal 2 should drop the
+  55,314,688 B matrix dependency for a 0.0044 mean-KLD cost is a
+  decision this record does not make.
+  [The evidence page](evidence/0032/README.md#matrix-free-control-arm-at-model-level)
+  records the controls, the frozen decision rules, the hashes, and
+  the program that ran.
 - **A pre-encoded tensor loses ADR-0012 decision 3's record-and-continue
   floor.** Today a layer that no override reaches takes the `--pure`
   floor. The pack step records it in `PackResult.floored_layers`, prints
@@ -380,10 +398,20 @@ The third cannot deliver the measured benefit or matching provenance.
   probe tested one quantizer. Decision 1 forbids `--allow-requantize`,
   so a build that drops the passthrough refuses the pack rather than
   requantizing the payload silently. A toolchain change repeats the probe.
-- What the re-priced map does to the allocation stays unknown. The rebuy
+- ~~What the re-priced map does to the allocation stays unknown. The rebuy
   changed the encoder and kept the shipped recipe's allocation, so no
   measurement on record says whether cheaper nominal-2 cells move the
-  solver's choices. Decision 4 requires the new map before anyone answers.
+  solver's choices. Decision 4 requires the new map before anyone answers.~~
+  Resolved in part 2026-09-17 by the q0-imx2 re-solve. The cheaper
+  nominal-2 cells moved the solver from eleven to twelve 2-bit stacks at
+  16,742,875,072 B. That pack measured mean KLD 0.077790 ± 0.000474, block
+  `candidate` in
+  [q0imx2-2026-09-17-results.txt](evidence/0032/q0imx2-2026-09-17-results.txt).
+  The evidence page's
+  [matrix-free section](evidence/0032/README.md#matrix-free-control-arm-at-model-level)
+  places that reading beside the matrix-free arms. The q0-imx2 map and
+  the re-solved recipe artifacts are not in the repository. That part of
+  the question stays open until they land.
 - ~~No measurement separates the search gain from the matrix gain. The
   `c2-assisted-q2_0` arm ran the patched encoder
   ([evidence](evidence/0032/README.md#rebuy-evidence)), and that patch
