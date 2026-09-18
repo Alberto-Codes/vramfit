@@ -310,7 +310,7 @@ The third cannot deliver the measured benefit or matching provenance.
   nominal-2 block, with the matrix still supplied for the nominal-4
   tensors. On the published allocation the matrix-free file measured
   mean KLD 0.075822 ± 0.000433 against the published assisted file's
-  0.071403, at identical bytes. On the re-solved twelve-stack recipe
+  0.071403, at an identical byte count. On the re-solved twelve-stack recipe
   it measured 0.082204 ± 0.000468 against 0.077790. Both differences
   are 0.0044, about ten standard errors, and both are 3.3 % of the
   0.132919 win over stock Q2_0. Weight space measured 2.5 %. The two
