@@ -37,9 +37,6 @@ ALLOWLIST: dict[str, str] = {
         "Ledger of the frozen run-root archive (#134). It records the "
         "envelope keys those files carry on disk, and the run root's path."
     ),
-    "publication/nemotron-30b-a3b-fit16gib/card-ledger.md": (
-        "Publication #2's ledger records paths under the same frozen run root (#134)."
-    ),
     "publication/gemma-4-31b-fit24gib/card-ledger.md": (
         "The Gemma publication ledger records paths under the same frozen "
         "run root (#134) and the tier-3 record key those files carry on disk."
