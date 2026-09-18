@@ -1,0 +1,39 @@
+# Copied from the 2026-09-17 q0-imx2 run's results.txt: the two measurement blocks named below. The Files section of README.md describes the run.
+
+--- ctl-repro ---
+file: <run>/ctl-repro.gguf
+bytes: 16922476480
+sha256: ae2d7a5194c8c1c711fed284e7834c4ca40b40756a1bf1d96d442baa24907427
+0.03.625.872 I kl_divergence: computing over 594 chunks, n_ctx=512, batch_size=2048, n_seq=4
+chunk             PPL               ln(PPL(Q)/PPL(base))          KL Divergence              Δp RMS            Same top p
+Mean PPL(Q)                   :   7.917699 ±   0.054005
+Mean PPL(base)                :   6.819158 ±   0.046077
+Cor(ln(PPL(Q)), ln(PPL(base))):  95.31%
+Mean ln(PPL(Q)/PPL(base))     :   0.149365 ±   0.002081
+Mean PPL(Q)/PPL(base)         :   1.161096 ±   0.002417
+Mean PPL(Q)-PPL(base)         :   1.098540 ±   0.017219
+Mean    KLD:   0.204318 ±   0.001160
+Maximum KLD:  10.506808
+99.9%   KLD:   5.159615
+Median  KLD:   0.076860
+Same top p: 83.127 ± 0.096 %
+eval_seconds: 95
+
+--- candidate ---
+file: <run>/candidate.gguf
+bytes: 16742875072
+sha256: 99b25f9e757acb919d033436c48ba95a0242caf6d1715fb5ff2f611c6408d630
+0.03.379.450 I kl_divergence: computing over 594 chunks, n_ctx=512, batch_size=2048, n_seq=4
+chunk             PPL               ln(PPL(Q)/PPL(base))          KL Divergence              Δp RMS            Same top p
+Mean PPL(Q)                   :   7.085022 ±   0.047531
+Mean PPL(base)                :   6.819158 ±   0.046077
+Cor(ln(PPL(Q)), ln(PPL(base))):  98.22%
+Mean ln(PPL(Q)/PPL(base))     :   0.038247 ±   0.001270
+Mean PPL(Q)/PPL(base)         :   1.038988 ±   0.001320
+Mean PPL(Q)-PPL(base)         :   0.265864 ±   0.008942
+Mean    KLD:   0.077790 ±   0.000474
+Maximum KLD:   6.337446
+99.9%   KLD:   2.273076
+Median  KLD:   0.028333
+Same top p: 89.037 ± 0.080 %
+eval_seconds: 94

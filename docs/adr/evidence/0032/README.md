@@ -246,7 +246,8 @@ records block `v2-puballoc-q0imx2` at mean KLD 0.071403, same top
 Its control `ctl-v1-published` reads mean KLD 0.204322. The
 re-solve on the q0-imx2 map, twelve stacks at 2 bits, measured mean
 KLD 0.077790 ± 0.000474 at 16,742,875,072 B. That figure lives in
-the operator's run archive, `data/vramfit-q0imx2-30b-real-run/report.md`
+[q0imx2-2026-09-17-results.txt](q0imx2-2026-09-17-results.txt) and
+in the operator's run archive, `data/vramfit-q0imx2-30b-real-run/report.md`
 (2026-09-17, map SHA-256 `3a8bce20…b1e`, recipe SHA-256
 `34ea28d3…a78`). The run
 below re-read the published bytes and re-packed the v1 recipe on its
@@ -278,7 +279,11 @@ allocation.
 **Matrix-free is viable at nominal 2, and the matrix's model-level
 share of the win is 3.3 %.** Weight space said 2.5 %. The two frames
 agree in kind: the Lloyd scale search carries the win, and the
-matrix adds a small, measurable, consistent margin on top.
+matrix adds a small, measurable, consistent margin on top. The
+assisted win reproduced on this pod, from mean KLD 0.204318
+(`ctl-v1-repack`) to 0.071403 (`ctl-v2-published`) on identical bytes.
+This section cites the assisted arm on the re-solved recipe from the
+2026-09-17 record and did not re-measure it on this pod.
 
 Every row below was measured on one H100 pod on 2026-09-18, on one
 f16 base and one set of base logits, over the full 594-chunk
@@ -332,7 +337,8 @@ carry.
    reading a higher mean KLD. The PPL differences sit under one
    standard error of PPL (± 0.047), so PPL cannot separate the two
    encoders on this corpus. KLD separates them at ten. This is the
-   ADR-0027 reason KLD is the tier-2 instrument, observed again.
+   [ADR-0024](../../0024-tier3-task-slice.md) reason KLD is the tier-2
+   instrument, observed again.
 
 What this does not establish: it measures vramfit's own encoder, not
 the reference patch's unassisted path. It ran one calibration
@@ -395,6 +401,10 @@ the assisted and unweighted payloads differed.
   each arm.
 - [matrix-free-timeline.txt](matrix-free-timeline.txt): the driver's
   stage timings.
+- [q0imx2-2026-09-17-results.txt](q0imx2-2026-09-17-results.txt):
+  the 2026-09-17 assisted-candidate block that `mf-cand` is judged
+  against, and the `ctl-repro` block whose SHA-256 `ctl-v1-repack`
+  matches.
 - Run logs, pack logs, and evaluation logs stay in the operator's run
   archive under `data/vramfit-encoder-first-real-run/artifacts/`.
 
