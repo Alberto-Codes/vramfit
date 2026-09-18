@@ -281,7 +281,8 @@ share of the win is 3.3 %.** Weight space said 2.5 %. The two frames
 agree in kind: the Lloyd scale search carries the win, and the
 matrix adds a small, measurable, consistent margin on top. The
 assisted win reproduced on this pod, from mean KLD 0.204318
-(`ctl-v1-repack`) to 0.071403 (`ctl-v2-published`) on identical bytes.
+(`ctl-v1-repack`) to 0.071403 (`ctl-v2-published`) at an identical
+byte count.
 This section cites the assisted arm on the re-solved recipe from the
 2026-09-17 record and did not re-measure it on this pod.
 
