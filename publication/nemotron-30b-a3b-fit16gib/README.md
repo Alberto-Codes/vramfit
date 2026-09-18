@@ -148,13 +148,20 @@ The packed file lands 16.09 MiB under the weight budget.
 
 ### The serve test, on these exact bytes
 
-Both runs used llama.cpp b10362, `--fit off`, `-ngl 99 -c 16384
--np 1`, f16 KV, one slot, on an RTX 4090 held to **16,380 MiB
-visible** by a hard ballast (the #164 method). Both ran on the file
-downloaded back from this repository and hashed against its published
-digest first. The only difference between them is the backend.
+Both runs used llama.cpp b10362 with the flags
+`--fit off -ngl 99 -c 16384 -np 1`, f16 KV, one slot, on an RTX 4090
+held to **16,380 MiB visible** by a hard ballast (the #164 method).
+Both ran on the file downloaded back from this repository and hashed
+against its published digest first. The only difference between them
+is the backend.
 
-**Both runtimes allocate the same buffers**, to within rounding:
+**Both runtimes need the same buffers**, to within rounding. The
+sizes below are what each backend reports it requires for this file at
+this context. The Vulkan column is read from the capped run, where
+every allocation succeeded. The CUDA column is read from an
+**uncapped** run on a 24 GiB card, because under the 16 GiB cap the
+CUDA run aborts partway through these allocations and never reports a
+full set — as the next table shows.
 
 | Buffer | Vulkan | CUDA |
 |---|---:|---:|
@@ -166,7 +173,7 @@ digest first. The only difference between them is the backend.
 | Compute buffer, host | 26.51 MiB | 26.51 MiB |
 | **Device buffers, total** | **16,002.99 MiB** | **16,002 MiB** |
 
-**The results differ anyway:**
+**Under the cap the outcomes differ:**
 
 | Backend | Under a 16,380 MiB visible cap | Result |
 |---|---|---|
@@ -174,8 +181,9 @@ digest first. The only difference between them is the backend.
 | **CUDA** | same configuration | **does not fit** — `cudaMalloc failed` allocating the 85.01 MiB compute buffer |
 
 The difference is the backend's own context overhead, not the file.
-llama.cpp's memory breakdown on the CUDA run reports about **450 MiB
-unaccounted** beside the buffers, for 16,454 MiB device-wide. Vulkan
+llama.cpp's memory breakdown on the uncapped CUDA run reports about
+**450 MiB unaccounted** beside the buffers, for 16,454 MiB
+device-wide. Vulkan
 fit the same 16,003 MiB of buffers inside the same cap, so its
 overhead is under the roughly 377 MiB of headroom that leaves. The
 16 GiB boundary falls between the two.

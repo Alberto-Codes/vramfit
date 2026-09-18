@@ -106,10 +106,19 @@ compares — the published card and this source must match.
 | `NVIDIA-Nemotron-3.5-Lightning-30B-A3B-fit16gib.runlog.jsonl` | `17d6d6c61a4d6b32a9fbd982675a98fc6114c87b2845a14d0ae14d6038623faa` | 2,444 |
 | `NVIDIA-Nemotron-3.5-Lightning-30B-A3B-fit16gib.gguf.evals.json` | `537799b59a7b1c6f4b7d02bbc37cca9eed8f13374354a5f60c0789fa7b778478` | 1,146 |
 | `baselines/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-IQ2_XXS.gguf.evals.json` | `8bbb31ba73b0149c20b0f5154e5107b5ded5ebd9c2cdd43d23170ee5a5195072` | 1,144 |
-| `README.md` | `747a22b56fdf4bc854f427c135b65955e7974ecd4e6cae0c2a788efb19eef9a9` | 40,927 |
+| `README.md` | `e5a170efd873a0a0aba1094f4707bb3dd549db7bfa13689bea90f920ee673dcf` | 41,329 |
 
 `LICENSE` is unchanged from the previous revision and was not
 re-uploaded.
+
+**The Hub's `README.md` is one revision behind this source.** The card
+uploaded and byte-verified at
+`747a22b5…f9a9` (40,927 B). This source then changed in review, to fix
+a paragraph that could be read as saying the capped CUDA run's
+allocations succeeded and an inline-code span broken across a newline.
+The row above records **this** source. Re-uploading the card restores
+the byte-for-byte match; until that runs, the published card differs
+from this file by those two wording fixes and by no number.
 
 **The published digests were read back from the Hub**, not assumed
 from the upload call: `logs/upload-verify.txt` records the repository
