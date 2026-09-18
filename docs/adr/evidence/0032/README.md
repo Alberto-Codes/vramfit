@@ -344,8 +344,10 @@ carry.
 What this does not establish: it measures vramfit's own encoder, not
 the reference patch's unassisted path. It ran one calibration
 matrix and one corpus. It packs the matrix-free arm through a scratch
-program that no `vramfit` command exposes, so no user can produce
-these bytes from the CLI today. Decision 3's rule that an uncovered
+program that no `vramfit` command exposed at the time. Since
+2026-09-17 the `q0-fit2` token ships that fit through `vramfit pack`
+([ADR-0018](../../0018-kquant-within-group-method.md)'s amendment of
+that date). Decision 3's rule that an uncovered
 Q2_0 tensor packs through stock `llama-quantize` is unchanged by
 this record. The serve test and the tier-3 slice did not run on
 either matrix-free file.
