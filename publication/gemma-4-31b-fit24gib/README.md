@@ -309,9 +309,10 @@ The budget arithmetic behind the recipe:
 | KV headroom | 9,663,676,416 | 9.000 |
 | Weight budget | 16,106,127,360 | 15.000 |
 | Predicted pack size | 16,074,691,830 | 14.971 |
-| Real packed file | 16,015,862,144 | 14.916 |
+| Real packed file | 16,015,880,864 | 14.916 |
 
-The packed file lands 86.08 MiB under the weight budget.
+The packed file lands 86.07 MiB under the weight budget. The
+2026-10-09 republish added 18,720 B of metadata and no tensor bytes.
 
 The serve ladders, llama.cpp b10362 Vulkan on an RTX 4090
 (24,564 MiB) under desktop sharing, `-ngl 99 -np 1`, KV cache f16,
@@ -348,6 +349,18 @@ line measured 1,280 MiB in the same frame. Its components measured
 compute reserve, plus the transient. One 768×768 image consumes
 256 decoder tokens, measured at the server — the checkpoint config
 claims 280, and the measured cost wins.
+
+The file embeds Google's canonical Gemma 4 chat template under
+`tokenizer.chat_template`. The text is `chat_template.jinja` from
+`google/gemma-4-31B-it-qat-q4_0-unquantized`, SHA-256
+`ae53464b…c6d4`, the same text Google's own QAT GGUF embeds. Pass
+no `--chat-template-file`. Check the key with
+`gguf-dump --no-tensors gemma-4-31B-it-fit24gib.gguf | grep chat_template`.
+The 2026-10-09 republish wrote that key with `gguf-new-metadata`
+and changed no tensor byte: llama.cpp's `gguf_hash.py` tensor
+SHA-256 is `837ab8cf…5eda` before and after. The earlier whole-file
+SHA-256 `2a7bd7a7…3b1e` names the same weights at Hub revision
+`43db4293`, without the template.
 
 To serve:
 
@@ -481,11 +494,11 @@ application-layer protections you would give the base model.
 
 | File | SHA-256 | Bytes |
 |---|---|---|
-| `gemma-4-31B-it-fit24gib.gguf` | `2a7bd7a7be6979c858258618ab576db573a7b671b45ee5e9785247341b8c3b1e` | 16,015,862,144 |
+| `gemma-4-31B-it-fit24gib.gguf` | `c365d491070bf74f5bebe6b50e1049b3b1d5d1d73f43fcaadf01fd44a50bb508` | 16,015,880,864 |
 | `gemma-4-31B-it-mmproj-q4km.gguf` | `4a03ccaeaaa49cde65a97addac0b2ccd07df4617858aac1472048589ab672033` | 659,537,504 |
 | `recipe.json` | `2730692845959b457211c5bd23a4d67acb8744aaa15e5eda8e7f825ed1e3b320` | 29,951 |
 | `gemma-4-31B-it-fit24gib.runlog.jsonl` | `8da670782e6ae96ef3cce4a2bc00c0962f91b5ab083a19f11a8c836c0ade5b6a` | 2,036 |
-| `gemma-4-31B-it-fit24gib.gguf.evals.json` | `eaefcf7c6b6d40afde6ea275cd7f6b6474525d389036bdbf6a5012c61a9a62d9` | 2,714 |
+| `gemma-4-31B-it-fit24gib.gguf.evals.json` | `510eb35373441968bc2e869068800263830263a66c45960f8cb6bdaabe030ba1` | 2,714 |
 | `baselines/gemma-4-31B_q4_0-it.gguf.evals.json` | `2d8561c1d9d30b5b99b586dd3b2485c51e8d49a03d58884c1bfad6efc4928f9f` | 2,710 |
 | `analysis/vision-campaign-kv9.json` | `2b705017870668ba248eea36ecb837c91d88ba0e78299ba7af9a7ce2ee709b4d` | 55,286 |
 | `analysis/psai-gui-kv9.json` | `8f25d7e3add46dab0cd95db161323d07c0c0cc5e216018a7778857b72cf96363` | 2,850,490 |

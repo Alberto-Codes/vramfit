@@ -16,8 +16,10 @@ relative to that root. The upload staging area is
 | PPL 37.4552, ratio 1.0681 ± 0.0027 | `validate-inframe.console.log`, kv9 STEP 2 block | candidate sidecar, tier 1 |
 | Mean KLD 0.0446 ± 0.0004, same top 92.04 % (92.036 ± 0.090) | same log block | candidate sidecar, tier 2 |
 | Tier-3 five tasks with stderr | `eval/tier3/kv9-decoder/<task>.json` | candidate sidecar, tier 3 |
-| File size 14.92 GiB (16,015,862,144 B) | `stat`, run log `size_checked` | candidate sidecar, artifact block |
-| SHA-256 `2a7bd7a7…b1e` | `sha256sum` 2026-08-29 on the staged pack, `eval/tier3/kv9-decoder/*.sha256` | candidate sidecar, artifact block |
+| File size 14.92 GiB (16,015,880,864 B) | `stat` 2026-10-09 on the republished pack; run log `size_checked` records 16,015,862,144 B before the 18,720 B metadata append | candidate sidecar, artifact block |
+| SHA-256 `c365d491…b508` | `sha256sum` 2026-10-09 on the staged pack; `2a7bd7a7…3b1e` (`sha256sum` 2026-08-29, `eval/tier3/kv9-decoder/*.sha256`) names the pre-template bytes at Hub revision `43db4293` | candidate sidecar, artifact block |
+| Tensor SHA-256 `837ab8cf…5eda`, identical before and after the republish | llama.cpp `gguf_hash.py` 2026-10-09 on both files (vramfit #617) | card serve notes |
+| Chat template source SHA-256 `ae53464b…c6d4` | `sha256sum` of `~/models/gemma-4-31B-it-qat-q4_0-unquantized/chat_template.jinja` 2026-10-09; equal to the text in `gemma-4-31B_q4_0-it.gguf` (`gguf-dump`) | card serve notes |
 | Toolchain (lm-eval 0.4.12, llama-cpp-python 0.3.34, b10362 lane) | tier-3 JSON `quantfit_tier3` blocks | candidate sidecar, toolchain block |
 
 The BF16 reference row (KLD-pass PPL 35.0668, 61,413,171,264 B =
@@ -119,11 +121,11 @@ and this source must match.
 
 | File | SHA-256 | Bytes |
 |---|---|---|
-| `gemma-4-31B-it-fit24gib.gguf` | `2a7bd7a7be6979c858258618ab576db573a7b671b45ee5e9785247341b8c3b1e` | 16,015,862,144 |
+| `gemma-4-31B-it-fit24gib.gguf` | `c365d491070bf74f5bebe6b50e1049b3b1d5d1d73f43fcaadf01fd44a50bb508` | 16,015,880,864 |
 | `gemma-4-31B-it-mmproj-q4km.gguf` | `4a03ccaeaaa49cde65a97addac0b2ccd07df4617858aac1472048589ab672033` | 659,537,504 |
 | `recipe.json` | `2730692845959b457211c5bd23a4d67acb8744aaa15e5eda8e7f825ed1e3b320` | 29,951 |
 | `gemma-4-31B-it-fit24gib.runlog.jsonl` | `8da670782e6ae96ef3cce4a2bc00c0962f91b5ab083a19f11a8c836c0ade5b6a` | 2,036 |
-| `gemma-4-31B-it-fit24gib.gguf.evals.json` | `eaefcf7c6b6d40afde6ea275cd7f6b6474525d389036bdbf6a5012c61a9a62d9` | 2,714 |
+| `gemma-4-31B-it-fit24gib.gguf.evals.json` | `510eb35373441968bc2e869068800263830263a66c45960f8cb6bdaabe030ba1` | 2,714 |
 | `baselines/gemma-4-31B_q4_0-it.gguf.evals.json` | `2d8561c1d9d30b5b99b586dd3b2485c51e8d49a03d58884c1bfad6efc4928f9f` | 2,710 |
 | `analysis/vision-campaign-kv9.json` | `2b705017870668ba248eea36ecb837c91d88ba0e78299ba7af9a7ce2ee709b4d` | 55,286 |
 | `analysis/psai-gui-kv9.json` | `8f25d7e3add46dab0cd95db161323d07c0c0cc5e216018a7778857b72cf96363` | 2,850,490 |
