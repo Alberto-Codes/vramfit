@@ -219,6 +219,33 @@ events — `size_checked` records `packed_bytes`,
 over-budget pack exits 1 and keeps the file, so you can inspect what
 overflowed.
 
+## The chat template
+
+The packed file carries the checkpoint's chat template under
+`tokenizer.chat_template` (#617). The pack reads
+`chat_template.jinja` first, then the `chat_template` key of
+`tokenizer_config.json`. After the quantizer exits 0, the pack adds
+the template when the file lacks it. A base GGUF converted outside
+vramfit can lack it, and the quantizer copies the base's metadata
+as it finds it. A packed file whose template differs from the
+checkpoint's halts the pack with exit 1. The pack does not overwrite
+it.
+
+A checkpoint with no template packs without one. Base models often
+ship none. The command then prints this warning on stderr:
+
+```
+warning: the packed model carries no tokenizer.chat_template and the checkpoint at <model_dir> ships none (chat_template.jinja, tokenizer_config.json). llama.cpp falls back to its ChatML template (#617)
+```
+
+The `model_packed` event records `chat_template_source` (the file
+the template came from, or null) and `chat_template_embedded`.
+Check a packed file with gguf-py's dump tool:
+
+```bash
+gguf-dump --no-tensors packed.gguf | grep chat_template
+```
+
 ## Sizes at plan time
 
 The solver prices llama.cpp recipes at per-type effective bits

@@ -693,6 +693,12 @@ rewrites the file's `general.file_type` to the tensor type that
 covers the most bytes in the file (ADR-0012 decision 3, the
 2026-09-04 amendment). The quantizer stamps the floor there, and on
 a mixed pack the floor can name a type the file does not hold.
+Then the command holds the file's `tokenizer.chat_template` against
+the checkpoint's chat template, from `chat_template.jinja` or
+`tokenizer_config.json` (#617). A file with none takes the
+checkpoint's. A different one halts the pack at stage `quantize`.
+A checkpoint with no template packs, and the command warns on
+stderr that llama.cpp falls back to its ChatML template.
 
 A group whose measured rows the 256 super-block does not divide maps
 through the expert-stack type table
@@ -915,8 +921,9 @@ run log: pack_started, gguf_converted (with `reused`), model_packed
 (real bytes, base type, embedding and output tensor types, override
 count, imatrix, uncovered tensors, excluded tensors, zero-count
 experts, floored layers, declared file type, pre-encoded tensors,
-the Q2_0 encoder revision, and `pre_encode_assisted` — the last
-three empty, null, and false on the stock path), size_checked (margin,
+the Q2_0 encoder revision, `pre_encode_assisted` (the last three
+empty, null, and false on the stock path), `chat_template_source`,
+and `chat_template_embedded`), size_checked (margin,
 `fits`, `predicted_total_bytes`, `predicted_delta_bytes`,
 `predicted_delta_fraction`, and `predicted_within_tolerance` — all
 four null when the prediction is absent), reconstruction_checked

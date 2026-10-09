@@ -229,6 +229,11 @@ class MemoryRecipePacker:
     suite that only needs the ADR-0012 k-quant table wants. A suite
     that exercises the ADR-0028 table states the widths that refuse
     the block, such as the 30B target's 2688.
+
+    ``chat_template_source`` names the checkpoint file the chat
+    template came from (#617). The fake records the template as
+    embedded exactly when it names a source. None records a pack
+    with no chat template, which the CLI warns about.
     """
 
     base_bytes: int = 1_000
@@ -243,6 +248,7 @@ class MemoryRecipePacker:
     packed_type_bytes: dict[str, int] | None = None
     row_widths: Mapping[str, int] = field(default_factory=dict)
     out_path: Path | None = None
+    chat_template_source: str | None = None
     packed: list[Recipe] = field(default_factory=list)
 
     def convert(self) -> int:
@@ -362,6 +368,8 @@ class MemoryRecipePacker:
             imatrix_excluded=excluded,
             floored_layers=layer_gaps,
             file_type=declared,
+            chat_template_source=self.chat_template_source,
+            chat_template_embedded=self.chat_template_source is not None,
         )
         if self.out_path is not None:
             self.out_path.write_bytes(b"gguf")
