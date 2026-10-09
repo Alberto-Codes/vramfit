@@ -14,7 +14,9 @@ the reconstruction-check verdict on protected packs — the stripped
 reference recipe and the collapsed-tensor judgment (ADR-0022), and
 the pre-encoding stage's own record: the tensors vramfit's assisted
 ``Q2_0`` encoder fitted and the encoder revision (ADR-0032 decision
-3). Type tables and subprocess details live in
+3). The record also states whether the packed file carries the
+checkpoint's chat template, and which file it came from (#617).
+Type tables and subprocess details live in
 [vramfit.adapters.outbound.gguf][].
 
 Examples:
@@ -152,6 +154,13 @@ class PackResult:
             (ADR-0018, 2026-09-17 amendment). The two encoders emit
             different bytes for one tensor, so the record states
             which one ran.
+        chat_template_source (str | None): The checkpoint file the
+            embedded chat template came from, ``chat_template.jinja``
+            or ``tokenizer_config.json`` (#617). None when the
+            checkpoint ships no chat template.
+        chat_template_embedded (bool): Whether the packed file
+            carries ``tokenizer.chat_template``. False means the
+            runtime falls back to its own default template (#617).
 
     Examples:
         Inspect the real size of a packed model:
@@ -175,6 +184,8 @@ class PackResult:
     pre_encoded: tuple[str, ...] = ()
     q2_0_encoder: str | None = None
     pre_encode_assisted: bool = False
+    chat_template_source: str | None = None
+    chat_template_embedded: bool = False
 
     def __post_init__(self) -> None:
         """Enforce the result invariants.
@@ -190,8 +201,10 @@ class PackResult:
                 stack or a negative expert index, a floored layer is
                 empty, two overrides share a pattern, a pre-encoded
                 tensor is empty or arrives without an ``imatrix_path``,
-                or ``pre_encoded`` and ``q2_0_encoder`` are not both
-                set or both unset.
+                ``pre_encoded`` and ``q2_0_encoder`` are not both
+                set or both unset, ``chat_template_source`` is empty,
+                or ``chat_template_source`` is set while
+                ``chat_template_embedded`` is False.
         """
         if self.packed_bytes <= 0:
             raise ValueError("packed_bytes must be positive")
@@ -218,6 +231,27 @@ class PackResult:
         if len(set(patterns)) != len(patterns):
             raise ValueError("override patterns must be unique")
         _check_pre_encoded(self)
+        _check_chat_template(self)
+
+
+def _check_chat_template(result: PackResult) -> None:
+    """Refuse a chat-template record that contradicts itself.
+
+    Args:
+        result: The record to check.
+
+    Raises:
+        ValueError: If ``chat_template_source`` is empty, or set while
+            ``chat_template_embedded`` is False. The pack embeds every
+            template it reads, so a read source the file lacks is a
+            contradiction (#617).
+    """
+    if result.chat_template_source is None:
+        return
+    if not result.chat_template_source:
+        raise ValueError("chat_template_source must not be empty")
+    if not result.chat_template_embedded:
+        raise ValueError("chat_template_source requires chat_template_embedded")
 
 
 def _check_pre_encoded(result: PackResult) -> None:

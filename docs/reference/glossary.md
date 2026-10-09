@@ -930,6 +930,13 @@ change.
 
 ## Packing
 
+**Chat template**
+:   The Jinja text a checkpoint ships in `chat_template.jinja` or in
+    the `chat_template` key of `tokenizer_config.json`. It renders
+    messages into the model's turn format. The pack embeds it under
+    the GGUF key `tokenizer.chat_template` (#617). Without that key,
+    llama.cpp falls back to its ChatML template.
+
 **Type mapping**
 :   The pack backend's translation from nominal precision to a runtime
     quantization type. [ADR-0012](../adr/0012-gguf-type-mapping.md)

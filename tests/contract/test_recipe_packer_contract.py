@@ -18,6 +18,7 @@ import sys
 from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Literal
 
 import pytest
@@ -28,7 +29,11 @@ from tests.fakes import (
     decoder_imatrix_entry_names,
     decoder_tensor_names,
 )
-from vramfit.adapters.outbound.gguf import exclusion_match, override_match
+from vramfit.adapters.outbound.gguf import (
+    chat_template,
+    exclusion_match,
+    override_match,
+)
 from vramfit.adapters.outbound.gguf.pack import LlamaCppPacker, TypeFallbackError
 from vramfit.adapters.outbound.gguf.types import PackError
 from vramfit.domain.model import (
@@ -47,6 +52,7 @@ if TYPE_CHECKING:  # pragma: no cover - a typing-only import
 pytestmark = pytest.mark.contract
 
 BASE_BYTES = 1_000
+CHAT_TEMPLATE = "{% for message in messages %}{{ message['content'] }}{% endfor %}"
 PACKED_BYTES = 500
 
 _CONVERT_STUB = f"""\
@@ -276,6 +282,15 @@ def _with_widths[PackerT: DataclassInstance](
     return replace(packer, row_widths=row_widths)
 
 
+def _checkpoint_dir(tmp_path: Path, *, with_chat_template: bool) -> Path:
+    """Make the checkpoint directory the real adapter reads (#617)."""
+    model_dir = tmp_path / "model"
+    model_dir.mkdir(exist_ok=True)
+    if with_chat_template:
+        (model_dir / "chat_template.jinja").write_text(CHAT_TEMPLATE)
+    return model_dir
+
+
 def _real_packer(  # noqa: PLR0913 - the contract fixture surface: one flag per stub behavior
     tmp_path: Path,
     *,
@@ -293,6 +308,7 @@ def _real_packer(  # noqa: PLR0913 - the contract fixture surface: one flag per 
     with_unreached_exclusion: bool = False,
     with_unmatched_override: bool = False,
     with_tied_base: bool = False,
+    with_chat_template: bool = False,
     row_widths: Mapping[str, int] | None = STACK_ROW_WIDTHS,
 ) -> RecipePacker:
     # These three configure the fake alone. The real adapter reads both
@@ -333,8 +349,7 @@ def _real_packer(  # noqa: PLR0913 - the contract fixture surface: one flag per 
     quantize = _write_stub(
         tmp_path / "llama-quantize", stub_body("quantize", _QUANTIZE_STUB)
     )
-    model_dir = tmp_path / "model"
-    model_dir.mkdir(exist_ok=True)
+    model_dir = _checkpoint_dir(tmp_path, with_chat_template=with_chat_template)
     if base_exists:
         (tmp_path / "base.gguf").write_bytes(b"G" * BASE_BYTES)
     return _with_widths(
@@ -393,6 +408,7 @@ def _fake_packer(  # noqa: PLR0913 - mirrors _real_packer's fixture surface
     with_unreached_exclusion: bool = False,
     with_unmatched_override: bool = False,
     with_tied_base: bool = False,
+    with_chat_template: bool = False,
     row_widths: Mapping[str, int] | None = STACK_ROW_WIDTHS,
 ) -> RecipePacker:
     uncovered = ("token_embd.weight",) if with_uncovered else ()
@@ -424,15 +440,38 @@ def _fake_packer(  # noqa: PLR0913 - mirrors _real_packer's fixture surface
             # The composition the `packed_layout` fixture serves the real
             # adapter, so both sides declare one modal type (#414).
             packed_type_bytes=dict(PACKED_TYPE_BYTES),
+            chat_template_source="chat_template.jinja" if with_chat_template else None,
         ),
         row_widths,
     )
 
 
+@pytest.fixture
+def packed_chat_template(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve a packed file with no chat template, and make the stamp a no-op.
+
+    The quantize stub writes opaque bytes, so the header parse has no
+    GGUF to read. A packed file with no template is the base case the
+    stamp exists for (#617). The real stamp runs against written GGUFs
+    in `tests/unit/adapters/test_gguf_chat_template.py`.
+    """
+
+    def header(_: Path) -> SimpleNamespace:
+        return SimpleNamespace(chat_template=None)
+
+    def stamp(_: Path, template: str) -> None:
+        del template
+
+    monkeypatch.setattr(chat_template, "read_header", header)
+    monkeypatch.setattr(chat_template, "stamp_chat_template", stamp)
+
+
 @pytest.mark.parametrize(
     "build", [_real_packer, _fake_packer], ids=["real-subprocess", "fake-memory"]
 )
-@pytest.mark.usefixtures("base_gguf_names", "imatrix_entry_names", "packed_layout")
+@pytest.mark.usefixtures(
+    "base_gguf_names", "imatrix_entry_names", "packed_layout", "packed_chat_template"
+)
 class TestRecipePackerContract:
     def test_convert_returns_the_base_size(self, build, tmp_path) -> None:
         packer: RecipePacker = build(tmp_path)
@@ -882,6 +921,28 @@ class TestRecipePackerContract:
 
         assert result.packed_bytes == PACKED_BYTES
 
+    def test_pack_with_a_jinja_template_records_its_embedding(
+        self, build, tmp_path
+    ) -> None:
+        packer: RecipePacker = build(
+            tmp_path, base_exists=True, with_chat_template=True
+        )
+
+        result = packer.pack(sample_pack_recipe())
+
+        assert result.chat_template_source == "chat_template.jinja"
+        assert result.chat_template_embedded
+
+    def test_pack_without_a_template_records_none_embedded(
+        self, build, tmp_path
+    ) -> None:
+        packer: RecipePacker = build(tmp_path, base_exists=True)
+
+        result = packer.pack(sample_pack_recipe())
+
+        assert result.chat_template_source is None
+        assert not result.chat_template_embedded
+
     def test_pack_foreign_runtime_recipe_raises_pack_error(
         self, build, tmp_path
     ) -> None:
@@ -915,7 +976,9 @@ class TestRecipePackerContract:
             packer.pack(sample_pack_recipe())
 
 
-@pytest.mark.usefixtures("base_gguf_names", "imatrix_entry_names", "packed_layout")
+@pytest.mark.usefixtures(
+    "base_gguf_names", "imatrix_entry_names", "packed_layout", "packed_chat_template"
+)
 class TestLlamaCppCommandLines:
     """Real-adapter behavior the fake structurally cannot cover.
 

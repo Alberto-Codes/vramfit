@@ -21,8 +21,10 @@ file kept, and the ``pack_halted`` event carries stage
 ``type_fallback`` and every rewrite (ADR-0028). The ``model_packed``
 event and one ``warning:`` line name every layer the base GGUF
 numbers that no override reached. Those layers pack at the recipe's
-floor and the quantizer reports none of them (#307). After
-packing it re-checks the real bytes against the recipe's weight
+floor and the quantizer reports none of them (#307). One more
+``warning:`` line names a packed file with no chat template, and
+the ``model_packed`` event records the template's source (#617).
+After packing it re-checks the real bytes against the recipe's weight
 budget and against its prediction (the stage lives in
 [vramfit.adapters.inbound.cli_pack_size][]), gates a protected
 imatrix pack on the reconstruction check
@@ -71,6 +73,7 @@ from vramfit.adapters.inbound.cli_pack_check import (
 from vramfit.adapters.inbound.cli_pack_imatrix import (
     _pre_encode_fields,
     _read_zero_count_experts,
+    _report_chat_template,
     _report_imatrix_effects,
     _report_pre_encoding,
     _warn_imatrix_provenance,
@@ -200,20 +203,26 @@ def _report_floored_layers(result: PackResult) -> None:
     )
 
 
-def _report_pack_effects(result: PackResult) -> None:
+def _report_pack_effects(result: PackResult, model_dir: Path) -> None:
     """Echo everything the packed file carries that the recipe does not.
 
     The first two reports name a gap the quantizer leaves unreported
     on a zero exit. The floored layers come first, because they
     explain a size the imatrix lines do not. The pre-encoding line
-    follows, naming what vramfit's own encoder fitted.
+    follows, naming what vramfit's own encoder fitted. The last line
+    warns when the packed file carries no chat template, because the
+    runtime then falls back to its own default without a warning
+    (#617).
 
     Args:
         result: The pack step's accounting record.
+        model_dir: The checkpoint directory the chat template comes
+            from.
     """
     _report_floored_layers(result)
     _report_imatrix_effects(result)
     _report_pre_encoding(result)
+    _report_chat_template(result, model_dir)
 
 
 def pack(
@@ -305,6 +314,10 @@ def pack(
     file's ``general.file_type`` becomes the type covering the most
     bytes, and the ``model_packed`` event records it under
     ``file_type`` (ADR-0012 decision 3 as amended 2026-09-04). The
+    packed file then carries the checkpoint's chat template, and the
+    event records its source file and ``chat_template_embedded``. A
+    pack with no chat template warns, because llama.cpp falls back
+    to its ChatML template (#617). The
     ``--python-bin`` interpreter
     runs the convert script and vramfit's ``Q2_0`` encoder — the
     ``pack`` extra provisions their dependencies. ``--threads`` sizes
@@ -501,9 +514,11 @@ def pack(
             "floored_layers": list(result.floored_layers),
             "file_type": result.file_type,
             **_pre_encode_fields(result),
+            "chat_template_source": result.chat_template_source,
+            "chat_template_embedded": result.chat_template_embedded,
         },
     )
-    _report_pack_effects(result)
+    _report_pack_effects(result, model_dir)
 
     _size_check_stage(run_log, recipe, result.packed_bytes, out)
 

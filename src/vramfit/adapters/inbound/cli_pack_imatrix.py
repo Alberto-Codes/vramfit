@@ -6,8 +6,9 @@ pack flow: the provenance warnings against the recipe's record
 (ADR-0020, ADR-0023), the count read that finds a zero-count expert
 (ADR-0026 decision 5, the 2026-08-13 #198 amendment), the
 console echoes of what the matrix did and did not reach (ADR-0016),
-and the report of what vramfit's ``Q2_0`` encoder pre-encoded,
-with that matrix or without it (ADR-0032).
+the report of what vramfit's ``Q2_0`` encoder pre-encoded,
+with that matrix or without it (ADR-0032), and the warning for a
+packed file with no chat template (#617).
 
 Examples:
     The pack command drives the count read between its stages:
@@ -176,6 +177,26 @@ def _report_pre_encoding(result: PackResult) -> None:
     typer.echo(
         f"pre-encoded {count} tensor{'' if count == 1 else 's'} with the "
         f"{fit} Q2_0 encoder {result.q2_0_encoder} (ADR-0032)"
+    )
+
+
+def _report_chat_template(result: PackResult, model_dir: Path) -> None:
+    """Warn when the packed file carries no chat template (#617).
+
+    llama.cpp then falls back to its ChatML template and prints no
+    warning, so only this line and the run log name the case.
+
+    Args:
+        result: The pack step's accounting record.
+        model_dir: The checkpoint directory the template comes from.
+    """
+    if result.chat_template_embedded:
+        return
+    typer.echo(
+        "warning: the packed model carries no tokenizer.chat_template and the "
+        f"checkpoint at {model_dir} ships none (chat_template.jinja, "
+        "tokenizer_config.json). llama.cpp falls back to its ChatML template (#617)",
+        err=True,
     )
 
 

@@ -58,6 +58,44 @@ class TestPackResult:
 
         assert result.packed_bytes == 100
 
+    def test_chat_template_source_with_embedding_constructs(self) -> None:
+        result = PackResult(
+            packed_bytes=1,
+            base_type="Q4_K_S",
+            token_embedding_type=None,
+            output_tensor_type=None,
+            overrides=(),
+            chat_template_source="chat_template.jinja",
+            chat_template_embedded=True,
+        )
+
+        assert result.chat_template_embedded
+
+    def test_chat_template_source_without_embedding_raises_value_error(
+        self,
+    ) -> None:
+        with pytest.raises(ValueError, match="chat_template_embedded"):
+            PackResult(
+                packed_bytes=1,
+                base_type="Q4_K_S",
+                token_embedding_type=None,
+                output_tensor_type=None,
+                overrides=(),
+                chat_template_source="chat_template.jinja",
+            )
+
+    def test_empty_chat_template_source_raises_value_error(self) -> None:
+        with pytest.raises(ValueError, match="chat_template_source must not be empty"):
+            PackResult(
+                packed_bytes=1,
+                base_type="Q4_K_S",
+                token_embedding_type=None,
+                output_tensor_type=None,
+                overrides=(),
+                chat_template_source="",
+                chat_template_embedded=True,
+            )
+
     def test_empty_token_embedding_type_raises_value_error(self) -> None:
         with pytest.raises(ValueError, match="token_embedding_type"):
             PackResult(
