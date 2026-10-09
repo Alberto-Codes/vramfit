@@ -156,9 +156,90 @@ the clone:
   enforces, and it fails open.
 - `rules/` — `pytest.md` scopes to test paths. `charting.md` applies
   only to chart sessions.
+- `agents/` — the four delegation roles. `hooks/agent_deny_writes.sh`
+  keeps the read-only roles off git history and GitHub records.
+  `hooks/agent_model_gate.sh` enforces the model routing in Supervised workers.
 
 `scripts/check_loc.py` runs on `src` only, so the 300/320 code-line cap
 does not reach `.claude/hooks/`. Keep a guard small anyway.
+
+## Supervised workers
+
+Four agent files in `.claude/agents/` carry the delegation roles:
+`specifier`, `builder`, `acceptance-reviewer` and `researcher`. Call each
+with the `model` its frontmatter names. The duties live once in
+[docs/reference/worker-runs.md](docs/reference/worker-runs.md). The
+procedure, the brief template and the sizing table live in
+[docs/how-to/delegate-work.md](docs/how-to/delegate-work.md). Both
+pages are `draft` until a vramfit dispatch proves them.
+
+Workers never commit, push, publish or change policy unless the user
+explicitly assigns that action. Each checkout has one writer. Workers
+preserve unrelated changes.
+
+### Delegation chain (behavior changes)
+
+The supervisor session does not implement a non-trivial behavior
+change. A small change that a handful of tool calls finish is the one
+exception.
+
+1. **Issue** — the durable task record, sized to one behavior.
+2. **Accepted contract** — from the `specifier` or the supervisor. Its
+   URL or path and its text go in every brief. It builds to the record
+   (an Accepted ADR, the glossary, a `stable` page), not to the
+   ticket's wording.
+3. **Builder** — allowed paths only, red then green, a gate table, no
+   commit.
+4. **Acceptance reviewer** — a **fresh** session. Not the builder, not
+   the supervisor checking its own diff.
+5. **Supervisor** — resolves findings, runs the remaining gates,
+   promotes or demotes the docs pages, commits **only after** acceptance.
+
+Research-only and docs-only work still needs a contract. The contract
+can omit the builder.
+
+**Fable is for decisive judgment only.** Escalate a decision to a
+`fable` agent when an `opus` attempt failed it twice or `xhigh` did not
+settle it. Name each decision that ran on Fable in the report. Keep
+every other sub agent off Fable: pass an explicit `model` on every
+Agent call, and do not `fork` from a Fable session. The hook
+`.claude/hooks/agent_model_gate.sh` denies a dispatch with no `model`
+and asks before a Fable dispatch with no `Escalation:` line.
+
+### Bounded execution
+
+The supervisor owns the cost of the whole assignment, including workers
+and repeated context.
+
+- **Define done first.** State the decision, the evidence, the allowed
+  repairs and the stopping condition. Keep the contract under 150 words.
+- **Require a reason for each action.** Advance the decision, repair a
+  demonstrated blocker, or satisfy a required gate.
+- **Bound delegation.** Default to one builder dispatch, one acceptance
+  review and one repair dispatch per behavior. Before exceeding these
+  limits, report the unresolved assertion and why another dispatch
+  could resolve it. Do not retry an unavailable worker.
+- **Use one validation path.** Run focused regressions, independent
+  acceptance and the required checks. Reuse passing checks for an
+  unchanged revision.
+- **Stop at the agreed outcome.** Report the decision and the remaining
+  evidence gaps.
+
+### Context budget
+
+- **Read narrowly before delegating.** Read the files the current
+  decision needs directly. Delegate a broader survey only when its
+  short answer saves supervisor context.
+- **Read a file once.** Use `git diff` between reads. Pipe long output
+  through `head`, `grep` or `wc`.
+- **Never poll.** A sub agent returns on its own, as a task
+  notification. Wait for CI with one background watcher.
+
+### Never destroy work you did not create
+
+Do not reset, clean, stash, restore or overwrite a change you did not
+make. Investigate an unexpected file or HEAD change before you act on
+it.
 
 ## Branching & Commits
 
