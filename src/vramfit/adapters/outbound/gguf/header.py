@@ -10,7 +10,9 @@ parser walks the header once and records what its callers need: the
 ([vramfit.adapters.outbound.gguf.file_type][]), and each tensor's
 name, shape, type id, and data offset for the mixed-GGUF rewrite and
 the payload verification
-([vramfit.adapters.outbound.gguf.pre_encode][]). It measures bytes
+([vramfit.adapters.outbound.gguf.pre_encode][]). It also decodes the
+``tokenizer.chat_template`` value for the chat-template stamp
+([vramfit.adapters.outbound.gguf.chat_template][], #617). It measures bytes
 by offset and never needs a block-size table, so a type it cannot
 name still counts.
 
@@ -43,6 +45,7 @@ from vramfit.adapters.outbound.gguf.types import PackError
 
 FILE_TYPE_KEY: Final[str] = "general.file_type"
 ALIGNMENT_KEY: Final[str] = "general.alignment"
+CHAT_TEMPLATE_KEY: Final[str] = "tokenizer.chat_template"
 
 _MAGIC: Final[bytes] = b"GGUF"
 _VERSIONS: Final[frozenset[int]] = frozenset({2, 3})
@@ -122,6 +125,8 @@ class GgufHeader:
         data_start (int): Absolute offset of the data section.
         tensors (tuple[TensorInfo, ...]): Every tensor in header
             order.
+        chat_template (str | None): The ``tokenizer.chat_template``
+            value, or None when the file declares none as a string.
 
     Examples:
         Locate one tensor's bytes:
@@ -138,6 +143,7 @@ class GgufHeader:
     infos_offset: int
     data_start: int
     tensors: tuple[TensorInfo, ...]
+    chat_template: str | None = None
 
     def spans(self, file_size: int) -> dict[str, tuple[int, int]]:
         """Bound each tensor's data by the next tensor's offset.
@@ -264,7 +270,8 @@ def _parse(parser: _Parser) -> GgufHeader:
         parser: A parser at the file's first byte.
 
     Returns:
-        The header.
+        The header, with the ``tokenizer.chat_template`` value when
+        the file declares one as a string.
 
     Raises:
         PackError: If the file is not a little-endian GGUF v2 or v3,
@@ -283,6 +290,7 @@ def _parse(parser: _Parser) -> GgufHeader:
     alignment = _DEFAULT_ALIGNMENT
     file_type_offset: int | None = None
     file_type = 0
+    chat_template: str | None = None
     for _ in range(n_kv):
         key = parser.read_string()
         value_type = int(parser.read("<I"))
@@ -301,6 +309,8 @@ def _parse(parser: _Parser) -> GgufHeader:
                 raise PackError(
                     f"{ALIGNMENT_KEY} is {alignment}, not a positive power of two"
                 )
+        elif key == CHAT_TEMPLATE_KEY and value_type == _STRING_TYPE:
+            chat_template = parser.read_string()
         else:
             parser.skip_value(value_type)
     infos_offset = parser.offset
@@ -320,6 +330,7 @@ def _parse(parser: _Parser) -> GgufHeader:
         infos_offset=infos_offset,
         data_start=data_start,
         tensors=tuple(infos),
+        chat_template=chat_template,
     )
 
 

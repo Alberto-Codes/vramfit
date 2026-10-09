@@ -68,6 +68,13 @@ failure inside that stage removes its temporaries. A failure after
 it keeps the temporary mixed GGUF and the payload directory, and
 names both.
 
+After the relabel the adapter holds the packed file's
+``tokenizer.chat_template`` against the checkpoint's chat template
+([vramfit.adapters.outbound.gguf.chat_template][], #617). A file
+with no template takes the checkpoint's. A file with a different
+one refuses. A checkpoint with no template leaves the file as it is,
+and the result records that the file carries none.
+
 Examples:
     Pack a recipe with a local llama.cpp checkout:
 
@@ -99,6 +106,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final
 
+from vramfit.adapters.outbound.gguf.chat_template import embed_chat_template
 from vramfit.adapters.outbound.gguf.exclusion_match import check_exclusion_match
 from vramfit.adapters.outbound.gguf.file_type import stamp_modal_file_type
 from vramfit.adapters.outbound.gguf.header import read_header
@@ -606,7 +614,10 @@ class LlamaCppPacker:
         unemitted. After the quantizer exits 0 and the fallback scan
         passes, the packed file's ``general.file_type`` becomes the
         modal type by bytes, and the result records it (ADR-0012
-        decision 3 as amended 2026-09-04).
+        decision 3 as amended 2026-09-04). Then the packed file's
+        ``tokenizer.chat_template`` must equal the checkpoint's chat
+        template. A file with none takes it, and the result records
+        the source file (#617).
 
         The override composition reads each group's measured row
         width, which `checkpoint_row_widths` supplies to the
@@ -651,8 +662,10 @@ class LlamaCppPacker:
                 file cannot take its file type (#414), the recipe's
                 method needs an imatrix the pack lacks, the
                 pre-encoding selection refuses, the encoder fails,
-                or a pre-encoded payload did not survive the
-                quantizer (ADR-0032).
+                a pre-encoded payload did not survive the
+                quantizer (ADR-0032), or the packed file's chat
+                template differs from the checkpoint's or cannot take
+                it (#617).
             TypeFallbackError: If the quantizer's output carries the
                 type-fallback warning pair — the artifact ignored
                 the recipe on a zero exit (ADR-0028). The file is
@@ -734,6 +747,11 @@ class LlamaCppPacker:
         # and not the file (#413). Relabel with the modal type by
         # bytes (ADR-0012 decision 3 as amended 2026-09-04).
         declared = stamp_modal_file_type(self.out_path)
+        # A base converted without the checkpoint's template packs
+        # without one, and the runtime falls back silently (#617).
+        template_source, template_embedded = embed_chat_template(
+            self.model_dir, self.out_path
+        )
         return PackResult(
             packed_bytes=packed_bytes,
             base_type=base,
@@ -749,4 +767,6 @@ class LlamaCppPacker:
             q2_0_encoder=encoder,
             pre_encode_assisted=recipe.within_group == Q0_IMX2_METHOD
             and bool(pre_encoded),
+            chat_template_source=template_source,
+            chat_template_embedded=template_embedded,
         )

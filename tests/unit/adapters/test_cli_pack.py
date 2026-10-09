@@ -788,6 +788,63 @@ class TestPackCommand:
         assert packed["file_type"] == "Q4_0"
         assert packed["base_type"] != "Q4_0"
 
+    def test_pack_without_chat_template_warns_and_records_it(
+        self, tmp_path, monkeypatch, llama_cpp_dir, recipe_path
+    ) -> None:
+        patch_packer(monkeypatch, MemoryRecipePacker(packed_bytes=WEIGHT_BUDGET - 100))
+        out = tmp_path / "packed.gguf"
+
+        result = runner.invoke(
+            app,
+            [
+                "pack",
+                str(recipe_path),
+                "--llama-cpp",
+                str(llama_cpp_dir),
+                "--out",
+                str(out),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "carries no tokenizer.chat_template" in result.stderr
+        assert "falls back to its ChatML template (#617)" in result.stderr
+        log = read_run_log(out.with_name(out.stem + ".runlog.jsonl"))
+        packed = next(line for line in log if line["event"] == "model_packed")
+        assert packed["chat_template_source"] is None
+        assert packed["chat_template_embedded"] is False
+
+    def test_pack_with_chat_template_records_it_and_warns_nothing(
+        self, tmp_path, monkeypatch, llama_cpp_dir, recipe_path
+    ) -> None:
+        patch_packer(
+            monkeypatch,
+            MemoryRecipePacker(
+                packed_bytes=WEIGHT_BUDGET - 100,
+                chat_template_source="chat_template.jinja",
+            ),
+        )
+        out = tmp_path / "packed.gguf"
+
+        result = runner.invoke(
+            app,
+            [
+                "pack",
+                str(recipe_path),
+                "--llama-cpp",
+                str(llama_cpp_dir),
+                "--out",
+                str(out),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "tokenizer.chat_template" not in result.output
+        log = read_run_log(out.with_name(out.stem + ".runlog.jsonl"))
+        packed = next(line for line in log if line["event"] == "model_packed")
+        assert packed["chat_template_source"] == "chat_template.jinja"
+        assert packed["chat_template_embedded"] is True
+
     def test_recipe_reaching_every_layer_warns_nothing(
         self, tmp_path, monkeypatch, llama_cpp_dir, recipe_path
     ) -> None:
